@@ -39,6 +39,8 @@ from ...agents.run_config import StreamingMode
 from ...auth.auth_tool import AuthConfig
 from ...events.event import Event
 from ...models.base_llm_connection import BaseLlmConnection
+from ...models.google_llm import Gemini
+from ...models.google_llm import GoogleLLMVariant
 from ...models.llm_request import LlmRequest
 from ...models.llm_response import LlmResponse
 from ...telemetry import tracing
@@ -47,8 +49,8 @@ from ...telemetry.tracing import trace_send_data
 from ...telemetry.tracing import tracer
 from ...tools.base_toolset import BaseToolset
 from ...tools.tool_context import ToolContext
-from ...utils.context_utils import Aclosing
 from ...utils import model_name_utils
+from ...utils.context_utils import Aclosing
 from .audio_cache_manager import AudioCacheManager
 from .functions import build_auth_request_event
 
@@ -515,7 +517,17 @@ class BaseLlmFlow(ABC):
           llm_request.live_connect_config.session_resumption.handle = (
               invocation_context.live_session_resumption_handle
           )
-          llm_request.live_connect_config.session_resumption.transparent = True
+          # Only set transparent=True for Vertex AI backend, as the Gemini API
+          # backend explicitly rejects it.
+          if (
+              isinstance(llm, Gemini)
+              and llm._api_backend == GoogleLLMVariant.VERTEX_AI  # pylint: disable=protected-access
+          ):
+            session_resumption = (
+                llm_request.live_connect_config.session_resumption
+            )
+            if session_resumption.transparent is None:
+              session_resumption.transparent = True
 
         if (
             isinstance(llm, Gemini)
@@ -527,8 +539,8 @@ class BaseLlmFlow(ABC):
           if llm_request.live_connect_config is None:
             llm_request.live_connect_config = types.LiveConnectConfig()
           if llm_request.live_connect_config.history_config is None:
-            llm_request.live_connect_config.history_config = types.HistoryConfig(
-                initial_history_in_client_content=True
+            llm_request.live_connect_config.history_config = (
+                types.HistoryConfig(initial_history_in_client_content=True)
             )
 
         logger.info(
