@@ -17,6 +17,7 @@
 from unittest import mock
 from unittest.mock import AsyncMock
 
+from google.adk.agents.live_request_queue import LiveRequestQueue
 from google.adk.agents.llm_agent import Agent
 from google.adk.agents.run_config import RunConfig
 from google.adk.events.event import Event
@@ -30,6 +31,7 @@ from google.adk.tools.base_toolset import BaseToolset
 from google.adk.tools.google_search_tool import GoogleSearchTool
 from google.genai import types
 import pytest
+from websockets.exceptions import ConnectionClosed
 
 from ... import testing_utils
 
@@ -490,8 +492,6 @@ async def test_handle_after_model_callback_caches_canonical_tools():
 @pytest.mark.asyncio
 async def test_run_live_reconnects_on_connection_closed():
   """Test that run_live reconnects when ConnectionClosed occurs."""
-  from google.adk.agents.live_request_queue import LiveRequestQueue
-  from websockets.exceptions import ConnectionClosed
 
   real_model = Gemini()
   mock_connection = mock.AsyncMock()
@@ -558,7 +558,6 @@ async def test_run_live_reconnects_on_connection_closed():
 @pytest.mark.asyncio
 async def test_run_live_reconnects_on_api_error():
   """Test that run_live reconnects when APIError occurs."""
-  from google.adk.agents.live_request_queue import LiveRequestQueue
   from google.genai.errors import APIError
 
   real_model = Gemini()
@@ -626,7 +625,6 @@ async def test_run_live_reconnects_on_api_error():
 @pytest.mark.asyncio
 async def test_run_live_skips_send_history_on_resumption():
   """Test that run_live skips send_history when resuming a session."""
-  from google.adk.agents.live_request_queue import LiveRequestQueue
 
   real_model = Gemini()
   mock_connection = mock.AsyncMock()
@@ -684,7 +682,6 @@ async def test_run_live_skips_send_history_on_resumption():
 @pytest.mark.asyncio
 async def test_live_session_resumption_go_away():
   """Test that go_away triggers reconnection."""
-  from google.adk.agents.live_request_queue import LiveRequestQueue
 
   real_model = Gemini()
   mock_connection = mock.AsyncMock()
@@ -743,8 +740,6 @@ async def test_live_session_resumption_go_away():
 @pytest.mark.asyncio
 async def test_run_live_no_reconnect_without_handle():
   """Test that run_live does not reconnect when handle is missing."""
-  from google.adk.agents.live_request_queue import LiveRequestQueue
-  from websockets.exceptions import ConnectionClosed
 
   real_model = Gemini()
   mock_connection = mock.AsyncMock()
@@ -786,8 +781,6 @@ async def test_run_live_no_reconnect_without_handle():
 @pytest.mark.asyncio
 async def test_run_live_reconnect_limit():
   """Test that run_live stops reconnecting after 5 attempts."""
-  from google.adk.agents.live_request_queue import LiveRequestQueue
-  from websockets.exceptions import ConnectionClosed
 
   real_model = Gemini()
 
@@ -843,9 +836,7 @@ async def test_run_live_reconnect_limit():
 @pytest.mark.asyncio
 async def test_run_live_reconnect_reset_attempt():
   """Test that attempt counter is reset on successful communication."""
-  from google.adk.agents.live_request_queue import LiveRequestQueue
   from google.adk.flows.llm_flows.base_llm_flow import DEFAULT_MAX_RECONNECT_ATTEMPTS
-  from websockets.exceptions import ConnectionClosed
 
   real_model = Gemini()
 
@@ -987,7 +978,6 @@ async def test_receive_from_model_author_attribution():
 @pytest.mark.asyncio
 async def test_run_live_clears_resumption_handle_on_transfer():
   """Test that run_live clears session resumption handles when transferring to another agent."""
-  from google.adk.agents.live_request_queue import LiveRequestQueue
 
   agent = Agent(name='test_agent')
   invocation_context = await testing_utils.create_invocation_context(
