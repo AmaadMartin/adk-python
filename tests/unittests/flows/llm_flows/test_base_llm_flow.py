@@ -1192,7 +1192,9 @@ async def test_run_live_reconnect_does_not_set_transparent():
 
           assert mock_connect.call_count == 2
           second_call_req = mock_connect.call_args_list[1][0][0]
-          session_resump = second_call_req.live_connect_config.session_resumption
+          session_resump = (
+              second_call_req.live_connect_config.session_resumption
+          )
           assert session_resump.transparent is None
 
 
