@@ -1175,21 +1175,25 @@ async def test_run_live_reconnect_does_not_set_transparent():
       mock_aenter = mock.AsyncMock()
       mock_aenter.side_effect = [mock_connection, mock_connection_2]
 
-      with mock.patch(
-          'google.adk.models.google_llm.Gemini.connect'
-      ) as mock_connect:
-        mock_connect.return_value.__aenter__ = mock_aenter
+      with mock.patch.object(
+          Gemini, '_api_backend', new_callable=mock.PropertyMock
+      ) as mock_backend:
+        mock_backend.return_value = GoogleLLMVariant.GEMINI_API
+        with mock.patch(
+            'google.adk.models.google_llm.Gemini.connect'
+        ) as mock_connect:
+          mock_connect.return_value.__aenter__ = mock_aenter
 
-        try:
-          async for _ in flow.run_live(invocation_context):
+          try:
+            async for _ in flow.run_live(invocation_context):
+              pass
+          except StopTestError:
             pass
-        except StopTestError:
-          pass
 
-        assert mock_connect.call_count == 2
-        second_call_req = mock_connect.call_args_list[1][0][0]
-        session_resump = second_call_req.live_connect_config.session_resumption
-        assert session_resump.transparent is None
+          assert mock_connect.call_count == 2
+          second_call_req = mock_connect.call_args_list[1][0][0]
+          session_resump = second_call_req.live_connect_config.session_resumption
+          assert session_resump.transparent is None
 
 
 @pytest.mark.asyncio
@@ -1302,6 +1306,7 @@ async def test_run_live_history_config_gated_by_backend(
   with mock.patch.object(flow, '_send_to_model', new_callable=AsyncMock):
 
     async def mock_preprocess(ctx, req):
+      req.model = 'gemini-3.1-flash-live-preview'
       req.contents = [
           types.Content(parts=[types.Part.from_text(text='history')])
       ]

@@ -517,7 +517,17 @@ class BaseLlmFlow(ABC):
           llm_request.live_connect_config.session_resumption.handle = (
               invocation_context.live_session_resumption_handle
           )
-          llm_request.live_connect_config.session_resumption.transparent = True
+          # Only set transparent=True for Vertex AI backend, as the Gemini API
+          # backend explicitly rejects it.
+          if (
+              isinstance(llm, Gemini)
+              and llm._api_backend == GoogleLLMVariant.VERTEX_AI  # pylint: disable=protected-access
+          ):
+            session_resumption = (
+                llm_request.live_connect_config.session_resumption
+            )
+            if session_resumption.transparent is None:
+              session_resumption.transparent = True
 
         if (
             isinstance(llm, Gemini)
