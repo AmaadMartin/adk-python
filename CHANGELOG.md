@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.35.0](https://github.com/google/adk-python/compare/v1.34.2...v1.35.0) (2026-06-10)
+
+
+### Features
+
+* **live:** Handle input transcription differently for Gemini Live 3.1 models ([#6045](https://github.com/google/adk-python/issues/6045)) ([ecfdaf5](https://github.com/google/adk-python/commit/ecfdaf5f5e7accfbb4294cb8cc56c910dad2b1a8))
+
+
+### Bug Fixes
+
+* add missing Gemini imports in base_llm_flow ([#5943](https://github.com/google/adk-python/issues/5943)) ([6d027b4](https://github.com/google/adk-python/commit/6d027b4ce8bc1c5d288b02e1e3819917117038ec))
+* **flows:** Reset reconnect attempts on connection success ([#6042](https://github.com/google/adk-python/issues/6042)) ([87abf23](https://github.com/google/adk-python/commit/87abf230dbc21b49fa5606e18627c7f62df0d37b))
+* **models:** Default grounding metadata for Gemini 3.1 live ([#6018](https://github.com/google/adk-python/issues/6018)) ([fafafb3](https://github.com/google/adk-python/commit/fafafb38e1027a5cfe185357f6b8a107bbd3779e))
+* Support generalized history config injection for Gemini 3.1 Live on Vertex AI ([#5999](https://github.com/google/adk-python/issues/5999)) ([aafd97f](https://github.com/google/adk-python/commit/aafd97f6f0ae114b0ca772b4f5176602e3677e79))
+
 ## [1.34.2](https://github.com/google/adk-python/compare/v1.34.1...v1.34.2) (2026-06-01)
 
 
