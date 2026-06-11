@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-name: block-merge
+name: Do Not Merge on GitHub
 
 on:
   pull_request:
@@ -20,9 +20,10 @@ on:
 
 jobs:
   block-merge:
+    name: Submit via Piper CL — GitHub merge is disabled
     runs-on: ubuntu-latest
     steps:
-      - name: Block GitHub merge (submit via Piper)
+      - name: Explain why merging is blocked
         run: |
-          echo "::error::Merging via GitHub is disabled. Submit changes through Piper CL."
+          echo "::error title=GitHub merge is disabled::This repository is mirrored from Google's internal source. Do NOT merge pull requests on GitHub. Submit your changes as a Piper CL instead; the change will sync back here automatically."
           exit 1
