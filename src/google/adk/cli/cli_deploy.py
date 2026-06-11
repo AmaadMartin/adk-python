@@ -68,6 +68,11 @@ _DOCKERFILE_TEMPLATE: Final[str] = """
 FROM python:3.11-slim
 WORKDIR /app
 
+RUN apt-get update && \
+    apt-get upgrade -y && \
+    apt-get install -y git && \
+    apt -y autoremove
+
 # Create a non-root user
 RUN adduser --disabled-password --gecos "" myuser
 
