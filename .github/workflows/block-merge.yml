@@ -20,7 +20,7 @@ on:
 
 jobs:
   block-merge:
-    name: Do not merge — maintainers land changes via Copybara
+    name: maintainers will submit via Copybara
     runs-on: ubuntu-latest
     steps:
       - name: Explain why merging is blocked
