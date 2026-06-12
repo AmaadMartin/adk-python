@@ -669,6 +669,44 @@ def test_trace_merged_tool_calls_serialization_error(
   mock_event_fixture.model_dumps_json.assert_called_once_with(exclude_none=True)
 
 
+def test_trace_merged_tool_calls_unexpected_json_loads_error(
+    monkeypatch, mock_span_fixture, mock_event_fixture
+):
+  monkeypatch.setattr(
+      'opentelemetry.trace.get_current_span', lambda: mock_span_fixture
+  )
+  monkeypatch.setattr(
+      'json.loads', mock.Mock(side_effect=Exception('Unexpected error'))
+  )
+
+  test_response_event_id = 'merged_evt_id_json_err'
+  mock_event_fixture.model_dumps_json.return_value = '{"foo": "bar"}'
+
+  trace_merged_tool_calls(
+      response_event_id=test_response_event_id,
+      function_response_event=mock_event_fixture,
+  )
+
+  expected_calls = [
+      mock.call('gen_ai.operation.name', 'execute_tool'),
+      mock.call('gen_ai.tool.name', '(merged tools)'),
+      mock.call('gen_ai.tool.description', '(merged tools)'),
+      mock.call('gen_ai.tool.call.id', test_response_event_id),
+      mock.call('gcp.vertex.agent.tool_call_args', 'N/A'),
+      mock.call('gcp.vertex.agent.event_id', test_response_event_id),
+      mock.call('gcp.vertex.agent.tool_response', '{"foo": "bar"}'),
+      mock.call('gcp.vertex.agent.llm_request', '{}'),
+      mock.call('gcp.vertex.agent.llm_response', '{}'),
+  ]
+
+  assert mock_span_fixture.set_attribute.call_count == len(expected_calls)
+  mock_span_fixture.set_attribute.assert_has_calls(
+      expected_calls, any_order=True
+  )
+  mock_event_fixture.model_dumps_json.assert_called_once_with(exclude_none=True)
+
+
+
 @pytest.mark.asyncio
 async def test_call_llm_disabling_request_response_content(
     monkeypatch, mock_span_fixture
