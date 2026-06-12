@@ -295,9 +295,7 @@ def trace_merged_tool_calls(
   span.set_attribute('gcp.vertex.agent.tool_call_args', 'N/A')
   span.set_attribute('gcp.vertex.agent.event_id', response_event_id)
   try:
-    function_response_event_json = function_response_event.model_dumps_json(
-        exclude_none=True
-    )
+    function_response_event_json = function_response_event.model_dumps_json(exclude_none=True)
   except Exception:  # pylint: disable=broad-exception-caught
     function_response_event_json = '<not serializable>'
 
