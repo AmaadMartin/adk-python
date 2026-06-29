@@ -297,6 +297,11 @@ class NodeRunner:
     # and bubbling up actions already handled internally by their nested sub-agents.
     is_native_node_event = not event.author or event.author == self._node.name
     if event.actions and is_native_node_event:
+      if event.actions.state_delta:
+        for k in list(event.actions.state_delta):
+          if k.startswith(ctx.state.TEMP_PREFIX):
+            ctx.state[k] = event.actions.state_delta.pop(k)
+
       if event.actions.route is not None:
         ctx.route = event.actions.route
         ctx._route_emitted = True
@@ -379,11 +384,7 @@ class NodeRunner:
       ctx._route_emitted = True
 
   def _flush_deltas(self, event: Event, ctx: Context) -> None:
-    """Move pending state/artifact deltas from ctx onto the event.
-
-    TODO: Handle non-persisted states (e.g. `temp:` prefixed keys)
-    that should flow through ctx but not be written to session events.
-    """
+    """Move pending state/artifact deltas from ctx onto the event."""
     from ..events.event_actions import EventActions
 
     state_delta = ctx.actions.state_delta

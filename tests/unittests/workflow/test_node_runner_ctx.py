@@ -656,3 +656,44 @@ async def test_override_isolation_scope_used_in_node_runner():
   ).run()
 
   assert events[0].isolation_scope == 'task:fc-999'
+
+
+# --- Temp state keys filtering ---
+
+
+@pytest.mark.asyncio
+async def test_temp_state_keys_filtered_from_events():
+  """Temporary state keys (temp:) are filtered from enqueued events but flow in context."""
+
+  class _Node(BaseNode):
+
+    async def _run_impl(self, *, ctx, node_input):
+      ctx.state['temp:secret'] = 'hidden'
+      ctx.state['normal_key'] = 'visible'
+      yield Event(
+          state={
+              'temp:yielded_secret': 'hidden_yielded',
+              'normal_yielded': 'visible_yielded',
+          }
+      )
+
+  parent_ctx, events = _make_ctx()
+  child_ctx = await NodeRunner(
+      node=_Node(name='n'), parent_ctx=parent_ctx
+  ).run()
+
+  # Verify they flow to child_ctx state
+  assert child_ctx.state['temp:secret'] == 'hidden'
+  assert child_ctx.state['normal_key'] == 'visible'
+  assert child_ctx.state['temp:yielded_secret'] == 'hidden_yielded'
+
+  # Verify they are filtered from events
+  # We expect 1 event because the directly set normal_key is flushed onto the yielded event.
+  assert len(events) == 1
+
+  # The single event should have normal keys but NO temp keys
+  assert 'temp:yielded_secret' not in events[0].actions.state_delta
+  assert 'temp:secret' not in events[0].actions.state_delta
+  assert events[0].actions.state_delta['normal_yielded'] == 'visible_yielded'
+  assert events[0].actions.state_delta['normal_key'] == 'visible'
+

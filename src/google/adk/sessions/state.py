@@ -95,7 +95,8 @@ class State:
     # TODO: make new change only store in delta, so that self._value is only
     #   updated at the storage commit time.
     self._value[key] = value
-    self._delta[key] = value
+    if not key.startswith(self.TEMP_PREFIX):
+      self._delta[key] = value
 
   def __contains__(self, key: str) -> bool:
     """Whether the state dict contains the given key."""
@@ -125,7 +126,9 @@ class State:
       for key, value in delta.items():
         _validate_state_entry(self._schema, key, value)
     self._value.update(delta)
-    self._delta.update(delta)
+    self._delta.update(
+        {k: v for k, v in delta.items() if not k.startswith(self.TEMP_PREFIX)}
+    )
 
   def to_dict(self) -> dict[str, Any]:
     """Returns the state dict."""
