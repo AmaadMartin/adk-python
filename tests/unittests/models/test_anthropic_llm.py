@@ -1632,6 +1632,7 @@ def test_message_to_generate_content_response_with_thinking():
   text_part = response.content.parts[2]
   assert text_part.text == "Here is my answer."
   assert text_part.thought is not True
+  assert response.finish_reason == types.FinishReason.STOP
 
 
 def test_message_to_generate_content_response_reports_cache_read_tokens():
@@ -1661,6 +1662,7 @@ def test_message_to_generate_content_response_reports_cache_read_tokens():
   response = message_to_generate_content_response(message)
 
   assert response.usage_metadata.cached_content_token_count == 75
+  assert response.finish_reason == types.FinishReason.STOP
 
 
 def test_message_to_generate_content_response_no_cache_read_tokens():
@@ -1690,6 +1692,7 @@ def test_message_to_generate_content_response_no_cache_read_tokens():
   response = message_to_generate_content_response(message)
 
   assert response.usage_metadata.cached_content_token_count is None
+  assert response.finish_reason == types.FinishReason.STOP
 
 
 def test_part_to_message_block_thinking_roundtrip():
@@ -2565,3 +2568,71 @@ async def test_generate_content_async_excludes_sampling_when_effort(
       assert "top_p" not in kwargs
       assert "top_k" not in kwargs
       assert kwargs["output_config"] == {"effort": "xhigh"}
+
+
+def test_to_google_genai_finish_reason():
+  assert anthropic_llm.to_google_genai_finish_reason("end_turn") == types.FinishReason.STOP
+  assert anthropic_llm.to_google_genai_finish_reason("stop_sequence") == types.FinishReason.STOP
+  assert anthropic_llm.to_google_genai_finish_reason("tool_use") == types.FinishReason.STOP
+  assert anthropic_llm.to_google_genai_finish_reason("max_tokens") == types.FinishReason.MAX_TOKENS
+  assert anthropic_llm.to_google_genai_finish_reason("unknown") == types.FinishReason.FINISH_REASON_UNSPECIFIED
+  assert anthropic_llm.to_google_genai_finish_reason(None) == types.FinishReason.FINISH_REASON_UNSPECIFIED
+
+
+@pytest.mark.parametrize(
+    "anthropic_stop_reason, expected_finish_reason",
+    [
+        ("end_turn", types.FinishReason.STOP),
+        ("max_tokens", types.FinishReason.MAX_TOKENS),
+        ("stop_sequence", types.FinishReason.STOP),
+        ("tool_use", types.FinishReason.STOP),
+        ("unknown_reason", types.FinishReason.FINISH_REASON_UNSPECIFIED),
+        (None, types.FinishReason.FINISH_REASON_UNSPECIFIED),
+    ],
+)
+async def test_generate_content_streaming_finish_reason(
+    anthropic_stop_reason, expected_finish_reason
+):
+  llm = AnthropicLlm()
+  events = [
+      MagicMock(
+          type="message_start",
+          message=MagicMock(usage=MagicMock(input_tokens=10, output_tokens=0)),
+      ),
+      MagicMock(
+          type="content_block_start",
+          index=0,
+          content_block=anthropic_types.TextBlock(text="", type="text"),
+      ),
+      MagicMock(
+          type="content_block_delta",
+          index=0,
+          delta=anthropic_types.TextDelta(text="Hello ", type="text_delta"),
+      ),
+      MagicMock(type="content_block_stop", index=0),
+      MagicMock(
+          type="message_delta",
+          delta=MagicMock(stop_reason=anthropic_stop_reason),
+          usage=MagicMock(output_tokens=5),
+      ),
+      MagicMock(type="message_stop"),
+  ]
+
+  mock_client = MagicMock()
+  mock_client.messages.create = AsyncMock(
+      return_value=_make_mock_stream_events(events)
+  )
+
+  llm_request = LlmRequest(
+      model="claude-sonnet-4-20250514",
+      contents=[Content(role="user", parts=[Part.from_text(text="Hi")])],
+  )
+
+  with mock.patch.object(llm, "_anthropic_client", mock_client):
+    responses = []
+    async for response in llm.generate_content_async(llm_request, stream=True):
+      responses.append(response)
+
+    assert len(responses) > 0
+    final_response = responses[-1]
+    assert final_response.finish_reason == expected_finish_reason

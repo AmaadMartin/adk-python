@@ -499,8 +499,7 @@ def message_to_generate_content_response(
           ),
           cached_content_token_count=_extract_cached_token_count(message.usage),
       ),
-      # TODO: Deal with these later.
-      # finish_reason=to_google_genai_finish_reason(message.stop_reason),
+      finish_reason=to_google_genai_finish_reason(message.stop_reason),
   )
 
 
@@ -788,6 +787,7 @@ class AnthropicLlm(BaseLlm):
     input_tokens = 0
     output_tokens = 0
     cached_input_tokens: int | None = None
+    stop_reason: Optional[str] = None
 
     async for event in raw_stream:
       if event.type == "message_start":
@@ -845,6 +845,7 @@ class AnthropicLlm(BaseLlm):
 
       elif event.type == "message_delta":
         output_tokens = event.usage.output_tokens
+        stop_reason = event.delta.stop_reason
 
     # Build the final aggregated response with all content.
     all_parts: list[types.Part] = []
@@ -887,6 +888,7 @@ class AnthropicLlm(BaseLlm):
             total_token_count=input_tokens + output_tokens,
             cached_content_token_count=cached_input_tokens,
         ),
+        finish_reason=to_google_genai_finish_reason(stop_reason),
         partial=False,
     )
 
