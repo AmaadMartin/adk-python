@@ -44,6 +44,11 @@ def _has_non_output_content(event: Event) -> bool:
     if event.actions.state_delta or event.actions.artifact_delta:
       return True
   return False
+def _filter_temp_keys(state_delta: dict[str, Any]) -> dict[str, Any]:
+  from ..sessions.state import State
+  return {
+      k: v for k, v in state_delta.items() if not k.startswith(State.TEMP_PREFIX)
+  }
 
 
 class NodeRunner:
@@ -341,7 +346,6 @@ class NodeRunner:
   async def _flush_output_and_deltas(self, ctx: Context) -> None:
     """Emit deferred output and/or unflushed state/artifact deltas."""
     from ..events.event import Event
-    from ..events.event_actions import EventActions
 
     state_delta = ctx.actions.state_delta
     artifact_delta = ctx.actions.artifact_delta
@@ -353,9 +357,11 @@ class NodeRunner:
     has_unflushed_route = (
         ctx._route_value is not None and not ctx._route_emitted
     )
-    has_deltas = bool(state_delta or artifact_delta)
+
+    has_deltas = bool(_filter_temp_keys(state_delta) or artifact_delta)
 
     if not has_deferred_output and not has_deltas and not has_unflushed_route:
+      state_delta.clear()
       return
 
     # Build the event — output + route + deltas, or a subset.
@@ -363,13 +369,8 @@ class NodeRunner:
         output=ctx._output_value if has_deferred_output else None,
         route=ctx._route_value if has_unflushed_route else None,
     )
-    if has_deltas:
-      event.actions = EventActions(
-          state_delta=dict(state_delta),
-          artifact_delta=dict(artifact_delta),
-      )
-      state_delta.clear()
-      artifact_delta.clear()
+
+    self._flush_deltas(event, ctx)
 
     self._enrich_event(event, ctx)
     await ctx._invocation_context._enqueue_event(event)
@@ -388,17 +389,22 @@ class NodeRunner:
 
     state_delta = ctx.actions.state_delta
     artifact_delta = ctx.actions.artifact_delta
-    if not state_delta and not artifact_delta:
-      return
 
-    if not event.actions:
-      event.actions = EventActions()
-    if state_delta:
-      event.actions.state_delta.update(state_delta)
-      state_delta.clear()
-    if artifact_delta:
+    # 1. Filter existing state_delta in event if any
+    if event.actions and event.actions.state_delta:
+      event.actions.state_delta = _filter_temp_keys(event.actions.state_delta)
+
+    # 2. Filter ctx.actions.state_delta
+    filtered_ctx_state_delta = _filter_temp_keys(state_delta)
+
+    if filtered_ctx_state_delta or artifact_delta:
+      event.actions = event.actions or EventActions()
+      event.actions.state_delta.update(filtered_ctx_state_delta)
       event.actions.artifact_delta.update(artifact_delta)
       artifact_delta.clear()
+
+    # Always clear ctx.actions.state_delta
+    state_delta.clear()
 
   def _enrich_event(self, event: Event, ctx: Context) -> None:
     """Set author, node_info, invocation_id on the event."""

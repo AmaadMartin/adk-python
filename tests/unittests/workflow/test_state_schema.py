@@ -422,3 +422,44 @@ async def test_node_without_schema_inherits_workflow_schema(
   runner = testing_utils.InMemoryRunner(app=app)
   with pytest.raises(StateSchemaError, match='unknown'):
     await runner.run_async(testing_utils.get_user_content('start'))
+
+
+@pytest.mark.asyncio
+async def test_workflow_temp_state_flows_but_not_in_events(
+    request: pytest.FixtureRequest,
+) -> None:
+  """Temp state keys flow to downstream nodes but are not written to events."""
+
+  def write_temp(ctx: Context) -> str:
+    ctx.state['temp:secret'] = 'hush'
+    return 'node1_done'
+
+  def read_temp(ctx: Context) -> str:
+    val = ctx.state.get('temp:secret')
+    return f'node2_read_{val}'
+
+  wf = Workflow(
+      name='wf',
+      edges=[
+          (START, write_temp),
+          (write_temp, read_temp),
+      ],
+  )
+  app = App(name=request.function.__name__, root_agent=wf)
+  runner = testing_utils.InMemoryRunner(app=app)
+  events = await runner.run_async(testing_utils.get_user_content('start'))
+
+  # 1. Verify it flowed
+  node2_output_event = next(
+      e
+      for e in events
+      if isinstance(e, Event)
+      and e.output
+      and e.output.startswith('node2_read_')
+  )
+  assert node2_output_event.output == 'node2_read_hush'
+
+  # 2. Verify it is NOT in any event's state_delta
+  for event in events:
+    if isinstance(event, Event) and event.actions and event.actions.state_delta:
+      assert 'temp:secret' not in event.actions.state_delta
