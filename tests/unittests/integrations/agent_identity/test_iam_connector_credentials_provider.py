@@ -15,6 +15,7 @@
 from unittest.mock import Mock
 from unittest.mock import patch
 
+from google.api_core.exceptions import GoogleAPICallError
 import pytest
 
 pytest.importorskip(
@@ -254,7 +255,7 @@ async def test_get_auth_credential_raises_error_if_upstream_call_fails(
     mock_client, auth_scheme, context, provider
 ):
   """Test get_auth_credential raises RuntimeError for failed calls."""
-  mock_client.retrieve_credentials.side_effect = Exception(
+  mock_client.retrieve_credentials.side_effect = GoogleAPICallError(
       "API Quota Exhausted"
   )
 
@@ -265,7 +266,7 @@ async def test_get_auth_credential_raises_error_if_upstream_call_fails(
     await provider.get_auth_credential(auth_scheme, context)
 
   # Assert that the original Exception is the chained cause!
-  assert str(exc_info.value.__cause__) == "API Quota Exhausted"
+  assert "API Quota Exhausted" in str(exc_info.value.__cause__)
 
 
 @patch.object(_iam_connector_credentials_provider.time, "time")
@@ -279,25 +280,15 @@ async def test_get_auth_credential_raises_error_if_polling_times_out(
   """Test get_auth_credential raises RuntimeError if polling times out."""
 
   # Force the operation into the polling loop state
-  meta_pb = RetrieveCredentialsMetadata.pb()()
-  meta_pb.consent_pending.SetInParent()
-  meta = RetrieveCredentialsMetadata.deserialize(meta_pb.SerializeToString())
+  meta = RetrieveCredentialsMetadata(consent_pending=RetrieveCredentialsMetadata.ConsentPending())
   mock_operation.metadata.value = RetrieveCredentialsMetadata.serialize(meta)
 
   # First call sets start_time=0.0, second call checks time > timeout
   # (20.0 > 10.0)
   mock_time.side_effect = [0.0, 20.0]
 
-  mock_metadata = Mock(spec=RetrieveCredentialsMetadata)
-  mock_metadata.consent_pending = True
-  mock_metadata.uri_consent_required = False
-  mock_operation.done = True
+  mock_operation.done = False
   mock_operation.ClearField("error")
-  mock_client = Mock(spec=Client)
-  mock_client.retrieve_credentials.side_effect = Exception(
-      "Timeout waiting for credentials."
-  )
-  provider._client = mock_client
 
   with pytest.raises(
       RuntimeError,
@@ -468,4 +459,14 @@ async def test_get_auth_credential_raises_error_if_consent_canceled(
   with pytest.raises(
       RuntimeError, match="Failed to retrieve consent based credential."
   ):
+    await provider.get_auth_credential(auth_scheme, context)
+
+
+async def test_get_auth_credential_bubbles_unexpected_exception(
+    mock_client, auth_scheme, context, provider
+):
+  """Test get_auth_credential bubbles unexpected exceptions (like ValueError) unwrapped."""
+  mock_client.retrieve_credentials.side_effect = ValueError("Unexpected error")
+
+  with pytest.raises(ValueError, match="Unexpected error"):
     await provider.get_auth_credential(auth_scheme, context)
