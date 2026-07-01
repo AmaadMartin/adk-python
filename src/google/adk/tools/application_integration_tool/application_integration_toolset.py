@@ -20,7 +20,11 @@ from typing import Optional
 from typing import Union
 
 from fastapi.openapi.models import HTTPBearer
+from pydantic import model_validator
 from typing_extensions import override
+
+from ..tool_configs import BaseToolConfig
+from ..tool_configs import ToolArgsConfig
 
 from ...agents.readonly_context import ReadonlyContext
 from ...auth.auth_credential import AuthCredential
@@ -29,6 +33,7 @@ from ...auth.auth_credential import ServiceAccount
 from ...auth.auth_credential import ServiceAccountCredential
 from ...auth.auth_schemes import AuthScheme
 from ...auth.auth_tool import AuthConfig
+from ..base_tool import BaseTool
 from ..base_toolset import BaseToolset
 from ..base_toolset import ToolPredicate
 from ..openapi_tool.auth.auth_helpers import service_account_scheme_credential
@@ -40,6 +45,29 @@ from .clients.integration_client import IntegrationClient
 from .integration_connector_tool import IntegrationConnectorTool
 
 logger = logging.getLogger("google_adk." + __name__)
+
+
+def _normalize_entity_operations(
+    entity_operations: Optional[Union[dict[str, list[str]], list[str], str]]
+) -> Optional[dict[str, list[str]]]:
+  if entity_operations is None:
+    return None
+  if isinstance(entity_operations, dict):
+    return entity_operations
+  if isinstance(entity_operations, str):
+    try:
+      import json
+      parsed = json.loads(entity_operations)
+      if isinstance(parsed, dict):
+        return parsed
+      if isinstance(parsed, list):
+        return {entity: [] for entity in parsed}
+    except json.JSONDecodeError:
+      pass
+    return {entity_operations: []}
+  if isinstance(entity_operations, list):
+    return {entity: [] for entity in entity_operations}
+  return None
 
 
 # TODO: Apply a common toolset interface
@@ -88,7 +116,7 @@ class ApplicationIntegrationToolset(BaseToolset):
       integration: Optional[str] = None,
       triggers: Optional[List[str]] = None,
       connection: Optional[str] = None,
-      entity_operations: Optional[str] = None,
+      entity_operations: Optional[Union[dict[str, list[str]], list[str], str]] = None,
       actions: Optional[list[str]] = None,
       # Optional parameter for the toolset. This is prepended to the generated
       # tool/python function name.
@@ -137,8 +165,9 @@ class ApplicationIntegrationToolset(BaseToolset):
     self._integration = integration
     self._triggers = triggers
     self._connection = connection
-    self._entity_operations = entity_operations
+    self._entity_operations = _normalize_entity_operations(entity_operations)
     self._actions = actions
+    self._tool_name_prefix = tool_name_prefix
     self._tool_instructions = tool_instructions
     self._service_account_json = service_account_json
     self._auth_scheme = auth_scheme
@@ -154,37 +183,16 @@ class ApplicationIntegrationToolset(BaseToolset):
         else None
     )
 
-    integration_client = IntegrationClient(
-        project,
-        location,
-        connection_template_override,
-        integration,
-        triggers,
-        connection,
-        entity_operations,
-        actions,
-        service_account_json,
-    )
-    connection_details = {}
-    if integration:
-      spec = integration_client.get_openapi_spec_for_integration()
-    elif connection and (entity_operations or actions):
-      connections_client = ConnectionsClient(
-          project, location, connection, service_account_json
-      )
-      connection_details = connections_client.get_connection_details()
-      spec = integration_client.get_openapi_spec_for_connection(
-          tool_name_prefix,
-          tool_instructions,
-      )
-    else:
+    # Basic validation check
+    if not (self._integration or (self._connection and (self._entity_operations or self._actions))):
       raise ValueError(
           "Invalid request, Either integration or (connection and"
           " (entity_operations or actions)) should be provided."
       )
+
     self._openapi_toolset = None
     self._tools = []
-    self._parse_spec_to_toolset(spec, connection_details)
+    self._initialized = False
 
   def _parse_spec_to_toolset(self, spec_dict, connection_details):
     """Parses the spec dict to OpenAPI toolset."""
@@ -270,11 +278,46 @@ class ApplicationIntegrationToolset(BaseToolset):
           )
       )
 
+  def _ensure_initialized(self):
+    if self._initialized:
+      return
+
+    integration_client = IntegrationClient(
+        self.project,
+        self.location,
+        self._connection_template_override,
+        self._integration,
+        self._triggers,
+        self._connection,
+        self._entity_operations,
+        self._actions,
+        self._service_account_json,
+    )
+    connection_details = {}
+    if self._integration:
+      spec = integration_client.get_openapi_spec_for_integration()
+    else:
+      connections_client = ConnectionsClient(
+          self.project,
+          self.location,
+          self._connection,
+          self._service_account_json,
+      )
+      connection_details = connections_client.get_connection_details()
+      spec = integration_client.get_openapi_spec_for_connection(
+          self._tool_name_prefix,
+          self._tool_instructions,
+      )
+
+    self._parse_spec_to_toolset(spec, connection_details)
+    self._initialized = True
+
   @override
   async def get_tools(
       self,
       readonly_context: Optional[ReadonlyContext] = None,
-  ) -> List[RestApiTool]:
+  ) -> List[BaseTool]:
+    self._ensure_initialized()
     return (
         [
             tool
@@ -289,3 +332,45 @@ class ApplicationIntegrationToolset(BaseToolset):
   async def close(self) -> None:
     if self._openapi_toolset:
       await self._openapi_toolset.close()
+
+  @override
+  def get_auth_config(self) -> Optional[AuthConfig]:
+    return self._auth_config
+
+  @override
+  @classmethod
+  def from_config(
+      cls: type[ApplicationIntegrationToolset],
+      config: ToolArgsConfig,
+      config_abs_path: str,
+  ) -> ApplicationIntegrationToolset:
+    toolset_config = ApplicationIntegrationToolsetConfig.model_validate(
+        config.model_dump()
+    )
+    return cls(**toolset_config.model_dump())
+
+
+class ApplicationIntegrationToolsetConfig(BaseToolConfig):
+  project: str
+  location: str
+  connection_template_override: Optional[str] = None
+  integration: Optional[str] = None
+  triggers: Optional[list[str]] = None
+  connection: Optional[str] = None
+  entity_operations: Optional[Union[dict[str, list[str]], list[str], str]] = None
+  actions: Optional[list[str]] = None
+  tool_name_prefix: Optional[str] = ""
+  tool_instructions: Optional[str] = ""
+  service_account_json: Optional[str] = None
+  auth_scheme: Optional[AuthScheme] = None
+  auth_credential: Optional[AuthCredential] = None
+  tool_filter: Optional[list[str]] = None
+
+  @model_validator(mode="after")
+  def validate_config(self) -> ApplicationIntegrationToolsetConfig:
+    if not (self.integration or (self.connection and (self.entity_operations or self.actions))):
+      raise ValueError(
+          "Invalid request. Either integration or (connection and"
+          " (entity_operations or actions)) should be provided."
+      )
+    return self
