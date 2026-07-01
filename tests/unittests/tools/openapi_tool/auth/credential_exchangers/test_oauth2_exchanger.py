@@ -15,7 +15,8 @@
 """Tests for OAuth2CredentialExchanger."""
 
 import copy
-from unittest.mock import MagicMock
+import time
+from unittest.mock import MagicMock, patch
 
 from google.adk.auth.auth_credential import AuthCredential
 from google.adk.auth.auth_credential import AuthCredentialTypes
@@ -151,3 +152,121 @@ def test_exchange_credential_auth_missing(oauth2_exchanger, auth_scheme):
   assert "auth_credential is empty. Please create AuthCredential using" in str(
       exc_info.value
   )
+
+
+def test_exchange_credential_refresh_not_needed(oauth2_exchanger, auth_scheme):
+  # Token expires in 1 hour
+  auth_credential = AuthCredential(
+      auth_type=AuthCredentialTypes.OAUTH2,
+      oauth2=OAuth2Auth(
+          client_id="test_client",
+          client_secret="test_secret",
+          access_token="test_access_token",
+          refresh_token="test_refresh_token",
+          expires_at=int(time.time()) + 3600,
+      ),
+  )
+
+  with patch(
+      "google.adk.tools.openapi_tool.auth.credential_exchangers.oauth2_exchanger.create_oauth2_session"
+  ) as mock_create_session:
+    updated_credential = oauth2_exchanger.exchange_credential(
+        auth_scheme, auth_credential
+    )
+    mock_create_session.assert_not_called()
+
+  assert updated_credential.auth_type == AuthCredentialTypes.HTTP
+  assert updated_credential.http.credentials.token == "test_access_token"
+
+
+def test_exchange_credential_refresh_success(oauth2_exchanger, auth_scheme):
+  # Token expired 1 hour ago
+  auth_credential = AuthCredential(
+      auth_type=AuthCredentialTypes.OAUTH2,
+      oauth2=OAuth2Auth(
+          client_id="test_client",
+          client_secret="test_secret",
+          access_token="expired_access_token",
+          refresh_token="test_refresh_token",
+          expires_at=int(time.time()) - 3600,
+      ),
+  )
+
+  mock_session = MagicMock()
+  mock_session.refresh_token.return_value = {
+      "access_token": "new_access_token",
+      "refresh_token": "new_refresh_token",
+      "expires_at": int(time.time()) + 3600,
+  }
+
+  with patch(
+      "google.adk.tools.openapi_tool.auth.credential_exchangers.oauth2_exchanger.create_oauth2_session",
+      return_value=(mock_session, "https://example.com/token"),
+  ) as mock_create_session:
+    updated_credential = oauth2_exchanger.exchange_credential(
+        auth_scheme, auth_credential
+    )
+    mock_create_session.assert_called_once_with(auth_scheme, auth_credential)
+    mock_session.refresh_token.assert_called_once_with(
+        url="https://example.com/token", refresh_token="test_refresh_token"
+    )
+
+  assert updated_credential.auth_type == AuthCredentialTypes.HTTP
+  assert updated_credential.http.credentials.token == "new_access_token"
+  assert auth_credential.oauth2.access_token == "new_access_token"
+  assert auth_credential.oauth2.refresh_token == "new_refresh_token"
+
+
+def test_exchange_credential_refresh_failure(oauth2_exchanger, auth_scheme):
+  # Token expired 1 hour ago
+  auth_credential = AuthCredential(
+      auth_type=AuthCredentialTypes.OAUTH2,
+      oauth2=OAuth2Auth(
+          client_id="test_client",
+          client_secret="test_secret",
+          access_token="expired_access_token",
+          refresh_token="test_refresh_token",
+          expires_at=int(time.time()) - 3600,
+      ),
+  )
+
+  mock_session = MagicMock()
+  mock_session.refresh_token.side_effect = Exception("Refresh failed")
+
+  with patch(
+      "google.adk.tools.openapi_tool.auth.credential_exchangers.oauth2_exchanger.create_oauth2_session",
+      return_value=(mock_session, "https://example.com/token"),
+  ):
+    # Should not raise exception, but return original credential (converted to HTTP)
+    updated_credential = oauth2_exchanger.exchange_credential(
+        auth_scheme, auth_credential
+    )
+
+  assert updated_credential.auth_type == AuthCredentialTypes.HTTP
+  assert updated_credential.http.credentials.token == "expired_access_token"
+
+
+def test_exchange_credential_refresh_no_refresh_token(
+    oauth2_exchanger, auth_scheme
+):
+  # Token expired, but no refresh token
+  auth_credential = AuthCredential(
+      auth_type=AuthCredentialTypes.OAUTH2,
+      oauth2=OAuth2Auth(
+          client_id="test_client",
+          client_secret="test_secret",
+          access_token="expired_access_token",
+          expires_at=int(time.time()) - 3600,
+      ),
+  )
+
+  with patch(
+      "google.adk.tools.openapi_tool.auth.credential_exchangers.oauth2_exchanger.create_oauth2_session"
+  ) as mock_create_session:
+    updated_credential = oauth2_exchanger.exchange_credential(
+        auth_scheme, auth_credential
+    )
+    mock_create_session.assert_not_called()
+
+  assert updated_credential.auth_type == AuthCredentialTypes.HTTP
+  assert updated_credential.http.credentials.token == "expired_access_token"

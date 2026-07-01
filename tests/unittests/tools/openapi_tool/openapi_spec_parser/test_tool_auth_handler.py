@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import time
 from typing import Optional
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -353,3 +354,49 @@ async def test_refreshed_credential_is_persisted_to_store(
   assert persisted is not None
   assert persisted.oauth2.access_token == 'new_access_token'
   assert persisted.oauth2.refresh_token == 'new_refresh_token'
+
+
+@pytest.mark.asyncio
+async def test_openid_connect_expired_passed_directly_refreshed(
+    openid_connect_scheme, openid_connect_credential
+):
+  # Create an expired credential
+  expired_credential = AuthCredential(
+      auth_type=AuthCredentialTypes.OAUTH2,
+      oauth2=OAuth2Auth(
+          client_id="test_client",
+          client_secret="test_secret",
+          access_token="expired_access_token",
+          refresh_token="test_refresh_token",
+          expires_at=int(time.time()) - 3600,
+      ),
+  )
+
+  tool_context = create_mock_tool_context()
+
+  handler = ToolAuthHandler(
+      tool_context,
+      openid_connect_scheme,
+      expired_credential,
+  )
+
+  mock_session = MagicMock()
+  mock_session.refresh_token.return_value = {
+      "access_token": "new_access_token",
+      "refresh_token": "new_refresh_token",
+      "expires_at": int(time.time()) + 3600,
+  }
+
+  with patch(
+      "google.adk.tools.openapi_tool.auth.credential_exchangers.oauth2_exchanger.create_oauth2_session",
+      return_value=(mock_session, "https://example.com/token"),
+  ) as mock_create_session:
+    result = await handler.prepare_auth_credentials()
+
+    mock_create_session.assert_called_once()
+    mock_session.refresh_token.assert_called_once()
+
+  assert result.state == "done"
+  assert result.auth_credential.auth_type == AuthCredentialTypes.HTTP
+  assert result.auth_credential.http.credentials.token == "new_access_token"
+  assert handler.auth_credential.oauth2.access_token == "new_access_token"
