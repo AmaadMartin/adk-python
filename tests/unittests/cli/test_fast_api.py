@@ -25,6 +25,7 @@ from unittest.mock import AsyncMock
 from unittest.mock import call
 from unittest.mock import MagicMock
 from unittest.mock import patch
+from urllib.parse import quote
 
 from fastapi.testclient import TestClient
 from google.adk.agents.base_agent import BaseAgent
@@ -526,6 +527,12 @@ def _create_test_client(
       ),
       patch.object(
           fast_api_module,
+          "NestedAgentLoader",
+          autospec=True,
+          return_value=mock_agent_loader,
+      ),
+      patch.object(
+          fast_api_module,
           "LocalEvalSetsManager",
           autospec=True,
           return_value=mock_eval_sets_manager,
@@ -587,6 +594,12 @@ bigquery_agent_analytics:
       patch.object(
           fast_api_module,
           "AgentLoader",
+          autospec=True,
+          return_value=mock_agent_loader,
+      ),
+      patch.object(
+          fast_api_module,
+          "NestedAgentLoader",
           autospec=True,
           return_value=mock_agent_loader,
       ),
@@ -732,6 +745,12 @@ def builder_test_client(
       patch.object(
           fast_api_module,
           "AgentLoader",
+          autospec=True,
+          return_value=mock_agent_loader,
+      ),
+      patch.object(
+          fast_api_module,
+          "NestedAgentLoader",
           autospec=True,
           return_value=mock_agent_loader,
       ),
@@ -1626,7 +1645,7 @@ def test_agent_run_sse_does_not_split_artifact_delta_for_function_resume(
 def test_agent_run_sse_yields_error_object_on_exception(
     test_app, create_test_session, monkeypatch
 ):
-  """Test /run_sse streams an error object if streaming raises."""
+  """Test /run_sse streams structured error details on exception."""
   info = create_test_session
 
   async def run_async_raises(self, **kwargs):
@@ -1643,15 +1662,42 @@ def test_agent_run_sse_yields_error_object_on_exception(
       "streaming": True,
   }
 
-  response = test_app.post("/run_sse", json=payload)
-  assert response.status_code == 200
+  # 1. Test without DEBUG enabled
+  with patch(
+      "google.adk.cli.api_server.logger.isEnabledFor", return_value=False
+  ):
+    response = test_app.post("/run_sse", json=payload)
+    assert response.status_code == 200
+    sse_events = [
+        json.loads(line.removeprefix("data: "))
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert len(sse_events) == 1
+    error_event = sse_events[0]
+    assert error_event["error"] == "ValueError: boom"
+    assert "error_details" in error_event
+    assert error_event["error_details"]["error_type"] == "ValueError"
+    assert error_event["error_details"]["error_message"] == "boom"
+    assert "stacktrace" not in error_event["error_details"]
+    assert "timestamp" in error_event["error_details"]
 
-  sse_events = [
-      json.loads(line.removeprefix("data: "))
-      for line in response.text.splitlines()
-      if line.startswith("data: ")
-  ]
-  assert sse_events == [{"error": "boom"}]
+  # 2. Test with DEBUG enabled
+  with patch(
+      "google.adk.cli.api_server.logger.isEnabledFor", return_value=True
+  ):
+    response = test_app.post("/run_sse", json=payload)
+    assert response.status_code == 200
+    sse_events = [
+        json.loads(line.removeprefix("data: "))
+        for line in response.text.splitlines()
+        if line.startswith("data: ")
+    ]
+    assert len(sse_events) == 1
+    error_event = sse_events[0]
+    assert error_event["error"] == "ValueError: boom"
+    assert "stacktrace" in error_event["error_details"]
+    assert "ValueError: boom" in error_event["error_details"]["stacktrace"]
 
 
 def test_list_artifact_names(test_app, create_test_session):
@@ -1698,6 +1744,98 @@ def test_save_artifact(test_app, create_test_session, mock_artifact_service):
   )
   stored = mock_artifact_service._artifacts[key][0]
   assert stored["artifact"].text == "hello world"
+
+
+def test_artifact_endpoints_support_nested_names(
+    test_app, create_test_session, mock_artifact_service
+):
+  """Test artifact endpoints support names containing path separators."""
+  info = create_test_session
+  filename = "reports/summary.txt"
+  encoded_filename = quote(filename, safe="")
+  base_url = (
+      f"/apps/{info['app_name']}/users/{info['user_id']}/sessions/"
+      f"{info['session_id']}/artifacts"
+  )
+
+  mock_artifact_service.add_artifact(
+      app_name=info["app_name"],
+      user_id=info["user_id"],
+      session_id=info["session_id"],
+      filename=filename,
+      artifact=types.Part(text="v0"),
+  )
+  mock_artifact_service.add_artifact(
+      app_name=info["app_name"],
+      user_id=info["user_id"],
+      session_id=info["session_id"],
+      filename=filename,
+      artifact=types.Part(text="v1"),
+      custom_metadata={"rev": "one"},
+      mime_type="text/plain",
+  )
+
+  response = test_app.get(base_url)
+  assert response.status_code == 200
+  assert filename in response.json()
+
+  for artifact_path in (filename, encoded_filename):
+    response = test_app.get(f"{base_url}/{artifact_path}")
+    assert response.status_code == 200
+    assert response.json()["text"] == "v1"
+
+  response = test_app.get(f"{base_url}/{encoded_filename}?version=0")
+  assert response.status_code == 200
+  assert response.json()["text"] == "v0"
+
+  response = test_app.get(f"{base_url}/{filename}/versions/0")
+  assert response.status_code == 200
+  assert response.json()["text"] == "v0"
+
+  response = test_app.get(f"{base_url}/{encoded_filename}/versions/1")
+  assert response.status_code == 200
+  assert response.json()["text"] == "v1"
+
+  response = test_app.get(f"{base_url}/{filename}/versions")
+  assert response.status_code == 200
+  assert response.json() == [0, 1]
+
+  response = test_app.get(f"{base_url}/{encoded_filename}/versions/metadata")
+  assert response.status_code == 200
+  versions_metadata = response.json()
+  assert len(versions_metadata) == 2
+  assert versions_metadata[1]["customMetadata"] == {"rev": "one"}
+
+  response = test_app.get(f"{base_url}/{filename}/versions/1/metadata")
+  assert response.status_code == 200
+  version_metadata = response.json()
+  assert version_metadata["version"] == 1
+  assert version_metadata["customMetadata"] == {"rev": "one"}
+
+  # Test loading latest version via path
+  for path in (filename, encoded_filename):
+    response = test_app.get(f"{base_url}/{path}/versions/latest")
+    assert response.status_code == 200
+    assert response.json()["text"] == "v1"
+
+    response = test_app.get(f"{base_url}/{path}/versions/latest/metadata")
+    assert response.status_code == 200
+    assert response.json()["version"] == 1
+
+  # Test invalid version ID
+  response = test_app.get(f"{base_url}/{filename}/versions/invalid")
+  assert response.status_code == 422
+  assert "Invalid version ID" in response.json()["detail"]
+
+  response = test_app.get(f"{base_url}/{filename}/versions/invalid/metadata")
+  assert response.status_code == 422
+  assert "Invalid version ID" in response.json()["detail"]
+
+  response = test_app.delete(f"{base_url}/{encoded_filename}")
+  assert response.status_code == 200
+
+  response = test_app.get(f"{base_url}/{encoded_filename}")
+  assert response.status_code == 404
 
 
 def test_save_artifact_returns_400_on_validation_error(
@@ -2697,6 +2835,12 @@ async def test_independent_telemetry_context(
       patch.object(
           fast_api_module,
           "AgentLoader",
+          autospec=True,
+          return_value=mock_agent_loader,
+      ),
+      patch.object(
+          fast_api_module,
+          "NestedAgentLoader",
           autospec=True,
           return_value=mock_agent_loader,
       ),

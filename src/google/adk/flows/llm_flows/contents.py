@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import copy
 import logging
 from typing import AsyncGenerator
 from typing import Optional
@@ -23,10 +22,11 @@ from google.genai import types
 from typing_extensions import override
 
 from ...agents.invocation_context import InvocationContext
+from ...events._branch_path import _BranchPath
 from ...events.event import Event
 from ...models.llm_request import LlmRequest
 from ._base_llm_processor import BaseLlmRequestProcessor
-from .functions import remove_client_function_call_id
+from .functions import AF_FUNCTION_CALL_ID_PREFIX
 from .functions import REQUEST_CONFIRMATION_FUNCTION_CALL_NAME
 from .functions import REQUEST_EUC_FUNCTION_CALL_NAME
 
@@ -52,15 +52,29 @@ class _ContentLlmRequestProcessor(BaseLlmRequestProcessor):
       ):
         preserve_function_call_ids = True
       else:
-        # Anthropic pairs tool_use/tool_result by id, so `adk-*` fallback
-        # ids must survive replay.
+        # Anthropic and LiteLLM-backed providers (e.g. OpenAI) pair tool
+        # calls with their results by id, so `adk-*` fallback ids must
+        # survive replay.
+        id_pairing_model_types: list[type] = []
         try:
           from ...models.anthropic_llm import AnthropicLlm
+
+          id_pairing_model_types.append(AnthropicLlm)
         except (ImportError, OSError):
-          AnthropicLlm = None
-        if AnthropicLlm is not None and isinstance(
-            canonical_model, AnthropicLlm
-        ):
+          pass
+        try:
+          from ...models.lite_llm import LiteLlm
+
+          id_pairing_model_types.append(LiteLlm)
+        except (ImportError, OSError):
+          pass
+        try:
+          from ...labs.openai import OpenAIResponsesLlm
+
+          id_pairing_model_types.append(OpenAIResponsesLlm)
+        except (ImportError, OSError):
+          pass
+        if isinstance(canonical_model, tuple(id_pairing_model_types)):
           preserve_function_call_ids = True
 
     # Preserve all contents that were added by instruction processor
@@ -108,7 +122,6 @@ def _rearrange_events_for_async_function_responses_in_history(
     events: list[Event],
 ) -> list[Event]:
   """Rearrange the async function_response events in the history."""
-
   function_call_id_to_response_events_index: dict[str, int] = {}
   for i, event in enumerate(events):
     function_responses = event.get_function_responses()
@@ -116,6 +129,9 @@ def _rearrange_events_for_async_function_responses_in_history(
       for function_response in function_responses:
         function_call_id = function_response.id
         function_call_id_to_response_events_index[function_call_id] = i
+
+  if not function_call_id_to_response_events_index:
+    return events
 
   result_events: list[Event] = []
   for event in events:
@@ -495,6 +511,52 @@ def _process_compaction_events(events: list[Event]) -> list[Event]:
   return [event for _, _, event in processed_items]
 
 
+def _copy_content_for_request(
+    content: types.Content,
+    *,
+    strip_client_function_call_ids: bool,
+) -> types.Content:
+  """Returns a session-isolated copy of ``content`` for an LLM request.
+
+  ``Content`` and every ``Part`` are shallow-copied so downstream request
+  processors (nl_planning, code_execution) can mutate them without corrupting
+  session events; payloads are shared by reference to avoid the deep recursion
+  that the previous ``deepcopy`` paid on every request.
+
+  Because the copy is shallow, nested fields (e.g. ``function_call.args``,
+  ``inline_data.data``) are shared with the session events. Downstream
+  processors must therefore only replace ``Part`` objects or set top-level
+  ``Part`` fields; mutating a nested field in place would corrupt session
+  history.
+
+  Args:
+    content: The (session-owned) content to copy. Not mutated.
+    strip_client_function_call_ids: Whether to remove ``adk-`` prefixed function
+      call/response ids (mirrors ``remove_client_function_call_id``).
+
+  Returns:
+    An isolated ``Content`` safe to attach to an ``LlmRequest``.
+  """
+  new_content = content.model_copy()
+  parts = content.parts
+  if not parts:
+    return new_content
+
+  new_parts = []
+  for part in parts:
+    new_part = part.model_copy()
+    if strip_client_function_call_ids:
+      fc = new_part.function_call
+      if fc and fc.id and fc.id.startswith(AF_FUNCTION_CALL_ID_PREFIX):
+        new_part.function_call = fc.model_copy(update={'id': None})
+      fr = new_part.function_response
+      if fr and fr.id and fr.id.startswith(AF_FUNCTION_CALL_ID_PREFIX):
+        new_part.function_response = fr.model_copy(update={'id': None})
+    new_parts.append(new_part)
+  new_content.parts = new_parts
+  return new_content
+
+
 def _get_contents(
     current_branch: Optional[str],
     events: list[Event],
@@ -642,11 +704,13 @@ def _get_contents(
   # Convert events to contents
   contents = []
   for event in result_events:
-    content = copy.deepcopy(event.content)
-    if content:
-      if not preserve_function_call_ids:
-        remove_client_function_call_id(content)
-      contents.append(content)
+    if event.content:
+      contents.append(
+          _copy_content_for_request(
+              event.content,
+              strip_client_function_call_ids=not preserve_function_call_ids,
+          )
+      )
 
   # for scoped agents (task / single_turn), prepend a
   # synthetic user-role content built from the originating FC's args.
@@ -890,12 +954,10 @@ def _is_event_belongs_to_branch(
   """
   if not invocation_branch or not event.branch:
     return True
-  # We use dot to delimit branch nodes. To avoid simple prefix match
-  # (e.g. agent_0 unexpectedly matching agent_00), require either perfect branch
-  # match, or match prefix with an additional explicit '.'
-  return invocation_branch == event.branch or invocation_branch.startswith(
-      f'{event.branch}.'
-  )
+
+  inv_path = _BranchPath.from_string(invocation_branch)
+  evt_path = _BranchPath.from_string(event.branch)
+  return inv_path == evt_path or inv_path.is_descendant_of(evt_path)
 
 
 def _is_function_call_event(event: Event, function_name: str) -> bool:
