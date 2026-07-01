@@ -27,6 +27,7 @@ from google.adk.auth.auth_credential import HttpCredentials
 from google.adk.auth.auth_credential import OAuth2Auth
 from google.adk.flows.llm_flows.functions import REQUEST_EUC_FUNCTION_CALL_NAME
 from google.api_core.client_options import ClientOptions
+from google.api_core.exceptions import GoogleAPICallError
 
 try:
   from google.cloud.iamconnectorcredentials_v1alpha import IAMConnectorCredentialsServiceClient as Client
@@ -223,7 +224,7 @@ class _IamConnectorCredentialsProvider:
 
     try:
       operation = await self._retrieve_credentials(user_id, auth_scheme)
-    except Exception as e:
+    except (GoogleAPICallError, TimeoutError) as e:
       raise RuntimeError(
           f"Failed to retrieve credential for user '{user_id}' on connector"
           f" '{auth_scheme.name}'."
@@ -238,7 +239,7 @@ class _IamConnectorCredentialsProvider:
       logger.debug("Auth credential obtained immediately.")
       return _construct_auth_credential(response)
 
-    if metadata and metadata.consent_pending:
+    if metadata is not None and "consent_pending" in metadata:
       # Get 2-legged OAuth token. Allow enough time for token exchange.
       try:
         operation = await self._poll_credentials(
@@ -252,7 +253,7 @@ class _IamConnectorCredentialsProvider:
           logger.debug("Auth credential obtained after polling.")
           response, _ = self._unpack_operation(operation)
           return _construct_auth_credential(response)
-      except Exception as e:
+      except (GoogleAPICallError, TimeoutError) as e:
         raise RuntimeError(
             f"Failed to retrieve credential for user '{user_id}' on connector"
             f" '{auth_scheme.name}'."

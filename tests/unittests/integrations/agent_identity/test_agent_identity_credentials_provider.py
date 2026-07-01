@@ -15,6 +15,7 @@
 from unittest.mock import Mock
 from unittest.mock import patch
 
+from google.api_core.exceptions import GoogleAPICallError
 import pytest
 
 pytest.importorskip(
@@ -240,7 +241,7 @@ async def test_get_auth_credential_raises_error_if_upstream_call_fails(
     mock_client, auth_scheme, context, provider
 ):
   """Test get_auth_credential raises RuntimeError for failed calls."""
-  mock_client.retrieve_credentials.side_effect = Exception(
+  mock_client.retrieve_credentials.side_effect = GoogleAPICallError(
       "API Quota Exhausted"
   )
 
@@ -251,7 +252,7 @@ async def test_get_auth_credential_raises_error_if_upstream_call_fails(
     await provider.get_auth_credential(auth_scheme, context)
 
   # Assert that the original Exception is the chained cause!
-  assert str(exc_info.value.__cause__) == "API Quota Exhausted"
+  assert "API Quota Exhausted" in str(exc_info.value.__cause__)
 
 
 @patch.object(_agent_identity_credentials_provider.time, "time")
@@ -420,4 +421,14 @@ async def test_get_auth_credential_raises_error_if_consent_canceled(
   with pytest.raises(
       RuntimeError, match="Failed to retrieve consent based credential."
   ):
+    await provider.get_auth_credential(auth_scheme, context)
+
+
+async def test_get_auth_credential_bubbles_unexpected_exception(
+    mock_client, auth_scheme, context, provider
+):
+  """Test get_auth_credential bubbles unexpected exceptions (like ValueError) unwrapped."""
+  mock_client.retrieve_credentials.side_effect = ValueError("Unexpected error")
+
+  with pytest.raises(ValueError, match="Unexpected error"):
     await provider.get_auth_credential(auth_scheme, context)
