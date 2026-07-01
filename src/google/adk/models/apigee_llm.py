@@ -865,6 +865,7 @@ class ChatCompletionsResponseHandler:
     self.usage = {}
     self.logprobs = {}
     self.custom_metadata = {}
+    self.custom_tool_call_indices = set()
     self._refusal_started = False
 
   def process_response(self, response: dict[str, Any]) -> LlmResponse:
@@ -879,8 +880,7 @@ class ChatCompletionsResponseHandler:
       )
     choice = choices[0]
     message = choice.get('message', {})
-    _, role = self._add_chat_completion_message(message)
-    parts = self._get_content_parts()
+    parts, role = self._add_chat_completion_message(message)
 
     usage = response.get('usage', {})
     reasoning_tokens = (usage.get('completion_tokens_details', {}) or {}).get(
@@ -1118,10 +1118,18 @@ class ChatCompletionsResponseHandler:
     parts = []
     if self.content_parts:
       parts.append(types.Part.from_text(text=self.content_parts))
-    sorted_indices = sorted(self.tool_call_parts.keys())
-    for index in sorted_indices:
-      parts.append(self.tool_call_parts[index])
+    for index, part in sorted(self.tool_call_parts.items()):
+      if index in self.custom_tool_call_indices:
+        args = part.function_call.args
+        if args and isinstance(val := args.get('input'), str):
+          try:
+            if isinstance(parsed := json.loads(val), dict):
+              part.function_call.args = parsed
+          except json.JSONDecodeError:
+            pass
+      parts.append(part)
     return parts
+
 
   def _upsert_tool_call(self, tool_call: dict[str, Any]) -> types.Part:
     """Upserts a tool call into the accumulated tool call parts.
@@ -1149,28 +1157,36 @@ class ChatCompletionsResponseHandler:
     part = self.tool_call_parts[index]
     chunk_part = types.Part(function_call=types.FunctionCall())
     call_type = tool_call.get('type')
-    # TODO: Add support for 'custom' type.
-    if call_type is not None and call_type != 'function':
+
+    if call_type == 'custom':
+      self.custom_tool_call_indices.add(index)
+    is_custom = index in self.custom_tool_call_indices
+
+    if call_type is not None and call_type not in ('function', 'custom'):
       raise ValueError(
           f'Unsupported tool_call type: {call_type} in call {tool_call}'
       )
-    func = tool_call.get('function', {})
-    args_delta = func.get('arguments', '')
-    if args_delta:
+
+    tool_call_data = tool_call.get('custom' if is_custom else 'function', {})
+    if is_custom:
+      if input_delta := tool_call_data.get('input'):
+        args = part.function_call.args = part.function_call.args or {}
+        args['input'] = args.get('input', '') + input_delta
+        chunk_part.function_call.args = {'input': input_delta}
+    elif args_delta := tool_call_data.get('arguments'):
       try:
         args = json.loads(args_delta)
         chunk_part.function_call.args = args
-        if not part.function_call.args:
-          part.function_call.args = dict(args)
-        else:
-          part.function_call.args.update(args)
+        part.function_call.args = part.function_call.args or {}
+        part.function_call.args.update(args)
       except json.JSONDecodeError as e:
         raise ValueError(f'Failed to parse arguments: {args_delta}') from e
 
-    func_name = func.get('name')
+    func_name = tool_call_data.get('name')
     if func_name:
       part.function_call.name = func_name
       chunk_part.function_call.name = func_name
+
     tool_call_id = tool_call.get('id')
     if tool_call_id:
       part.function_call.id = tool_call_id

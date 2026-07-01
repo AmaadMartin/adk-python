@@ -388,8 +388,8 @@ async def test_generate_content_async_invalid_tool_call_type_raises_error(
               'tool_calls': [{
                   'id': 'call_123',
                   # Invalid type
-                  'type': 'custom',
-                  'custom': {
+                  'type': 'invalid_type',
+                  'invalid_type': {
                       'name': 'read_string',
                       'input': 'Hi! The this is a custom tool call!',
                   },
@@ -400,7 +400,9 @@ async def test_generate_content_async_invalid_tool_call_type_raises_error(
   mock_response.status_code = 200
 
   with mock.patch.object(httpx.AsyncClient, 'post', return_value=mock_response):
-    with pytest.raises(ValueError, match='Unsupported tool_call type: custom'):
+    with pytest.raises(
+        ValueError, match='Unsupported tool_call type: invalid_type'
+    ):
       _ = [
           r
           async for r in client.generate_content_async(
@@ -829,3 +831,159 @@ def test_process_chunk_with_refusal_streaming():
       final_response.content.parts[0].text
       == 'Hello\n[[REFUSAL]]: I refuse to answer'
   )
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    'custom_data,expected_args',
+    [
+        ({'name': 'my_tool', 'input': '{"param1": "value1"}'}, {'param1': 'value1'}),
+        ({'name': 'my_tool', 'input': 'raw string value'}, {'input': 'raw string value'}),
+        ({'name': 'my_tool'}, {}),
+    ],
+)
+async def test_generate_content_async_custom_tool_call(
+    client, llm_request, custom_data, expected_args
+):
+  mock_response = AsyncMock(spec=httpx.Response)
+  mock_response.json.return_value = {
+      'choices': [{
+          'message': {
+              'role': 'assistant',
+              'content': None,
+              'tool_calls': [{
+                  'id': 'call_123',
+                  'type': 'custom',
+                  'custom': custom_data,
+              }],
+          }
+      }]
+  }
+  mock_response.status_code = 200
+
+  with mock.patch.object(httpx.AsyncClient, 'post', return_value=mock_response):
+    responses = [
+        r
+        async for r in client.generate_content_async(llm_request, stream=False)
+    ]
+
+    assert len(responses) == 1
+    part = responses[0].content.parts[0]
+    assert part.function_call
+    assert part.function_call.name == 'my_tool'
+    assert (part.function_call.args or {}) == expected_args
+    assert part.function_call.id == 'call_123'
+
+
+
+@pytest.mark.asyncio
+async def test_generate_content_async_custom_tool_call_streaming():
+  local_client = CompletionsHTTPClient(base_url='https://localhost')
+  llm_request = LlmRequest(
+      model='apigee/test',
+      contents=[
+          types.Content(role='user', parts=[types.Part.from_text(text='hi')])
+      ],
+  )
+
+  # Mock chunks simulating split input
+  chunk_data_0 = {
+      'choices': [{
+          'index': 0,
+          'delta': {
+              'tool_calls': [{
+                  'index': 0,
+                  'id': 'call_123',
+                  'type': 'custom',
+                  'custom': {'name': 'my_tool', 'input': ''},
+              }]
+          },
+          'finish_reason': None,
+      }],
+  }
+  chunk_data_1 = {
+      'choices': [{
+          'index': 0,
+          'delta': {
+              'tool_calls': [{
+                  'index': 0,
+                  'custom': {'input': '{"param1":'},
+              }]
+          },
+          'finish_reason': None,
+      }],
+  }
+  chunk_data_2 = {
+      'choices': [{
+          'index': 0,
+          'delta': {
+              'tool_calls': [{
+                  'index': 0,
+                  'custom': {'input': ' "value1"}'},
+              }]
+          },
+          'finish_reason': None,
+      }],
+  }
+  chunk_data_3 = {
+      'choices': [{'index': 0, 'delta': {}, 'finish_reason': 'tool_calls'}],
+  }
+
+  chunks = [
+      f'{json.dumps(chunk_data_0)}\n',
+      f'{json.dumps(chunk_data_1)}\n',
+      f'{json.dumps(chunk_data_2)}\n',
+      f'{json.dumps(chunk_data_3)}\n',
+  ]
+
+  async def mock_aiter_lines():
+    for chunk in chunks:
+      yield chunk
+
+  mock_response = AsyncMock(spec=httpx.Response)
+  mock_response.aiter_lines.return_value = mock_aiter_lines()
+  mock_response.status_code = 200
+
+  mock_stream_ctx = mock.AsyncMock()
+  mock_stream_ctx.__aenter__.return_value = mock_response
+
+  with mock.patch.object(
+      httpx.AsyncClient, 'stream', return_value=mock_stream_ctx
+  ):
+    responses = [
+        r
+        async for r in local_client.generate_content_async(
+            llm_request, stream=True
+        )
+    ]
+    # Check that we get 5 responses
+    assert len(responses) == 5
+
+    # Check 1st response: partial tool call, empty args
+    assert responses[0].partial is True
+    assert responses[0].content.parts[0].function_call.name == 'my_tool'
+    assert responses[0].content.parts[0].function_call.id == 'call_123'
+    assert not responses[0].content.parts[0].function_call.args
+
+    # Check 2nd response: partial args
+    assert responses[1].partial is True
+    assert responses[1].content.parts[0].function_call.args == {
+        'input': '{"param1":'
+    }
+
+    # Check 3rd response: partial args (delta)
+    assert responses[2].partial is True
+    assert responses[2].content.parts[0].function_call.args == {
+        'input': ' "value1"}'
+    }
+
+    # Check 4th response: last delta (empty)
+    assert responses[3].partial is True
+    assert responses[3].content.parts == []
+
+    # Check 5th response: final accumulated and parsed
+    assert responses[4].finish_reason == types.FinishReason.STOP
+    assert responses[4].content.parts[0].function_call.args == {
+        'param1': 'value1'
+    }
+
+
