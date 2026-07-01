@@ -407,6 +407,87 @@ class TestPydocHelper:
         == expected_doc
     )
 
+  def test_generate_return_doc_multiple_content_types_same_schema(self):
+    responses = {
+        '200': {
+            'description': 'Successful response',
+            'content': {
+                'application/json': {
+                    'schema': {
+                        'type': 'object',
+                        'properties': {'id': {'type': 'integer'}},
+                    }
+                },
+                'application/xml': {
+                    'schema': {
+                        'type': 'object',
+                        'properties': {'id': {'type': 'integer'}},
+                    }
+                },
+            },
+        }
+    }
+    return_doc = PydocHelper.generate_return_doc(dict_to_responses(responses))
+    assert 'Returns (Dict[str, Any]): Successful response' in return_doc
+    assert 'Object properties:\n        id (int):' in return_doc
+    assert 'application/json' not in return_doc
+    assert 'application/xml' not in return_doc
+
+  def test_generate_return_doc_multiple_content_types_different_schemas(self):
+    responses = {
+        '200': {
+            'description': 'Successful response',
+            'content': {
+                'application/json': {
+                    'schema': {
+                        'type': 'object',
+                        'properties': {'id': {'type': 'integer'}},
+                    }
+                },
+                'text/plain': {'schema': {'type': 'string'}},
+            },
+        }
+    }
+    return_doc = PydocHelper.generate_return_doc(dict_to_responses(responses))
+    assert (
+        'Returns (Union[Dict[str, Any], str]): Successful response'
+        in return_doc
+    )
+    assert (
+        'Object properties (application/json):\n        id (int):' in return_doc
+    )
+
+  def test_generate_return_doc_multiple_content_types_different_objects(self):
+    responses = {
+        '200': {
+            'description': 'Successful response',
+            'content': {
+                'application/json': {
+                    'schema': {
+                        'type': 'object',
+                        'properties': {'id': {'type': 'integer'}},
+                    }
+                },
+                'application/xml': {
+                    'schema': {
+                        'type': 'object',
+                        'properties': {'xml_id': {'type': 'string'}},
+                    }
+                },
+            },
+        }
+    }
+    return_doc = PydocHelper.generate_return_doc(dict_to_responses(responses))
+    assert 'Returns (Dict[str, Any]): Successful response' in return_doc
+    assert (
+        'Object properties (application/json):\n        id (int):' in return_doc
+    )
+    assert (
+        'Object properties (application/xml):\n        xml_id (str):'
+        in return_doc
+    )
+
+
 
 if __name__ == '__main__':
   pytest.main([__file__])

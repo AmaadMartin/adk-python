@@ -243,28 +243,49 @@ class PydocHelper:
     description = (response_details.description or '').strip()
     content = response_details.content or {}
 
-    # Generate return type hint and properties for the first response type.
-    # TODO: Handle multiple content types.
-    for _, schema_details in content.items():
-      schema = schema_details.schema_ or {}
+    # Group content types by schema to handle multiple content types.
+    unique_schemas: List[tuple[Schema, List[str]]] = []
+    for content_type, schema_details in content.items():
+      schema = schema_details.schema_ or Schema()
+      for existing_schema, content_types in unique_schemas:
+        if existing_schema == schema:
+          content_types.append(content_type)
+          break
+      else:
+        unique_schemas.append((schema, [content_type]))
 
-      # Use a dummy Parameter object for return type hinting.
-      dummy_param = ApiParameter(
-          original_name='', param_location='', param_schema=schema
+    # Generate combined type hint
+    unique_type_hints = list(
+        dict.fromkeys(
+            TypeHintHelper.get_type_hint(schema)
+            for schema, _ in unique_schemas
+        )
+    )
+    combined_type_hint = (
+        unique_type_hints[0]
+        if len(unique_type_hints) == 1
+        else f'Union[{", ".join(unique_type_hints)}]'
+    )
+
+    return_doc = f'Returns ({combined_type_hint}): {description}'
+
+    properties_docs = []
+    for schema, content_types in unique_schemas:
+      if schema.type != 'object' or not schema.properties:
+        continue
+      header = (
+          f'        Object properties ({", ".join(sorted(content_types))}):\n'
+          if len(unique_schemas) > 1
+          else ' Object properties:\n'
       )
-      return_doc = f'Returns ({dummy_param.type_hint}): {description}'
+      prop_lines = [
+          f'        {k} ({TypeHintHelper.get_type_hint(v)}): {v.description or ""}'
+          for k, v in schema.properties.items()
+      ]
+      properties_docs.append(header + '\n'.join(prop_lines) + '\n')
 
-      response_type = schema.type or 'Any'
-      if response_type != 'object':
-        break
-      properties = schema.properties
-      if not properties:
-        break
-      return_doc += ' Object properties:\n'
-      for prop_name, prop_details in properties.items():
-        prop_desc = prop_details.description or ''
-        prop_type = TypeHintHelper.get_type_hint(prop_details)
-        return_doc += f'        {prop_name} ({prop_type}): {prop_desc}\n'
-      break
+    if properties_docs:
+      nl = '\n' if len(unique_schemas) > 1 else ''
+      return_doc += f'{nl}{"".join(properties_docs)}'
 
     return return_doc
