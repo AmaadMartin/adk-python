@@ -362,7 +362,8 @@ def credential_to_param(
     token: Optional[str] = None
     is_http_bearer = isinstance(auth_scheme, HTTPBearer)
     if auth_credential.auth_type == AuthCredentialTypes.HTTP:
-      token = auth_credential.http and auth_credential.http.credentials.token
+      if auth_credential.http:
+        token = auth_credential.http.credentials.token
       if not token:
         scheme_name = "HTTP bearer" if is_http_bearer else "OAuth2/OIDC"
         raise ValueError(
@@ -372,7 +373,8 @@ def credential_to_param(
         AuthCredentialTypes.OAUTH2,
         AuthCredentialTypes.OPEN_ID_CONNECT,
     ):
-      token = auth_credential.oauth2 and auth_credential.oauth2.access_token
+      if auth_credential.oauth2:
+        token = auth_credential.oauth2.access_token
     else:
       scheme_name = "HTTPBearer" if is_http_bearer else str(auth_scheme.type_)
       raise ValueError(
