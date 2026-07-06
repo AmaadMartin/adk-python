@@ -2038,7 +2038,7 @@ def _model_response_to_generate_content_response(
     )
 
   mapped_finish_reason = _map_finish_reason(finish_reason)
-  if mapped_finish_reason:
+  if mapped_finish_reason is not None:
     llm_response.finish_reason = mapped_finish_reason
     if mapped_finish_reason != types.FinishReason.STOP:
       llm_response.error_code = mapped_finish_reason
@@ -2717,7 +2717,10 @@ class LiteLlm(BaseLlm):
         )
         mapped_finish_reason = _map_finish_reason(finish_reason)
         llm_response.finish_reason = mapped_finish_reason
-        if mapped_finish_reason != types.FinishReason.STOP:
+        if (
+            mapped_finish_reason is not None
+            and mapped_finish_reason != types.FinishReason.STOP
+        ):
           llm_response.error_code = mapped_finish_reason
           llm_response.error_message = _finish_reason_to_error_message(
               mapped_finish_reason
@@ -2738,7 +2741,10 @@ class LiteLlm(BaseLlm):
         )
         mapped_finish_reason = _map_finish_reason(finish_reason)
         llm_response.finish_reason = mapped_finish_reason
-        if mapped_finish_reason != types.FinishReason.STOP:
+        if (
+            mapped_finish_reason is not None
+            and mapped_finish_reason != types.FinishReason.STOP
+        ):
           llm_response.error_code = mapped_finish_reason
           llm_response.error_message = _finish_reason_to_error_message(
               mapped_finish_reason
