@@ -333,9 +333,13 @@ def credential_to_param(
 
   # 1. API Key Scheme
   if auth_scheme.type_ == AuthSchemeType.apiKey:
-    if auth_credential.auth_type != AuthCredentialTypes.API_KEY or not auth_credential.api_key:
+    if (
+        auth_credential.auth_type != AuthCredentialTypes.API_KEY
+        or not auth_credential.api_key
+    ):
       raise ValueError(
-          f"Scheme APIKey requires APIKey credential, got {auth_credential.auth_type}"
+          "Scheme APIKey requires APIKey credential, got"
+          f" {auth_credential.auth_type}"
       )
     param_name = auth_scheme.name or ""
     python_name = INTERNAL_AUTH_PREFIX + param_name
@@ -372,7 +376,8 @@ def credential_to_param(
     else:
       scheme_name = "HTTPBearer" if is_http_bearer else auth_scheme.type_
       raise ValueError(
-          f"Scheme {scheme_name} got incompatible credential type {auth_credential.auth_type}"
+          f"Scheme {scheme_name} got incompatible credential type"
+          f" {auth_credential.auth_type}"
       )
 
     if token:
@@ -390,7 +395,8 @@ def credential_to_param(
   elif isinstance(auth_scheme, HTTPBase):
     if auth_credential.auth_type != AuthCredentialTypes.HTTP:
       raise ValueError(
-          f"Scheme {auth_scheme.scheme} requires HTTP credential type, got {auth_credential.auth_type}"
+          f"Scheme {auth_scheme.scheme} requires HTTP credential type, got"
+          f" {auth_credential.auth_type}"
       )
     if not auth_credential.http:
       raise ValueError("Invalid HTTP auth credentials")
