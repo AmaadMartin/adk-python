@@ -68,6 +68,9 @@ class DynamicNodeRun:
   recovered_state: _ChildScanState | None = None
   """The raw scan state from events, used for replay interception."""
 
+  is_background: bool = False
+  """Whether this node was scheduled in a background task."""
+
 
 @dataclass(kw_only=True)
 class DynamicNodeState:
@@ -396,6 +399,7 @@ class DynamicNodeScheduler(ScheduleDynamicNode):
       override_isolation_scope: str | None = None,
   ) -> Context:
     """Unified runner for both fresh and resume executions."""
+    is_background = asyncio.current_task() != getattr(ctx, '_main_task', None)
     if is_fresh:
       state = NodeState(
           status=NodeStatus.RUNNING,
@@ -403,11 +407,12 @@ class DynamicNodeScheduler(ScheduleDynamicNode):
           run_id=run_id,
           parent_run_id=ctx.run_id,
       )
-      run = DynamicNodeRun(state=state)
+      run = DynamicNodeRun(state=state, is_background=is_background)
       self._state.runs[node_path] = run
       resume_inputs = None
     else:
       run = self._state.runs[node_path]
+      run.is_background = is_background
       run.state.status = NodeStatus.RUNNING
       resume_inputs = (
           dict(run.state.resume_inputs) if run.state.resume_inputs else None

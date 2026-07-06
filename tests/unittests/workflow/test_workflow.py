@@ -21,18 +21,18 @@ workflow behavior through Runner(node=...) instead of agent.run_async().
 from collections import Counter
 from typing import Any
 from typing import AsyncGenerator
+import asyncio
 import uuid
 
 from google.adk.agents.context import Context
 from google.adk.events.event import Event
-from google.adk.events.request_input import RequestInput
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from google.adk.workflow._base_node import BaseNode
 from google.adk.workflow._base_node import START
 from google.adk.workflow._join_node import JoinNode
+from google.adk.workflow._node import node
 from google.adk.workflow._workflow import Workflow
-from google.adk.workflow.utils._workflow_hitl_utils import create_request_input_response
 from google.genai import types
 from pydantic import ConfigDict
 from pydantic import Field
@@ -1386,7 +1386,6 @@ async def test_use_as_output_function_to_workflow():
 @pytest.mark.asyncio
 async def test_use_as_output_custom_node():
   """Custom BaseNode delegates output via use_as_output."""
-  from google.adk.workflow._function_node import FunctionNode
 
   def func_b() -> str:
     return 'delegated_output'
@@ -2179,3 +2178,99 @@ async def test_route_and_output_triggers_downstream_on_resume():
 
   outputs = [e.output for e in events2 if e.output is not None]
   assert 'done' in outputs
+
+
+@pytest.mark.asyncio
+async def test_failing_background_dynamic_node():
+  """Workflow fails if a background dynamic node fails."""
+
+  @node
+  async def failing_dynamic(*, ctx, node_input):
+    raise ValueError("Dynamic node failed")
+    yield
+
+  @node(rerun_on_resume=True)
+  async def parent_node(*, ctx, node_input):
+    # Run in background
+    asyncio.create_task(ctx.run_node(failing_dynamic))
+    yield "parent_done"
+
+  wf = Workflow(name="wf", edges=[(START, parent_node)])
+
+  with pytest.raises(ValueError, match="Dynamic node failed"):
+    await _run_workflow(wf)
+
+
+@pytest.mark.asyncio
+async def test_interrupting_background_dynamic_node():
+  """Workflow interrupts if a background dynamic node interrupts."""
+
+  @node(rerun_on_resume=True)
+  async def interrupting_dynamic(*, ctx, node_input):
+    yield Event(
+        content=types.Content(
+            parts=[
+                types.Part(
+                    function_call=types.FunctionCall(
+                        name="approve", args={}, id="fc-123"
+                    )
+                )
+            ]
+        ),
+        long_running_tool_ids={"fc-123"},
+    )
+
+  @node(rerun_on_resume=True)
+  async def parent_node(*, ctx, node_input):
+    # Run in background
+    asyncio.create_task(ctx.run_node(interrupting_dynamic))
+    yield "parent_done"
+
+  wf = Workflow(name="wf", edges=[(START, parent_node)])
+  events, ss, session = await _run_workflow(wf)
+
+  # Workflow should have interrupted
+  assert any(e.long_running_tool_ids for e in events)
+  fc_ids = set()
+  for e in events:
+    if e.long_running_tool_ids:
+      fc_ids.update(e.long_running_tool_ids)
+  assert "fc-123" in fc_ids
+
+
+@pytest.mark.asyncio
+async def test_cancelled_background_dynamic_node():
+  """Workflow ignores cancelled background dynamic nodes."""
+
+  @node(rerun_on_resume=True)
+  async def dummy_node(*, ctx, node_input):
+    await asyncio.sleep(10)
+    yield "dummy_done"
+
+  @node(rerun_on_resume=True)
+  async def parent_node(*, ctx, node_input):
+    # Run B in background
+    asyncio.create_task(ctx.run_node(dummy_node))
+
+    # Access scheduler state to cancel the task
+    scheduler = ctx._workflow_scheduler
+    # Wait a bit to make sure B is scheduled and task is created
+    await asyncio.sleep(0.01)
+
+    runs = scheduler._state.runs
+    cancelled_any = False
+    for run in runs.values():
+      if run.task and not run.task.done():
+        run.task.cancel()
+        cancelled_any = True
+
+    assert cancelled_any, "Failed to find and cancel dynamic task"
+    yield "parent_done"
+
+  wf = Workflow(name="wf", edges=[(START, parent_node)])
+  events, ss, session = await _run_workflow(wf)
+
+  # Workflow should succeed because B was cancelled and we ignore it
+  outputs = [e.output for e in events if e.output is not None]
+  assert "parent_done" in outputs
+  assert "dummy_done" not in outputs

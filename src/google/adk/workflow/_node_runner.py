@@ -132,6 +132,7 @@ class NodeRunner:
             self._parent_ctx, self._node
         ) as telemetry_context:
           ctx._telemetry_context = telemetry_context
+          ctx._main_task = asyncio.current_task()
           await self._execute_node(ctx, node_input)
           await self._flush_output_and_deltas(ctx)
           logger.debug("node %s end.", ctx.node_path)
