@@ -349,9 +349,13 @@ class RecordingsPlugin(BasePlugin):
       self._invocation_states.pop(ctx.invocation_id, None)
 
   # Private helpers (placed after public callbacks)
-  def _get_config(self, callback_context: CallbackContext) -> Optional[dict[str, Any]]:
+  def _get_config(
+      self, callback_context: CallbackContext
+  ) -> Optional[dict[str, Any]]:
     session_state = callback_context.state
-    return session_state.get("temp:_adk_recordings_config") or session_state.get("_adk_recordings_config")
+    return session_state.get(
+        "temp:_adk_recordings_config"
+    ) or session_state.get("_adk_recordings_config")
 
   def _is_record_mode_on(self, callback_context: CallbackContext) -> bool:
     """Check if recording mode is enabled for this invocation.

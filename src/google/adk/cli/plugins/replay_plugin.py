@@ -139,9 +139,13 @@ class ReplayPlugin(BasePlugin):
     logger.debug("Cleaned up replay state for invocation %s", ctx.invocation_id)
 
   # Private helpers
-  def _get_config(self, callback_context: CallbackContext) -> Optional[dict[str, Any]]:
+  def _get_config(
+      self, callback_context: CallbackContext
+  ) -> Optional[dict[str, Any]]:
     session_state = callback_context.state
-    return session_state.get("temp:_adk_replay_config") or session_state.get("_adk_replay_config")
+    return session_state.get("temp:_adk_replay_config") or session_state.get(
+        "_adk_replay_config"
+    )
 
   def _is_replay_mode_on(self, callback_context: CallbackContext) -> bool:
     """Check if replay mode is enabled for this invocation."""

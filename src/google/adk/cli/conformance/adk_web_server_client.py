@@ -256,7 +256,11 @@ class AdkWebServerClient:
         request.state_delta = {}
 
       if mode in ("replay", "record"):
-        config_key = "temp:_adk_replay_config" if mode == "replay" else "temp:_adk_recordings_config"
+        config_key = (
+            "temp:_adk_replay_config"
+            if mode == "replay"
+            else "temp:_adk_recordings_config"
+        )
         request.state_delta[config_key] = {
             "dir": str(test_case_dir),
             "user_message_index": user_message_index,
