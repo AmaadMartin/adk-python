@@ -143,9 +143,12 @@ class ReplayPlugin(BasePlugin):
       self, callback_context: CallbackContext
   ) -> Optional[dict[str, Any]]:
     session_state = callback_context.state
-    return session_state.get("temp:_adk_replay_config") or session_state.get(
+    config = session_state.get("temp:_adk_replay_config") or session_state.get(
         "_adk_replay_config"
     )
+    if isinstance(config, dict):
+      return config
+    return None
 
   def _is_replay_mode_on(self, callback_context: CallbackContext) -> bool:
     """Check if replay mode is enabled for this invocation."""
@@ -155,7 +158,7 @@ class ReplayPlugin(BasePlugin):
     case_dir = config.get("dir")
     msg_index = config.get("user_message_index")
 
-    return case_dir and msg_index is not None
+    return bool(case_dir) and msg_index is not None
 
   def _get_invocation_state(
       self, callback_context: CallbackContext
