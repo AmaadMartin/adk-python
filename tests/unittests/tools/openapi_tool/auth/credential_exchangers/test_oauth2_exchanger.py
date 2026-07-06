@@ -15,7 +15,9 @@
 """Tests for OAuth2CredentialExchanger."""
 
 import copy
+import time
 from unittest.mock import MagicMock
+
 
 from google.adk.auth.auth_credential import AuthCredential
 from google.adk.auth.auth_credential import AuthCredentialTypes
@@ -151,3 +153,176 @@ def test_exchange_credential_auth_missing(oauth2_exchanger, auth_scheme):
   assert "auth_credential is empty. Please create AuthCredential using" in str(
       exc_info.value
   )
+
+
+def test_exchange_credential_no_refresh_needed_active_token(
+    oauth2_exchanger, auth_scheme
+):
+  """Test that active token is returned without refresh."""
+  auth_credential = AuthCredential(
+      auth_type=AuthCredentialTypes.OAUTH2,
+      oauth2=OAuth2Auth(
+          client_id="test_client",
+          client_secret="test_secret",
+          access_token="active_token",
+          expires_at=int(time.time()) + 3600,  # 1 hour in future
+          refresh_token="refresh_token",
+      ),
+  )
+
+  updated_credential = oauth2_exchanger.exchange_credential(
+      auth_scheme, auth_credential
+  )
+
+  assert updated_credential.auth_type == AuthCredentialTypes.HTTP
+  assert updated_credential.http.credentials.token == "active_token"
+
+
+def test_exchange_credential_refresh_success(
+    oauth2_exchanger, auth_scheme, monkeypatch
+):
+  """Test successful token refresh when token is expired."""
+  auth_credential = AuthCredential(
+      auth_type=AuthCredentialTypes.OAUTH2,
+      oauth2=OAuth2Auth(
+          client_id="test_client",
+          client_secret="test_secret",
+          access_token="expired_token",
+          expires_at=int(time.time()) - 100,  # expired
+          refresh_token="test_refresh_token",
+      ),
+  )
+
+  mock_session = MagicMock()
+  mock_session.refresh_token.return_value = {
+      "access_token": "new_access_token",
+      "refresh_token": "new_refresh_token",
+      "expires_at": int(time.time()) + 3600,
+  }
+
+  mock_create_session = MagicMock(
+      return_value=(mock_session, "https://example.com/token")
+  )
+
+  monkeypatch.setattr(
+      "google.adk.tools.openapi_tool.auth.credential_exchangers.oauth2_exchanger.create_oauth2_session",
+      mock_create_session,
+  )
+
+  updated_credential = oauth2_exchanger.exchange_credential(
+      auth_scheme, auth_credential
+  )
+
+  mock_create_session.assert_called_once_with(auth_scheme, auth_credential)
+  mock_session.refresh_token.assert_called_once_with(
+      url="https://example.com/token",
+      refresh_token="test_refresh_token",
+  )
+
+  assert updated_credential.auth_type == AuthCredentialTypes.HTTP
+  assert updated_credential.http.credentials.token == "new_access_token"
+
+  assert auth_credential.oauth2.access_token == "new_access_token"
+  assert auth_credential.oauth2.refresh_token == "new_refresh_token"
+
+
+def test_exchange_credential_refresh_fails(
+    oauth2_exchanger, auth_scheme, monkeypatch
+):
+  """Test that original credential is returned if refresh fails."""
+  auth_credential = AuthCredential(
+      auth_type=AuthCredentialTypes.OAUTH2,
+      oauth2=OAuth2Auth(
+          client_id="test_client",
+          client_secret="test_secret",
+          access_token="expired_token",
+          expires_at=int(time.time()) - 100,
+          refresh_token="test_refresh_token",
+      ),
+  )
+
+  mock_session = MagicMock()
+  mock_session.refresh_token.side_effect = Exception("Refresh failed")
+
+  mock_create_session = MagicMock(
+      return_value=(mock_session, "https://example.com/token")
+  )
+
+  monkeypatch.setattr(
+      "google.adk.tools.openapi_tool.auth.credential_exchangers.oauth2_exchanger.create_oauth2_session",
+      mock_create_session,
+  )
+
+  updated_credential = oauth2_exchanger.exchange_credential(
+      auth_scheme, auth_credential
+  )
+
+  mock_create_session.assert_called_once()
+
+  assert updated_credential == auth_credential
+  assert updated_credential.auth_type == AuthCredentialTypes.OAUTH2
+  assert updated_credential.oauth2.access_token == "expired_token"
+
+
+def test_exchange_credential_expired_no_refresh_token(
+    oauth2_exchanger, auth_scheme, monkeypatch
+):
+  """Test that expired token without refresh token returns original credential."""
+  auth_credential = AuthCredential(
+      auth_type=AuthCredentialTypes.OAUTH2,
+      oauth2=OAuth2Auth(
+          client_id="test_client",
+          client_secret="test_secret",
+          access_token="expired_token",
+          expires_at=int(time.time()) - 100,
+      ),
+  )
+
+  mock_create_session = MagicMock()
+  monkeypatch.setattr(
+      "google.adk.tools.openapi_tool.auth.credential_exchangers.oauth2_exchanger.create_oauth2_session",
+      mock_create_session,
+  )
+
+  updated_credential = oauth2_exchanger.exchange_credential(
+      auth_scheme, auth_credential
+  )
+
+  mock_create_session.assert_not_called()
+
+  assert updated_credential == auth_credential
+  assert updated_credential.auth_type == AuthCredentialTypes.OAUTH2
+
+
+def test_exchange_credential_cannot_create_session(
+    oauth2_exchanger, auth_scheme, monkeypatch
+):
+  """Test that original credential is returned if session creation fails."""
+  auth_credential = AuthCredential(
+      auth_type=AuthCredentialTypes.OAUTH2,
+      oauth2=OAuth2Auth(
+          client_id="test_client",
+          client_secret="test_secret",
+          access_token="expired_token",
+          expires_at=int(time.time()) - 100,
+          refresh_token="test_refresh_token",
+      ),
+  )
+
+  mock_create_session = MagicMock(return_value=(None, None))
+
+  monkeypatch.setattr(
+      "google.adk.tools.openapi_tool.auth.credential_exchangers.oauth2_exchanger.create_oauth2_session",
+      mock_create_session,
+  )
+
+  updated_credential = oauth2_exchanger.exchange_credential(
+      auth_scheme, auth_credential
+  )
+
+  mock_create_session.assert_called_once()
+
+  assert updated_credential == auth_credential
+  assert updated_credential.auth_type == AuthCredentialTypes.OAUTH2
+
+
