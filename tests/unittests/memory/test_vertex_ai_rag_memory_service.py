@@ -35,35 +35,56 @@ def _rag_context(source_display_name: str, text: str) -> SimpleNamespace:
 async def test_search_memory_rejects_ambiguous_legacy_display_names(mocker):
   """Ensures dotted user IDs cannot match another user's legacy memory."""
   memory_service = VertexAiRagMemoryService(rag_corpus="unused")
-  fake_rag = SimpleNamespace(
-      retrieval_query=mocker.Mock(
-          return_value=SimpleNamespace(
-              contexts=SimpleNamespace(
-                  contexts=[
-                      _rag_context(
-                          "demo.alice.smith.session_secret",
-                          "SECRET_FROM_ALICE_SMITH",
-                      ),
-                      _rag_context(
-                          _build_source_display_name(
-                              "demo", "alice", "session_ok"
-                          ),
-                          "NORMAL_ALICE_MEMORY",
-                      ),
-                      _rag_context(
-                          "demo.alice.legacy_session",
-                          "LEGACY_ALICE_MEMORY",
-                      ),
-                      _rag_context("demo.bob.session_other", "BOB_MEMORY"),
-                  ]
-              )
+  fake_filter = mocker.Mock()
+  fake_config = mocker.Mock()
+  fake_retrieval_query = mocker.Mock(
+      return_value=SimpleNamespace(
+          contexts=SimpleNamespace(
+              contexts=[
+                  _rag_context(
+                      "demo.alice.smith.session_secret",
+                      "SECRET_FROM_ALICE_SMITH",
+                  ),
+                  _rag_context(
+                      _build_source_display_name("demo", "alice", "session_ok"),
+                      "NORMAL_ALICE_MEMORY",
+                  ),
+                  _rag_context(
+                      "demo.alice.legacy_session",
+                      "LEGACY_ALICE_MEMORY",
+                  ),
+              ]
           )
       )
+  )
+
+  fake_rag = SimpleNamespace(
+      Filter=fake_filter,
+      RagRetrievalConfig=fake_config,
+      retrieval_query=fake_retrieval_query,
   )
   mocker.patch("google.adk.dependencies.vertexai.rag", fake_rag)
 
   response = await memory_service.search_memory(
       app_name="demo", user_id="alice", query="secret"
+  )
+
+  fake_filter.assert_called_once_with(
+      vector_distance_threshold=10.0,
+      metadata_filter=(
+          "regexp_contains(DisplayName,"
+          " '^(adk\\-memory\\-v1\\.ZGVtbw\\.YWxpY2U\\.|demo\\.alice\\.)')"
+      ),
+  )
+  fake_config.assert_called_once_with(
+      top_k=None,
+      filter=fake_filter.return_value,
+  )
+  fake_retrieval_query.assert_called_once_with(
+      text="secret",
+      rag_resources=memory_service._vertex_rag_store.rag_resources,
+      rag_corpora=memory_service._vertex_rag_store.rag_corpora,
+      rag_retrieval_config=fake_config.return_value,
   )
 
   texts = [memory.content.parts[0].text for memory in response.memories]
@@ -74,7 +95,13 @@ async def test_search_memory_rejects_ambiguous_legacy_display_names(mocker):
 async def test_add_and_search_memory_uses_unambiguous_display_names(mocker):
   memory_service = VertexAiRagMemoryService(rag_corpus="unused")
   upload_file = mocker.Mock()
-  fake_rag = SimpleNamespace(upload_file=upload_file)
+  fake_filter = mocker.Mock()
+  fake_config = mocker.Mock()
+  fake_rag = SimpleNamespace(
+      upload_file=upload_file,
+      Filter=fake_filter,
+      RagRetrievalConfig=fake_config,
+  )
   mocker.patch("google.adk.dependencies.vertexai.rag", fake_rag)
 
   await memory_service.add_session_to_memory(
@@ -100,16 +127,35 @@ async def test_add_and_search_memory_uses_unambiguous_display_names(mocker):
   assert display_name.startswith(_SOURCE_DISPLAY_NAME_PREFIX)
   assert display_name != "demo.app.alice.smith.session.secret"
 
-  fake_rag.retrieval_query = mocker.Mock(
+  fake_retrieval_query = mocker.Mock(
       return_value=SimpleNamespace(
           contexts=SimpleNamespace(
               contexts=[_rag_context(display_name, "sensitive memory")]
           )
       )
   )
+  fake_rag.retrieval_query = fake_retrieval_query
 
   response = await memory_service.search_memory(
       app_name="demo.app", user_id="alice.smith", query="sensitive"
+  )
+
+  fake_filter.assert_called_once_with(
+      vector_distance_threshold=10.0,
+      metadata_filter=(
+          "regexp_contains(DisplayName,"
+          " '^(adk\\-memory\\-v1\\.ZGVtby5hcHA\\.YWxpY2Uuc21pdGg\\.|demo\\.app\\.alice\\.smith\\.)')"
+      ),
+  )
+  fake_config.assert_called_once_with(
+      top_k=None,
+      filter=fake_filter.return_value,
+  )
+  fake_retrieval_query.assert_called_once_with(
+      text="sensitive",
+      rag_resources=memory_service._vertex_rag_store.rag_resources,
+      rag_corpora=memory_service._vertex_rag_store.rag_corpora,
+      rag_retrieval_config=fake_config.return_value,
   )
 
   assert [memory.content.parts[0].text for memory in response.memories] == [
