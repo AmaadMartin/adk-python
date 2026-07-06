@@ -24,6 +24,7 @@ from google.adk.auth.auth_credential import AuthCredential
 from google.adk.auth.auth_credential import AuthCredentialTypes
 from google.adk.auth.auth_credential import HttpAuth
 from google.adk.auth.auth_credential import HttpCredentials
+from google.adk.auth.auth_credential import OAuth2Auth
 from google.adk.auth.auth_credential import ServiceAccount
 from google.adk.auth.auth_credential import ServiceAccountCredential
 from google.adk.auth.auth_schemes import AuthSchemeType
@@ -567,6 +568,39 @@ def test_dict_to_auth_scheme_invalid_data():
   data = {"type": "apiKey", "in": "header"}  # Missing 'name'
   with pytest.raises(ValueError, match="Invalid security scheme data"):
     dict_to_auth_scheme(data)
+
+
+def test_credential_to_param_http_bearer_with_oidc_credential_fails():
+  auth_scheme = HTTPBearer(bearerFormat="JWT")
+  auth_credential = AuthCredential(
+      auth_type=AuthCredentialTypes.OPEN_ID_CONNECT,
+      oauth2=OAuth2Auth(access_token="test_token"),
+  )
+  with pytest.raises(
+      ValueError, match="Scheme HTTPBearer got incompatible credential type"
+  ):
+    credential_to_param(auth_scheme, auth_credential)
+
+
+def test_credential_to_param_openid_connect_unexchanged_token_success():
+  auth_scheme = OpenIdConnect(openIdConnectUrl="openid_url")
+  auth_credential = AuthCredential(
+      auth_type=AuthCredentialTypes.OPEN_ID_CONNECT,
+      oauth2=OAuth2Auth(access_token="test_token"),
+  )
+  param, kwargs = credential_to_param(auth_scheme, auth_credential)
+  assert param.original_name == "Authorization"
+  assert param.param_location == "header"
+  assert kwargs == {INTERNAL_AUTH_PREFIX + "Authorization": "Bearer test_token"}
+
+
+def test_credential_to_param_openid_connect_with_apikey_credential_fails():
+  auth_scheme = OpenIdConnect(openIdConnectUrl="openid_url")
+  auth_credential = AuthCredential(
+      auth_type=AuthCredentialTypes.API_KEY, api_key="test_key"
+  )
+  with pytest.raises(ValueError, match="got incompatible credential type"):
+    credential_to_param(auth_scheme, auth_credential)
 
 
 if __name__ == "__main__":
