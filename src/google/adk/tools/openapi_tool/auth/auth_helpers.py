@@ -332,7 +332,7 @@ def credential_to_param(
     return None, None
 
   # 1. API Key Scheme
-  if auth_scheme.type_ == AuthSchemeType.apiKey:
+  if isinstance(auth_scheme, APIKey):
     if (
         auth_credential.auth_type != AuthCredentialTypes.API_KEY
         or not auth_credential.api_key
@@ -352,14 +352,14 @@ def credential_to_param(
         description=auth_scheme.description or "",
         py_name=python_name,
     )
-    kwargs = {param.py_name: auth_credential.api_key}
+    kwargs = {python_name: auth_credential.api_key}
     return param, kwargs
 
   # 2. Bearer-like Schemes (HTTPBearer, OpenID Connect, OAuth2)
   elif isinstance(
       auth_scheme, (HTTPBearer, OpenIdConnect, OpenIdConnectWithConfig, OAuth2)
   ):
-    token = None
+    token: Optional[str] = None
     is_http_bearer = isinstance(auth_scheme, HTTPBearer)
     if auth_credential.auth_type == AuthCredentialTypes.HTTP:
       token = auth_credential.http and auth_credential.http.credentials.token
@@ -374,21 +374,22 @@ def credential_to_param(
     ):
       token = auth_credential.oauth2 and auth_credential.oauth2.access_token
     else:
-      scheme_name = "HTTPBearer" if is_http_bearer else auth_scheme.type_
+      scheme_name = "HTTPBearer" if is_http_bearer else str(auth_scheme.type_)
       raise ValueError(
           f"Scheme {scheme_name} got incompatible credential type"
           f" {auth_credential.auth_type}"
       )
 
     if token:
+      py_name = INTERNAL_AUTH_PREFIX + "Authorization"
       param = ApiParameter(
           original_name="Authorization",
           param_location="header",
           param_schema=Schema(type="string"),
           description=auth_scheme.description or "Bearer token",
-          py_name=INTERNAL_AUTH_PREFIX + "Authorization",
+          py_name=py_name,
       )
-      return param, {param.py_name: f"Bearer {token}"}
+      return param, {py_name: f"Bearer {token}"}
     return None, None
 
   # 3. Generic HTTP Base Scheme (e.g. Basic Auth)
