@@ -16,6 +16,8 @@ from __future__ import annotations
 
 """Credential fetcher for OpenID Connect."""
 
+import logging
+import time
 from typing import Optional
 
 from .....auth.auth_credential import AuthCredential
@@ -24,7 +26,12 @@ from .....auth.auth_credential import HttpAuth
 from .....auth.auth_credential import HttpCredentials
 from .....auth.auth_schemes import AuthScheme
 from .....auth.auth_schemes import AuthSchemeType
+from .....auth.oauth2_credential_util import create_oauth2_session
+from .....auth.oauth2_credential_util import update_credential_with_tokens
 from .base_credential_exchanger import BaseAuthCredentialExchanger
+
+logger = logging.getLogger("google_adk." + __name__)
+
 
 
 class OAuth2CredentialExchanger(BaseAuthCredentialExchanger):
@@ -103,8 +110,6 @@ class OAuth2CredentialExchanger(BaseAuthCredentialExchanger):
     Raises:
         ValueError: If the auth scheme or auth credential is invalid.
     """
-    # TODO: Implement token refresh flow
-
     self._check_scheme_credential_type(auth_scheme, auth_credential)
 
     # If token is already HTTPBearer token, do nothing assuming that this token
@@ -112,8 +117,33 @@ class OAuth2CredentialExchanger(BaseAuthCredentialExchanger):
     if auth_credential.http:
       return auth_credential
 
-    # If access token is exchanged, exchange a HTTPBearer token.
-    if auth_credential.oauth2.access_token:
+    oauth2 = auth_credential.oauth2
+    # Use 60 seconds leeway to prevent mid-request expiration
+    if oauth2.access_token and (
+        oauth2.expires_at is None or oauth2.expires_at - 60 >= time.time()
+    ):
       return self.generate_auth_token(auth_credential)
 
-    return None
+    if not oauth2.refresh_token:
+      return auth_credential if oauth2.access_token else None
+
+    client, token_endpoint = create_oauth2_session(
+        auth_scheme, auth_credential
+    )
+    if not (client and token_endpoint):
+      logger.warning("Could not create OAuth2 session for token refresh")
+      return auth_credential
+
+    try:
+      logger.debug("Attempting to refresh OAuth2 token")
+      tokens = client.refresh_token(
+          url=token_endpoint,
+          refresh_token=oauth2.refresh_token,
+      )
+      update_credential_with_tokens(auth_credential, tokens)
+      logger.info("Successfully refreshed OAuth2 token")
+      return self.generate_auth_token(auth_credential)
+    except Exception as e:
+      logger.error("Failed to refresh OAuth2 token: %s", e)
+      return auth_credential
+
