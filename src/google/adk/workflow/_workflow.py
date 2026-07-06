@@ -375,12 +375,31 @@ class Workflow(BaseNode):
         self._handle_completion(loop_state, name, node, child_ctx)
 
     # Await fire-and-forget dynamic tasks.
-    # TODO: Handle dynamic task failures and interrupts here.
-    # Currently, dynamic node completion is handled inline in the
-    # _schedule_dynamic_node_callback closure. But failures are not caught.
     dynamic_tasks = loop_state.get_dynamic_tasks()
     if dynamic_tasks:
       await asyncio.wait(dynamic_tasks)
+
+    # Check background dynamic runs for errors/interrupts.
+    # Sort keys to ensure deterministic processing order.
+    for node_path in sorted(loop_state.runs.keys()):
+      run = loop_state.runs[node_path]
+      if run.is_background and run.task:
+        if run.task.cancelled():
+          continue
+        child_ctx = run.task.result()
+        if child_ctx.error:
+          run.state.status = NodeStatus.FAILED
+          ctx._error = child_ctx.error
+          ctx._error_node_path = child_ctx.error_node_path
+          loop_state.error_shut_down = True
+          logger.debug(
+              'node %s execute loop end due to dynamic task failure: %s',
+              ctx.node_path,
+              node_path,
+          )
+          return
+        if child_ctx.interrupt_ids:
+          loop_state.interrupt_ids.update(child_ctx.interrupt_ids)
     logger.debug('node %s execute loop end.', ctx.node_path)
 
   # --- Scheduling ---
