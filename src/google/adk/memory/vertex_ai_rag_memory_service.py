@@ -20,6 +20,7 @@ import binascii
 from collections import OrderedDict
 import json
 import os
+import re
 import tempfile
 from typing import Optional
 from typing import TYPE_CHECKING
@@ -176,28 +177,38 @@ class VertexAiRagMemoryService(BaseMemoryService):
     from ..dependencies.vertexai import rag
     from ..events.event import Event
 
+    encoded_app_name = _encode_source_display_name_part(app_name)
+    encoded_user_id = _encode_source_display_name_part(user_id)
+
+    combined_pattern = f"^({re.escape(_SOURCE_DISPLAY_NAME_PREFIX)}{encoded_app_name}\\.{encoded_user_id}\\.|{re.escape(app_name)}\\.{re.escape(user_id)}\\.)"
+    metadata_filter = f"regexp_contains(DisplayName, '{combined_pattern}')"
+
+    filter_obj = rag.Filter(
+        vector_distance_threshold=self._vertex_rag_store.vector_distance_threshold,
+        metadata_filter=metadata_filter,
+    )
+    rag_retrieval_config = rag.RagRetrievalConfig(
+        top_k=self._vertex_rag_store.similarity_top_k,
+        filter=filter_obj,
+    )
+
     response = rag.retrieval_query(
         text=query,
         rag_resources=self._vertex_rag_store.rag_resources,
         rag_corpora=self._vertex_rag_store.rag_corpora,
-        similarity_top_k=self._vertex_rag_store.similarity_top_k,
-        vector_distance_threshold=self._vertex_rag_store.vector_distance_threshold,
+        rag_retrieval_config=rag_retrieval_config,
     )
 
     memory_results = []
     session_events_map: OrderedDict[str, list[list[Event]]] = OrderedDict()
     for context in response.contexts.contexts:
-      # filter out context that is not related
-      # TODO: Add server side filtering by app_name and user_id.
       source_display_name = getattr(context, "source_display_name", "")
       if not isinstance(source_display_name, str):
         continue
       session_info = _parse_source_display_name(source_display_name)
       if not session_info:
         continue
-      source_app_name, source_user_id, session_id = session_info
-      if source_app_name != app_name or source_user_id != user_id:
-        continue
+      _, _, session_id = session_info
       events = []
       if context.text:
         lines = context.text.split("\n")
