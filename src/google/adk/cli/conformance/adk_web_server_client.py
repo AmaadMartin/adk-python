@@ -255,28 +255,13 @@ class AdkWebServerClient:
       if request.state_delta is None:
         request.state_delta = {}
 
-      if mode == "replay":
-        request.state_delta["_adk_replay_config"] = {
+      if mode in ("replay", "record"):
+        config_key = "temp:_adk_replay_config" if mode == "replay" else "temp:_adk_recordings_config"
+        request.state_delta[config_key] = {
             "dir": str(test_case_dir),
             "user_message_index": user_message_index,
+            "streaming_mode": "sse" if request.streaming else "none",
         }
-        if request.streaming:
-          request.state_delta["_adk_replay_config"]["streaming_mode"] = "sse"
-        else:
-          request.state_delta["_adk_replay_config"]["streaming_mode"] = "none"
-      elif mode == "record":
-        request.state_delta["_adk_recordings_config"] = {
-            "dir": str(test_case_dir),
-            "user_message_index": user_message_index,
-        }
-        if request.streaming:
-          request.state_delta["_adk_recordings_config"][
-              "streaming_mode"
-          ] = "sse"
-        else:
-          request.state_delta["_adk_recordings_config"][
-              "streaming_mode"
-          ] = "none"
       else:
         raise ValueError(f"Unsupported mode: {mode}")
 

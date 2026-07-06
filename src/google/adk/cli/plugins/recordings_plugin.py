@@ -349,6 +349,10 @@ class RecordingsPlugin(BasePlugin):
       self._invocation_states.pop(ctx.invocation_id, None)
 
   # Private helpers (placed after public callbacks)
+  def _get_config(self, callback_context: CallbackContext) -> Optional[dict[str, Any]]:
+    session_state = callback_context.state
+    return session_state.get("temp:_adk_recordings_config") or session_state.get("_adk_recordings_config")
+
   def _is_record_mode_on(self, callback_context: CallbackContext) -> bool:
     """Check if recording mode is enabled for this invocation.
 
@@ -358,9 +362,7 @@ class RecordingsPlugin(BasePlugin):
     Returns:
       True if recording mode is enabled, False otherwise.
     """
-    # TODO: Investigate how to support with `temp:` states.
-    session_state = callback_context.state
-    if not (config := session_state.get("_adk_recordings_config")):
+    if not (config := self._get_config(callback_context)):
       return False
 
     case_dir = config.get("dir")
@@ -380,9 +382,7 @@ class RecordingsPlugin(BasePlugin):
   ) -> _InvocationRecordingState:
     """Create and store recording state for this invocation."""
     invocation_id = callback_context.invocation_id
-    session_state = callback_context.state
-
-    config = session_state.get("_adk_recordings_config", {})
+    config = self._get_config(callback_context) or {}
     case_dir = config.get("dir")
     msg_index = config.get("user_message_index")
     self._streaming_mode = config.get("streaming_mode", "")

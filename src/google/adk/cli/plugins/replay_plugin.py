@@ -139,10 +139,13 @@ class ReplayPlugin(BasePlugin):
     logger.debug("Cleaned up replay state for invocation %s", ctx.invocation_id)
 
   # Private helpers
+  def _get_config(self, callback_context: CallbackContext) -> Optional[dict[str, Any]]:
+    session_state = callback_context.state
+    return session_state.get("temp:_adk_replay_config") or session_state.get("_adk_replay_config")
+
   def _is_replay_mode_on(self, callback_context: CallbackContext) -> bool:
     """Check if replay mode is enabled for this invocation."""
-    session_state = callback_context.state
-    if not (config := session_state.get("_adk_replay_config")):
+    if not (config := self._get_config(callback_context)):
       return False
 
     case_dir = config.get("dir")
@@ -162,9 +165,7 @@ class ReplayPlugin(BasePlugin):
   ) -> _InvocationReplayState:
     """Load and store replay state for this invocation."""
     invocation_id = callback_context.invocation_id
-    session_state = callback_context.state
-
-    config = session_state.get("_adk_replay_config", {})
+    config = self._get_config(callback_context) or {}
     case_dir = config.get("dir")
     msg_index = config.get("user_message_index")
     streaming_mode = config.get("streaming_mode")
