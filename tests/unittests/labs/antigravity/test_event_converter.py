@@ -257,5 +257,3 @@ def test_empty_system_message_step_produces_no_event():
 
   assert _convert(step_empty) == []
   assert _convert(step_none) == []
-
-

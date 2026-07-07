@@ -169,4 +169,3 @@ async def test_run_yields_system_message_events(tmp_path):
   assert events[0].author == 'agy'
   assert events[0].content.role == 'system'
   assert events[0].content.parts[0].text == 'Turn cancelled by user'
-
