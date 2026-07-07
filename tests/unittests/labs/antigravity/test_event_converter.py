@@ -224,3 +224,36 @@ def test_streaming_completed_step_emits_partial_then_final():
   assert events[0].content.parts[0].text == ' world'
   assert events[1].partial in (False, None)
   assert events[1].content.parts[0].text == 'hello world'
+
+
+def test_system_message_step_maps_to_system_event():
+  """A system message step with non-empty content maps to a system event."""
+  step = sdk_types.Step(
+      step_index=1,
+      type=sdk_types.StepType.SYSTEM_MESSAGE,
+      source=sdk_types.StepSource.SYSTEM,
+      content='Turn cancelled by user',
+  )
+
+  events = _convert(step)
+
+  assert len(events) == 1
+  assert events[0].author == 'agy'
+  assert events[0].content.role == 'system'
+  assert events[0].content.parts[0].text == 'Turn cancelled by user'
+
+
+def test_empty_system_message_step_produces_no_event():
+  """A system message step with empty or None content yields nothing."""
+  step_empty = sdk_types.Step(
+      step_index=1,
+      type=sdk_types.StepType.SYSTEM_MESSAGE,
+      source=sdk_types.StepSource.SYSTEM,
+      content='',
+  )
+  step_none = MagicMock()
+  step_none.type = sdk_types.StepType.SYSTEM_MESSAGE
+  step_none.content = None
+
+  assert _convert(step_empty) == []
+  assert _convert(step_none) == []
