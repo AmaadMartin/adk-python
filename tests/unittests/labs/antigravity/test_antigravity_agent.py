@@ -121,3 +121,52 @@ async def test_resumed_replayed_steps_are_skipped(tmp_path):
 
   texts = [e.content.parts[0].text for e in events]
   assert texts == ['new']
+
+
+@pytest.mark.asyncio
+async def test_run_yields_system_message_events(tmp_path):
+  """Verify that SYSTEM_MESSAGE steps are yielded as system events during a turn."""
+  from google.antigravity import types as sdk_types
+
+  def _system_step(step_index: int, text: str):
+    step = MagicMock()
+    step.step_index = step_index
+    step.source = sdk_types.StepSource.SYSTEM
+    step.type = sdk_types.StepType.SYSTEM_MESSAGE
+    step.status = sdk_types.StepStatus.DONE
+    step.content = text
+    step.tool_calls = []
+    return step
+
+  async def _receive_steps():
+    yield _system_step(0, 'Turn cancelled by user')
+
+  conversation = MagicMock()
+  conversation.send = AsyncMock()
+  conversation.receive_steps = _receive_steps
+  active_agent = MagicMock()
+  active_agent.conversation = conversation
+  active_agent.conversation_id = 'sess_789_agy'
+  active_agent.__aenter__ = AsyncMock(return_value=active_agent)
+  active_agent.__aexit__ = AsyncMock(return_value=None)
+
+  save_dir = tmp_path
+  agent = AntigravityAgent(
+      name='agy', config=_make_config(save_dir=str(save_dir))
+  )
+
+  ctx = MagicMock()
+  ctx.invocation_id = 'inv_1'
+  ctx.branch = 'main'
+  ctx.session.id = 'sess_789'
+  ctx.user_content = None
+  ctx.run_config = None
+
+  with patch.object(_antigravity_agent, 'Agent', return_value=active_agent):
+    events = [event async for event in agent._run_async_impl(ctx)]
+
+  assert len(events) == 1
+  assert events[0].author == 'agy'
+  assert events[0].content.role == 'system'
+  assert events[0].content.parts[0].text == 'Turn cancelled by user'
+

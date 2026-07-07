@@ -18,10 +18,7 @@ Kept separate from the agent wrapper so the mapping rules stay readable and
 independently testable.
 
 Scope: model text (final and, in SSE streaming mode, partial thinking/text
-deltas), function calls, and function responses.
-
-TODO: Surface SYSTEM_MESSAGE steps (emitted on turn cancellation) as ADK
-events; they are currently dropped.
+deltas), function calls, function responses, and system messages.
 """
 
 from __future__ import annotations
@@ -116,6 +113,29 @@ def _convert_model_text(
           branch=ctx.branch,
           content=genai_types.Content(
               role='model',
+              parts=[genai_types.Part.from_text(text=step.content)],
+          ),
+      )
+  ]
+
+
+def _convert_system_messages(
+    step: sdk_types.Step,
+    *,
+    ctx: InvocationContext,
+    author: str,
+) -> list[Event]:
+  """Converts system message steps into system events."""
+  if step.type != sdk_types.StepType.SYSTEM_MESSAGE or not step.content:
+    return []
+
+  return [
+      Event(
+          invocation_id=ctx.invocation_id,
+          author=author,
+          branch=ctx.branch,
+          content=genai_types.Content(
+              role='system',
               parts=[genai_types.Part.from_text(text=step.content)],
           ),
       )
@@ -255,6 +275,7 @@ def convert_step_to_events(
   return [
       *partials,
       *_convert_model_text(step, ctx=ctx, author=author),
+      *_convert_system_messages(step, ctx=ctx, author=author),
       *_convert_function_calls(
           step, ctx=ctx, author=author, seen_tool_calls=seen_tool_calls
       ),
