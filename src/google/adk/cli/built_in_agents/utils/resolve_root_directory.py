@@ -57,13 +57,17 @@ def resolve_file_path(
     root_directory = session_state["root_directory"]
 
   root_path_obj = Path(root_directory)
+  base_dir = Path(working_directory or os.getcwd()).resolve()
+
   if root_path_obj.is_absolute():
-    resolved_root = root_path_obj
-  elif working_directory:
-    resolved_root = Path(working_directory) / root_directory
+    resolved_root = root_path_obj.resolve()
   else:
-    resolved_root = Path(os.getcwd()) / root_directory
-  resolved_root = resolved_root.resolve()
+    resolved_root = (base_dir / root_path_obj).resolve()
+
+  # Check if root_directory escapes base_dir
+  if not resolved_root.is_relative_to(base_dir):
+    raise ValueError(f"Root directory {root_directory!r} resolves outside the base directory {base_dir}.")
+
 
   if file_path_obj.is_absolute():
     candidate = file_path_obj.resolve()
