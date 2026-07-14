@@ -300,49 +300,64 @@ class _OriginCheckMiddleware:
     self._allowed_origins = allowed_origins
     self._allowed_origin_regex = allowed_origin_regex
 
+  async def _reject(self, scope: dict[str, Any], send: Any, reason: bytes) -> None:
+    if scope["type"] == "websocket":
+      await send({"type": "websocket.close", "code": 4403})
+    else:
+      await send({
+          "type": "http.response.start",
+          "status": 403,
+          "headers": [
+              (b"content-type", b"text/plain"),
+              (b"content-length", str(len(reason)).encode()),
+          ],
+      })
+      await send({
+          "type": "http.response.body",
+          "body": reason,
+      })
+
   async def __call__(
       self,
       scope: dict[str, Any],
       receive: Any,
       send: Any,
   ) -> None:
-    if scope["type"] != "http":
+    if scope["type"] not in ("http", "websocket"):
       await self._app(scope, receive, send)
       return
 
-    method = scope.get("method", "GET")
-    if method in _SAFE_HTTP_METHODS:
-      await self._app(scope, receive, send)
-      return
+    server_host = _get_server_host(scope)
+    is_loopback_server = server_host is not None and _is_loopback_address(server_host)
+    request_origin = _get_request_origin(scope)
+
+    if is_loopback_server and not self._has_configured_allowed_origins:
+      if request_origin is None:
+        await self._reject(scope, send, b"Forbidden: missing host header")
+        return
+      try:
+        from urllib.parse import urlparse  # noqa: PLC0415
+        request_host = urlparse(request_origin).hostname or ""
+        if not _is_loopback_address(request_host):
+          await self._reject(scope, send, b"Forbidden: host/origin not allowed")
+          return
+      except Exception:
+        await self._reject(scope, send, b"Forbidden: host/origin not allowed")
+        return
 
     origin = _get_scope_header(scope, b"origin")
-    if origin is None:
-      await self._app(scope, receive, send)
-      return
+    if origin is not None:
+      if not _is_request_origin_allowed(
+          origin,
+          scope,
+          self._allowed_origins,
+          self._allowed_origin_regex,
+          self._has_configured_allowed_origins,
+      ):
+        await self._reject(scope, send, b"Forbidden: origin not allowed")
+        return
 
-    if _is_request_origin_allowed(
-        origin,
-        scope,
-        self._allowed_origins,
-        self._allowed_origin_regex,
-        self._has_configured_allowed_origins,
-    ):
-      await self._app(scope, receive, send)
-      return
-
-    response_body = b"Forbidden: origin not allowed"
-    await send({
-        "type": "http.response.start",
-        "status": 403,
-        "headers": [
-            (b"content-type", b"text/plain"),
-            (b"content-length", str(len(response_body)).encode()),
-        ],
-    })
-    await send({
-        "type": "http.response.body",
-        "body": response_body,
-    })
+    await self._app(scope, receive, send)
 
 
 class _DefaultAppRewriteMiddleware:
@@ -678,6 +693,8 @@ class ApiServer:
       runner_dict: A dict of instantiated runners for each app.
   """
 
+  _allow_special_agents: bool = False
+
   def __init__(
       self,
       *,
@@ -711,7 +728,7 @@ class ApiServer:
     # Internal properties we want to allow being modified from callbacks.
     self.runners_to_clean: set[str] = set()
     self.current_app_name_ref: SharedValue[str] = SharedValue(value="")
-    self.runner_dict = {}
+    self.runner_dict: dict[str, Runner] = {}
     self.url_prefix = url_prefix
     self.auto_create_session = auto_create_session
     self.trigger_sources = trigger_sources
@@ -720,11 +737,20 @@ class ApiServer:
 
   async def get_runner_async(self, app_name: str) -> Runner:
     """Returns the cached runner for the given app."""
+    if app_name.startswith("__") and not self._allow_special_agents:
+      raise HTTPException(
+          status_code=403,
+          detail=(
+              "Access to internal special agents is disabled in API server"
+              " mode."
+          ),
+      )
     # Handle cleanup
     if app_name in self.runners_to_clean:
       self.runners_to_clean.remove(app_name)
       runner = self.runner_dict.pop(app_name, None)
-      await cleanup.close_runners(list([runner]))
+      if runner is not None:
+        await cleanup.close_runners([runner])
 
     # Return cached runner if exists
     if app_name in self.runner_dict:
@@ -982,8 +1008,8 @@ class ApiServer:
     Returns:
       A FastAPI app instance.
     """
-    trace_dict = {}
-    session_trace_dict = {}
+    trace_dict: dict[str, Any] = {}
+    session_trace_dict: dict[str, Any] = {}
     self._trace_dict = trace_dict
     self._session_trace_dict = session_trace_dict
 
@@ -1143,6 +1169,14 @@ class ApiServer:
     @app.get("/apps/{app_name}/app-info", response_model_exclude_none=True)
     async def get_adk_app_info(app_name: str) -> AppInfo:
       """Returns the detailed info for a given ADK app."""
+      if app_name.startswith("__") and not self._allow_special_agents:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Access to internal special agents is disabled in API server"
+                " mode."
+            ),
+        )
       agent_or_app = self.agent_loader.load_agent(app_name)
       root_agent = self._get_root_agent(agent_or_app)
       if isinstance(root_agent, LlmAgent):
@@ -1705,6 +1739,7 @@ class ApiServer:
         enable_affective_dialog: bool | None = Query(default=None),
         enable_session_resumption: bool | None = Query(default=None),
         save_live_blob: bool = Query(default=False),
+        explicit_vad_signal: bool | None = Query(default=None),
     ) -> None:
       resolved_app_name = app_name or self.default_app_name
       if not resolved_app_name:
@@ -1761,6 +1796,7 @@ class ApiServer:
                 else None
             ),
             save_live_blob=save_live_blob,
+            explicit_vad_signal=explicit_vad_signal,
         )
         async with Aclosing(
             runner.run_live(
