@@ -2526,14 +2526,14 @@ def test_builder_save_allows_same_origin_post(builder_test_client, tmp_path):
   assert (tmp_path / "app" / "tmp" / "app" / "root_agent.yaml").is_file()
 
 
-def test_builder_get_allows_cross_origin_get(builder_test_client):
+def test_builder_get_rejects_cross_origin_get(builder_test_client):
   response = builder_test_client.get(
       "/dev/apps/missing/builder?tmp=true",
       headers={"origin": "https://evil.com"},
   )
 
-  assert response.status_code == 200
-  assert response.text == ""
+  assert response.status_code == 403
+  assert response.text == "Forbidden: origin not allowed"
 
 
 def test_builder_cancel_deletes_tmp_idempotent(builder_test_client, tmp_path):

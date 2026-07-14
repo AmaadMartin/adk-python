@@ -300,49 +300,64 @@ class _OriginCheckMiddleware:
     self._allowed_origins = allowed_origins
     self._allowed_origin_regex = allowed_origin_regex
 
+  async def _reject(self, scope: dict[str, Any], send: Any, reason: bytes) -> None:
+    if scope["type"] == "websocket":
+      await send({"type": "websocket.close", "code": 4403})
+    else:
+      await send({
+          "type": "http.response.start",
+          "status": 403,
+          "headers": [
+              (b"content-type", b"text/plain"),
+              (b"content-length", str(len(reason)).encode()),
+          ],
+      })
+      await send({
+          "type": "http.response.body",
+          "body": reason,
+      })
+
   async def __call__(
       self,
       scope: dict[str, Any],
       receive: Any,
       send: Any,
   ) -> None:
-    if scope["type"] != "http":
+    if scope["type"] not in ("http", "websocket"):
       await self._app(scope, receive, send)
       return
 
-    method = scope.get("method", "GET")
-    if method in _SAFE_HTTP_METHODS:
-      await self._app(scope, receive, send)
-      return
+    server_host = _get_server_host(scope)
+    is_loopback_server = server_host is not None and _is_loopback_address(server_host)
+    request_origin = _get_request_origin(scope)
+
+    if is_loopback_server and not self._has_configured_allowed_origins:
+      if request_origin is None:
+        await self._reject(scope, send, b"Forbidden: missing host header")
+        return
+      try:
+        from urllib.parse import urlparse  # noqa: PLC0415
+        request_host = urlparse(request_origin).hostname or ""
+        if not _is_loopback_address(request_host):
+          await self._reject(scope, send, b"Forbidden: host/origin not allowed")
+          return
+      except Exception:
+        await self._reject(scope, send, b"Forbidden: host/origin not allowed")
+        return
 
     origin = _get_scope_header(scope, b"origin")
-    if origin is None:
-      await self._app(scope, receive, send)
-      return
+    if origin is not None:
+      if not _is_request_origin_allowed(
+          origin,
+          scope,
+          self._allowed_origins,
+          self._allowed_origin_regex,
+          self._has_configured_allowed_origins,
+      ):
+        await self._reject(scope, send, b"Forbidden: origin not allowed")
+        return
 
-    if _is_request_origin_allowed(
-        origin,
-        scope,
-        self._allowed_origins,
-        self._allowed_origin_regex,
-        self._has_configured_allowed_origins,
-    ):
-      await self._app(scope, receive, send)
-      return
-
-    response_body = b"Forbidden: origin not allowed"
-    await send({
-        "type": "http.response.start",
-        "status": 403,
-        "headers": [
-            (b"content-type", b"text/plain"),
-            (b"content-length", str(len(response_body)).encode()),
-        ],
-    })
-    await send({
-        "type": "http.response.body",
-        "body": response_body,
-    })
+    await self._app(scope, receive, send)
 
 
 class _DefaultAppRewriteMiddleware:

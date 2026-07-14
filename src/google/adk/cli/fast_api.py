@@ -134,9 +134,10 @@ def _register_builder_endpoints(app: FastAPI, web: bool, agents_dir: str):
 
   _ALLOWED_EXTENSIONS = frozenset({".yaml", ".yml"})
 
-  _BLOCKED_YAML_KEYS = frozenset({"args"})
+  _BLOCKED_YAML_KEYS = frozenset({"args", "kwargs"})
 
   def _check_yaml_for_blocked_keys(content: bytes, filename: str) -> None:
+    from ..agents.config_agent_utils import _BLOCKED_MODULES
     try:
       docs = list(yaml.safe_load_all(content))
     except yaml.YAMLError as exc:
@@ -151,6 +152,10 @@ def _register_builder_endpoints(app: FastAPI, web: bool, agents_dir: str):
                 f"The '{key}' field is not allowed in builder uploads "
                 "because it can execute arbitrary code."
             )
+          if key in ("name", "code", "agent_class") and isinstance(value, str):
+            top_module = value.split(".")[0]
+            if top_module in _BLOCKED_MODULES:
+              raise ValueError(f"Blocked module reference: {value!r}")
           _walk(value)
       elif isinstance(node, list):
         for item in node:
