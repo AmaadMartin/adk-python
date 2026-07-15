@@ -269,7 +269,7 @@ async def _handle_after_model_callback(
   agent = invocation_context.agent
 
   # Add grounding metadata to the response if needed.
-  # TODO(b/448114567): Remove this function once the workaround is no longer needed.
+  # TODO: Remove this function once the workaround is no longer needed.
   async def _maybe_add_grounding_metadata(
       response: Optional[LlmResponse] = None,
   ) -> Optional[LlmResponse]:
@@ -418,108 +418,13 @@ async def _run_and_handle_error(
       raise model_error
 
 
-async def _process_agent_tools(
-    invocation_context: InvocationContext,
-    llm_request: LlmRequest,
-) -> None:
-  """Process the agent's tools and populate ``llm_request.tools_dict``.
-
-  Iterates over the agent's ``tools`` list, converts each tool union
-  (callable, BaseTool, or BaseToolset) into resolved ``BaseTool``
-  instances, and calls ``process_llm_request`` on each to register
-  tool declarations in the request.
-
-  Tool-union resolution is dispatched concurrently via ``asyncio.gather``
-  to overlap I/O-bound listings (e.g. MCP ``list_tools`` over the
-  network). The subsequent ``process_llm_request`` calls are kept
-  serial in the original ``agent.tools`` order: some tools read/write
-  ``llm_request`` state (e.g. ``GoogleSearchTool`` writes
-  ``llm_request.model``; ``ComputerUseToolset`` performs an idempotency
-  check on ``llm_request.config.tools``) and rely on observing the
-  post-state of earlier tools.
-
-  After this function returns, ``llm_request.tools_dict`` maps tool
-  names to ``BaseTool`` instances ready for function call dispatch.
-
-  Args:
-    invocation_context: The invocation context (``agent`` is read from
-      ``invocation_context.agent``).
-    llm_request: The LLM request to populate with tool declarations.
-  """
-  agent = invocation_context.agent
-  if agent is None or not hasattr(agent, 'tools') or not agent.tools:
-    return
-
-  multiple_tools = len(agent.tools) > 1
-  model = agent.canonical_model
-
-  from ...agents.llm_agent import _convert_tool_union_to_tools
-
-  # Resolve tool_unions in parallel. ``asyncio.gather`` preserves
-  # input order in the returned list, so the serial commit phase below
-  # still observes ``agent.tools`` order. If any resolution raises,
-  # gather cancels the siblings and propagates -- same observable
-  # behavior as the previous serial loop, which would propagate the
-  # first exception and abandon the rest.
-  resolved_tools_per_union = await asyncio.gather(*(
-      _convert_tool_union_to_tools(
-          tool_union,
-          ReadonlyContext(invocation_context),
-          model,
-          multiple_tools,
-      )
-      for tool_union in agent.tools
-  ))
-
-  # Serial commit phase, in original ``agent.tools`` order. Mutations
-  # to ``llm_request`` and reads of its state (model, config.tools,
-  # tools_dict) preserve today's ordering semantics exactly.
-  for tool_union, tools in zip(agent.tools, resolved_tools_per_union):
-    tool_context = ToolContext(invocation_context)
-
-    # If it's a toolset, process it first
-    if isinstance(tool_union, BaseToolset):
-      await tool_union.process_llm_request(
-          tool_context=tool_context, llm_request=llm_request
-      )
-
-    # Then process all tools from this tool union
-    for tool in tools:
-      await tool.process_llm_request(
-          tool_context=tool_context, llm_request=llm_request
-      )
-
-  if invocation_context.live_request_queue is not None:
-    _mark_live_async_tools_non_blocking(llm_request)
-
-
-def _mark_live_async_tools_non_blocking(llm_request: LlmRequest) -> None:
-  """Marks live streaming and response-scheduling tools as NON_BLOCKING.
-
-  These tools emit asynchronous FunctionResponses, which the Live API only
-  accepts for NON_BLOCKING declarations.
-  """
-  if not llm_request.config.tools:
-    return
-  for gemini_tool in llm_request.config.tools:
-    for declaration in gemini_tool.function_declarations or []:
-      tool = llm_request.tools_dict.get(declaration.name)
-      if tool is None:
-        continue
-      is_streaming_tool = hasattr(tool, 'func') and inspect.isasyncgenfunction(
-          tool.func
-      )
-      if tool.response_scheduling is not None or is_streaming_tool:
-        declaration.behavior = types.Behavior.NON_BLOCKING
-
-
 class BaseLlmFlow(ABC):
   """A basic flow that calls the LLM in a loop until a final response is generated.
 
   This flow ends when it transfers to another agent.
   """
 
-  def __init__(self):
+  def __init__(self) -> None:
     self.request_processors: list[BaseLlmRequestProcessor] = []
     self.response_processors: list[BaseLlmResponseProcessor] = []
 
@@ -768,7 +673,7 @@ class BaseLlmFlow(ABC):
       self,
       llm_connection: BaseLlmConnection,
       invocation_context: InvocationContext,
-  ):
+  ) -> None:
     """Sends data to model."""
     while True:
       live_request_queue = invocation_context.live_request_queue
@@ -806,6 +711,8 @@ class BaseLlmFlow(ABC):
 
       if live_request.content:
         content = live_request.content
+        if content.parts and any(p.function_call for p in content.parts):
+          raise ValueError('User message cannot contain function calls.')
         # Persist user text content to session (similar to non-live mode)
         # Skip function responses - they are already handled separately
         is_function_response = content.parts and any(
@@ -1042,19 +949,7 @@ class BaseLlmFlow(ABC):
         async for event in agen:
           yield event
 
-    # Resolve toolset authentication before tool listing.
-    # This ensures credentials are ready before get_tools() is called.
-    async with Aclosing(
-        self._resolve_toolset_auth(invocation_context, agent)
-    ) as agen:
-      async for event in agen:
-        yield event
 
-    if invocation_context.end_invocation:
-      return
-
-    # Run processors for tools.
-    await _process_agent_tools(invocation_context, llm_request)
 
   async def _postprocess_async(
       self,
@@ -1171,6 +1066,7 @@ class BaseLlmFlow(ABC):
         and not llm_response.usage_metadata
         and not llm_response.live_session_resumption_update
         and not llm_response.grounding_metadata
+        and not llm_response.voice_activity
     ):
       return
 
@@ -1179,6 +1075,12 @@ class BaseLlmFlow(ABC):
       model_response_event.live_session_resumption_update = (
           llm_response.live_session_resumption_update
       )
+      yield model_response_event
+      return
+
+    # Handle voice activity events
+    if llm_response.voice_activity:
+      model_response_event.voice_activity = llm_response.voice_activity
       yield model_response_event
       return
 
@@ -1447,16 +1349,7 @@ class BaseLlmFlow(ABC):
         llm_request, llm_response, model_response_event
     )
 
-  async def _resolve_toolset_auth(
-      self,
-      invocation_context: InvocationContext,
-      agent: LlmAgent,
-  ) -> AsyncGenerator[Event, None]:
-    async with Aclosing(
-        _resolve_toolset_auth(invocation_context, agent)
-    ) as agen:
-      async for event in agen:
-        yield event
+
 
   async def _handle_before_model_callback(
       self,
