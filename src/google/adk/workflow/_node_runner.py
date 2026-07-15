@@ -403,7 +403,11 @@ class NodeRunner:
   def _enrich_event(self, event: Event, ctx: Context) -> None:
     """Set author, node_info, invocation_id on the event."""
     # TODO: revisit after we settle Event.author logic for content/message.
-    event.author = ctx.event_author or self._node.name
+    if not event.author:
+      if getattr(event.content, "role", None) == "user":
+        event.author = "user"
+      else:
+        event.author = ctx.event_author or self._node.name
     event.invocation_id = ctx._invocation_context.invocation_id
     event.node_info.path = ctx.node_path
     if event.branch is None:
