@@ -204,18 +204,23 @@ class VertexAiRagMemoryService(BaseMemoryService):
         project=self._project, location=self._location
     )
 
+    encoded_app = _encode_source_display_name_part(app_name)
+    encoded_user = _encode_source_display_name_part(user_id)
+    filter_value = f"{_SOURCE_DISPLAY_NAME_PREFIX}{encoded_app}.{encoded_user}.*"
+
+
     response = client.rag.retrieve_contexts(
         vertex_rag_store=self._vertex_rag_store,
         query=agentplatform_types.RagQuery(
             text=query,
             similarity_top_k=self._vertex_rag_store.similarity_top_k,
         ),
+        server_side_filters={"metadata_filter": f'file.display_name == "{filter_value}"'},
     )
     memory_results = []
     session_events_map: OrderedDict[str, list[list[Event]]] = OrderedDict()
     for context in response.contexts.contexts:
       # filter out context that is not related
-      # TODO: Add server side filtering by app_name and user_id.
       source_display_name = getattr(context, "source_display_name", "")
       if not isinstance(source_display_name, str):
         continue
