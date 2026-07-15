@@ -165,8 +165,7 @@ class BaseTool(ABC):
       tool_context: The context of the tool.
       llm_request: The outgoing LLM request, mutable this method.
     """
-    # Use the consolidated logic in LlmRequest.append_tools
-    llm_request.append_tools([self])
+    pass
 
   @property
   def _api_variant(self) -> GoogleLLMVariant:

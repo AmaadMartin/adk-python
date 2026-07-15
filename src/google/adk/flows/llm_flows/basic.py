@@ -146,6 +146,27 @@ def _build_basic_request(
   )
 
 
+import inspect
+
+
+def _mark_live_async_tools_non_blocking(llm_request: LlmRequest) -> None:
+  """Marks live streaming and response-scheduling tools as NON_BLOCKING.
+
+  These tools emit asynchronous FunctionResponses, which the Live API only
+  accepts for NON_BLOCKING declarations.
+  """
+  if not llm_request.config.tools:
+    return
+  for gemini_tool in llm_request.config.tools:
+    for declaration in gemini_tool.function_declarations or []:
+      tool = llm_request.tools_dict.get(declaration.name)
+      if tool is None:
+        continue
+      is_streaming_tool = inspect.isasyncgenfunction(getattr(tool, 'func', None))
+      if tool.response_scheduling is not None or is_streaming_tool:
+        declaration.behavior = types.Behavior.NON_BLOCKING
+
+
 class _BasicLlmRequestProcessor(BaseLlmRequestProcessor):
 
   @override
@@ -154,10 +175,61 @@ class _BasicLlmRequestProcessor(BaseLlmRequestProcessor):
   ) -> AsyncGenerator[Event, None]:
     _build_basic_request(invocation_context, llm_request)
 
-    # TODO: handle tool append here, instead of in BaseTool.process_llm_request.
+    agent = invocation_context.agent
+    if agent is None or not hasattr(agent, 'tools') or not agent.tools:
+      return
 
-    return
-    yield  # Generator requires yield statement in function body.
+    from ...utils.context_utils import Aclosing
+    from .base_llm_flow import _resolve_toolset_auth
+
+    # Resolve toolset authentication before tool listing.
+    # This ensures credentials are ready before get_tools() is called.
+    async with Aclosing(
+        _resolve_toolset_auth(invocation_context, agent)
+    ) as agen:
+      async for event in agen:
+        yield event
+
+    if invocation_context.end_invocation:
+      return
+
+    multiple_tools = len(agent.tools) > 1
+    model = agent.canonical_model
+
+    import asyncio
+    from ...agents.llm_agent import _convert_tool_union_to_tools
+    from ...agents.readonly_context import ReadonlyContext
+    from ...tools.base_toolset import BaseToolset
+    from ...tools.tool_context import ToolContext
+
+    resolved_tools_per_union = await asyncio.gather(*(
+        _convert_tool_union_to_tools(
+            tool_union,
+            ReadonlyContext(invocation_context),
+            model,
+            multiple_tools,
+        )
+        for tool_union in agent.tools
+    ))
+
+    for tool_union, tools in zip(agent.tools, resolved_tools_per_union):
+      tool_context = ToolContext(invocation_context)
+
+      # If it's a toolset, process it first
+      if isinstance(tool_union, BaseToolset):
+        await tool_union.process_llm_request(
+            tool_context=tool_context, llm_request=llm_request
+        )
+
+      # Then process all tools from this tool union
+      for tool in tools:
+        llm_request.append_tools([tool])
+        await tool.process_llm_request(
+            tool_context=tool_context, llm_request=llm_request
+        )
+
+    if invocation_context.live_request_queue is not None:
+      _mark_live_async_tools_non_blocking(llm_request)
 
 
 request_processor = _BasicLlmRequestProcessor()
