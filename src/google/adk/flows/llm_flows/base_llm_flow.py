@@ -269,7 +269,7 @@ async def _handle_after_model_callback(
   agent = invocation_context.agent
 
   # Add grounding metadata to the response if needed.
-  # TODO(b/448114567): Remove this function once the workaround is no longer needed.
+  # TODO: Remove this function once the workaround is no longer needed.
   async def _maybe_add_grounding_metadata(
       response: Optional[LlmResponse] = None,
   ) -> Optional[LlmResponse]:
@@ -448,6 +448,7 @@ async def _process_agent_tools(
   """
   agent = invocation_context.agent
   if agent is None or not hasattr(agent, 'tools') or not agent.tools:
+    invocation_context.canonical_tools_cache = []
     return
 
   multiple_tools = len(agent.tools) > 1
@@ -492,6 +493,12 @@ async def _process_agent_tools(
   if invocation_context.live_request_queue is not None:
     _mark_live_async_tools_non_blocking(llm_request)
 
+  # Reuse this exact, current-step resolution in after-model processing. Tool
+  # sets can change between model steps, so the cache is refreshed each time.
+  invocation_context.canonical_tools_cache = [
+      tool for tools in resolved_tools_per_union for tool in tools
+  ]
+
 
 def _mark_live_async_tools_non_blocking(llm_request: LlmRequest) -> None:
   """Marks live streaming and response-scheduling tools as NON_BLOCKING.
@@ -519,7 +526,7 @@ class BaseLlmFlow(ABC):
   This flow ends when it transfers to another agent.
   """
 
-  def __init__(self):
+  def __init__(self) -> None:
     self.request_processors: list[BaseLlmRequestProcessor] = []
     self.response_processors: list[BaseLlmResponseProcessor] = []
 
@@ -768,7 +775,7 @@ class BaseLlmFlow(ABC):
       self,
       llm_connection: BaseLlmConnection,
       invocation_context: InvocationContext,
-  ):
+  ) -> None:
     """Sends data to model."""
     while True:
       live_request_queue = invocation_context.live_request_queue
@@ -806,6 +813,8 @@ class BaseLlmFlow(ABC):
 
       if live_request.content:
         content = live_request.content
+        if content.parts and any(p.function_call for p in content.parts):
+          raise ValueError('User message cannot contain function calls.')
         # Persist user text content to session (similar to non-live mode)
         # Skip function responses - they are already handled separately
         is_function_response = content.parts and any(
@@ -1171,6 +1180,7 @@ class BaseLlmFlow(ABC):
         and not llm_response.usage_metadata
         and not llm_response.live_session_resumption_update
         and not llm_response.grounding_metadata
+        and not llm_response.voice_activity
     ):
       return
 
@@ -1179,6 +1189,12 @@ class BaseLlmFlow(ABC):
       model_response_event.live_session_resumption_update = (
           llm_response.live_session_resumption_update
       )
+      yield model_response_event
+      return
+
+    # Handle voice activity events
+    if llm_response.voice_activity:
+      model_response_event.voice_activity = llm_response.voice_activity
       yield model_response_event
       return
 

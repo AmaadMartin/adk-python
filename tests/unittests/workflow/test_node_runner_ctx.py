@@ -536,8 +536,8 @@ async def test_event_author_overrides_node_name():
 
 
 @pytest.mark.asyncio
-async def test_event_author_overrides_preset_author():
-  """event_author always wins, even over a pre-set event author."""
+async def test_event_author_preserves_preset_author():
+  """Pre-set event author is preserved."""
 
   class _Node(BaseNode):
 
@@ -548,7 +548,26 @@ async def test_event_author_overrides_preset_author():
   parent_ctx.event_author = 'my_workflow'
   await NodeRunner(node=_Node(name='my_node'), parent_ctx=parent_ctx).run()
 
-  assert events[0].author == 'my_workflow'
+  assert events[0].author == 'custom_author'
+
+
+@pytest.mark.asyncio
+async def test_event_author_inferred_from_user_content():
+  """If author is missing, it is inferred as 'user' if content role is 'user'."""
+
+  class _Node(BaseNode):
+
+    async def _run_impl(self, *, ctx, node_input):
+      yield Event(
+          content=types.Content(role='user', parts=[types.Part(text='hi')]),
+          output='result'
+      )
+
+  parent_ctx, events = _make_ctx()
+  parent_ctx.event_author = 'my_workflow'
+  await NodeRunner(node=_Node(name='my_node'), parent_ctx=parent_ctx).run()
+
+  assert events[0].author == 'user'
 
 
 # =========================================================================
