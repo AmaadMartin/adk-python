@@ -353,7 +353,12 @@ class NodeRunner:
     has_unflushed_route = (
         ctx._route_value is not None and not ctx._route_emitted
     )
-    has_deltas = bool(state_delta or artifact_delta)
+
+    filtered_state_delta = {
+        k: v for k, v in state_delta.items() if not k.startswith("temp:")
+    }
+    state_delta.clear()
+    has_deltas = bool(filtered_state_delta or artifact_delta)
 
     if not has_deferred_output and not has_deltas and not has_unflushed_route:
       return
@@ -365,10 +370,9 @@ class NodeRunner:
     )
     if has_deltas:
       event.actions = EventActions(
-          state_delta=dict(state_delta),
+          state_delta=filtered_state_delta,
           artifact_delta=dict(artifact_delta),
       )
-      state_delta.clear()
       artifact_delta.clear()
 
     self._enrich_event(event, ctx)
@@ -379,23 +383,23 @@ class NodeRunner:
       ctx._route_emitted = True
 
   def _flush_deltas(self, event: Event, ctx: Context) -> None:
-    """Move pending state/artifact deltas from ctx onto the event.
-
-    TODO: Handle non-persisted states (e.g. `temp:` prefixed keys)
-    that should flow through ctx but not be written to session events.
-    """
+    """Move pending state/artifact deltas from ctx onto the event."""
     from ..events.event_actions import EventActions
 
     state_delta = ctx.actions.state_delta
     artifact_delta = ctx.actions.artifact_delta
-    if not state_delta and not artifact_delta:
+
+    filtered_state_delta = {
+        k: v for k, v in state_delta.items() if not k.startswith("temp:")
+    }
+    state_delta.clear()
+    if not filtered_state_delta and not artifact_delta:
       return
 
     if not event.actions:
       event.actions = EventActions()
-    if state_delta:
-      event.actions.state_delta.update(state_delta)
-      state_delta.clear()
+    if filtered_state_delta:
+      event.actions.state_delta.update(filtered_state_delta)
     if artifact_delta:
       event.actions.artifact_delta.update(artifact_delta)
       artifact_delta.clear()
