@@ -417,7 +417,10 @@ class TestPydocHelper:
             },
         }
     }
-    expected_doc = 'Returns [application/json] (str): Successful response\nReturns [application/xml] (int): Successful response'
+    expected_doc = (
+        'Returns [application/json] (str): Successful response\nReturns'
+        ' [application/xml] (int): Successful response'
+    )
     assert (
         PydocHelper.generate_return_doc(dict_to_responses(responses))
         == expected_doc
@@ -432,8 +435,11 @@ class TestPydocHelper:
                     'schema': {
                         'type': 'object',
                         'properties': {
-                            'prop1': {'type': 'string', 'description': 'Prop1 desc'}
-                        }
+                            'prop1': {
+                                'type': 'string',
+                                'description': 'Prop1 desc',
+                            }
+                        },
                     }
                 },
                 'text/plain': {'schema': {'type': 'string'}},
@@ -441,9 +447,9 @@ class TestPydocHelper:
         }
     }
     expected_doc = (
-        'Returns [application/json] (Dict[str, Any]): Successful response Object properties:\n'
-        '        prop1 (str): Prop1 desc\n'
-        'Returns [text/plain] (str): Successful response'
+        'Returns [application/json] (Dict[str, Any]): Successful response'
+        ' Object properties:\n        prop1 (str): Prop1 desc\nReturns'
+        ' [text/plain] (str): Successful response'
     )
     assert (
         PydocHelper.generate_return_doc(dict_to_responses(responses))

@@ -252,9 +252,11 @@ class PydocHelper:
       dummy_param = ApiParameter(
           original_name='', param_location='', param_schema=schema
       )
-      
+
       content_suffix = f' [{content_type}]' if len(content) > 1 else ''
-      component_doc = f'Returns{content_suffix} ({dummy_param.type_hint}): {description}'
+      component_doc = (
+          f'Returns{content_suffix} ({dummy_param.type_hint}): {description}'
+      )
 
       if schema.type == 'object' and schema.properties:
         component_doc += ' Object properties:\n'
@@ -265,4 +267,6 @@ class PydocHelper:
 
       components.append(component_doc)
 
-    return '\n'.join(c.rstrip('\n') for c in components) + ('\n' if components and components[-1].endswith('\n') else '')
+    return '\n'.join(c.rstrip('\n') for c in components) + (
+        '\n' if components and components[-1].endswith('\n') else ''
+    )
