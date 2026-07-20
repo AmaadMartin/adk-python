@@ -258,12 +258,13 @@ class PydocHelper:
           f'Returns{content_suffix} ({dummy_param.type_hint}): {description}'
       )
 
-      if schema.type == 'object' and schema.properties:
+      if isinstance(schema, Schema) and schema.type == 'object' and schema.properties:
         component_doc += ' Object properties:\n'
         for prop_name, prop_details in schema.properties.items():
-          prop_desc = prop_details.description or ''
-          prop_type = TypeHintHelper.get_type_hint(prop_details)
-          component_doc += f'        {prop_name} ({prop_type}): {prop_desc}\n'
+          if isinstance(prop_details, Schema):
+            prop_desc = getattr(prop_details, 'description', '') or ''
+            prop_type = TypeHintHelper.get_type_hint(prop_details)
+            component_doc += f'        {prop_name} ({prop_type}): {prop_desc}\n'
 
       components.append(component_doc)
 
