@@ -258,7 +258,11 @@ class PydocHelper:
           f'Returns{content_suffix} ({dummy_param.type_hint}): {description}'
       )
 
-      if isinstance(schema, Schema) and schema.type == 'object' and schema.properties:
+      if (
+          isinstance(schema, Schema)
+          and schema.type == 'object'
+          and schema.properties
+      ):
         component_doc += ' Object properties:\n'
         for prop_name, prop_details in schema.properties.items():
           if isinstance(prop_details, Schema):
