@@ -464,6 +464,24 @@ def test_credential_to_param_openid_connect():
 
   assert param.original_name == "Authorization"
   assert param.param_location == "header"
+  assert param.description == "OpenID Connect token"
+  assert kwargs == {INTERNAL_AUTH_PREFIX + "Authorization": "Bearer test_token"}
+
+
+def test_credential_to_param_openid_connect_credential_type():
+  auth_scheme = OpenIdConnect(openIdConnectUrl="openid_url")
+  auth_credential = AuthCredential(
+      auth_type=AuthCredentialTypes.OPEN_ID_CONNECT,
+      http=HttpAuth(
+          scheme="bearer", credentials=HttpCredentials(token="test_token")
+      ),
+  )
+
+  param, kwargs = credential_to_param(auth_scheme, auth_credential)
+
+  assert param.original_name == "Authorization"
+  assert param.param_location == "header"
+  assert param.description == "OpenID Connect token"
   assert kwargs == {INTERNAL_AUTH_PREFIX + "Authorization": "Bearer test_token"}
 
 
