@@ -407,6 +407,55 @@ class TestPydocHelper:
         == expected_doc
     )
 
+  def test_generate_return_doc_multiple_content_types(self):
+    responses = {
+        '200': {
+            'description': 'Successful response',
+            'content': {
+                'application/json': {'schema': {'type': 'string'}},
+                'application/xml': {'schema': {'type': 'integer'}},
+            },
+        }
+    }
+    expected_doc = (
+        'Returns [application/json] (str): Successful response\nReturns'
+        ' [application/xml] (int): Successful response'
+    )
+    assert (
+        PydocHelper.generate_return_doc(dict_to_responses(responses))
+        == expected_doc
+    )
+
+  def test_generate_return_doc_multiple_content_types_with_objects(self):
+    responses = {
+        '200': {
+            'description': 'Successful response',
+            'content': {
+                'application/json': {
+                    'schema': {
+                        'type': 'object',
+                        'properties': {
+                            'prop1': {
+                                'type': 'string',
+                                'description': 'Prop1 desc',
+                            }
+                        },
+                    }
+                },
+                'text/plain': {'schema': {'type': 'string'}},
+            },
+        }
+    }
+    expected_doc = (
+        'Returns [application/json] (Dict[str, Any]): Successful response'
+        ' Object properties:\n        prop1 (str): Prop1 desc\nReturns'
+        ' [text/plain] (str): Successful response'
+    )
+    assert (
+        PydocHelper.generate_return_doc(dict_to_responses(responses))
+        == expected_doc
+    )
+
 
 if __name__ == '__main__':
   pytest.main([__file__])
