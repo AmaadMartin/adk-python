@@ -2860,9 +2860,10 @@ class LiteLlm(BaseLlm):
         llm_response.finish_reason = mapped_finish_reason
         if mapped_finish_reason != types.FinishReason.STOP:
           llm_response.error_code = mapped_finish_reason
-          llm_response.error_message = _finish_reason_to_error_message(
-              mapped_finish_reason
-          )
+          if mapped_finish_reason is not None:
+            llm_response.error_message = _finish_reason_to_error_message(
+                mapped_finish_reason
+            )
         return llm_response
 
       def _finalize_text_response(
@@ -2881,9 +2882,10 @@ class LiteLlm(BaseLlm):
         llm_response.finish_reason = mapped_finish_reason
         if mapped_finish_reason != types.FinishReason.STOP:
           llm_response.error_code = mapped_finish_reason
-          llm_response.error_message = _finish_reason_to_error_message(
-              mapped_finish_reason
-          )
+          if mapped_finish_reason is not None:
+            llm_response.error_message = _finish_reason_to_error_message(
+                mapped_finish_reason
+            )
         return llm_response
 
       def _reset_stream_buffers() -> None:
