@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sys
+from typing import Any
 from typing import AsyncGenerator
 from typing import ClassVar
 
@@ -56,7 +57,7 @@ async def _merge_agent_run(
 ) -> AsyncGenerator[Event, None]:
   """Merges agent runs using asyncio.TaskGroup on Python 3.11+."""
   sentinel = object()
-  queue = asyncio.Queue()
+  queue: asyncio.Queue[tuple[Any, Any]] = asyncio.Queue()
 
   # Agents are processed in parallel.
   # Events for each agent are put on queue sequentially.
@@ -112,7 +113,7 @@ async def _merge_agent_run_pre_3_11(
       Event: The next event from the merged generator.
   """
   sentinel = object()
-  queue = asyncio.Queue()
+  queue: asyncio.Queue[tuple[Any, Any]] = asyncio.Queue()
 
   def propagate_exceptions(tasks: list[asyncio.Task[None]]) -> None:
     # Propagate exceptions and errors from tasks.

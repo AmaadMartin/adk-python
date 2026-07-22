@@ -161,9 +161,13 @@ class SequentialAgent(BaseAgent):
 
       if isinstance(sub_agent, LlmAgent):
         # Use function name to dedupe.
-        if task_completed.__name__ not in sub_agent.tools:
+        if not any(
+            getattr(t, '__name__', None) == task_completed.__name__
+            for t in sub_agent.tools
+        ):
           sub_agent.tools.append(task_completed)
-          sub_agent.instruction += f"""If you finished the user's request
+          if isinstance(sub_agent.instruction, str):
+            sub_agent.instruction += f"""If you finished the user's request
           according to its description, call the {task_completed.__name__} function
           to exit so the next agents can take over. When calling this function,
           do not generate any text other than the function call."""
