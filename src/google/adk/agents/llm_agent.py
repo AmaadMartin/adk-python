@@ -103,7 +103,7 @@ OnModelErrorCallback: TypeAlias = Union[
 
 _SingleBeforeToolCallback: TypeAlias = Callable[
     [BaseTool, dict[str, Any], ToolContext],
-    Union[Awaitable[Optional[dict]], Optional[dict]],
+    Union[Awaitable[Optional[dict[str, Any]]], Optional[dict[str, Any]]],
 ]
 
 BeforeToolCallback: TypeAlias = Union[
@@ -112,8 +112,8 @@ BeforeToolCallback: TypeAlias = Union[
 ]
 
 _SingleAfterToolCallback: TypeAlias = Callable[
-    [BaseTool, dict[str, Any], ToolContext, dict],
-    Union[Awaitable[Optional[dict]], Optional[dict]],
+    [BaseTool, dict[str, Any], ToolContext, dict[str, Any]],
+    Union[Awaitable[Optional[dict[str, Any]]], Optional[dict[str, Any]]],
 ]
 
 AfterToolCallback: TypeAlias = Union[
@@ -123,7 +123,7 @@ AfterToolCallback: TypeAlias = Union[
 
 _SingleOnToolErrorCallback: TypeAlias = Callable[
     [BaseTool, dict[str, Any], ToolContext, Exception],
-    Union[Awaitable[Optional[dict]], Optional[dict]],
+    Union[Awaitable[Optional[dict[str, Any]]], Optional[dict[str, Any]]],
 ]
 
 OnToolErrorCallback: TypeAlias = Union[
@@ -131,7 +131,7 @@ OnToolErrorCallback: TypeAlias = Union[
     list[_SingleOnToolErrorCallback],
 ]
 
-ToolUnion: TypeAlias = Union[Callable, BaseTool, BaseToolset]
+ToolUnion: TypeAlias = Union[Callable[..., Any], BaseTool, BaseToolset]
 
 
 async def _convert_tool_union_to_tools(
@@ -798,8 +798,8 @@ class LlmAgent(BaseAgent, abc.ABC):
   @property
   def canonical_before_tool_callbacks(
       self,
-  ) -> list[BeforeToolCallback]:
-    """The resolved self.before_tool_callback field as a list of BeforeToolCallback.
+  ) -> list[_SingleBeforeToolCallback]:
+    """The resolved self.before_tool_callback field as a list of _SingleBeforeToolCallback.
 
     This method is only for use by Agent Development Kit.
     """
@@ -812,8 +812,8 @@ class LlmAgent(BaseAgent, abc.ABC):
   @property
   def canonical_after_tool_callbacks(
       self,
-  ) -> list[AfterToolCallback]:
-    """The resolved self.after_tool_callback field as a list of AfterToolCallback.
+  ) -> list[_SingleAfterToolCallback]:
+    """The resolved self.after_tool_callback field as a list of _SingleAfterToolCallback.
 
     This method is only for use by Agent Development Kit.
     """
@@ -826,8 +826,8 @@ class LlmAgent(BaseAgent, abc.ABC):
   @property
   def canonical_on_tool_error_callbacks(
       self,
-  ) -> list[OnToolErrorCallback]:
-    """The resolved self.on_tool_error_callback field as a list of OnToolErrorCallback.
+  ) -> list[_SingleOnToolErrorCallback]:
+    """The resolved self.on_tool_error_callback field as a list of _SingleOnToolErrorCallback.
 
     This method is only for use by Agent Development Kit.
     """
@@ -946,6 +946,7 @@ class LlmAgent(BaseAgent, abc.ABC):
           function_response.name == 'transfer_to_agent'
           and event.author == from_agent
           and event.actions.transfer_to_agent != from_agent
+          and event.actions.transfer_to_agent is not None
       ):
         return self.__get_agent_to_run(event.actions.transfer_to_agent)
     return None
@@ -1178,6 +1179,8 @@ class LlmAgent(BaseAgent, abc.ABC):
         logger.debug(
             'Tool %s is a sub-class of BaseTool/BaseToolset.', tool_config.name
         )
+        if tool_config.args is None:
+          raise ValueError(f'ToolArgsConfig required for {tool_config.name}')
         resolved_tools.append(
             obj.from_config(tool_config.args, config_abs_path)
         )
@@ -1203,10 +1206,12 @@ class LlmAgent(BaseAgent, abc.ABC):
   @experimental(FeatureName.AGENT_CONFIG)
   def _parse_config(
       cls: Type[LlmAgent],
-      config: LlmAgentConfig,
+      config: Any,
       config_abs_path: str,
       kwargs: Dict[str, Any],
   ) -> Dict[str, Any]:
+    if not isinstance(config, LlmAgentConfig):
+      return kwargs
     from .config_agent_utils import resolve_callbacks
     from .config_agent_utils import resolve_code_reference
 
