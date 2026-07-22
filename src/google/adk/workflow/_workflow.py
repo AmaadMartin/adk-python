@@ -240,7 +240,12 @@ class Workflow(BaseNode):
           self.name,
       )
 
-    self._seed_start_triggers(loop_state, node_input)
+    agent_state = ctx._invocation_context.agent_states.get(self.name)
+    resumed = False
+    if agent_state:
+      resumed = self._process_resume(loop_state, agent_state)
+    if not resumed:
+      self._seed_start_triggers(loop_state, node_input)
 
     # Create closure for dynamic node scheduling
     loop_state.schedule_dynamic_node = self._make_schedule_dynamic_node(
@@ -531,6 +536,7 @@ class Workflow(BaseNode):
 
     node_state.input = trigger.input
     node_state.status = NodeStatus.RUNNING
+    node_state.active_trigger = trigger
 
   def _start_node_task(
       self,
@@ -655,17 +661,20 @@ class Workflow(BaseNode):
     from ..events.event_actions import EventActions
 
     nodes = {
-        name: node_state.model_dump(
-            mode="json", include={"status", "interrupts", "resume_inputs"}
-        )
+        name: node_state.model_dump(mode="json")
         for name, node_state in loop_state.nodes.items()
+    }
+    agent_state = {
+        "nodes": nodes,
+        "node_outputs": dict(loop_state.node_outputs),
+        "node_branches": dict(loop_state.node_branches),
     }
     await ic._enqueue_event(
         Event(
             invocation_id=ic.invocation_id,
             author=self.name,
             branch=ic.branch,
-            actions=EventActions(agent_state={"nodes": nodes}),
+            actions=EventActions(agent_state=agent_state),
         )
     )
 
@@ -822,6 +831,43 @@ class Workflow(BaseNode):
         loop_state.interrupt_ids.update(node_state.interrupts)
 
   # --- Resume ---
+
+  def _process_resume(
+      self, loop_state: _LoopState, agent_state: dict[str, Any]
+  ) -> bool:
+    """Rehydrate loop state directly from checkpoint event."""
+    try:
+      raw_nodes = agent_state.get("nodes", {})
+      nodes = {}
+      trigger_buffer = {}
+      for name, raw_node in raw_nodes.items():
+        node_state = NodeState.model_validate(raw_node)
+        nodes[name] = node_state
+        
+        status = node_state.status
+        if status in (NodeStatus.WAITING, NodeStatus.RUNNING, NodeStatus.PENDING):
+          if node_state.active_trigger:
+            trigger_buffer.setdefault(name, []).append(node_state.active_trigger)
+          else:
+            trigger_buffer.setdefault(name, []).append(Trigger(input=node_state.input))
+          node_state.status = NodeStatus.PENDING
+
+      loop_state.nodes = nodes
+      loop_state.trigger_buffer = trigger_buffer
+      loop_state.node_outputs = agent_state.get("node_outputs", {})
+      loop_state.node_branches = agent_state.get("node_branches", {})
+      return True
+    except Exception as e:
+      logger.warning(
+          "Workflow %s: failed to resume from checkpoint, falling back to fresh start: %s",
+          self.name,
+          e,
+      )
+      loop_state.nodes.clear()
+      loop_state.trigger_buffer.clear()
+      loop_state.node_outputs.clear()
+      loop_state.node_branches.clear()
+      return False
 
   # --- FINALIZE ---
 
