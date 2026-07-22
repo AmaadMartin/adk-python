@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Generic, TypeVar
 from typing import TYPE_CHECKING
 
 from opentelemetry import context as context_api
@@ -115,7 +115,14 @@ def _derive_node_path(
   return derived_node_path, derived_run_id
 
 
-class Context(ReadonlyContext):
+_StateValueT = TypeVar("_StateValueT")
+_OutputT = TypeVar("_OutputT")
+_ResumeInputsT = TypeVar("_ResumeInputsT")
+_NodeInputT = TypeVar("_NodeInputT")
+_NodeOutputT = TypeVar("_NodeOutputT")
+
+
+class Context(ReadonlyContext[_StateValueT], Generic[_StateValueT, _OutputT, _ResumeInputsT]):
   """The context within an agent run.
 
   When used in a workflow, additional fields under the ``Workflow-specific
@@ -136,7 +143,7 @@ class Context(ReadonlyContext):
       node: BaseNode | None = None,
       node_path: str | None = None,
       run_id: str = '',
-      resume_inputs: dict[str, Any] | None = None,
+      resume_inputs: dict[str, _ResumeInputsT] | None = None,
       attempt_count: int = 1,
       use_as_output: bool = False,
   ) -> None:
@@ -208,7 +215,7 @@ class Context(ReadonlyContext):
     self._child_run_counters: dict[str, int] = {}
     self._attempt_count = attempt_count
     self._output_delegated = False
-    self._output_value: Any = None
+    self._output_value: _OutputT | None = None
     self._output_emitted: bool = False
     self._route_value: RouteValue | list[RouteValue] | None = None
     self._route_emitted: bool = False
@@ -325,7 +332,7 @@ class Context(ReadonlyContext):
     return self._attempt_count
 
   @property
-  def resume_inputs(self) -> dict[str, Any]:
+  def resume_inputs(self) -> dict[str, _ResumeInputsT]:
     """Returns inputs for resuming node, keyed by interrupt id."""
     return self._resume_inputs
 
@@ -340,7 +347,7 @@ class Context(ReadonlyContext):
     return self._error_node_path
 
   @property
-  def output(self) -> Any:
+  def output(self) -> _OutputT | None:
     """The node's result value. Source of truth for node output.
 
     Set once per run. Also set by the framework when the node
@@ -357,7 +364,7 @@ class Context(ReadonlyContext):
     return self._output_value
 
   @output.setter
-  def output(self, value: Any) -> None:
+  def output(self, value: _OutputT) -> None:
     if self._output_value is not None:
       raise ValueError(
           'Output already set. A node can produce at most one output.'
@@ -422,7 +429,7 @@ class Context(ReadonlyContext):
   async def run_node(
       self,
       node: NodeLike,
-      node_input: Any = None,
+      node_input: _NodeInputT | None = None,
       *,
       use_as_output: bool = False,
       run_id: str | None = None,
@@ -430,7 +437,7 @@ class Context(ReadonlyContext):
       override_branch: str | None = None,
       override_isolation_scope: str | None = None,
       raise_on_wait: bool = False,
-  ) -> Any:
+  ) -> _NodeOutputT | None:
     """Executes a node dynamically.
 
     This method allows a node within a workflow to trigger the run of
@@ -481,7 +488,7 @@ class Context(ReadonlyContext):
   async def _run_node_internal(
       self,
       node: NodeLike,
-      node_input: Any = None,
+      node_input: _NodeInputT | None = None,
       *,
       use_as_output: bool = False,
       run_id: str | None = None,
@@ -490,7 +497,7 @@ class Context(ReadonlyContext):
       override_isolation_scope: str | None = None,
       raise_on_wait: bool = False,
       return_ctx: bool = False,
-      resume_inputs: dict[str, Any] | None = None,
+      resume_inputs: dict[str, _ResumeInputsT] | None = None,
       skip_run_id_validation: bool = False,
   ) -> Any:
     """Executes a node dynamically (Internal Orchestration API).
