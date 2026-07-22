@@ -26,8 +26,8 @@ from typing import Union
 from google.adk.agents import LlmAgent
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.models import BaseLlm
-from google.adk.tools import AgentTool
-from google.adk.tools import FunctionTool
+from google.adk.tools.agent_tool import AgentTool
+from google.adk.tools.function_tool import FunctionTool
 from google.genai import types
 
 from .sub_agents.google_search_agent import create_google_search_agent
@@ -148,6 +148,8 @@ class AgentBuilderAssistant:
     """Load ADK AgentConfig.json schema content and format for YAML embedding."""
 
     schema_dict = load_agent_config_schema(raw_format=False)
+    if isinstance(schema_dict, str):
+      raise ValueError("Expected dictionary from load_agent_config_schema")
     subset = AgentBuilderAssistant._extract_core_schema(schema_dict)
     return AgentBuilderAssistant._build_schema_reference(subset)
 

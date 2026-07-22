@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import logging
 
+from typing import Any
+
 from watchdog.events import FileSystemEventHandler
 
 from .agent_loader import AgentLoader
@@ -37,7 +39,7 @@ class AgentChangeEventHandler(FileSystemEventHandler):
     self.runners_to_clean = runners_to_clean
     self.current_app_name_ref = current_app_name_ref
 
-  def on_modified(self, event):
+  def on_modified(self, event: Any) -> None:
     if not event.src_path.endswith((".py", ".yaml", ".yml")):
       return
     logger.info("Change detected in agents directory: %s", event.src_path)

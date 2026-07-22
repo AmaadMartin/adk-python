@@ -60,7 +60,7 @@ async def _create_conformance_test_files(
     )
 
     # Run the agent with the user messages
-    function_call_name_to_id_map = {}
+    function_call_name_to_id_map: dict[str, str] = {}
     for user_message_index, user_message in enumerate(
         test_case.test_spec.user_messages
     ):
@@ -72,23 +72,15 @@ async def _create_conformance_test_files(
         # long-running tool. Replace the function call ID with the actual
         # function call ID. This is needed because the function call ID is not
         # known when writing the test case.
-        if (
-            user_message.content.parts
-            and user_message.content.parts[0].function_response
-            and user_message.content.parts[0].function_response.name
-        ):
-          if (
-              user_message.content.parts[0].function_response.name
-              not in function_call_name_to_id_map
-          ):
+        func_resp = user_message.content.parts[0].function_response if user_message.content.parts else None
+        if func_resp and func_resp.name:
+          if func_resp.name not in function_call_name_to_id_map:
             raise ValueError(
                 "Function response for"
-                f" {user_message.content.parts[0].function_response.name} does"
+                f" {func_resp.name} does"
                 " not match any pending function call."
             )
-          content.parts[0].function_response.id = function_call_name_to_id_map[
-              user_message.content.parts[0].function_response.name
-          ]
+          func_resp.id = function_call_name_to_id_map[func_resp.name]
       elif user_message.text is not None:
         content = types.UserContent(parts=[types.Part(text=user_message.text)])
       else:
@@ -113,6 +105,8 @@ async def _create_conformance_test_files(
         if event.content and event.content.parts:
           for part in event.content.parts:
             if part.function_call:
+              assert part.function_call.name is not None
+              assert part.function_call.id is not None
               function_call_name_to_id_map[part.function_call.name] = (
                   part.function_call.id
               )

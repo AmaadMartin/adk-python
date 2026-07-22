@@ -107,7 +107,7 @@ def serialize_node(node: Any) -> dict[str, Any]:
 
 def serialize_agent(agent: BaseAgent) -> dict[str, Any]:
   """Recursively serialize an agent, excluding non-serializable fields."""
-  agent_dict = {}
+  agent_dict: dict[str, Any] = {}
 
   for field_name, field_info in agent.__class__.model_fields.items():
     if field_name in SKIP_FIELDS or (field_info and field_info.exclude):
@@ -138,7 +138,7 @@ def serialize_agent(agent: BaseAgent) -> dict[str, Any]:
     # Handle graph field (Graph with nodes and edges)
     elif field_name == "graph":
       try:
-        graph_dict = {}
+        graph_dict: dict[str, Any] = {}
         # Serialize nodes
         if hasattr(value, "nodes") and value.nodes:
           graph_dict["nodes"] = [serialize_node(node) for node in value.nodes]
@@ -161,7 +161,7 @@ def serialize_agent(agent: BaseAgent) -> dict[str, Any]:
     # Handle edges field (list of EdgeItems)
     elif field_name == "edges":
       try:
-        serialized_edges = []
+        serialized_edges_list: list[Any] = []
         for edge_item in value:
           if isinstance(edge_item, tuple):
             serialized = []
@@ -172,7 +172,7 @@ def serialize_agent(agent: BaseAgent) -> dict[str, Any]:
                 )
               else:
                 serialized.append(serialize_node_like(elem))
-            serialized_edges.append(serialized)
+            serialized_edges_list.append(serialized)
           elif hasattr(edge_item, "from_node") and hasattr(
               edge_item, "to_node"
           ):
@@ -182,10 +182,10 @@ def serialize_agent(agent: BaseAgent) -> dict[str, Any]:
             }
             if hasattr(edge_item, "route") and edge_item.route is not None:
               edge_dict["route"] = edge_item.route
-            serialized_edges.append(edge_dict)
+            serialized_edges_list.append(edge_dict)
           else:
-            serialized_edges.append(str(edge_item))
-        agent_dict[field_name] = serialized_edges
+            serialized_edges_list.append(str(edge_item))
+        agent_dict[field_name] = serialized_edges_list
       except Exception:
         pass
     # Handle tools field
@@ -198,7 +198,7 @@ def serialize_agent(agent: BaseAgent) -> dict[str, Any]:
             if getattr(sa, "name", None)
         }
 
-        serialized_tools = []
+        serialized_tools: list[Any] = []
         for tool in value:
           tool_name = None
           if callable(tool):

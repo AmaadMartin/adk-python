@@ -152,7 +152,7 @@ def _create_in_memory_session_service(
     logger.warning(warning_message, *warning_args)
   from ...sessions.in_memory_session_service import InMemorySessionService
 
-  return InMemorySessionService()
+  return InMemorySessionService()  # type: ignore[no-untyped-call]
 
 
 def _create_in_memory_artifact_service(
@@ -266,7 +266,7 @@ def create_memory_service_from_options(
   logger.info("Using in-memory memory service")
   from ...memory.in_memory_memory_service import InMemoryMemoryService
 
-  return InMemoryMemoryService()
+  return InMemoryMemoryService()  # type: ignore[no-untyped-call]
 
 
 def create_artifact_service_from_options(

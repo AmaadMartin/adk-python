@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 from google.adk.agents import LlmAgent
-from google.adk.tools import google_search
+from google.adk.tools.google_search_tool import google_search
 
 
 def create_google_search_agent() -> LlmAgent:

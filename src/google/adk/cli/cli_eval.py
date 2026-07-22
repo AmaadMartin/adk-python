@@ -143,7 +143,7 @@ async def _collect_inferences(
   inference_results = []
   for inference_request in inference_requests:
     async with Aclosing(
-        eval_service.perform_inference(inference_request=inference_request)
+        await eval_service.perform_inference(inference_request=inference_request)  # type: ignore[type-var,attr-defined]
     ) as agen:
       async for inference_result in agen:
         inference_results.append(inference_result)
@@ -165,7 +165,7 @@ async def _collect_eval_results(
       evaluate_config=EvaluateConfig(eval_metrics=eval_metrics),
   )
   async with Aclosing(
-      eval_service.evaluate(evaluate_request=evaluate_request)
+      await eval_service.evaluate(evaluate_request=evaluate_request)  # type: ignore[type-var,attr-defined]
   ) as agen:
     async for eval_result in agen:
       eval_results.append(eval_result)
@@ -210,11 +210,11 @@ def pretty_print_eval_result(eval_result: EvalCaseResult) -> None:
         f"Score: {metric_result.score}, "
         f"Threshold: {metric_result.threshold}"
     )
-    if metric_result.details and metric_result.details.rubric_scores:
+    if metric_result.details and metric_result.details.rubric_scores and metric_result.criterion is not None and hasattr(metric_result.criterion, "rubrics"):
       click.echo("Rubric Scores:")
       rubrics_by_id = {
           r["rubric_id"]: r["rubric_content"]["text_property"]
-          for r in metric_result.criterion.rubrics
+          for r in getattr(metric_result.criterion, "rubrics", [])
       }
       for rubric_score in metric_result.details.rubric_scores:
         rubric_text = rubrics_by_id.get(rubric_score.rubric_id)
@@ -254,10 +254,10 @@ def pretty_print_eval_result(eval_result: EvalCaseResult) -> None:
           f"Status: {metric_result.eval_status.name}, "
           f"Score: {metric_result.score}"
       )
-      if metric_result.details and metric_result.details.rubric_scores:
+      if metric_result.details and metric_result.details.rubric_scores and metric_result.criterion is not None and hasattr(metric_result.criterion, "rubrics"):
         rubrics_by_id = {
             r["rubric_id"]: r["rubric_content"]["text_property"]
-            for r in metric_result.criterion.rubrics
+            for r in getattr(metric_result.criterion, "rubrics", [])
         }
         for rubric_score in metric_result.details.rubric_scores:
           rubric = rubrics_by_id.get(rubric_score.rubric_id)

@@ -51,7 +51,7 @@ async def cleanup_unused_files(
       - errors: list of error messages
       - total_freed_space: total bytes freed by deletions
   """
-  session_state = tool_context.state
+  session_state = tool_context.state.to_dict()
   root_path = resolve_file_path(".", session_state)
 
   try:

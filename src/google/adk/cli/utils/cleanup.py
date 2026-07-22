@@ -24,7 +24,7 @@ logger = logging.getLogger("google_adk." + __name__)
 
 
 async def close_runners(runners: List[Runner]) -> None:
-  cleanup_tasks = [asyncio.create_task(runner.close()) for runner in runners]
+  cleanup_tasks = [asyncio.create_task(runner.close()) for runner in runners]  # type: ignore[no-untyped-call]
   if cleanup_tasks:
     # Wait for all cleanup tasks with timeout
     done, pending = await asyncio.wait(

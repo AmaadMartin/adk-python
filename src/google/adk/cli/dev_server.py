@@ -77,8 +77,7 @@ TAG_EVALUATION = "Evaluation"
 
 
 class CreateTestRequest(common.BaseModel):
-  session_data: dict
-
+  session_data: dict[str, Any]
 
 class AddSessionToEvalSetRequest(common.BaseModel):
   eval_id: str
@@ -198,10 +197,10 @@ class DevServer(ApiServer):
   def _register_dev_endpoints(
       self,
       app: FastAPI,
-      trace_dict: dict,
+      trace_dict: dict[str, Any],
       memory_exporter: Any,
       web_assets_dir: Optional[str] = None,
-  ):
+  ) -> None:
     """Register all development-only endpoints.
 
     This includes debug, evaluation, and graph visualization endpoints.
@@ -456,7 +455,7 @@ class DevServer(ApiServer):
         app_name: str,
         file_path: Optional[str] = None,
         tmp: Optional[bool] = False,
-    ):
+    ) -> Any:
       try:
         app_root = _get_app_root(app_name)
       except ValueError as exc:
@@ -638,7 +637,7 @@ class DevServer(ApiServer):
 
       queue: asyncio.Queue[str | None] = asyncio.Queue()
 
-      async def run_pytest_subprocess():
+      async def run_pytest_subprocess() -> None:
         cmd_args = [
             sys.executable,
             "-m",
@@ -666,7 +665,7 @@ class DevServer(ApiServer):
           )
 
           while True:
-            line = await process.stdout.readline()
+            line = await process.stdout.readline() if process.stdout else b''
             if not line:
               break
             await queue.put(line.decode("utf-8"))
@@ -679,7 +678,8 @@ class DevServer(ApiServer):
       # Start pytest in a background task
       asyncio.create_task(run_pytest_subprocess())
 
-      async def generate():
+      from typing import AsyncGenerator
+      async def generate() -> AsyncGenerator[bytes, None]:
         while True:
           item = await queue.get()
           if item is None:
@@ -741,7 +741,7 @@ class DevServer(ApiServer):
         raise HTTPException(status_code=404, detail="Test file not found")
 
       with open(test_file_path, "r") as f:
-        return json.load(f)
+        return json.load(f)  # type: ignore[no-any-return]
 
     # ========== EVALUATION ENDPOINTS ==========
 
@@ -754,7 +754,7 @@ class DevServer(ApiServer):
         app_name: str, create_eval_set_request: CreateEvalSetRequest
     ) -> EvalSet:
       try:
-        return self.eval_sets_manager.create_eval_set(
+        return self.eval_sets_manager.create_eval_set(  # type: ignore[no-any-return]
             app_name=app_name,
             eval_set_id=create_eval_set_request.eval_set.eval_set_id,
         )
@@ -777,12 +777,12 @@ class DevServer(ApiServer):
     async def create_eval_set_legacy(
         app_name: str,
         eval_set_id: str,
-    ):
+    ) -> None:
       """Creates an eval set, given the id."""
       await create_eval_set(
           app_name=app_name,
           create_eval_set_request=CreateEvalSetRequest(
-              eval_set=UserEvalSet(eval_set_id=eval_set_id, eval_cases=[]),
+              eval_set=EvalSet(eval_set_id=eval_set_id, eval_cases=[]),
           ),
       )
 
@@ -832,7 +832,7 @@ class DevServer(ApiServer):
         eval_result_id: str,
     ) -> EvalSetResult:
       try:
-        return self.eval_set_results_manager.get_eval_set_result(
+        return self.eval_set_results_manager.get_eval_set_result(  # type: ignore[no-any-return]
             app_name, eval_result_id
         )
       except ValueError as ve:
@@ -881,7 +881,7 @@ class DevServer(ApiServer):
     )
     async def add_session_to_eval_set(
         app_name: str, eval_set_id: str, req: AddSessionToEvalSetRequest
-    ):
+    ) -> None:
       # Get the session
       session = await self.session_service.get_session(
           app_name=app_name, user_id=req.user_id, session_id=req.session_id
@@ -952,7 +952,7 @@ class DevServer(ApiServer):
       )
 
       if eval_case_to_find:
-        return eval_case_to_find
+        return eval_case_to_find  # type: ignore[no-any-return]
 
       raise HTTPException(
           status_code=404,
@@ -976,7 +976,7 @@ class DevServer(ApiServer):
         eval_set_id: str,
         eval_case_id: str,
         updated_eval_case: EvalCase,
-    ):
+    ) -> None:
       if (
           updated_eval_case.eval_id
           and updated_eval_case.eval_id != eval_case_id
@@ -1152,7 +1152,7 @@ class DevServer(ApiServer):
     )
     async def get_app_graph_dot(
         app_name: str, dark_mode: bool = False
-    ) -> GetEventGraphResult | dict:
+    ) -> GetEventGraphResult | dict[str, Any]:
       """Returns the base agent graph in DOT format without any highlights.
 
       This endpoint allows the frontend to fetch the graph structure once
@@ -1167,7 +1167,7 @@ class DevServer(ApiServer):
 
       # Get graph with NO highlights (empty list) and specified theme
       dot_graph = await agent_graph.get_agent_graph(
-          root_agent, [], dark_mode=dark_mode
+          root_agent, None, dark_mode=dark_mode
       )
 
       if dot_graph and isinstance(dot_graph, graphviz.Digraph):
@@ -1183,7 +1183,7 @@ class DevServer(ApiServer):
     )
     async def get_event_graph(
         app_name: str, user_id: str, session_id: str, event_id: str
-    ):
+    ) -> GetEventGraphResult | dict[str, Any]:
       session = await self.session_service.get_session(
           app_name=app_name, user_id=user_id, session_id=session_id
       )
@@ -1198,23 +1198,25 @@ class DevServer(ApiServer):
       root_agent = self._get_root_agent(agent_or_app)
       dot_graph = None
       if function_calls:
-        function_call_highlights = []
+        function_call_highlights: list[tuple[str, str]] = []
         for function_call in function_calls:
           from_name = event.author
           to_name = function_call.name
-          function_call_highlights.append((from_name, to_name))
-          dot_graph = await agent_graph.get_agent_graph(
-              root_agent, function_call_highlights
-          )
+          if to_name:
+            function_call_highlights.append((from_name, to_name))
+        dot_graph = await agent_graph.get_agent_graph(
+            root_agent, function_call_highlights
+        )
       elif function_responses:
-        function_responses_highlights = []
+        function_responses_highlights: list[tuple[str, str]] = []
         for function_response in function_responses:
-          from_name = function_response.name
+          from_resp_name = function_response.name
           to_name = event.author
-          function_responses_highlights.append((from_name, to_name))
-          dot_graph = await agent_graph.get_agent_graph(
-              root_agent, function_responses_highlights
-          )
+          if from_resp_name:
+            function_responses_highlights.append((from_resp_name, to_name))
+        dot_graph = await agent_graph.get_agent_graph(
+            root_agent, function_responses_highlights
+        )
       else:
         from_name = event.author
         to_name = ""
@@ -1226,7 +1228,7 @@ class DevServer(ApiServer):
       else:
         return {}
 
-  def _navigate_to_node(self, app_info: dict, node_path: str) -> dict | None:
+  def _navigate_to_node(self, app_info: dict[str, Any], node_path: str) -> dict[str, Any] | None:
     """Navigate to a specific node in the agent hierarchy.
 
     Args:
@@ -1274,11 +1276,11 @@ class DevServer(ApiServer):
         return None
       current = found
 
-    return current
+    return current  # type: ignore[no-any-return]
 
   def _get_all_sub_workflows(
-      self, app_info: dict, current_path: str = ""
-  ) -> dict[str, dict]:
+      self, app_info: dict[str, Any], current_path: str = ""
+  ) -> dict[str, dict[str, Any]]:
     """Recursively discover all sub-workflows within the given app info.
 
     Args:
@@ -1313,7 +1315,7 @@ class DevServer(ApiServer):
 
     return workflows
 
-  def get_fast_api_app(self, **kwargs):
+  def get_fast_api_app(self, **kwargs: Any) -> Any:  # type: ignore[override]
     """Override to add dev endpoints after production endpoints.
 
     Calls parent's get_fast_api_app() to get the base app with production

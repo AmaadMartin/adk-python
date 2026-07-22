@@ -26,7 +26,7 @@ from pathlib import Path
 import sys
 import tempfile
 import textwrap
-from typing import Optional
+from typing import Any, AsyncGenerator, Callable, Literal, Optional, cast
 
 import click
 from click.core import ParameterSource
@@ -48,10 +48,10 @@ LOG_LEVELS = click.Choice(
 )
 
 
-def _logging_options():
+def _logging_options() -> Callable[..., Any]:
   """Decorator to add logging options to click commands."""
 
-  def decorator(func):
+  def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
     @click.option(
         "-v",
         "--verbose",
@@ -68,7 +68,7 @@ def _logging_options():
     )
     @functools.wraps(func)
     @click.pass_context
-    def wrapper(ctx, *args, **kwargs):
+    def wrapper(ctx: click.Context, *args: Any, **kwargs: Any) -> Any:
       # If verbose flag is set and log level is not set, set log level to DEBUG.
       log_level_source = ctx.get_parameter_source("log_level")
       if (
@@ -123,10 +123,10 @@ def _apply_feature_overrides(
       )
 
 
-def feature_options():
+def feature_options() -> Callable[..., Any]:
   """Decorator to add feature override options to click commands."""
 
-  def decorator(func):
+  def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
     @click.option(
         "--enable_features",
         help=(
@@ -148,7 +148,7 @@ def feature_options():
         multiple=True,
     )
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
       enable_features = kwargs.pop("enable_features", ())
       disable_features = kwargs.pop("disable_features", ())
       if enable_features or disable_features:
@@ -181,11 +181,11 @@ class HelpfulCommand(click.Command):
   Returns:
   """
 
-  def __init__(self, *args, **kwargs):
+  def __init__(self, *args: Any, **kwargs: Any) -> None:
     super().__init__(*args, **kwargs)
 
   @staticmethod
-  def _format_missing_arg_error(click_exception):
+  def _format_missing_arg_error(click_exception: click.MissingParameter) -> str:
     """Format the missing argument error with uppercase parameter name.
 
     Args:
@@ -194,10 +194,10 @@ class HelpfulCommand(click.Command):
     Returns:
       str: Formatted error message with uppercase parameter name.
     """
-    name = click_exception.param.name
+    name = click_exception.param.name if click_exception.param else "unknown"
     return f"Missing required argument: {name.upper()}"
 
-  def parse_args(self, ctx, args):
+  def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
     """Override the parse_args method to show help text on error.
 
     Args:
@@ -238,19 +238,19 @@ def _warn_if_with_ui(with_ui: bool) -> None:
 
 @click.group(context_settings={"max_content_width": 240})
 @click.version_option(version.__version__)
-def main():
+def main() -> None:
   """Agent Development Kit CLI tools."""
   pass
 
 
 @main.group()
-def deploy():
+def deploy() -> None:
   """Deploys agent to hosted environments."""
   pass
 
 
 @main.group()
-def conformance():
+def conformance() -> None:
   """Conformance testing tools for ADK."""
   pass
 
@@ -275,10 +275,10 @@ def conformance():
 )
 @click.pass_context
 def cli_conformance_record(
-    ctx,
+    ctx: click.Context,
     paths: tuple[str, ...],
     streaming_mode: StreamingMode,
-):
+) -> None:
   """Generate ADK conformance test YAML files from TestCaseInput specifications.
 
   NOTE: this is work in progress.
@@ -369,13 +369,13 @@ def cli_conformance_record(
 )
 @click.pass_context
 def cli_conformance_test(
-    ctx,
+    ctx: click.Context,
     paths: tuple[str, ...],
     mode: str,
     generate_report: bool,
     report_dir: str | None = None,
     streaming_mode: StreamingMode | None = None,
-):
+) -> None:
   """Run conformance tests to verify agent behavior consistency.
 
   Validates that agents produce consistent outputs by comparing against recorded
@@ -512,7 +512,7 @@ def cli_create_cmd(
     project: str | None,
     region: str | None,
     type: str | None,
-):
+) -> None:
   """Creates a new app in the current folder with prepopulated agent template.
 
   APP_NAME: required, the folder of the agent source code.
@@ -533,27 +533,28 @@ def cli_create_cmd(
   )
 
 
-def validate_exclusive(ctx, param, value):
+def validate_exclusive(ctx: click.Context, param: click.Parameter, value: Any) -> Any:
   # Store the validated parameters in the context
-  if not hasattr(ctx, "exclusive_opts"):
-    ctx.exclusive_opts = {}
+  if "exclusive_opts" not in ctx.meta:
+    ctx.meta["exclusive_opts"] = {}
 
+  exclusive_opts = ctx.meta["exclusive_opts"]
   # If this option has a value and we've already seen another exclusive option
-  if value is not None and any(ctx.exclusive_opts.values()):
-    exclusive_opt = next(key for key, val in ctx.exclusive_opts.items() if val)
+  if value is not None and any(exclusive_opts.values()):
+    exclusive_opt = next(key for key, val in exclusive_opts.items() if val)
     raise click.UsageError(
         f"Options '{param.name}' and '{exclusive_opt}' cannot be set together."
     )
 
   # Record this option's value
-  ctx.exclusive_opts[param.name] = value is not None
+  exclusive_opts[param.name] = value is not None
   return value
 
 
-def adk_services_options(*, default_use_local_storage: bool = True):
+def adk_services_options(*, default_use_local_storage: bool = True) -> Callable[..., Any]:
   """Decorator to add ADK services options to click commands."""
 
-  def decorator(func):
+  def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
     @click.option(
         "--session_service_uri",
         help=textwrap.dedent("""\
@@ -620,7 +621,7 @@ def adk_services_options(*, default_use_local_storage: bool = True):
         default=None,
     )
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
       ctx = click.get_current_context(silent=True)
       if ctx is not None:
         use_local_storage_source = ctx.get_parameter_source("use_local_storage")
@@ -738,7 +739,7 @@ def cli_run(
     use_local_storage: bool = True,
     default_llm_model: Optional[str] = None,
     log_level: str = "INFO",
-):
+) -> None:
   """Runs an agent. If no query is provided, enters interactive mode.
 
   AGENT: The path to the agent source code folder.
@@ -822,7 +823,7 @@ def cli_run(
     help="Rebuild test files by running the real agent with user messages.",
 )
 @click.pass_context
-def cli_test(ctx, folder: str, rebuild: bool):
+def cli_test(ctx: click.Context, folder: str, rebuild: bool) -> None:
   """Runs pytest on agent test JSON files under the specified folder.
 
   FOLDER: The path to the folder containing agents and tests.
@@ -889,10 +890,10 @@ def cli_test(ctx, folder: str, rebuild: bool):
   sys.exit(result.returncode)
 
 
-def eval_options():
+def eval_options() -> Callable[..., Any]:
   """Decorator to add common eval options to click commands."""
 
-  def decorator(func):
+  def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
     @click.option(
         "--eval_storage_uri",
         type=str,
@@ -909,7 +910,7 @@ def eval_options():
         help="Optional. Set the logging level",
     )
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
       return func(*args, **kwargs)
 
     return wrapper
@@ -937,12 +938,12 @@ def eval_options():
 @eval_options()
 def cli_eval(
     agent_module_file_path: str,
-    eval_set_file_path_or_id: list[str],
+    eval_set_file_path_or_id: tuple[str, ...],
     config_file_path: str,
     print_detailed_results: bool,
     eval_storage_uri: str | None = None,
     log_level: str = "INFO",
-):
+) -> None:
   """Evaluates an agent given the eval sets.
 
   AGENT_MODULE_FILE_PATH: The path to the __init__.py file that contains a
@@ -1030,8 +1031,8 @@ def cli_eval(
   root_agent = get_root_agent(agent_module_file_path)
   app_name = os.path.basename(agent_module_file_path)
   agents_dir = os.path.dirname(agent_module_file_path)
-  eval_sets_manager = None
-  eval_set_results_manager = None
+  eval_sets_manager: Any = None
+  eval_set_results_manager: Any = None
 
   if eval_storage_uri:
     from .utils import evals
@@ -1046,7 +1047,7 @@ def cli_eval(
 
   inference_requests = []
   eval_set_file_or_id_to_evals = parse_and_get_evals_to_run(
-      eval_set_file_path_or_id
+      list(eval_set_file_path_or_id)
   )
 
   # Check if the first entry is a file that exists, if it does then we assume
@@ -1208,7 +1209,7 @@ def cli_optimize(
     optimizer_config_file_path: str,
     print_detailed_results: bool,
     log_level: str = "INFO",
-):
+) -> None:
   """Optimizes the root agent instructions using the GEPA optimizer.
 
   AGENT_MODULE_FILE_PATH: The path to the __init__.py file that contains a
@@ -1271,6 +1272,7 @@ def cli_optimize(
   optimizer = GEPARootAgentPromptOptimizer(optimizer_config)
 
   optimization_result = asyncio.run(optimizer.optimize(root_agent, sampler))
+  assert optimization_result.gepa_result is not None
   best_idx = optimization_result.gepa_result["best_idx"]
 
   click.echo("=" * 80)
@@ -1293,7 +1295,7 @@ def cli_optimize(
 
 
 @main.group("eval_set")
-def eval_set():
+def eval_set() -> None:
   """Manage Eval Sets."""
   pass
 
@@ -1312,7 +1314,7 @@ def cli_create_eval_set(
     eval_set_id: str,
     eval_storage_uri: str | None = None,
     log_level: str = "INFO",
-):
+) -> None:
   """Creates an empty EvalSet given the agent_module_file_path and eval_set_id."""
   from .cli_eval import get_eval_sets_manager
 
@@ -1362,7 +1364,7 @@ def cli_add_eval_case(
     eval_storage_uri: str | None = None,
     session_input_file: str | None = None,
     log_level: str = "INFO",
-):
+) -> None:
   """Adds eval cases to the given eval set.
 
   There are several ways that an eval case can be created, for now this method
@@ -1385,6 +1387,7 @@ def cli_add_eval_case(
   eval_sets_manager = get_eval_sets_manager(eval_storage_uri, agents_dir)
 
   try:
+    assert session_input_file is not None
     with open(session_input_file, "r") as f:
       session_input = SessionInput.model_validate_json(f.read())
 
@@ -1451,7 +1454,7 @@ def cli_generate_eval_cases(
     user_simulation_config_file: str,
     eval_storage_uri: str | None = None,
     log_level: str = "INFO",
-):
+) -> None:
   """Generates eval cases dynamically and adds them to the given eval set.
 
   Uses Vertex AI Eval SDK to generate conversation scenarios based on an
@@ -1546,10 +1549,10 @@ def cli_generate_eval_cases(
     raise click.ClickException(f"Failed to generate eval case(s): {e}") from e
 
 
-def web_options():
+def web_options() -> Callable[..., Any]:
   """Decorator to add web UI options to click commands."""
 
-  def decorator(func):
+  def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
     @click.option(
         "--logo-text",
         type=str,
@@ -1566,7 +1569,7 @@ def web_options():
         default=None,
     )
     @functools.wraps(func)
-    def wrapper(*args, **kwargs):
+    def wrapper(*args: Any, **kwargs: Any) -> Any:
       return func(*args, **kwargs)
 
     return wrapper
@@ -1574,7 +1577,7 @@ def web_options():
   return decorator
 
 
-def _deprecate_parameter(ctx, param, value):
+def _deprecate_parameter(ctx: click.Context, param: click.Parameter, value: Any) -> Any:
   if value:
     click.echo(
         click.style(
@@ -1587,7 +1590,7 @@ def _deprecate_parameter(ctx, param, value):
   return value
 
 
-def _deprecate_trace_to_cloud(ctx, param, value):
+def _deprecate_trace_to_cloud(ctx: click.Context, param: click.Parameter, value: Any) -> Any:
   if value:
     click.echo(
         click.style(
@@ -1600,10 +1603,10 @@ def _deprecate_trace_to_cloud(ctx, param, value):
   return value
 
 
-def fast_api_common_options():
+def fast_api_common_options() -> Callable[..., Any]:
   """Decorator to add common fast api options to click commands."""
 
-  def decorator(func):
+  def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
     func = _logging_options()(func)
 
     @click.option(
@@ -1709,7 +1712,7 @@ def fast_api_common_options():
     )
     @functools.wraps(func)
     @click.pass_context
-    def wrapper(ctx, *args, **kwargs):
+    def wrapper(ctx: click.Context, *args: Any, **kwargs: Any) -> Any:
       # Parse comma-separated trigger_sources into a list.
       trigger_sources = kwargs.get("trigger_sources")
       if trigger_sources is not None:
@@ -1780,8 +1783,8 @@ def cli_web(
     extra_plugins: list[str] | None = None,
     logo_text: str | None = None,
     logo_image_url: str | None = None,
-    trigger_sources: list[str] | None = None,
-):
+    trigger_sources: Any = None,
+) -> None:
   """Starts a FastAPI server with Web UI for agents.
 
   AGENTS_DIR: The directory of agents (where each subdirectory is a single
@@ -1796,7 +1799,7 @@ def cli_web(
   logs.setup_adk_logger(getattr(logging, log_level.upper()))
 
   @asynccontextmanager
-  async def _lifespan(app: FastAPI):
+  async def _lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     click.secho(
         f"""
 +-----------------------------------------------------------------------------+
@@ -1839,7 +1842,7 @@ def cli_web(
       extra_plugins=extra_plugins,
       logo_text=logo_text,
       logo_image_url=logo_image_url,
-      trigger_sources=trigger_sources,
+      trigger_sources=cast(Any, trigger_sources),
       default_llm_model=default_llm_model,
   )
   config = uvicorn.Config(
@@ -1918,11 +1921,11 @@ def cli_api_server(
     reload_agents: bool = False,
     extra_plugins: list[str] | None = None,
     auto_create_session: bool = False,
-    trigger_sources: list[str] | None = None,
+    trigger_sources: Any = None,
     with_ui: bool = False,
     gemini_enterprise_app_name: str | None = None,
     express_mode: bool = False,
-):
+) -> None:
   """Starts a FastAPI server for agents.
 
   AGENTS_DIR: The directory of agents (where each subdirectory is a single
@@ -1963,7 +1966,7 @@ def cli_api_server(
           reload_agents=reload_agents,
           extra_plugins=extra_plugins,
           auto_create_session=auto_create_session,
-          trigger_sources=trigger_sources,
+          trigger_sources=cast(Any, trigger_sources),
           gemini_enterprise_app_name=gemini_enterprise_app_name,
           express_mode=express_mode,
       ),
@@ -2118,7 +2121,7 @@ def cli_api_server(
 @adk_services_options(default_use_local_storage=False)
 @click.pass_context
 def cli_deploy_cloud_run(
-    ctx,
+    ctx: click.Context,
     agent: str,
     project: str | None,
     region: str | None,
@@ -2138,7 +2141,7 @@ def cli_deploy_cloud_run(
     use_local_storage: bool = False,
     a2a: bool = False,
     trigger_sources: str | None = None,
-):
+) -> None:
   """Deploys an agent to Cloud Run.
 
   AGENT: The path to the agent source code folder.
@@ -2188,7 +2191,7 @@ def cli_deploy_cloud_run(
 
 
 @main.group()
-def migrate():
+def migrate() -> None:
   """ADK migration commands."""
   pass
 
@@ -2232,7 +2235,7 @@ def cli_migrate_session(
     dest_db_url: str,
     log_level: str,
     allow_unsafe_unpickling: bool,
-):
+) -> None:
   """Migrates a session database to the latest schema version."""
   logs.setup_adk_logger(getattr(logging, log_level.upper()))
   try:
@@ -2457,7 +2460,7 @@ def cli_deploy_agent_engine(
     memory_service_uri: str | None = None,
     session_service_uri: str | None = None,
     use_local_storage: bool = False,
-):
+) -> None:
   """Deploys an agent to Agent Engine.
 
   Example:
@@ -2587,7 +2590,7 @@ def cli_deploy_agent_engine(
 )
 @click.option(
     "--service_type",
-    type=click.Choice(["ClusterIP", "LoadBalancer"], case_sensitive=True),
+    type=click.Choice(["ClusterIP", "NodePort", "LoadBalancer"], case_sensitive=True),
     default="ClusterIP",
     show_default=True,
     help=(
@@ -2650,14 +2653,14 @@ def cli_deploy_gke(
     otel_to_cloud: bool,
     with_ui: bool,
     adk_version: str,
-    service_type: str,
-    log_level: str | None = None,
+    service_type: Literal["ClusterIP", "NodePort", "LoadBalancer"] = "ClusterIP",
+    log_level: str = "INFO",
     session_service_uri: str | None = None,
     artifact_service_uri: str | None = None,
     memory_service_uri: str | None = None,
     use_local_storage: bool = False,
     trigger_sources: str | None = None,
-):
+) -> None:
   """Deploys an agent to GKE.
 
   AGENT: The path to the agent source code folder.

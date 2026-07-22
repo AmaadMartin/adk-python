@@ -128,7 +128,7 @@ def retrieve_express_project(
         "region": project.get("region", location),
     }
   except requests.exceptions.HTTPError as e:
-    if e.response.status_code == 404:
+    if e.response is not None and e.response.status_code == 404:
       return None
     raise
 

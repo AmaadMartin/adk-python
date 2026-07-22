@@ -17,7 +17,7 @@
 from __future__ import annotations
 
 from google.adk.agents import LlmAgent
-from google.adk.tools import url_context
+from google.adk.tools.url_context_tool import url_context
 
 
 def create_url_context_agent() -> LlmAgent:

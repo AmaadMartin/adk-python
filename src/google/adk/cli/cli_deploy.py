@@ -1477,7 +1477,7 @@ spec:
             'get-credentials',
             cluster_name,
             '--region',
-            region,
+            region,  # type: ignore[list-item]
             '--project',
             project,
         ],
