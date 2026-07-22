@@ -2179,3 +2179,29 @@ async def test_route_and_output_triggers_downstream_on_resume():
 
   outputs = [e.output for e in events2 if e.output is not None]
   assert 'done' in outputs
+def test_process_resume_misses():
+    from google.adk.workflow._workflow import Workflow, _LoopState
+    from google.adk.agents.context import Context
+    from google.genai.types import Part, Content
+    from google.adk.events.event import Event
+    from google.adk.events.event_actions import EventActions
+    from google.adk.agents.invocation_context import InvocationContext
+    from google.adk.sessions.session import Session
+    from google.adk.workflow._node_state import NodeState
+    from google.adk.workflow._node_status import NodeStatus
+    
+    wf = Workflow(name="test")
+    from unittest.mock import MagicMock
+    session = Session(id="test", appName="test", userId="test")
+    session.events.append(Event(author="not test", actions=EventActions(agent_state={"nodes": {}})))
+    session.events.append(Event(author="test", actions=EventActions()))
+    session.events.append(Event(author="test", actions=EventActions(agent_state=None)))
+    session.events.append(Event(author="test", actions=EventActions(agent_state={"nodes": {"node1": NodeState(status=NodeStatus.COMPLETED)}})))
+    session.events.append(Event(author="test", actions=EventActions(agent_state={"not_nodes": 1})))
+    ctx = MagicMock()
+    ctx._invocation_context.session = session
+    ctx._invocation_context.is_resumable = True
+    ctx.resume_inputs = {}
+    loop_state = _LoopState()
+    assert wf._process_resume(loop_state, ctx)
+    assert "node1" in loop_state.nodes
