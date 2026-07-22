@@ -14,20 +14,20 @@ Fix all `mypy --strict` compliance errors in the context-related modules within 
 
 ### ADK Context
 - Documentation context: `adk-python` is currently rolling out strict typing across its modules. Modules such as `flows`, `evaluation`, `models`, `plugins`, `integrations`, `agents`, `auth`, `tools`, and `cli` have recently seen strict type fixes. This task targets the context logic which appears to have missing type inferences for dynamic inputs and `kwargs`.
-- Reference context: Prior commits like `c7420229 chore: fix mypy strict type errors in adk agents` serve as the reference strategy for adding `-> None` to `__init__` and adding standard Collections types.  
+- Reference context: Prior commits like `c7420229 chore: fix mypy strict type errors in adk agents` serve as the reference strategy for adding `-> None` to `__init__` and adding standard Collections types.
 
 ### Language Specific Context
 - Target language: Python
 - Target repo: `adk-python`
-- General context: Mypy configuration uses `strict = False` globally for now but PRs are progressively enforcing it per-module or fixing the baseline. 
+- General context: Mypy configuration uses `strict = False` globally for now but PRs are progressively enforcing it per-module or fixing the baseline.
 
 ## Definition
 
-### Data Models 
+### Data Models
 - Variables of type `Any` or `dict` in context components must be refined where possible, or explicitly typed as `Any` using `typing.Any` to satisfy `disallow_untyped_defs`.
 
 ### Inputs
-- Source files: 
+- Source files:
   - `src/google/adk/agents/context.py`
   - `src/google/adk/agents/readonly_context.py`
   - `src/google/adk/agents/callback_context.py`
@@ -43,11 +43,11 @@ Fix all `mypy --strict` compliance errors in the context-related modules within 
 ## Constraints
 
 ### Invariants
-- The existing runtime behavior for agents and workflows utilizing these contexts MUST NOT change. 
+- The existing runtime behavior for agents and workflows utilizing these contexts MUST NOT change.
 - Avoid overriding or narrowing types in a way that breaks user-facing APIs.
 
 ### Preconditions
-- The target repository is checked out at the `main` branch. 
+- The target repository is checked out at the `main` branch.
 
 ### Postconditions
 - All context files mentioned must pass local mypy checks.
@@ -56,7 +56,7 @@ Fix all `mypy --strict` compliance errors in the context-related modules within 
 - If a type cannot be strictly inferred due to dynamic Python behavior, explicit `Any` or `cast` may be used sparingly, provided it resolves the strict typing block.
 
 ### Breaking Change Analysis
-- No breaking changes. Type annotations are purely static. 
+- No breaking changes. Type annotations are purely static.
 
 ### Testing
 
