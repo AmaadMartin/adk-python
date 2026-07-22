@@ -24,7 +24,6 @@ if TYPE_CHECKING:
 
   from ..auth.auth_credential import AuthCredential
   from ..sessions.session import Session
-  from ..sessions.state import State
   from .invocation_context import InvocationContext
   from .run_config import RunConfig
 
@@ -55,7 +54,7 @@ class ReadonlyContext:
     return self._invocation_context.agent.name
 
   @property
-  def state(self) -> MappingProxyType[str, Any] | State:
+  def state(self) -> Any:
     """The state of the current session. READONLY field."""
     return MappingProxyType(self._invocation_context.session.state)
 
