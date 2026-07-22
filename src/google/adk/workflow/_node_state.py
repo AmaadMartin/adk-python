@@ -23,6 +23,7 @@ from pydantic import ConfigDict
 from pydantic import Field
 
 from ._node_status import NodeStatus
+from ._trigger import Trigger
 
 
 class NodeState(BaseModel):
@@ -35,6 +36,9 @@ class NodeState(BaseModel):
 
   input: Any = None
   """The input provided to the node."""
+
+  active_trigger: Trigger | None = None
+  """The trigger that initiated the run."""
 
   attempt_count: int = Field(default=1, exclude_if=lambda v: v == 1)
   """The attempt count for this node run (1-based)."""
