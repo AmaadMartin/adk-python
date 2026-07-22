@@ -51,7 +51,6 @@ def _log_eval_summary(eval_results: list[EvalCaseResult]):
   """Logs a summary of eval results."""
   num_pass, num_fail, num_other = 0, 0, 0
   for eval_result in eval_results:
-    eval_result: EvalCaseResult
     if eval_result.final_eval_status == EvalStatus.PASSED:
       num_pass += 1
     elif eval_result.final_eval_status == EvalStatus.FAILED:

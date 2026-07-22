@@ -2119,7 +2119,7 @@ def _model_response_to_generate_content_response(
     )
 
   mapped_finish_reason = _map_finish_reason(finish_reason)
-  if mapped_finish_reason:
+  if mapped_finish_reason is not None:
     llm_response.finish_reason = mapped_finish_reason
     if mapped_finish_reason != types.FinishReason.STOP:
       llm_response.error_code = mapped_finish_reason
