@@ -636,8 +636,8 @@ class Context(ReadonlyContext):
           raise ValueError(f'Cannot find root_agent on node {curr_node.name}')
 
         # Local import to avoid runtime circular dependencies with Context
-        from ..workflow.utils._transfer_utils import resolve_and_derive_transfer_context
         from ..agents.base_agent import BaseAgent
+        from ..workflow.utils._transfer_utils import resolve_and_derive_transfer_context
 
         assert isinstance(curr_node, BaseAgent)
         target_agent, next_parent_ctx = resolve_and_derive_transfer_context(

@@ -561,9 +561,7 @@ class InvocationContext(BaseModel):
     if function_id is None:
       return None
 
-    return find_event_by_function_call_id(
-        search_space, function_id
-    )
+    return find_event_by_function_call_id(search_space, function_id)
 
   def stamp_event_branch_context(self, event: Event) -> None:
     """Stamps the event with the branch and isolation scope of its matching function call."""
