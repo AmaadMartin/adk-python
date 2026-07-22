@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 from typing import Any
-from typing import cast
 from typing import Optional
 
 from google.adk.platform import time as platform_time
