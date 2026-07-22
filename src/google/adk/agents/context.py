@@ -122,7 +122,6 @@ _OutputT = TypeVar('_OutputT')
 _ResumeInputsT = TypeVar('_ResumeInputsT')
 
 
-
 class Context(
     ReadonlyContext[_StateValueT],
     Generic[_StateValueT, _OutputT, _ResumeInputsT],
