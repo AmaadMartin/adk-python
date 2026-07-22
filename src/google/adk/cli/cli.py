@@ -263,7 +263,7 @@ async def run_interactively(
       next_message = types.Content(role='user', parts=parts)
       resume_invocation_id = invocation_id
 
-  await runner.close()
+  await runner.close()  # type: ignore[no-untyped-call]
 
 
 def _override_default_llm_model(default_llm_model: str) -> None:
@@ -282,7 +282,7 @@ def _setup_runner_context(
     memory_service_uri: Optional[str] = None,
     use_local_storage: bool = True,
     default_llm_model: Optional[str] = None,
-):
+) -> tuple[Any, Any, Any, Any, Any, str, str, Any]:
   """Sets up the agent, services, and environment for running.
 
   Returns a tuple containing the loaded agent/app, services, and other
@@ -332,7 +332,7 @@ def _setup_runner_context(
       memory_service_uri=memory_service_uri,
   )
 
-  credential_service = InMemoryCredentialService()
+  credential_service = InMemoryCredentialService()  # type: ignore[no-untyped-call]
 
   return (
       agent_or_app,
@@ -774,6 +774,6 @@ async def run_once_cli(
     click.secho(f'Error: {e}', fg='red', err=True)
     return 1
   finally:
-    await runner.close()
+    await runner.close()  # type: ignore[no-untyped-call]
 
   return exit_code

@@ -42,8 +42,8 @@ def plot_workflow_graph(
     sub_agents = root_agent.get("sub_agents", [])
     tools = root_agent.get("tools", [])
 
-    nodes = [{"name": root_name, "type": "agent", "tools": tools}]
-    edges = []
+    nodes: list[dict[str, Any]] = [{"name": root_name, "type": "agent", "tools": tools}]
+    edges: list[dict[str, Any]] = []
 
     def _traverse_sub_agents(
         agent_dict: dict[str, Any], parent_name: str
@@ -140,12 +140,12 @@ def plot_workflow_graph(
   )
 
   # Get nodes and edges
-  nodes = list(graph.get("nodes", []))
-  edges = list(graph.get("edges", []))
+  nodes = cast("list[dict[str, Any]]", list(graph.get("nodes", [])))
+  edges = cast("list[dict[str, Any]]", list(graph.get("edges", [])))
 
   # Inject tools as nodes
-  tool_nodes = {}
-  tool_edges = []
+  tool_nodes: dict[str, dict[str, Any]] = {}
+  tool_edges: list[dict[str, Any]] = []
   for node in nodes:
     node_name = node.get("name")
     if not node_name or node_name == "__START__":

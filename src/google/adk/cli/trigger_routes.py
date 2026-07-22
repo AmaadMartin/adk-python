@@ -225,7 +225,7 @@ class TriggerRouter:
       exponential backoff + jitter
   """
 
-  DEFAULT_TRIGGER_SOURCES = []
+  DEFAULT_TRIGGER_SOURCES: list[str] = []
   """Trigger sources registered when ``trigger_sources`` is not specified.
   By default, no triggers are registered to require explicit opt-in via CLI.
   """

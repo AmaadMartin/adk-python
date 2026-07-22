@@ -23,6 +23,7 @@ import sys
 from typing import Literal
 from typing import Optional
 from typing import Union
+from typing import cast
 
 from typing_extensions import override
 
@@ -95,7 +96,7 @@ class NestedAgentLoader(AgentLoader):
         # Force multi-agent (nested) mode even if the root directory itself
         # contains an agent.py, to allow discovering the nested agents.
         self._is_single_agent = False
-        self._single_agent_name = None
+        self._single_agent_name = cast(Optional[str], None)
         self.agents_dir = str(agents_path)
       else:
         # Fall back to parent class behavior
@@ -104,7 +105,7 @@ class NestedAgentLoader(AgentLoader):
   @override
   def list_agents(self) -> list[str]:
     """Lists all agents recursively across subdirectories (sorted alphabetically)."""
-    if self._is_single_agent:
+    if self._is_single_agent and self._single_agent_name is not None:
       return [self._single_agent_name]
     base_path = Path(self.agents_dir)
     if not base_path.exists() or not base_path.is_dir():

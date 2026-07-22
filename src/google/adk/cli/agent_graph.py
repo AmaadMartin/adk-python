@@ -302,8 +302,11 @@ async def build_graph(
 
 
 async def get_agent_graph(
-    root_agent, highlights_pairs, image=False, dark_mode=True
-):
+    root_agent: BaseAgent,
+    highlights_pairs: list[tuple[str, str]] | None = None,
+    image: bool = False,
+    dark_mode: bool = True,
+) -> graphviz.Digraph | bytes:
   bg_color = '#333537' if dark_mode else '#ffffff'
   graph = graphviz.Digraph(
       graph_attr={'rankdir': 'LR', 'bgcolor': bg_color}, strict=True
