@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from typing import Any
+from typing import cast
 from typing import Optional
 
 from google.adk.platform import time as platform_time
@@ -266,7 +267,7 @@ class Event(LlmResponse):
       return ''
     return self.node_info.name
 
-  def model_post_init(self, __context: Any) -> None:
+  def model_post_init(self, __context):
     """Post initialization logic for the event."""
     # Generates a random ID for the event.
     if not self.id:
@@ -301,4 +302,4 @@ class Event(LlmResponse):
 
   @staticmethod
   def new_id() -> str:
-    return platform_uuid.new_uuid()
+    return cast(str, platform_uuid.new_uuid())
