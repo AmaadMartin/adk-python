@@ -165,13 +165,9 @@ async def get_publisher_client(
         _publisher_client_cache.pop(cache_key, None)
 
     info = client_info.ClientInfo(user_agent=final_user_agent)  # type: ignore[no-untyped-call]
-
-    client = typing.cast(
-        PublisherAsyncClient,
-        eventarc_publishing_v1.PublisherAsyncClient(
-            credentials=credentials,
-            client_info=info,
-        ),
+    client = eventarc_publishing_v1.PublisherAsyncClient(
+        credentials=credentials,
+        client_info=info,
     )
 
     if len(_publisher_client_cache) >= _CACHE_MAX_SIZE:

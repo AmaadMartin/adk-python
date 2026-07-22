@@ -2195,11 +2195,13 @@ def _message_to_generate_content_response(
 
 
 def _finish_reason_to_error_message(
-    finish_reason: types.FinishReason,
+    finish_reason: types.FinishReason | None,
 ) -> str:
   """Returns an error message for non-stop finish reasons."""
   if finish_reason == types.FinishReason.MAX_TOKENS:
     return "Maximum tokens reached"
+  if finish_reason is None:
+    return "Finished without reason"
   return f"Finished with {finish_reason.name}"
 
 
