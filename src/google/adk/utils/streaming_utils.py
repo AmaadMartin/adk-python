@@ -569,7 +569,7 @@ class StreamingResponseAggregator:
         self._last_grounding_metadata = None
       self._tool_call_parts.extend([
           types.Part(function_call=function_call)
-          for function_call in (message.tool_call.function_calls or [])
+          for function_call in message.tool_call.function_calls or []
       ])
       if not self._is_gemini_3_x_live:
         if self._tool_call_metadata is None:
