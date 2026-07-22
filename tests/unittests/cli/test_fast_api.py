@@ -3550,5 +3550,45 @@ def test_gemini_stream_reasoning_engine_missing_class_method(
   assert response.status_code == 400
 
 
+@patch("google.adk.cli.api_server.trace.get_tracer_provider")
+@patch("google.adk.cli.api_server.metrics.get_meter_provider")
+@patch("google.adk.cli.api_server._logs.get_logger_provider")
+def test_lifespan_shuts_down_otel_providers(
+    mock_get_logger_provider: MagicMock,
+    mock_get_meter_provider: MagicMock,
+    mock_get_tracer_provider: MagicMock,
+    mock_session_service: MagicMock,
+    mock_artifact_service: MagicMock,
+    mock_memory_service: MagicMock,
+    mock_agent_loader: MagicMock,
+    mock_eval_sets_manager: MagicMock,
+    mock_eval_set_results_manager: MagicMock,
+) -> None:
+  """Test that internal_lifespan calls shutdown on OTel providers."""
+  mock_tracer = MagicMock()
+  mock_get_tracer_provider.return_value = mock_tracer
+
+  mock_meter = MagicMock()
+  mock_get_meter_provider.return_value = mock_meter
+
+  mock_logger = MagicMock()
+  mock_get_logger_provider.return_value = mock_logger
+
+  with _create_test_client(
+      mock_session_service,
+      mock_artifact_service,
+      mock_memory_service,
+      mock_agent_loader,
+      mock_eval_sets_manager,
+      mock_eval_set_results_manager,
+  ) as client:
+    # Just entering and exiting the client triggers the lifespan events.
+    pass
+
+  mock_tracer.shutdown.assert_called_once()
+  mock_meter.shutdown.assert_called_once()
+  mock_logger.shutdown.assert_called_once()
+
+
 if __name__ == "__main__":
   pytest.main(["-xvs", __file__])
