@@ -120,8 +120,7 @@ def _derive_node_path(
 _StateValueT = TypeVar('_StateValueT')
 _OutputT = TypeVar('_OutputT')
 _ResumeInputsT = TypeVar('_ResumeInputsT')
-_NodeInputT = TypeVar('_NodeInputT')
-_NodeOutputT = TypeVar('_NodeOutputT')
+
 
 
 class Context(
@@ -434,7 +433,7 @@ class Context(
   async def run_node(
       self,
       node: NodeLike,
-      node_input: _NodeInputT | None = None,
+      node_input: Any = None,
       *,
       use_as_output: bool = False,
       run_id: str | None = None,
@@ -442,7 +441,7 @@ class Context(
       override_branch: str | None = None,
       override_isolation_scope: str | None = None,
       raise_on_wait: bool = False,
-  ) -> _NodeOutputT | None:
+  ) -> Any:
     """Executes a node dynamically.
 
     This method allows a node within a workflow to trigger the run of
@@ -493,7 +492,7 @@ class Context(
   async def _run_node_internal(
       self,
       node: NodeLike,
-      node_input: _NodeInputT | None = None,
+      node_input: Any = None,
       *,
       use_as_output: bool = False,
       run_id: str | None = None,
