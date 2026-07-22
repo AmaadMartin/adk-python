@@ -18,17 +18,18 @@ import logging
 from typing import Any
 from typing import AsyncGenerator
 from typing import Optional
-
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
   from google.genai import live
+
 from google.genai import types
 
 from ..features import FeatureName
 from ..features import is_feature_enabled
 from ..models.llm_response import LlmResponse
 
-logger = logging.getLogger("google_adk." + __name__)
+logger = logging.getLogger('google_adk.' + __name__)
 
 
 class StreamingResponseAggregator:

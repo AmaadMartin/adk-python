@@ -19,7 +19,6 @@ from typing import AsyncGenerator
 from typing import Union
 
 from google.adk.utils.streaming_utils import StreamingResponseAggregator
-
 from google.genai import types
 
 from ..utils import model_name_utils
@@ -177,12 +176,6 @@ class GeminiLlmConnection(BaseLlmConnection):
       await self._gemini_session.send_realtime_input(activity_end=input)
     else:
       raise ValueError('Unsupported input type: %s' % type(input))
-
-
-
-
-
-
 
   async def receive(self) -> AsyncGenerator[LlmResponse, None]:
     """Receives the model response using the llm server connection.
