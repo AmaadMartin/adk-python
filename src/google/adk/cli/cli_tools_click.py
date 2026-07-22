@@ -26,7 +26,12 @@ from pathlib import Path
 import sys
 import tempfile
 import textwrap
-from typing import Any, AsyncGenerator, Callable, Literal, Optional, cast
+from typing import Any
+from typing import AsyncGenerator
+from typing import Callable
+from typing import cast
+from typing import Literal
+from typing import Optional
 
 import click
 from click.core import ParameterSource
@@ -533,7 +538,9 @@ def cli_create_cmd(
   )
 
 
-def validate_exclusive(ctx: click.Context, param: click.Parameter, value: Any) -> Any:
+def validate_exclusive(
+    ctx: click.Context, param: click.Parameter, value: Any
+) -> Any:
   # Store the validated parameters in the context
   if "exclusive_opts" not in ctx.meta:
     ctx.meta["exclusive_opts"] = {}
@@ -551,7 +558,9 @@ def validate_exclusive(ctx: click.Context, param: click.Parameter, value: Any) -
   return value
 
 
-def adk_services_options(*, default_use_local_storage: bool = True) -> Callable[..., Any]:
+def adk_services_options(
+    *, default_use_local_storage: bool = True
+) -> Callable[..., Any]:
   """Decorator to add ADK services options to click commands."""
 
   def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -1577,7 +1586,9 @@ def web_options() -> Callable[..., Any]:
   return decorator
 
 
-def _deprecate_parameter(ctx: click.Context, param: click.Parameter, value: Any) -> Any:
+def _deprecate_parameter(
+    ctx: click.Context, param: click.Parameter, value: Any
+) -> Any:
   if value:
     click.echo(
         click.style(
@@ -1590,7 +1601,9 @@ def _deprecate_parameter(ctx: click.Context, param: click.Parameter, value: Any)
   return value
 
 
-def _deprecate_trace_to_cloud(ctx: click.Context, param: click.Parameter, value: Any) -> Any:
+def _deprecate_trace_to_cloud(
+    ctx: click.Context, param: click.Parameter, value: Any
+) -> Any:
   if value:
     click.echo(
         click.style(
@@ -2590,7 +2603,9 @@ def cli_deploy_agent_engine(
 )
 @click.option(
     "--service_type",
-    type=click.Choice(["ClusterIP", "NodePort", "LoadBalancer"], case_sensitive=True),
+    type=click.Choice(
+        ["ClusterIP", "NodePort", "LoadBalancer"], case_sensitive=True
+    ),
     default="ClusterIP",
     show_default=True,
     help=(
@@ -2653,7 +2668,9 @@ def cli_deploy_gke(
     otel_to_cloud: bool,
     with_ui: bool,
     adk_version: str,
-    service_type: Literal["ClusterIP", "NodePort", "LoadBalancer"] = "ClusterIP",
+    service_type: Literal[
+        "ClusterIP", "NodePort", "LoadBalancer"
+    ] = "ClusterIP",
     log_level: str = "INFO",
     session_service_uri: str | None = None,
     artifact_service_uri: str | None = None,

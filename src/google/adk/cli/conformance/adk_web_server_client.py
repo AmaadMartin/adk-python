@@ -223,7 +223,7 @@ class AdkWebServerClient:
       response.raise_for_status()
       version_data = response.json()
       if not isinstance(version_data, dict):
-          raise ValueError(f"Expected dict, got {type(version_data)}")
+        raise ValueError(f"Expected dict, got {type(version_data)}")
       return {str(k): str(v) for k, v in version_data.items()}
 
   async def run_agent(

@@ -72,7 +72,11 @@ async def _create_conformance_test_files(
         # long-running tool. Replace the function call ID with the actual
         # function call ID. This is needed because the function call ID is not
         # known when writing the test case.
-        func_resp = user_message.content.parts[0].function_response if user_message.content.parts else None
+        func_resp = (
+            user_message.content.parts[0].function_response
+            if user_message.content.parts
+            else None
+        )
         if func_resp and func_resp.name:
           if func_resp.name not in function_call_name_to_id_map:
             raise ValueError(

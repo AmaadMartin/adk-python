@@ -20,10 +20,10 @@ import logging
 import os
 from pathlib import Path
 import sys
+from typing import cast
 from typing import Literal
 from typing import Optional
 from typing import Union
-from typing import cast
 
 from typing_extensions import override
 

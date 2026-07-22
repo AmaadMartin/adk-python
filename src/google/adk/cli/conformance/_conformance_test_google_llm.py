@@ -158,11 +158,11 @@ class _ConformanceTestGemini(Gemini):
     user_message_index = config.get('user_message_index')
     assert isinstance(user_message_index, int)
     self._user_message_index: int = user_message_index
-    
+
     agent_name = config.get('agent_name')
     assert isinstance(agent_name, str)
     self._agent_name: str = agent_name
-    
+
     replay_index = config.get('current_replay_index')
     assert isinstance(replay_index, int)
     self._replay_index: int = replay_index

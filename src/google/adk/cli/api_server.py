@@ -62,8 +62,6 @@ from watchdog.observers import Observer
 import yaml
 
 from ..agents.base_agent import BaseAgent
-from ..evaluation.eval_sets_manager import EvalSetsManager
-from ..evaluation.eval_set_results_manager import EvalSetResultsManager
 from ..agents.live_request_queue import LiveRequest
 from ..agents.live_request_queue import LiveRequestQueue
 from ..agents.llm_agent import LlmAgent
@@ -76,6 +74,8 @@ from ..auth.credential_service.base_credential_service import BaseCredentialServ
 from ..errors.already_exists_error import AlreadyExistsError
 from ..errors.input_validation_error import InputValidationError
 from ..errors.session_not_found_error import SessionNotFoundError
+from ..evaluation.eval_set_results_manager import EvalSetResultsManager
+from ..evaluation.eval_sets_manager import EvalSetsManager
 from ..events.event import Event
 from ..memory.base_memory_service import BaseMemoryService
 from ..plugins.base_plugin import BasePlugin
@@ -970,9 +970,7 @@ class ApiServer:
       lifespan: Optional[Lifespan[FastAPI]] = None,
       allow_origins: Optional[list[str]] = None,
       web_assets_dir: Optional[str] = None,
-      setup_observer: Callable[
-          [Any, "ApiServer"], None
-      ] = lambda o, s: None,
+      setup_observer: Callable[[Any, "ApiServer"], None] = lambda o, s: None,
       tear_down_observer: Callable[
           [Any, "ApiServer"], None
       ] = lambda o, s: None,
@@ -1564,7 +1562,9 @@ class ApiServer:
         _is_visual_builder.set(False)
 
     @app.post("/run", response_model_exclude_none=True)
-    async def run_agent(req: RunAgentRequest, request: Request) -> list[Event] | Response:
+    async def run_agent(
+        req: RunAgentRequest, request: Request
+    ) -> list[Event] | Response:
       app_name = req.app_name or self.default_app_name
       if not app_name:
         raise HTTPException(

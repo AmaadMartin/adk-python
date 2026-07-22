@@ -79,6 +79,7 @@ TAG_EVALUATION = "Evaluation"
 class CreateTestRequest(common.BaseModel):
   session_data: dict[str, Any]
 
+
 class AddSessionToEvalSetRequest(common.BaseModel):
   eval_id: str
   session_id: str
@@ -665,7 +666,7 @@ class DevServer(ApiServer):
           )
 
           while True:
-            line = await process.stdout.readline() if process.stdout else b''
+            line = await process.stdout.readline() if process.stdout else b""
             if not line:
               break
             await queue.put(line.decode("utf-8"))
@@ -679,6 +680,7 @@ class DevServer(ApiServer):
       asyncio.create_task(run_pytest_subprocess())
 
       from typing import AsyncGenerator
+
       async def generate() -> AsyncGenerator[bytes, None]:
         while True:
           item = await queue.get()
@@ -1228,7 +1230,9 @@ class DevServer(ApiServer):
       else:
         return {}
 
-  def _navigate_to_node(self, app_info: dict[str, Any], node_path: str) -> dict[str, Any] | None:
+  def _navigate_to_node(
+      self, app_info: dict[str, Any], node_path: str
+  ) -> dict[str, Any] | None:
     """Navigate to a specific node in the agent hierarchy.
 
     Args:

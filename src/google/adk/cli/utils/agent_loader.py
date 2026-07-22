@@ -22,10 +22,10 @@ from pathlib import Path
 import re
 import sys
 from typing import Any
+from typing import cast
 from typing import Literal
 from typing import Optional
 from typing import Union
-from typing import cast
 
 from pydantic import ValidationError
 from typing_extensions import override
