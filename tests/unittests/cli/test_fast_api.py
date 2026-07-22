@@ -3567,13 +3567,13 @@ def test_lifespan_shuts_down_otel_providers(
   """Test that internal_lifespan calls shutdown on OTel providers."""
   mock_tracer = MagicMock()
   mock_get_tracer_provider.return_value = mock_tracer
-  
+
   mock_meter = MagicMock()
   mock_get_meter_provider.return_value = mock_meter
-  
+
   mock_logger = MagicMock()
   mock_get_logger_provider.return_value = mock_logger
-  
+
   with _create_test_client(
       mock_session_service,
       mock_artifact_service,
