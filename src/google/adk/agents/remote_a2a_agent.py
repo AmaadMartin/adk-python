@@ -538,9 +538,14 @@ class RemoteA2aAgent(BaseAgent):
           )
           if not event:
             return None
-          if event.content is not None and event.content.parts is not None and update.status.state in (
-              _compat.TS_SUBMITTED,
-              _compat.TS_WORKING,
+          if (
+              event.content is not None
+              and event.content.parts is not None
+              and update.status.state
+              in (
+                  _compat.TS_SUBMITTED,
+                  _compat.TS_WORKING,
+              )
           ):
             for part in event.content.parts:
               part.thought = True

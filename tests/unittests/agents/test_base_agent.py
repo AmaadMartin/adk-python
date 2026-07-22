@@ -233,9 +233,9 @@ async def test_run_async_before_agent_callback_noop(
 
   # Assert
   spy_before_agent_callback.assert_called_once()
-  _, kwargs = spy_before_agent_callback.call_args
-  assert 'callback_context' in kwargs
-  assert isinstance(kwargs['callback_context'], CallbackContext)
+  args, _ = spy_before_agent_callback.call_args
+  assert len(args) == 1
+  assert isinstance(args[0], CallbackContext)
 
   spy_run_async_impl.assert_called_once()
 
@@ -291,9 +291,9 @@ async def test_run_async_with_async_before_agent_callback_noop(
 
   # Assert
   spy_before_agent_callback.assert_called_once()
-  _, kwargs = spy_before_agent_callback.call_args
-  assert 'callback_context' in kwargs
-  assert isinstance(kwargs['callback_context'], CallbackContext)
+  args, _ = spy_before_agent_callback.call_args
+  assert len(args) == 1
+  assert isinstance(args[0], CallbackContext)
 
   spy_run_async_impl.assert_called_once()
 
@@ -614,9 +614,9 @@ async def test_run_async_after_agent_callback_noop(
 
   # Assert
   spy_after_agent_callback.assert_called_once()
-  _, kwargs = spy_after_agent_callback.call_args
-  assert 'callback_context' in kwargs
-  assert isinstance(kwargs['callback_context'], CallbackContext)
+  args, _ = spy_after_agent_callback.call_args
+  assert len(args) == 1
+  assert isinstance(args[0], CallbackContext)
   assert len(events) == 1
 
 
@@ -640,9 +640,9 @@ async def test_run_async_with_async_after_agent_callback_noop(
 
   # Assert
   spy_after_agent_callback.assert_called_once()
-  _, kwargs = spy_after_agent_callback.call_args
-  assert 'callback_context' in kwargs
-  assert isinstance(kwargs['callback_context'], CallbackContext)
+  args, _ = spy_after_agent_callback.call_args
+  assert len(args) == 1
+  assert isinstance(args[0], CallbackContext)
   assert len(events) == 1
 
 
