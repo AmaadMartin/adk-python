@@ -18,10 +18,6 @@ import logging
 from typing import Any
 from typing import AsyncGenerator
 from typing import Optional
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-  from google.genai import live
 
 from google.genai import types
 
@@ -309,7 +305,7 @@ class StreamingResponseAggregator:
     )
 
   async def process_live_server_message(
-      self, message: live.LiveServerMessage
+      self, message: types.LiveServerMessage
   ) -> AsyncGenerator[LlmResponse, None]:
     logger.debug('Got LLM Live message: %s', message)
     if message.usage_metadata:
