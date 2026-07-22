@@ -47,6 +47,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.websockets import WebSocket
 from fastapi.websockets import WebSocketDisconnect
 from google.genai import types
+from opentelemetry import _logs
+from opentelemetry import metrics
 from opentelemetry import trace
 import opentelemetry.sdk.environment_variables as otel_env
 from opentelemetry.sdk.trace import export as export_lib
@@ -571,8 +573,7 @@ def _setup_gcp_telemetry(
           # TODO - use trace_to_cloud here as well once otel_to_cloud is no
           # longer experimental.
           enable_cloud_tracing=True,
-          # TODO - re-enable metrics once errors during shutdown are fixed.
-          enable_cloud_metrics=False,
+          enable_cloud_metrics=True,
           enable_cloud_logging=True,
           google_auth=(credentials, project_id),
       )
@@ -1017,6 +1018,28 @@ class ApiServer:
         tear_down_observer(observer, self)
         # Create tasks for all runner closures to run concurrently
         await cleanup.close_runners(list(self.runner_dict.values()))
+
+        # Shut down OpenTelemetry providers gracefully
+        try:
+          if tracer_provider := trace.get_tracer_provider():
+            if hasattr(tracer_provider, "shutdown"):
+              tracer_provider.shutdown()
+        except Exception as e:
+          logger.error("Failed to shutdown tracer provider: %s", e)
+
+        try:
+          if meter_provider := metrics.get_meter_provider():
+            if hasattr(meter_provider, "shutdown"):
+              meter_provider.shutdown()
+        except Exception as e:
+          logger.error("Failed to shutdown meter provider: %s", e)
+
+        try:
+          if logger_provider := _logs.get_logger_provider():
+            if hasattr(logger_provider, "shutdown"):
+              logger_provider.shutdown()
+        except Exception as e:
+          logger.error("Failed to shutdown logger provider: %s", e)
 
     memory_exporter = InMemoryExporter(session_trace_dict)
     self._memory_exporter = memory_exporter
