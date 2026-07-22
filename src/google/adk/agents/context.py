@@ -18,8 +18,10 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from collections.abc import Sequence
-from typing import Any, Generic, TypeVar
+from typing import Any
+from typing import Generic
 from typing import TYPE_CHECKING
+from typing import TypeVar
 
 from opentelemetry import context as context_api
 from typing_extensions import override
@@ -115,14 +117,17 @@ def _derive_node_path(
   return derived_node_path, derived_run_id
 
 
-_StateValueT = TypeVar("_StateValueT")
-_OutputT = TypeVar("_OutputT")
-_ResumeInputsT = TypeVar("_ResumeInputsT")
-_NodeInputT = TypeVar("_NodeInputT")
-_NodeOutputT = TypeVar("_NodeOutputT")
+_StateValueT = TypeVar('_StateValueT')
+_OutputT = TypeVar('_OutputT')
+_ResumeInputsT = TypeVar('_ResumeInputsT')
+_NodeInputT = TypeVar('_NodeInputT')
+_NodeOutputT = TypeVar('_NodeOutputT')
 
 
-class Context(ReadonlyContext[_StateValueT], Generic[_StateValueT, _OutputT, _ResumeInputsT]):
+class Context(
+    ReadonlyContext[_StateValueT],
+    Generic[_StateValueT, _OutputT, _ResumeInputsT],
+):
   """The context within an agent run.
 
   When used in a workflow, additional fields under the ``Workflow-specific
