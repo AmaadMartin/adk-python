@@ -404,8 +404,12 @@ class RemoteA2aAgent(BaseAgent):
     )
     if function_call_event.custom_metadata and a2a_message:
       metadata = function_call_event.custom_metadata
-      a2a_message.task_id = metadata.get(A2A_METADATA_PREFIX + "task_id")
-      a2a_message.context_id = metadata.get(A2A_METADATA_PREFIX + "context_id")
+      task_id = metadata.get(A2A_METADATA_PREFIX + "task_id")
+      if task_id is not None:
+        a2a_message.task_id = str(task_id)
+      context_id = metadata.get(A2A_METADATA_PREFIX + "context_id")
+      if context_id is not None:
+        a2a_message.context_id = str(context_id)
 
     return a2a_message
 
