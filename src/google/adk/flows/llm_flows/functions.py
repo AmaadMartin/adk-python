@@ -517,15 +517,17 @@ async def _execute_single_function_call_async(
     if error_response is not None:
       return error_response
 
-    for callback in agent.canonical_on_tool_error_callbacks:
-      error_response = callback(
+    for error_callback in agent.canonical_on_tool_error_callbacks:
+      cb_res = error_callback(
           tool=tool,
           args=tool_args,
           tool_context=tool_context,
           error=error,
       )
-      if inspect.isawaitable(error_response):
-        error_response = await error_response
+      if inspect.isawaitable(cb_res):
+        error_response = await cb_res
+      else:
+        error_response = cb_res
       if error_response is not None:
         return error_response
 
@@ -574,12 +576,14 @@ async def _execute_single_function_call_async(
     # Step 2: If no overrides are provided from the plugins, further run the
     # canonical callback.
     if function_response is None:
-      for callback in agent.canonical_before_tool_callbacks:
-        function_response = callback(
+      for before_callback in agent.canonical_before_tool_callbacks:
+        before_cb_res = before_callback(
             tool=tool, args=function_args, tool_context=tool_context
         )
-        if inspect.isawaitable(function_response):
-          function_response = await function_response
+        if inspect.isawaitable(before_cb_res):
+          function_response = await before_cb_res
+        else:
+          function_response = before_cb_res
         if function_response:
           break
 
@@ -615,15 +619,17 @@ async def _execute_single_function_call_async(
     # Step 5: If no overrides are provided from the plugins, further run the
     # canonical after_tool_callbacks.
     if altered_function_response is None:
-      for callback in agent.canonical_after_tool_callbacks:
-        altered_function_response = callback(
+      for after_callback in agent.canonical_after_tool_callbacks:
+        after_cb_res = after_callback(
             tool=tool,
             args=function_args,
             tool_context=tool_context,
             tool_response=function_response,
         )
-        if inspect.isawaitable(altered_function_response):
-          altered_function_response = await altered_function_response
+        if inspect.isawaitable(after_cb_res):
+          altered_function_response = await after_cb_res
+        else:
+          altered_function_response = after_cb_res
         if altered_function_response:
           break
 
@@ -760,15 +766,17 @@ async def _execute_single_function_call_live(
     if error_response is not None:
       return error_response
 
-    for callback in agent.canonical_on_tool_error_callbacks:
-      error_response = callback(
+    for error_callback in agent.canonical_on_tool_error_callbacks:
+      cb_res = error_callback(
           tool=tool,
           args=tool_args,
           tool_context=tool_context,
           error=error,
       )
-      if inspect.isawaitable(error_response):
-        error_response = await error_response
+      if inspect.isawaitable(cb_res):
+        error_response = await cb_res
+      else:
+        error_response = cb_res
       if error_response is not None:
         return error_response
 
@@ -828,12 +836,14 @@ async def _execute_single_function_call_live(
     # Step 2: If no overrides are provided from the plugins, further run the
     # canonical callback.
     if function_response is None:
-      for callback in agent.canonical_before_tool_callbacks:
-        function_response = callback(
+      for before_callback in agent.canonical_before_tool_callbacks:
+        before_cb_res = before_callback(
             tool=tool, args=function_args, tool_context=tool_context
         )
-        if inspect.isawaitable(function_response):
-          function_response = await function_response
+        if inspect.isawaitable(before_cb_res):
+          function_response = await before_cb_res
+        else:
+          function_response = before_cb_res
         if function_response:
           break
 
@@ -874,15 +884,17 @@ async def _execute_single_function_call_live(
     # Step 5: If no overrides are provided from the plugins, further run the
     # canonical after_tool_callbacks.
     if altered_function_response is None:
-      for callback in agent.canonical_after_tool_callbacks:
-        altered_function_response = callback(
+      for after_callback in agent.canonical_after_tool_callbacks:
+        after_cb_res = after_callback(
             tool=tool,
             args=function_args,
             tool_context=tool_context,
             tool_response=function_response,
         )
-        if inspect.isawaitable(altered_function_response):
-          altered_function_response = await altered_function_response
+        if inspect.isawaitable(after_cb_res):
+          altered_function_response = await after_cb_res
+        else:
+          altered_function_response = after_cb_res
         if altered_function_response:
           break
 
