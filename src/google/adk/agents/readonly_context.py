@@ -15,8 +15,7 @@
 from __future__ import annotations
 
 from types import MappingProxyType
-from typing import Any
-from typing import Optional
+from typing import Any, Generic, Optional, TypeVar
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -28,7 +27,10 @@ if TYPE_CHECKING:
   from .run_config import RunConfig
 
 
-class ReadonlyContext:
+_StateValueT = TypeVar('_StateValueT')
+
+
+class ReadonlyContext(Generic[_StateValueT]):
 
   def __init__(
       self,
@@ -54,7 +56,7 @@ class ReadonlyContext:
     return self._invocation_context.agent.name
 
   @property
-  def state(self) -> MappingProxyType[str, Any]:
+  def state(self) -> MappingProxyType[str, _StateValueT]:
     """The state of the current session. READONLY field."""
     return MappingProxyType(self._invocation_context.session.state)
 
