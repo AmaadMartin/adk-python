@@ -101,14 +101,14 @@ class A2AClientError(Exception):
 
 def _add_mock_function_call(event: Event, state: TaskState) -> None:
   """Generates a mock function call for input-required events if applicable."""
-  if event.content is None:
+  if event.content is None or event.content.parts is None:
     return
 
   output_parts, long_running_tool_ids = (
       _create_mock_function_call_for_required_user_input(
           state,
           event.content.parts,
-          event.long_running_tool_ids,
+          event.long_running_tool_ids or set(),
       )
   )
   event.content.parts = output_parts
@@ -285,6 +285,7 @@ class RemoteA2aAgent(BaseAgent):
     """Resolve agent card from source."""
 
     # Determine if source is URL or file path
+    assert self._agent_card_source is not None
     if self._agent_card_source.startswith(("http://", "https://")):
       return await self._resolve_agent_card_from_url(self._agent_card_source)
     else:
@@ -394,13 +395,14 @@ class RemoteA2aAgent(BaseAgent):
               )
           )
       new_event = event.model_copy(deep=True)
-      new_event.content.parts = new_parts
+      if new_event.content:
+        new_event.content.parts = new_parts
       event = new_event
 
     a2a_message = convert_event_to_a2a_message(
         event, ctx, _compat.ROLE_USER, self._genai_part_converter
     )
-    if function_call_event.custom_metadata:
+    if function_call_event.custom_metadata and a2a_message:
       metadata = function_call_event.custom_metadata
       a2a_message.task_id = metadata.get(A2A_METADATA_PREFIX + "task_id")
       a2a_message.context_id = metadata.get(A2A_METADATA_PREFIX + "context_id")
@@ -536,7 +538,7 @@ class RemoteA2aAgent(BaseAgent):
           )
           if not event:
             return None
-          if event.content is not None and update.status.state in (
+          if event.content is not None and event.content.parts is not None and update.status.state in (
               _compat.TS_SUBMITTED,
               _compat.TS_WORKING,
           ):
