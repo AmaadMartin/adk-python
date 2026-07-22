@@ -47,7 +47,6 @@ from opentelemetry.sdk.trace import TracerProvider
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 from starlette.types import Lifespan
-from watchdog.observers import Observer
 
 from ..auth.credential_service.in_memory_credential_service import InMemoryCredentialService
 from ..runners import Runner
@@ -97,7 +96,9 @@ def __getattr__(name: str) -> Any:
   return attr
 
 
-def _register_builder_endpoints(app: FastAPI, web: bool, agents_dir: str) -> None:
+def _register_builder_endpoints(
+    app: FastAPI, web: bool, agents_dir: str
+) -> None:
   """Registers builder endpoints if web is enabled and multipart is installed."""
   if not web:
     return
@@ -658,6 +659,7 @@ def get_fast_api_app(
     outer_lifespan = lifespan
 
     from typing import AsyncGenerator
+
     @asynccontextmanager
     async def _a2a_lifespan(app_instance: FastAPI) -> AsyncGenerator[Any, None]:
       try:
@@ -693,7 +695,9 @@ def get_fast_api_app(
     # the root agents directory should be an existing folder
     if base_path.exists() and base_path.is_dir():
 
-      def create_a2a_runner_loader(captured_app_name: str) -> Callable[[], Awaitable[Runner]]:
+      def create_a2a_runner_loader(
+          captured_app_name: str,
+      ) -> Callable[[], Awaitable[Runner]]:
         """Factory function to create A2A runner with proper closure."""
 
         async def _get_a2a_runner_async() -> Runner:

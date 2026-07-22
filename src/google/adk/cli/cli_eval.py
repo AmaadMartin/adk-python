@@ -210,7 +210,12 @@ def pretty_print_eval_result(eval_result: EvalCaseResult) -> None:
         f"Score: {metric_result.score}, "
         f"Threshold: {metric_result.threshold}"
     )
-    if metric_result.details and metric_result.details.rubric_scores and metric_result.criterion is not None and hasattr(metric_result.criterion, "rubrics"):
+    if (
+        metric_result.details
+        and metric_result.details.rubric_scores
+        and metric_result.criterion is not None
+        and hasattr(metric_result.criterion, "rubrics")
+    ):
       click.echo("Rubric Scores:")
       rubrics_by_id = {
           r["rubric_id"]: r["rubric_content"]["text_property"]
@@ -254,7 +259,12 @@ def pretty_print_eval_result(eval_result: EvalCaseResult) -> None:
           f"Status: {metric_result.eval_status.name}, "
           f"Score: {metric_result.score}"
       )
-      if metric_result.details and metric_result.details.rubric_scores and metric_result.criterion is not None and hasattr(metric_result.criterion, "rubrics"):
+      if (
+          metric_result.details
+          and metric_result.details.rubric_scores
+          and metric_result.criterion is not None
+          and hasattr(metric_result.criterion, "rubrics")
+      ):
         rubrics_by_id = {
             r["rubric_id"]: r["rubric_content"]["text_property"]
             for r in getattr(metric_result.criterion, "rubrics", [])

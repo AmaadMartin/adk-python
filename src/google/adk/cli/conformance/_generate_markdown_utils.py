@@ -24,7 +24,8 @@ from typing import TYPE_CHECKING
 import click
 
 if TYPE_CHECKING:
-  from .cli_test import _ConformanceTestSummary, _TestResult
+  from .cli_test import _ConformanceTestSummary
+  from .cli_test import _TestResult
 
 
 def generate_markdown_report(

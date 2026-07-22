@@ -114,7 +114,7 @@ class MockModel(BaseLlm):
   response_index: int = -1
 
   @classmethod
-  def create(cls, contents: list[types.Content]) -> 'MockModel':
+  def create(cls, contents: list[types.Content]) -> "MockModel":
     llm_responses = [LlmResponse(content=content) for content in contents]
     return cls(responses=llm_responses)
 
@@ -181,7 +181,9 @@ class InMemoryRunner:
     )
 
 
-def normalize_events(events: list[Any], is_json: bool = False) -> list[dict[str, Any]]:
+def normalize_events(
+    events: list[Any], is_json: bool = False
+) -> list[dict[str, Any]]:
   normalized: list[dict[str, Any]] = []
   for e in events:
     if is_json:
@@ -459,7 +461,9 @@ def _remap_ids_in_args(value: Any, id_map: dict[str, str]) -> None:
     "agent_dir, test_file",
     get_test_files(),
 )
-def test_agent_replay(agent_dir: Path, test_file: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_agent_replay(
+    agent_dir: Path, test_file: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
   # Add agent_dir.parent to sys.path so relative imports work
   import sys
 
@@ -590,7 +594,9 @@ def test_agent_replay(agent_dir: Path, test_file: Path, monkeypatch: pytest.Monk
     if mock_responses:
       mock_model = MockModel.create(contents=mock_responses)
 
-      async def mock_gen_async(instance: Any, llm_request: LlmRequest, stream: bool = False) -> AsyncGenerator[LlmResponse, None]:
+      async def mock_gen_async(
+          instance: Any, llm_request: LlmRequest, stream: bool = False
+      ) -> AsyncGenerator[LlmResponse, None]:
         async for resp in mock_model.generate_content_async(
             llm_request, stream
         ):

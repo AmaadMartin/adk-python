@@ -19,7 +19,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import difflib
 import json
-from typing import Any, Optional
+from typing import Any
+from typing import Optional
 
 from ...events.event import Event
 from ...sessions.session import Session
