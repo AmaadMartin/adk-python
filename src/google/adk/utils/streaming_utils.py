@@ -28,7 +28,7 @@ from ..features import FeatureName
 from ..features import is_feature_enabled
 from ..models.llm_response import LlmResponse
 
-logger = logging.getLogger(__name__)
+logger = logging.getLogger("google_adk." + __name__)
 
 
 class StreamingResponseAggregator:
@@ -484,11 +484,7 @@ class StreamingResponseAggregator:
         final_grounding_metadata = (
             grounding_metadata
             or self._last_grounding_metadata
-            or (
-                types.GroundingMetadata()
-                if self._is_gemini_3_x_live
-                else None
-            )
+            or (types.GroundingMetadata() if self._is_gemini_3_x_live else None)
         )
         if (
             final_grounding_metadata
@@ -533,9 +529,7 @@ class StreamingResponseAggregator:
             grounding_metadata=grounding_metadata
             or self._last_grounding_metadata
             or (
-                types.GroundingMetadata()
-                if self._is_gemini_3_x_live
-                else None
+                types.GroundingMetadata() if self._is_gemini_3_x_live else None
             ),
             model_version=self._model_version,
             live_session_id=self._live_session_id,
@@ -590,8 +584,8 @@ class StreamingResponseAggregator:
       # and merge them into a single response at turn_complete.
       if self._is_gemini_3_x_live and self._tool_call_parts:
         logger.debug(
-            'Yielding self._tool_call_parts immediately for Gemini 3.x live tool'
-            ' call'
+            'Yielding self._tool_call_parts immediately for Gemini 3.x live'
+            ' tool call'
         )
         yield LlmResponse(
             content=types.Content(role='model', parts=self._tool_call_parts),
@@ -624,8 +618,6 @@ class StreamingResponseAggregator:
           model_version=self._model_version,
           live_session_id=self._live_session_id,
       )
-
-
 
   async def close_live(self) -> AsyncGenerator[LlmResponse, None]:
     if self._tool_call_parts:

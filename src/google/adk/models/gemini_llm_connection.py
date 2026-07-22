@@ -15,9 +15,10 @@
 from __future__ import annotations
 
 import logging
-from google.adk.utils.streaming_utils import StreamingResponseAggregator
 from typing import AsyncGenerator
 from typing import Union
+
+from google.adk.utils.streaming_utils import StreamingResponseAggregator
 
 from google.genai import types
 
@@ -196,7 +197,7 @@ class GeminiLlmConnection(BaseLlmConnection):
           is_gemini_3_x_live=self._is_gemini_3_x_live,
           model_version=self._model_version,
       )
-      
+
       async for message in agen:
         async for resp in aggregator.process_live_server_message(message):
           yield resp
