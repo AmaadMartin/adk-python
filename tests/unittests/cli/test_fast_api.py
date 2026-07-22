@@ -3554,16 +3554,16 @@ def test_gemini_stream_reasoning_engine_missing_class_method(
 @patch("google.adk.cli.api_server.metrics.get_meter_provider")
 @patch("google.adk.cli.api_server._logs.get_logger_provider")
 def test_lifespan_shuts_down_otel_providers(
-    mock_get_logger_provider,
-    mock_get_meter_provider,
-    mock_get_tracer_provider,
-    mock_session_service,
-    mock_artifact_service,
-    mock_memory_service,
-    mock_agent_loader,
-    mock_eval_sets_manager,
-    mock_eval_set_results_manager,
-):
+    mock_get_logger_provider: MagicMock,
+    mock_get_meter_provider: MagicMock,
+    mock_get_tracer_provider: MagicMock,
+    mock_session_service: MagicMock,
+    mock_artifact_service: MagicMock,
+    mock_memory_service: MagicMock,
+    mock_agent_loader: MagicMock,
+    mock_eval_sets_manager: MagicMock,
+    mock_eval_set_results_manager: MagicMock,
+) -> None:
   """Test that internal_lifespan calls shutdown on OTel providers."""
   mock_tracer = MagicMock()
   mock_get_tracer_provider.return_value = mock_tracer
