@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from typing import AsyncGenerator
 from typing import Optional
@@ -24,6 +25,8 @@ from ..features import FeatureName
 from ..features import is_feature_enabled
 from ..models.llm_response import LlmResponse
 
+logger = logging.getLogger('google_adk.' + __name__)
+
 
 class StreamingResponseAggregator:
   """Aggregates partial streaming responses.
@@ -32,7 +35,12 @@ class StreamingResponseAggregator:
   individual (partial) model responses, as well as for aggregated content.
   """
 
-  def __init__(self) -> None:
+  def __init__(
+      self,
+      live_session_id: str | None = None,
+      model_version: str | None = None,
+      is_gemini_3_x_live: bool = False,
+  ) -> None:
     self._text = ''
     self._thought_text = ''
     self._usage_metadata = None
@@ -51,6 +59,16 @@ class StreamingResponseAggregator:
     self._current_fc_args: dict[str, Any] = {}
     self._current_fc_id: Optional[str] = None
     self._current_thought_signature: Optional[bytes] = None
+    # For Live API state
+    self._live_session_id = live_session_id
+    self._model_version = model_version
+    self._is_gemini_3_x_live = is_gemini_3_x_live
+    self._input_transcription_text: str = ''
+    self._output_transcription_text: str = ''
+    self._last_grounding_metadata: Optional[types.GroundingMetadata] = None
+    self._tool_call_metadata: Optional[types.GroundingMetadata] = None
+    self._tool_call_parts: list[types.Part] = []
+    self._is_thought: bool = False
 
   def _flush_text_buffer_to_sequence(self) -> None:
     """Flush current text buffer to parts sequence.
@@ -249,6 +267,435 @@ class StreamingResponseAggregator:
         # Flush any buffered text first, then add the FC part
         self._flush_text_buffer_to_sequence()
         self._parts_sequence.append(part)
+
+  def _build_full_text_response(
+      self,
+      text: str,
+      is_thought: bool = False,
+      grounding_metadata: types.GroundingMetadata | None = None,
+      interrupted: bool = False,
+  ) -> LlmResponse:
+    """Builds a full text response.
+
+    The text should not be partial and the returned LlmResponse is not
+    partial.
+
+    Args:
+      text: The text to be included in the response.
+      is_thought: Whether the text is a thought.
+      grounding_metadata: The grounding metadata to include.
+      interrupted: Whether this response was interrupted.
+
+    Returns:
+      An LlmResponse containing the full text.
+    """
+    part = types.Part.from_text(text=text)
+    if is_thought:
+      part.thought = True
+
+    return LlmResponse(
+        content=types.Content(
+            role='model',
+            parts=[part],
+        ),
+        grounding_metadata=grounding_metadata,
+        interrupted=interrupted,
+        partial=False,
+        live_session_id=self._live_session_id,
+    )
+
+  async def process_live_server_message(
+      self, message: types.LiveServerMessage
+  ) -> AsyncGenerator[LlmResponse, None]:
+    logger.debug('Got LLM Live message: %s', message)
+    if message.usage_metadata:
+      # Remap live token usage to GenerateContentResponse usage metadata.
+      yield LlmResponse(
+          usage_metadata=self._to_generate_content_usage_metadata(
+              message.usage_metadata
+          ),
+          model_version=self._model_version,
+          live_session_id=self._live_session_id,
+      )
+    if message.server_content:
+      content = message.server_content.model_turn
+      grounding_metadata = message.server_content.grounding_metadata
+      if grounding_metadata:
+        self._last_grounding_metadata = self._merge_grounding_metadata(
+            self._last_grounding_metadata, grounding_metadata
+        )
+
+      # Standalone grounding_metadata event (when content is empty)
+      if (
+          not (content and content.parts)
+          and message.server_content.grounding_metadata
+          and not message.server_content.turn_complete
+      ):
+        yield LlmResponse(
+            grounding_metadata=message.server_content.grounding_metadata,
+            interrupted=message.server_content.interrupted,
+            model_version=self._model_version,
+            live_session_id=self._live_session_id,
+            turn_complete_reason=getattr(
+                message.server_content, 'turn_complete_reason', None
+            ),
+        )
+
+      if content and content.parts:
+        llm_response = LlmResponse(
+            content=content,
+            interrupted=message.server_content.interrupted,
+            model_version=self._model_version,
+            live_session_id=self._live_session_id,
+            turn_complete_reason=getattr(
+                message.server_content, 'turn_complete_reason', None
+            ),
+        )
+        # grounding_metadata is yielded again at turn_complete,
+        # so avoid duplicating it here if turn_complete is true.
+        if not message.server_content.turn_complete:
+          if message.server_content.grounding_metadata is not None:
+            llm_response.grounding_metadata = (
+                message.server_content.grounding_metadata
+            )
+        if content.parts[0].text:
+          current_is_thought = getattr(content.parts[0], 'thought', False)
+          if self._text and current_is_thought != self._is_thought:
+            yield self._build_full_text_response(self._text, self._is_thought)
+            self._text = ''
+            self._is_thought = False
+
+          self._text += content.parts[0].text
+          self._is_thought = current_is_thought
+          llm_response.partial = True
+        # don't yield the merged self._text event when receiving audio data
+        elif self._text and not content.parts[0].inline_data:
+          yield self._build_full_text_response(
+              self._text, self._is_thought, self._last_grounding_metadata
+          )
+          self._text = ''
+          self._is_thought = False
+          self._last_grounding_metadata = None
+        yield llm_response
+      # Note: in some cases, tool_call may arrive before
+      # generation_complete, causing transcription to appear after
+      # tool_call in the session log.
+      if message.server_content.input_transcription:
+        # Gemini 3.x Live only sends a single final input
+        # transcription
+        if self._is_gemini_3_x_live:
+          if message.server_content.input_transcription.text:
+            yield LlmResponse(
+                input_transcription=types.Transcription(
+                    text=message.server_content.input_transcription.text,
+                    finished=True,
+                ),
+                partial=False,
+                model_version=self._model_version,
+                live_session_id=self._live_session_id,
+            )
+        else:
+          if message.server_content.input_transcription.text:
+            self._input_transcription_text += (
+                message.server_content.input_transcription.text
+            )
+            yield LlmResponse(
+                input_transcription=types.Transcription(
+                    text=message.server_content.input_transcription.text,
+                    finished=False,
+                ),
+                partial=True,
+                model_version=self._model_version,
+                live_session_id=self._live_session_id,
+            )
+          # finished=True and partial transcription may happen in the same
+          # message.
+          if message.server_content.input_transcription.finished:
+            yield LlmResponse(
+                input_transcription=types.Transcription(
+                    text=self._input_transcription_text,
+                    finished=True,
+                ),
+                partial=False,
+                model_version=self._model_version,
+                live_session_id=self._live_session_id,
+            )
+            self._input_transcription_text = ''
+      if message.server_content.output_transcription:
+        if message.server_content.output_transcription.text:
+          self._output_transcription_text += (
+              message.server_content.output_transcription.text
+          )
+          yield LlmResponse(
+              output_transcription=types.Transcription(
+                  text=message.server_content.output_transcription.text,
+                  finished=False,
+              ),
+              partial=True,
+              model_version=self._model_version,
+              live_session_id=self._live_session_id,
+          )
+        if message.server_content.output_transcription.finished:
+          yield LlmResponse(
+              output_transcription=types.Transcription(
+                  text=self._output_transcription_text,
+                  finished=True,
+              ),
+              partial=False,
+              model_version=self._model_version,
+              live_session_id=self._live_session_id,
+          )
+          self._output_transcription_text = ''
+      # The Gemini API or Vertex AI might not send a transcription finished signal.
+      # Instead, we rely on generation_complete, turn_complete or
+      # interrupted signals to flush any pending transcriptions.
+      if (
+          message.server_content.interrupted
+          or message.server_content.turn_complete
+          or message.server_content.generation_complete
+      ):
+        if self._input_transcription_text:
+          yield LlmResponse(
+              input_transcription=types.Transcription(
+                  text=self._input_transcription_text,
+                  finished=True,
+              ),
+              partial=False,
+              model_version=self._model_version,
+              live_session_id=self._live_session_id,
+          )
+          self._input_transcription_text = ''
+        if self._output_transcription_text:
+          yield LlmResponse(
+              output_transcription=types.Transcription(
+                  text=self._output_transcription_text,
+                  finished=True,
+              ),
+              partial=False,
+              model_version=self._model_version,
+              live_session_id=self._live_session_id,
+          )
+          self._output_transcription_text = ''
+      if message.server_content.turn_complete:
+        # Capture final grounding metadata before self._last_grounding_metadata is cleared in the next block.
+        final_grounding_metadata = (
+            grounding_metadata
+            or self._last_grounding_metadata
+            or (types.GroundingMetadata() if self._is_gemini_3_x_live else None)
+        )
+        if (
+            final_grounding_metadata
+            and final_grounding_metadata.retrieval_queries
+            and not final_grounding_metadata.grounding_chunks
+        ):
+          logger.warning(
+              'Incomplete grounding_metadata received: retrieval_queries=%s'
+              ' but grounding_chunks is empty. This may indicate a'
+              ' transient issue with the Vertex AI Search backend.',
+              final_grounding_metadata.retrieval_queries,
+          )
+
+        if self._text:
+          yield self._build_full_text_response(
+              self._text,
+              self._is_thought,
+              self._last_grounding_metadata,
+              bool(message.server_content.interrupted),
+          )
+          self._text = ''
+          self._is_thought = False
+          self._last_grounding_metadata = None
+        if self._tool_call_parts:
+          logger.debug('Returning aggregated self._tool_call_parts')
+          yield LlmResponse(
+              content=types.Content(role='model', parts=self._tool_call_parts),
+              grounding_metadata=self._tool_call_metadata,
+              model_version=self._model_version,
+              live_session_id=self._live_session_id,
+          )
+          self._tool_call_parts = []
+          if self._tool_call_metadata is not None:
+            self._last_grounding_metadata = None
+          self._tool_call_metadata = None
+
+        yield LlmResponse(
+            turn_complete=True,
+            interrupted=message.server_content.interrupted,
+            # If self._last_grounding_metadata was cleared in the full self._text yield,
+            # avoid duplicating it here.
+            grounding_metadata=grounding_metadata
+            or self._last_grounding_metadata
+            or (
+                types.GroundingMetadata() if self._is_gemini_3_x_live else None
+            ),
+            model_version=self._model_version,
+            live_session_id=self._live_session_id,
+            turn_complete_reason=getattr(
+                message.server_content, 'turn_complete_reason', None
+            ),
+        )
+        self._last_grounding_metadata = None  # Reset after yielding
+      # in case of empty content or parts, we still surface it
+      # in case it's an interrupted message, we merge the previous partial
+      # self._text. Other we don't merge. because content can be none when model
+      # safety threshold is triggered
+      if message.server_content.interrupted:
+        if self._text:
+          yield self._build_full_text_response(
+              self._text,
+              self._is_thought,
+              self._last_grounding_metadata,
+              interrupted=bool(message.server_content.interrupted),
+          )
+          self._text = ''
+          self._is_thought = False
+          self._last_grounding_metadata = None
+        else:
+          yield LlmResponse(
+              interrupted=message.server_content.interrupted,
+              grounding_metadata=self._last_grounding_metadata,
+              model_version=self._model_version,
+              live_session_id=self._live_session_id,
+          )
+          self._last_grounding_metadata = None
+    if message.tool_call:
+      logger.debug('Received tool call: %s', message.tool_call)
+      if self._text:
+        yield self._build_full_text_response(
+            self._text, self._is_thought, self._last_grounding_metadata
+        )
+        self._text = ''
+        self._is_thought = False
+        self._last_grounding_metadata = None
+      self._tool_call_parts.extend([
+          types.Part(function_call=function_call)
+          for function_call in message.tool_call.function_calls or []
+      ])
+      if not self._is_gemini_3_x_live:
+        if self._tool_call_metadata is None:
+          self._tool_call_metadata = self._last_grounding_metadata
+      # Gemini 3.x Live does not emit turn_complete until it receives the
+      # tool response, so yield tool calls immediately to avoid
+      # deadlocking the conversation. Other models (e.g. 2.5-pro,
+      # native-audio) send turn_complete after tool calls, so buffer
+      # and merge them into a single response at turn_complete.
+      if self._is_gemini_3_x_live and self._tool_call_parts:
+        logger.debug(
+            'Yielding self._tool_call_parts immediately for Gemini 3.x live'
+            ' tool call'
+        )
+        yield LlmResponse(
+            content=types.Content(role='model', parts=self._tool_call_parts),
+            grounding_metadata=self._last_grounding_metadata,
+            model_version=self._model_version,
+            live_session_id=self._live_session_id,
+        )
+        self._tool_call_parts = []
+        self._last_grounding_metadata = None
+    if message.session_resumption_update:
+      logger.debug('Received session resumption message: %s', message)
+      yield (
+          LlmResponse(
+              live_session_resumption_update=message.session_resumption_update,
+              model_version=self._model_version,
+              live_session_id=self._live_session_id,
+          )
+      )
+    if message.voice_activity:
+      logger.debug('Received voice activity: %s', message.voice_activity)
+      yield LlmResponse(
+          voice_activity=message.voice_activity,
+          model_version=self._model_version,
+          live_session_id=self._live_session_id,
+      )
+    if message.go_away:
+      logger.debug('Received GoAway message: %s', message.go_away)
+      yield LlmResponse(
+          go_away=message.go_away,
+          model_version=self._model_version,
+          live_session_id=self._live_session_id,
+      )
+
+  async def close_live(self) -> AsyncGenerator[LlmResponse, None]:
+    if self._tool_call_parts:
+      logger.debug('Exited loop with pending tool_call_parts')
+      yield LlmResponse(
+          content=types.Content(role='model', parts=self._tool_call_parts),
+          model_version=self._model_version,
+          live_session_id=self._live_session_id,
+      )
+
+  @staticmethod
+  def _merge_grounding_metadata(
+      existing: types.GroundingMetadata | None,
+      new: types.GroundingMetadata | None,
+  ) -> types.GroundingMetadata | None:
+    """Merges two GroundingMetadata instances, accumulating list fields safely."""
+    if existing is None:
+      return new
+    if new is None:
+      return existing
+    existing_data = existing.model_dump(exclude_none=True)
+    new_data = new.model_dump(exclude_none=True)
+
+    # Get offset from existing grounding chunks for shifting support indices
+    chunk_offset = len(existing_data.get('grounding_chunks', []))
+
+    for key, val in new_data.items():
+      if isinstance(val, list) and all(isinstance(x, str) for x in val):
+        existing_list = existing_data.get(key, [])
+        for item in val:
+          if item not in existing_list:
+            existing_list.append(item)
+        existing_data[key] = existing_list
+      elif key == 'grounding_chunks':
+        existing_chunks = existing_data.get('grounding_chunks', [])
+        existing_chunks.extend(val)
+        existing_data['grounding_chunks'] = existing_chunks
+      elif key == 'grounding_supports':
+        existing_supports = existing_data.get('grounding_supports', [])
+        for support in val:
+          if (
+              'grounding_chunk_indices' in support
+              and support['grounding_chunk_indices']
+          ):
+            support['grounding_chunk_indices'] = [
+                idx + chunk_offset for idx in support['grounding_chunk_indices']
+            ]
+          existing_supports.append(support)
+        existing_data['grounding_supports'] = existing_supports
+      else:
+        existing_data[key] = val
+    return types.GroundingMetadata(**existing_data)
+
+  def _to_generate_content_usage_metadata(
+      self, usage_metadata: types.UsageMetadata
+  ) -> types.GenerateContentResponseUsageMetadata:
+    """Converts live API usage metadata to GenerateContentResponse usage metadata.
+
+    The live API names output tokens `response_token_count`/
+    `response_tokens_details`, whereas `GenerateContentResponseUsageMetadata`
+    names them `candidates_token_count`/`candidates_tokens_details`.
+
+    Args:
+      usage_metadata: The live API usage metadata.
+
+    Returns:
+      The converted usage metadata.
+    """
+    return types.GenerateContentResponseUsageMetadata(
+        prompt_token_count=usage_metadata.prompt_token_count,
+        cached_content_token_count=usage_metadata.cached_content_token_count,
+        candidates_token_count=usage_metadata.response_token_count,
+        total_token_count=usage_metadata.total_token_count,
+        thoughts_token_count=usage_metadata.thoughts_token_count,
+        tool_use_prompt_token_count=usage_metadata.tool_use_prompt_token_count,
+        prompt_tokens_details=usage_metadata.prompt_tokens_details,
+        cache_tokens_details=usage_metadata.cache_tokens_details,
+        candidates_tokens_details=usage_metadata.response_tokens_details,
+        tool_use_prompt_tokens_details=usage_metadata.tool_use_prompt_tokens_details,
+        traffic_type=usage_metadata.traffic_type,
+    )
 
   async def process_response(
       self, response: types.GenerateContentResponse
