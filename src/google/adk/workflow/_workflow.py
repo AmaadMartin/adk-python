@@ -227,7 +227,6 @@ class Workflow(BaseNode):
     ctx.event_author = self.name
 
     # --- SETUP: resume from events or start fresh ---
-    # TODO: resume from checkpoint event.
     loop_state = _LoopState()
     replay_mgr = loop_state.replay_manager
     loop_state.recovered_executions, _ = replay_mgr.scan_workflow_events(ctx)
@@ -240,6 +239,7 @@ class Workflow(BaseNode):
           self.name,
       )
 
+    self._process_resume(loop_state, ctx)
     self._seed_start_triggers(loop_state, node_input)
 
     # Create closure for dynamic node scheduling
@@ -525,9 +525,10 @@ class Workflow(BaseNode):
       loop_state.nodes[node_name] = node_state
     else:
       node_state = loop_state.nodes[node_name]
-      # Create a new NodeState for a fresh execution to avoid carryover bugs.
-      node_state = self._create_node_state_for_new_run(node_state)
-      loop_state.nodes[node_name] = node_state
+      if node_state.status not in (NodeStatus.WAITING, NodeStatus.PENDING):
+        # Create a new NodeState for a fresh execution to avoid carryover bugs.
+        node_state = self._create_node_state_for_new_run(node_state)
+        loop_state.nodes[node_name] = node_state
 
     node_state.input = trigger.input
     node_state.status = NodeStatus.RUNNING
@@ -822,6 +823,43 @@ class Workflow(BaseNode):
         loop_state.interrupt_ids.update(node_state.interrupts)
 
   # --- Resume ---
+
+  def _process_resume(self, loop_state: _LoopState, ctx: Context) -> bool:
+    """Parse the most recent checkpoint event and rehydrate state.
+
+    Returns:
+        bool: True if a checkpoint was found and rehydrated, False otherwise.
+    """
+    ic = ctx._invocation_context
+    if not ic.is_resumable or not ic.session.events:
+      return False
+
+    nodes_data = next(
+        (
+            e.actions.agent_state["nodes"]
+            for e in reversed(ic.session.events)
+            if e.author == self.name and e.actions.agent_state and "nodes" in e.actions.agent_state
+        ),
+        None,
+    )
+
+    if not nodes_data:
+      return False
+
+    for name, data in nodes_data.items():
+      node_state = data if isinstance(data, NodeState) else NodeState.model_validate(data)
+      loop_state.nodes[name] = node_state
+
+      for intr in set(node_state.interrupts) & ctx.resume_inputs.keys():
+        node_state.resume_inputs[intr] = ctx.resume_inputs[intr]
+        node_state.interrupts.remove(intr)
+
+      if not node_state.interrupts and node_state.status == NodeStatus.WAITING:
+        node_state.status = NodeStatus.PENDING
+
+      loop_state.interrupt_ids.update(node_state.interrupts)
+
+    return True
 
   # --- FINALIZE ---
 
