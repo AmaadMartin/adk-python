@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from typing import AsyncGenerator
 from typing import Optional
@@ -26,9 +27,9 @@ from google.genai import types
 from ..features import FeatureName
 from ..features import is_feature_enabled
 from ..models.llm_response import LlmResponse
-import logging
 
 logger = logging.getLogger(__name__)
+
 
 class StreamingResponseAggregator:
   """Aggregates partial streaming responses.
@@ -307,7 +308,7 @@ class StreamingResponseAggregator:
     )
 
   async def process_live_server_message(
-      self, message: "live.LiveServerMessage"
+      self, message: live.LiveServerMessage
   ) -> AsyncGenerator[LlmResponse, None]:
     logger.debug('Got LLM Live message: %s', message)
     if message.usage_metadata:
