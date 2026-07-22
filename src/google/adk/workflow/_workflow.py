@@ -843,13 +843,21 @@ class Workflow(BaseNode):
       for name, raw_node in raw_nodes.items():
         node_state = NodeState.model_validate(raw_node)
         nodes[name] = node_state
-        
+
         status = node_state.status
-        if status in (NodeStatus.WAITING, NodeStatus.RUNNING, NodeStatus.PENDING):
+        if status in (
+            NodeStatus.WAITING,
+            NodeStatus.RUNNING,
+            NodeStatus.PENDING,
+        ):
           if node_state.active_trigger:
-            trigger_buffer.setdefault(name, []).append(node_state.active_trigger)
+            trigger_buffer.setdefault(name, []).append(
+                node_state.active_trigger
+            )
           else:
-            trigger_buffer.setdefault(name, []).append(Trigger(input=node_state.input))
+            trigger_buffer.setdefault(name, []).append(
+                Trigger(input=node_state.input)
+            )
           node_state.status = NodeStatus.PENDING
 
       loop_state.nodes = nodes
@@ -859,7 +867,8 @@ class Workflow(BaseNode):
       return True
     except Exception as e:
       logger.warning(
-          "Workflow %s: failed to resume from checkpoint, falling back to fresh start: %s",
+          "Workflow %s: failed to resume from checkpoint, falling back to fresh"
+          " start: %s",
           self.name,
           e,
       )
