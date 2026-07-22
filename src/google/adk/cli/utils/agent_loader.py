@@ -22,6 +22,7 @@ from pathlib import Path
 import re
 import sys
 from typing import Any
+from typing import cast
 from typing import Literal
 from typing import Optional
 from typing import Union
@@ -76,6 +77,9 @@ class AgentLoader(BaseAgentLoader):
     self._agent_cache: dict[str, Union[BaseAgent, App]] = {}
 
   def _init_agent_mode(self, agents_path: Path) -> None:
+    self._is_single_agent: bool = False
+    self._single_agent_name: Optional[str] = None
+    self.agents_dir: str = ""
     if is_single_agent_directory(agents_path):
       self._is_single_agent = True
       self._single_agent_name = agents_path.name
@@ -122,7 +126,7 @@ class AgentLoader(BaseAgentLoader):
         from ...workflow._base_node import BaseNode
 
         if isinstance(module_candidate.root_agent, (BaseAgent, BaseNode)):
-          return module_candidate.root_agent
+          return cast(Union[BaseAgent, App], module_candidate.root_agent)
         else:
           logger.warning(
               "Root agent found is not an instance of BaseAgent. But a type %s",
@@ -155,7 +159,7 @@ class AgentLoader(BaseAgentLoader):
 
   def _load_from_submodule(
       self, agent_name: str
-  ) -> Optional[Union[BaseAgent], App]:
+  ) -> Optional[Union[BaseAgent, App]]:
     # Load for case: Import "{agent_name}.agent" and look for "root_agent"
     # Covers structure: agents_dir/{agent_name}/agent.py (with root_agent defined in the module)
     try:
@@ -171,7 +175,7 @@ class AgentLoader(BaseAgentLoader):
         from ...workflow._base_node import BaseNode
 
         if isinstance(module_candidate.root_agent, (BaseAgent, BaseNode)):
-          return module_candidate.root_agent
+          return cast(Union[BaseAgent, App], module_candidate.root_agent)
         else:
           logger.warning(
               "Root agent found is not an instance of BaseAgent. But a type %s",
@@ -417,7 +421,7 @@ class AgentLoader(BaseAgentLoader):
   @override
   def list_agents(self) -> list[str]:
     """Lists all agents available in the agent loader (sorted alphabetically)."""
-    if self._is_single_agent:
+    if self._is_single_agent and self._single_agent_name is not None:
       return [self._single_agent_name]
     base_path = Path.cwd() / self.agents_dir
     agent_names = [
@@ -440,6 +444,8 @@ class AgentLoader(BaseAgentLoader):
         loaded = self.load_agent(agent_name)
         if isinstance(loaded, App):
           agent = loaded.root_agent
+          if agent is None:
+            continue
         else:
           agent = loaded
 

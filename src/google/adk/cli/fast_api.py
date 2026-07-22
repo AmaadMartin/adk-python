@@ -47,7 +47,6 @@ from opentelemetry.sdk.trace import TracerProvider
 from pydantic import BaseModel
 from starlette.concurrency import run_in_threadpool
 from starlette.types import Lifespan
-from watchdog.observers import Observer
 
 from ..auth.credential_service.in_memory_credential_service import InMemoryCredentialService
 from ..runners import Runner
@@ -86,7 +85,7 @@ _LAZY_SERVICE_IMPORTS: dict[str, str] = {
 }
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
   """Lazily import defaults so patching in tests keeps working."""
   if name not in _LAZY_SERVICE_IMPORTS:
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
@@ -97,7 +96,9 @@ def __getattr__(name: str):
   return attr
 
 
-def _register_builder_endpoints(app: FastAPI, web: bool, agents_dir: str):
+def _register_builder_endpoints(
+    app: FastAPI, web: bool, agents_dir: str
+) -> None:
   """Registers builder endpoints if web is enabled and multipart is installed."""
   if not web:
     return
@@ -361,7 +362,7 @@ def _register_builder_endpoints(app: FastAPI, web: bool, agents_dir: str):
       app_name: str,
       file_path: Optional[str] = None,
       tmp: Optional[bool] = False,
-  ):
+  ) -> Any:
     try:
       app_root = _get_app_root(app_name)
     except ValueError as exc:
@@ -547,7 +548,7 @@ def get_fast_api_app(
   session_service = create_session_service_from_options(
       base_dir=agents_dir,
       session_service_uri=session_service_uri,
-      session_db_kwargs=session_db_kwargs,
+      session_db_kwargs=dict(session_db_kwargs) if session_db_kwargs else None,
       use_local_storage=use_local_storage,
   )
 
@@ -563,7 +564,7 @@ def get_fast_api_app(
     raise click.ClickException(str(exc)) from exc
 
   # Build  the Credential service
-  credential_service = InMemoryCredentialService()
+  credential_service = InMemoryCredentialService()  # type: ignore[no-untyped-call]
 
   # Instantiate the appropriate server class based on web option
   # If web=True, use DevServer (includes all endpoints: production + dev)
@@ -584,7 +585,7 @@ def get_fast_api_app(
       logo_image_url=logo_image_url,
       url_prefix=url_prefix,
       auto_create_session=auto_create_session,
-      trigger_sources=trigger_sources,
+      trigger_sources=trigger_sources,  # type: ignore[arg-type]
       default_llm_model=default_llm_model,
   )
 
@@ -619,16 +620,16 @@ def get_fast_api_app(
 
   if reload_agents:
 
-    def setup_observer(observer: Observer, adk_web_server: ApiServer):
+    def setup_observer(observer: Any, adk_web_server: ApiServer) -> None:
       agent_change_handler = AgentChangeEventHandler(
-          agent_loader=agent_loader,
+          agent_loader=agent_loader,  # type: ignore[arg-type]
           runners_to_clean=adk_web_server.runners_to_clean,
           current_app_name_ref=adk_web_server.current_app_name_ref,
       )
       observer.schedule(agent_change_handler, agents_dir, recursive=True)
       observer.start()
 
-    def tear_down_observer(observer: Observer, _: ApiServer):
+    def tear_down_observer(observer: Any, _: ApiServer) -> None:
       observer.stop()
       observer.join()
 
@@ -657,8 +658,10 @@ def get_fast_api_app(
   if a2a_task_store is not None and hasattr(a2a_task_store, "engine"):
     outer_lifespan = lifespan
 
+    from typing import AsyncGenerator
+
     @asynccontextmanager
-    async def _a2a_lifespan(app_instance: FastAPI):
+    async def _a2a_lifespan(app_instance: FastAPI) -> AsyncGenerator[Any, None]:
       try:
         if outer_lifespan:
           async with outer_lifespan(app_instance) as ctx:
@@ -692,7 +695,9 @@ def get_fast_api_app(
     # the root agents directory should be an existing folder
     if base_path.exists() and base_path.is_dir():
 
-      def create_a2a_runner_loader(captured_app_name: str):
+      def create_a2a_runner_loader(
+          captured_app_name: str,
+      ) -> Callable[[], Awaitable[Runner]]:
         """Factory function to create A2A runner with proper closure."""
 
         async def _get_a2a_runner_async() -> Runner:
@@ -843,7 +848,7 @@ def get_fast_api_app(
         response_model_exclude_none=True,
         response_class=JSONResponse,
     )
-    async def query(request: Request):
+    async def query(request: Request) -> JSONResponse:  # type: ignore[untyped-decorator]
       try:
         body = await request.json()
       except json.JSONDecodeError as exc:
@@ -886,7 +891,7 @@ def get_fast_api_app(
         response_model_exclude_none=True,
         response_class=StreamingResponse,
     )
-    async def stream_query(request: Request):
+    async def stream_query(request: Request) -> StreamingResponse:  # type: ignore[untyped-decorator]
       try:
         body = await request.json()
       except json.JSONDecodeError as exc:
@@ -913,7 +918,7 @@ def get_fast_api_app(
 
       if inspect.isgenerator(output):
 
-        async def _aiter_from_iter(iterator):
+        async def _aiter_from_iter(iterator: Any) -> AsyncGenerator[Any, None]:
           while True:
             try:
               chunk = await run_in_threadpool(next, iterator)

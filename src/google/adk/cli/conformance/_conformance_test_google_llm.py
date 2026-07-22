@@ -154,9 +154,18 @@ class _ConformanceTestGemini(Gemini):
   ) -> None:
     super().__init__(**kwargs)
     recordings = config.get('_adk_replay_recordings')
-    self._user_message_index = config.get('user_message_index')
-    self._agent_name = config.get('agent_name')
-    self._replay_index = config.get('current_replay_index')
+    assert recordings is not None
+    user_message_index = config.get('user_message_index')
+    assert isinstance(user_message_index, int)
+    self._user_message_index: int = user_message_index
+
+    agent_name = config.get('agent_name')
+    assert isinstance(agent_name, str)
+    self._agent_name: str = agent_name
+
+    replay_index = config.get('current_replay_index')
+    assert isinstance(replay_index, int)
+    self._replay_index: int = replay_index
     # Pre-filter LLM recordings for this agent and message index
     self._agent_llm_recordings = [
         recording.llm_recording
@@ -203,7 +212,7 @@ class _ConformanceTestGemini(Gemini):
   ) -> None:
     """Verify that the current LLM request exactly matches the recorded one."""
     # Comprehensive exclude dict for all fields that can differ between runs
-    excluded_fields = {
+    excluded_fields: dict[str, Any] = {
         'live_connect_config': True,
         'config': {  # some config fields can vary per run
             'http_options': True,

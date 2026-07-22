@@ -285,6 +285,8 @@ Choose region""",
     click.secho(_NOT_ELIGIBLE_MSG, fg="red")
     raise click.Abort()
 
+  raise click.Abort()
+
 
 def prompt_to_choose_backend(
     google_api_key: Optional[str],
@@ -312,3 +314,5 @@ def prompt_to_choose_backend(
     )
   elif backend_choice == "3":
     return handle_login_with_google()
+
+  raise click.Abort()

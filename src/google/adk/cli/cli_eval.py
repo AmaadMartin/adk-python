@@ -36,9 +36,6 @@ from ..evaluation.constants import MISSING_EVAL_DEPENDENCIES_MESSAGE
 from ..evaluation.eval_case import get_all_tool_calls
 from ..evaluation.eval_case import IntermediateDataType
 from ..evaluation.eval_metrics import EvalMetric
-from ..evaluation.eval_metrics import Interval
-from ..evaluation.eval_metrics import MetricInfo
-from ..evaluation.eval_metrics import MetricValueInfo
 from ..evaluation.eval_result import EvalCaseResult
 from ..evaluation.eval_sets_manager import EvalSetsManager
 from ..utils.context_utils import Aclosing
@@ -77,19 +74,6 @@ def _get_agent_module(agent_module_file_path: str) -> ModuleType:
   return _import_from_path(module_name, file_path)
 
 
-def get_default_metric_info(
-    metric_name: str, description: str = ""
-) -> MetricInfo:
-  """Returns a default MetricInfo for a metric."""
-  return MetricInfo(
-      metric_name=metric_name,
-      description=description,
-      metric_value_info=MetricValueInfo(
-          interval=Interval(min_value=0.0, max_value=1.0)
-      ),
-  )
-
-
 def get_root_agent(agent_module_file_path: str) -> Agent:
   """Returns root agent given the agent module."""
   agent_module = _get_agent_module(agent_module_file_path)
@@ -117,15 +101,27 @@ def parse_and_get_evals_to_run(
   eval_set_to_evals: dict[str, list[str]] = {}
   for input_eval_set in evals_to_run_info:
     evals = []
-    if ":" not in input_eval_set:
+    drive_letter = input_eval_set[:1]
+    has_windows_drive_prefix = (
+        len(input_eval_set) >= 3
+        and drive_letter.isascii()
+        and drive_letter.isalpha()
+        and input_eval_set[1] == ":"
+        and input_eval_set[2] in ("\\", "/")
+    )
+    selector_separator_index = input_eval_set.find(
+        ":", 3 if has_windows_drive_prefix else 0
+    )
+    if selector_separator_index == -1:
       # We don't have any eval cases specified. This would be the case where the
       # the user wants to run all eval cases in the eval set.
       eval_set = input_eval_set
     else:
       # There are eval cases that we need to parse. The user wants to run
       # specific eval cases from the eval set.
-      eval_set = input_eval_set.split(":")[0]
-      evals = input_eval_set.split(":")[1].split(",")
+      eval_set = input_eval_set[:selector_separator_index]
+      selector_list = input_eval_set[selector_separator_index + 1 :]
+      evals = selector_list.split(":")[0].split(",")
       evals = [s for s in evals if s.strip()]
 
     if eval_set not in eval_set_to_evals:
@@ -147,7 +143,7 @@ async def _collect_inferences(
   inference_results = []
   for inference_request in inference_requests:
     async with Aclosing(
-        eval_service.perform_inference(inference_request=inference_request)
+        await eval_service.perform_inference(inference_request=inference_request)  # type: ignore[type-var,attr-defined]
     ) as agen:
       async for inference_result in agen:
         inference_results.append(inference_result)
@@ -169,7 +165,7 @@ async def _collect_eval_results(
       evaluate_config=EvaluateConfig(eval_metrics=eval_metrics),
   )
   async with Aclosing(
-      eval_service.evaluate(evaluate_request=evaluate_request)
+      await eval_service.evaluate(evaluate_request=evaluate_request)  # type: ignore[type-var,attr-defined]
   ) as agen:
     async for eval_result in agen:
       eval_results.append(eval_result)
@@ -214,11 +210,16 @@ def pretty_print_eval_result(eval_result: EvalCaseResult) -> None:
         f"Score: {metric_result.score}, "
         f"Threshold: {metric_result.threshold}"
     )
-    if metric_result.details and metric_result.details.rubric_scores:
+    if (
+        metric_result.details
+        and metric_result.details.rubric_scores
+        and metric_result.criterion is not None
+        and hasattr(metric_result.criterion, "rubrics")
+    ):
       click.echo("Rubric Scores:")
       rubrics_by_id = {
           r["rubric_id"]: r["rubric_content"]["text_property"]
-          for r in metric_result.criterion.rubrics
+          for r in getattr(metric_result.criterion, "rubrics", [])
       }
       for rubric_score in metric_result.details.rubric_scores:
         rubric_text = rubrics_by_id.get(rubric_score.rubric_id)
@@ -258,10 +259,15 @@ def pretty_print_eval_result(eval_result: EvalCaseResult) -> None:
           f"Status: {metric_result.eval_status.name}, "
           f"Score: {metric_result.score}"
       )
-      if metric_result.details and metric_result.details.rubric_scores:
+      if (
+          metric_result.details
+          and metric_result.details.rubric_scores
+          and metric_result.criterion is not None
+          and hasattr(metric_result.criterion, "rubrics")
+      ):
         rubrics_by_id = {
             r["rubric_id"]: r["rubric_content"]["text_property"]
-            for r in metric_result.criterion.rubrics
+            for r in getattr(metric_result.criterion, "rubrics", [])
         }
         for rubric_score in metric_result.details.rubric_scores:
           rubric = rubrics_by_id.get(rubric_score.rubric_id)

@@ -247,7 +247,7 @@ def _register_builtin_services(registry: ServiceRegistry) -> None:
   def memory_session_factory(uri: str, **kwargs: Any) -> BaseSessionService:
     from ..sessions.in_memory_session_service import InMemorySessionService
 
-    return InMemorySessionService()
+    return InMemorySessionService()  # type: ignore[no-untyped-call]
 
   def agentengine_session_factory(
       uri: str, **kwargs: Any
@@ -336,7 +336,7 @@ def _register_builtin_services(registry: ServiceRegistry) -> None:
   def memory_memory_factory(uri: str, **_: Any) -> BaseMemoryService:
     from ..memory.in_memory_memory_service import InMemoryMemoryService
 
-    return InMemoryMemoryService()
+    return InMemoryMemoryService()  # type: ignore[no-untyped-call]
 
   def rag_memory_factory(uri: str, **kwargs: Any) -> BaseMemoryService:
     from ..memory.vertex_ai_rag_memory_service import VertexAiRagMemoryService

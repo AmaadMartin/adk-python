@@ -99,7 +99,12 @@ class AdkWebServerClient:
     """
     return self
 
-  async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:  # pylint: disable=unused-argument
+  async def __aexit__(
+      self,
+      exc_type: Any,
+      exc_val: Any,
+      exc_tb: Any,
+  ) -> None:  # pylint: disable=unused-argument
     """Async context manager exit that closes the HTTP client."""
     await self.close()
 
@@ -216,7 +221,10 @@ class AdkWebServerClient:
     async with self._get_client() as client:
       response = await client.get("/version")
       response.raise_for_status()
-      return response.json()
+      version_data = response.json()
+      if not isinstance(version_data, dict):
+        raise ValueError(f"Expected dict, got {type(version_data)}")
+      return {str(k): str(v) for k, v in version_data.items()}
 
   async def run_agent(
       self,
