@@ -665,8 +665,21 @@ async def run_once_cli(
         break
 
     if interrupt_event:
-      # Assume the first active interrupt is the one we want to answer
-      interrupt_id = list(interrupt_event.long_running_tool_ids)[0]
+      interrupt_ids = list(interrupt_event.long_running_tool_ids)
+      
+      if len(interrupt_ids) > 1:
+        if not jsonl:
+          click.secho('Error: Multiple pending interrupts found. Resuming sessions with multiple active interrupts is currently not supported.', err=True, fg='red')
+          click.secho('Pending interrupts:', err=True, fg='yellow')
+          for cid in interrupt_ids:
+            c_fc = next((c for c in interrupt_event.get_function_calls() if c.id == cid), None)
+            c_name = c_fc.name if c_fc else 'unknown'
+            click.secho(f'  - {cid} ({c_name})', err=True, fg='yellow')
+        exit_code = 1
+        return
+
+      interrupt_id = interrupt_ids[0]
+
       if not jsonl:
         click.secho(
             f'Auto-resuming interrupt {interrupt_id} with input: {query}',
@@ -674,11 +687,6 @@ async def run_once_cli(
             err=True,
         )
 
-      # Construct a FunctionResponse pointing back to the interrupt ID.
-      # We check the synthetic function name to handle different interrupt types.
-      # TODO: We still need to handle 'adk_request_credential' (auth).
-      # TODO: Support batch HITL or interactive selection when multiple
-      # interrupts are active.
       fc = next(
           (
               c
@@ -688,8 +696,9 @@ async def run_once_cli(
           None,
       )
 
-      if fc and fc.name == 'adk_request_confirmation':
-        # Try to parse as JSON to support passing custom payload or explicit confirmed flag.
+      fc_name = fc.name if fc else 'adk_request_input'
+
+      if fc_name == 'adk_request_confirmation':
         try:
           parsed = json.loads(query)
           if isinstance(parsed, dict):
@@ -698,33 +707,23 @@ async def run_once_cli(
             response = {'confirmed': _is_positive_response(query)}
         except (json.JSONDecodeError, ValueError):
           response = {'confirmed': _is_positive_response(query)}
-
-        content = types.Content(
-            role='user',
-            parts=[
-                types.Part(
-                    function_response=types.FunctionResponse(
-                        id=interrupt_id,
-                        name='adk_request_confirmation',
-                        response=response,
-                    )
-                )
-            ],
-        )
+      elif fc_name == 'adk_request_credential':
+        response = {'credential': query}
       else:
-        # Fallback to adk_request_input or default behavior
-        content = types.Content(
-            role='user',
-            parts=[
-                types.Part(
-                    function_response=types.FunctionResponse(
-                        id=interrupt_id,
-                        name='adk_request_input',
-                        response={'result': query},
-                    )
-                )
-            ],
-        )
+        response = {'result': query}
+
+      content = types.Content(
+          role='user',
+          parts=[
+              types.Part(
+                  function_response=types.FunctionResponse(
+                      id=interrupt_id,
+                      name=fc_name,
+                      response=response,
+                  )
+              )
+          ],
+      )
     else:
       # Standard flow: Treat the query as a new text message from the user
       content = types.Content(role='user', parts=[types.Part(text=query)])
