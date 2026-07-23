@@ -119,15 +119,18 @@ class OAuth2CredentialExchanger(BaseAuthCredentialExchanger):
             token_endpoint = flows.authorizationCode.tokenUrl
           elif flows.password and flows.password.tokenUrl:
             token_endpoint = flows.password.tokenUrl
-      
+
       if not token_endpoint:
-        raise ValueError("Could not resolve token_endpoint from auth_scheme for refresh token flow.")
-      
-      import urllib.request
-      import urllib.parse
+        raise ValueError(
+            "Could not resolve token_endpoint from auth_scheme for refresh"
+            " token flow."
+        )
+
       import json
       from urllib.error import HTTPError
-      
+      import urllib.parse
+      import urllib.request
+
       data = {
           "grant_type": "refresh_token",
           "refresh_token": auth_credential.oauth2.refresh_token,
@@ -138,9 +141,11 @@ class OAuth2CredentialExchanger(BaseAuthCredentialExchanger):
         data["client_secret"] = auth_credential.oauth2.client_secret
 
       encoded_data = urllib.parse.urlencode(data).encode("utf-8")
-      req = urllib.request.Request(token_endpoint, data=encoded_data, method="POST")
+      req = urllib.request.Request(
+          token_endpoint, data=encoded_data, method="POST"
+      )
       req.add_header("Content-Type", "application/x-www-form-urlencoded")
-      
+
       try:
         with urllib.request.urlopen(req) as response:
           response_data = json.loads(response.read().decode("utf-8"))
@@ -150,7 +155,9 @@ class OAuth2CredentialExchanger(BaseAuthCredentialExchanger):
             auth_credential.oauth2.expires_in = response_data["expires_in"]
       except HTTPError as e:
         error_msg = e.read().decode("utf-8")
-        raise ValueError(f"Failed to refresh token: HTTP {e.code} API Error: {error_msg}")
+        raise ValueError(
+            f"Failed to refresh token: HTTP {e.code} API Error: {error_msg}"
+        )
       except Exception as e:
         raise ValueError(f"Failed to refresh token: {e}")
 

@@ -23,7 +23,6 @@ from google.adk.auth.auth_credential import OAuth2Auth
 from google.adk.auth.auth_schemes import AuthSchemeType
 from google.adk.auth.auth_schemes import OpenIdConnectWithConfig
 from google.adk.tools.openapi_tool.auth.credential_exchangers import OAuth2CredentialExchanger
-from google.adk.tools.openapi_tool.auth.credential_exchangers.base_credential_exchanger import AuthCredentialMissingError
 import pytest
 
 
@@ -153,7 +152,9 @@ def test_exchange_credential_auth_missing(oauth2_exchanger, auth_scheme):
   )
 
 
-def test_exchange_credential_refresh_token_success(oauth2_exchanger, auth_scheme, monkeypatch):
+def test_exchange_credential_refresh_token_success(
+    oauth2_exchanger, auth_scheme, monkeypatch
+):
   """Test successful refresh token flow."""
   import json
   import urllib.request
@@ -168,20 +169,21 @@ def test_exchange_credential_refresh_token_success(oauth2_exchanger, auth_scheme
   )
 
   mock_response = MagicMock()
-  mock_response.read.return_value = json.dumps({
-      "access_token": "new_access_token",
-      "expires_in": 3600
-  }).encode("utf-8")
+  mock_response.read.return_value = json.dumps(
+      {"access_token": "new_access_token", "expires_in": 3600}
+  ).encode("utf-8")
 
   mock_urlopen = MagicMock()
   mock_urlopen.__enter__.return_value = mock_response
 
   def mock_urlopen_cm(*args, **kwargs):
-      return mock_urlopen
+    return mock_urlopen
 
   monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen_cm)
 
-  updated_credential = oauth2_exchanger.exchange_credential(auth_scheme, auth_credential)
+  updated_credential = oauth2_exchanger.exchange_credential(
+      auth_scheme, auth_credential
+  )
 
   assert updated_credential.auth_type == AuthCredentialTypes.HTTP
   assert updated_credential.http.scheme == "bearer"
@@ -189,10 +191,12 @@ def test_exchange_credential_refresh_token_success(oauth2_exchanger, auth_scheme
   assert auth_credential.oauth2.expires_in == 3600
 
 
-def test_exchange_credential_refresh_token_http_error(oauth2_exchanger, auth_scheme, monkeypatch):
+def test_exchange_credential_refresh_token_http_error(
+    oauth2_exchanger, auth_scheme, monkeypatch
+):
   """Test refresh token flow failure (HTTP 400)."""
-  import urllib.request
   from urllib.error import HTTPError
+  import urllib.request
 
   auth_credential = AuthCredential(
       auth_type=AuthCredentialTypes.OAUTH2,
@@ -203,15 +207,15 @@ def test_exchange_credential_refresh_token_http_error(oauth2_exchanger, auth_sch
   )
 
   def mock_urlopen_error(req):
-      fp = MagicMock()
-      fp.read.return_value = b'{"error":"invalid_grant"}'
-      raise HTTPError(req.full_url, 400, "Bad Request", {}, fp)
+    fp = MagicMock()
+    fp.read.return_value = b'{"error":"invalid_grant"}'
+    raise HTTPError(req.full_url, 400, "Bad Request", {}, fp)
 
   monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen_error)
 
   with pytest.raises(ValueError) as exc_info:
     oauth2_exchanger.exchange_credential(auth_scheme, auth_credential)
-  
+
   assert "HTTP 400" in str(exc_info.value)
   assert "invalid_grant" in str(exc_info.value)
 
@@ -233,7 +237,5 @@ def test_exchange_credential_refresh_token_no_token_url(oauth2_exchanger):
 
   with pytest.raises(ValueError) as exc_info:
     oauth2_exchanger.exchange_credential(auth_scheme_no_url, auth_credential)
-  
+
   assert "Could not resolve token_endpoint" in str(exc_info.value)
-
-
