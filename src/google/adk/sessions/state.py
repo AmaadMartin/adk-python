@@ -13,9 +13,10 @@
 # limitations under the License.
 
 from __future__ import annotations
-
 from typing import Any
+import typing
 from typing import TYPE_CHECKING
+from collections.abc import MutableMapping
 
 if TYPE_CHECKING:
   from pydantic import BaseModel
@@ -58,7 +59,7 @@ def _validate_state_entry(
     ) from e
 
 
-class State:
+class State(MutableMapping[str, Any]):
   """A state dict that maintains the current value and the pending-commit delta."""
 
   APP_PREFIX = "app:"
@@ -97,9 +98,25 @@ class State:
     self._value[key] = value
     self._delta[key] = value
 
-  def __contains__(self, key: str) -> bool:
+  def __contains__(self, key: Any) -> bool:
     """Whether the state dict contains the given key."""
+    if not isinstance(key, str):
+      return False
     return key in self._value or key in self._delta
+
+  def __delitem__(self, key: str) -> None:
+    if key not in self:
+      raise KeyError(key)
+    if key in self._value:
+      del self._value[key]
+    if key in self._delta:
+      del self._delta[key]
+
+  def __iter__(self) -> typing.Iterator[str]:
+    return iter(self.to_dict())
+
+  def __len__(self) -> int:
+    return len(self.to_dict())
 
   def setdefault(self, key: str, default: Any = None) -> Any:
     """Gets the value of a key, or sets it to a default if the key doesn't exist."""
@@ -119,8 +136,11 @@ class State:
       return default
     return self[key]
 
-  def update(self, delta: dict[str, Any]) -> None:
+  def update(self, *args: Any, **kwargs: Any) -> None:
     """Updates the state dict with the given delta."""
+    if not args and not kwargs: return
+    delta = args[0] if args else kwargs
+    if delta is None: return
     if self._schema is not None and isinstance(self._schema, type):
       for key, value in delta.items():
         _validate_state_entry(self._schema, key, value)
