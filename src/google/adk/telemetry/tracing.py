@@ -29,6 +29,7 @@ from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from contextlib import contextmanager
 import logging
+from typing import Any
 from typing import Final
 from typing import TYPE_CHECKING
 
@@ -160,7 +161,7 @@ def trace_tool_call(
     span: Span | None = None,
     error_type: str | None = None,
     invocation_context: InvocationContext | None = None,
-):
+) -> None:
   """Traces tool call.
 
   Args:
@@ -219,8 +220,8 @@ def trace_tool_call(
     span.set_attribute("gcp.vertex.agent.tool_call_args", "{}")
 
   # Tracing tool response
-  tool_call_id = "<not specified>"
-  tool_response = "<not specified>"
+  tool_call_id: str = "<not specified>"
+  tool_response: Any = "<not specified>"
   if (
       function_response_event is not None
       and function_response_event.content is not None
@@ -253,7 +254,7 @@ def trace_merged_tool_calls(
     response_event_id: str,
     function_response_event: Event,
     invocation_context: InvocationContext | None = None,
-):
+) -> None:
   """Traces merged tool call events.
 
   Calling this function is not needed for telemetry purposes. This is provided
@@ -279,7 +280,7 @@ def trace_merged_tool_calls(
   span.set_attribute("gcp.vertex.agent.tool_call_args", "N/A")
   span.set_attribute("gcp.vertex.agent.event_id", response_event_id)
   try:
-    function_response_event_json = function_response_event.model_dumps_json(
+    function_response_event_json = function_response_event.model_dump_json(
         exclude_none=True
     )
   except Exception:  # pylint: disable=broad-exception-caught
@@ -317,7 +318,7 @@ def trace_call_llm(
     llm_request: LlmRequest,
     llm_response: LlmResponse,
     span: Span | None = None,
-):
+) -> None:
   """Traces a call to the LLM.
 
   This function records details about the LLM request and response as
@@ -409,7 +410,7 @@ def trace_send_data(
     invocation_context: InvocationContext,
     event_id: str,
     data: list[types.Content],
-):
+) -> None:
   """Traces the sending of data to the agent.
 
   This function records details about the data sent to the agent as
@@ -815,7 +816,7 @@ class GenerateContentSpan:
   This class provides attributes for the experimental semantic convention.
   """
 
-  def __init__(self, span: Span):
+  def __init__(self, span: Span) -> None:
     self.span: Final = span
     self.operation_details_attributes: dict[str, AttributeValue] = {}
     self.operation_details_common_attributes: dict[str, AttributeValue] = {}
@@ -824,7 +825,7 @@ class GenerateContentSpan:
 @deprecated(
     "Replaced by trace_inference_result to support experimental semconv."
 )
-def trace_generate_content_result(span: Span | None, llm_response: LlmResponse):
+def trace_generate_content_result(span: Span | None, llm_response: LlmResponse) -> None:
   """Trace result of the inference in generate_content span."""
 
   if span is None:
@@ -850,7 +851,7 @@ def trace_inference_result(
     invocation_context: InvocationContext | None,
     span: Span | None | GenerateContentSpan,
     llm_response: LlmResponse,
-):
+) -> None:
   """Trace result of the inference in generate_content span."""
   telemetry_config = _telemetry_config_from_invocation_context(
       invocation_context

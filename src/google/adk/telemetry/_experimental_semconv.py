@@ -37,7 +37,10 @@ from collections.abc import Sequence
 import json
 import logging
 import sys
+from typing import Any
+from typing import cast
 from typing import Literal
+from typing import Optional
 from typing import Protocol
 from typing import runtime_checkable
 from typing import TYPE_CHECKING
@@ -78,7 +81,7 @@ OTEL_SEMCONV_STABILITY_OPT_IN = 'OTEL_SEMCONV_STABILITY_OPT_IN'
 
 GEN_AI_USAGE_REASONING_OUTPUT_TOKENS = 'gen_ai.usage.reasoning.output_tokens'
 
-FUNCTION_TOOL_DEFINITION_TYPE = 'function'
+FUNCTION_TOOL_DEFINITION_TYPE: Literal['function'] = 'function'
 
 COMPLETION_DETAILS_EVENT_NAME = 'gen_ai.client.inference.operation.details'
 
@@ -217,7 +220,7 @@ def _to_finish_reason(finish_reason: types.FinishReason | None) -> str:
   if finish_reason is types.FinishReason.MAX_TOKENS:
     return 'length'
 
-  return finish_reason.name.lower()
+  return str(finish_reason.name).lower()
 
 
 def _to_part(part: types.Part, idx: int) -> Part | None:
@@ -350,9 +353,9 @@ def _model_dump_to_tool_definition(
   )
   parameters = model_dump.get('parameters') or model_dump.get('inputSchema')
   return FunctionToolDefinition(
-      name=name,
-      description=description,
-      parameters=parameters,
+      name=cast(str, name),
+      description=cast(Optional[str], description),
+      parameters=cast(Optional[Mapping[str, object]], parameters),
       type=FUNCTION_TOOL_DEFINITION_TYPE,
   )
 
@@ -463,17 +466,18 @@ def _to_tool_definitions(
 
 
 def _operation_details_attributes_no_content(
-    operation_details_attributes: Mapping[str, AttributeValue],
-) -> dict[str, AttributeValue]:
+    operation_details_attributes: Mapping[str, Any],
+) -> dict[str, Any]:
   """Returns a no-content view of operation-details attributes.
 
   Strips function-tool ``parameters`` (privacy-sensitive) but preserves generic
   tool definitions verbatim.
   """
-  tool_def = operation_details_attributes.get(GEN_AI_TOOL_DEFINITIONS)
-  if not tool_def:
+  tool_def_any = operation_details_attributes.get(GEN_AI_TOOL_DEFINITIONS)
+  if not tool_def_any:
     return {}
 
+  tool_def = cast(list[ToolDefinition], tool_def_any)
   return {
       GEN_AI_TOOL_DEFINITIONS: [
           FunctionToolDefinition(
@@ -482,7 +486,7 @@ def _operation_details_attributes_no_content(
               parameters=None,
               type=td['type'],
           )
-          if 'parameters' in td
+          if td['type'] == 'function'
           else td
           for td in tool_def
       ]
@@ -503,7 +507,7 @@ def _resolve_tool_definitions(
 
 def _build_request_operation_details(
     llm_request: LlmRequest,
-) -> dict[str, AttributeValue]:
+) -> dict[str, Any]:
   """Pure builder for the per-request operation-details attributes.
 
   Synchronous by construction: every tool entry on
@@ -529,9 +533,9 @@ def _build_request_operation_details(
 
 def _build_response_common_attributes(
     llm_response: LlmResponse,
-) -> dict[str, AttributeValue]:
+) -> dict[str, Any]:
   """Pure builder for common attributes derived from an LLM response."""
-  attributes: dict[str, AttributeValue] = {}
+  attributes: dict[str, Any] = {}
   if finish_reason := llm_response.finish_reason:
     attributes[GEN_AI_RESPONSE_FINISH_REASONS] = [
         _to_finish_reason(finish_reason)
@@ -543,7 +547,7 @@ def _build_response_common_attributes(
 
 def _build_response_operation_details(
     llm_response: LlmResponse,
-) -> dict[str, AttributeValue]:
+) -> dict[str, Any]:
   """Pure builder for the per-response operation-details attributes."""
   output_message = _to_output_message(llm_response)
   if output_message is None:
@@ -553,9 +557,9 @@ def _build_response_operation_details(
 
 def _build_completion_log_attributes(
     telemetry_config: TelemetryConfig,
-    operation_details_attributes: Mapping[str, AttributeValue],
-    operation_details_common_attributes: Mapping[str, AttributeValue],
-) -> Mapping[str, AttributeValue]:
+    operation_details_attributes: Mapping[str, Any],
+    operation_details_common_attributes: Mapping[str, Any],
+) -> Mapping[str, Any]:
   """Returns the attributes to attach to the emitted completion log record."""
   if telemetry_config.should_add_content_to_logs:
     return dict(operation_details_common_attributes) | dict(
@@ -568,8 +572,8 @@ def _build_completion_log_attributes(
 
 def _build_completion_span_attributes(
     telemetry_config: TelemetryConfig,
-    operation_details_attributes: Mapping[str, AttributeValue],
-) -> Mapping[str, AttributeValue]:
+    operation_details_attributes: Mapping[str, Any],
+) -> Mapping[str, Any]:
   """Returns the attributes to set on the active span (pre-serialization)."""
   if telemetry_config.should_add_content_to_experimental_spans:
     return dict(operation_details_attributes)
@@ -582,10 +586,10 @@ def _build_completion_span_attributes(
 
 
 def set_operation_details_common_attributes(
-    operation_details_common_attributes: MutableMapping[str, AttributeValue],
+    operation_details_common_attributes: MutableMapping[str, Any],
     telemetry_config: TelemetryConfig,
-    attributes: Mapping[str, AttributeValue],
-    log_only_attributes: Mapping[str, AttributeValue] | None = None,
+    attributes: Mapping[str, Any],
+    log_only_attributes: Mapping[str, Any] | None = None,
 ) -> None:
   operation_details_common_attributes.update(attributes)
   if log_only_attributes and telemetry_config.should_add_content_to_logs:
@@ -593,7 +597,7 @@ def set_operation_details_common_attributes(
 
 
 def set_operation_details_attributes_from_request(
-    operation_details_attributes: MutableMapping[str, AttributeValue],
+    operation_details_attributes: MutableMapping[str, Any],
     llm_request: LlmRequest,
 ) -> None:
   operation_details_attributes.update(
@@ -603,8 +607,8 @@ def set_operation_details_attributes_from_request(
 
 def set_operation_details_attributes_from_response(
     llm_response: LlmResponse,
-    operation_details_attributes: MutableMapping[str, AttributeValue],
-    operation_details_common_attributes: MutableMapping[str, AttributeValue],
+    operation_details_attributes: MutableMapping[str, Any],
+    operation_details_common_attributes: MutableMapping[str, Any],
 ) -> None:
   operation_details_common_attributes.update(
       _build_response_common_attributes(llm_response)
@@ -617,8 +621,8 @@ def set_operation_details_attributes_from_response(
 def maybe_log_completion_details(
     span: Span | None,
     otel_logger: Logger,
-    operation_details_attributes: Mapping[str, AttributeValue],
-    operation_details_common_attributes: Mapping[str, AttributeValue],
+    operation_details_attributes: Mapping[str, Any],
+    operation_details_common_attributes: Mapping[str, Any],
     telemetry_config: TelemetryConfig,
 ) -> None:
   """Logs completion details based on the experimental semconv capturing mode."""

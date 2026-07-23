@@ -61,7 +61,7 @@ class TopSpanProcessor(trace.SpanProcessor):
 
   def on_start(
       self, span: trace.Span, parent_context: Optional[context.Context] = None
-  ):
+  ) -> None:
     """Adds support ID to the top span."""
     baggage_items = baggage.get_all(context=parent_context)
     if self._is_top_span(span, baggage_items) and (
@@ -70,7 +70,7 @@ class TopSpanProcessor(trace.SpanProcessor):
         )
     ):
       span.set_attribute(
-          _GOOGLE_TRACEPARENT_SUPPORT_ATTRIBUTE_KEY, baggage_trace_header
+          _GOOGLE_TRACEPARENT_SUPPORT_ATTRIBUTE_KEY, str(baggage_trace_header)
       )
 
   def on_end(self, span: trace.ReadableSpan) -> None:
