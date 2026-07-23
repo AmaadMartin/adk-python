@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any
 
 import inspect
 from typing import Optional
@@ -59,7 +60,7 @@ class GlobalInstructionPlugin(BasePlugin):
     self.global_instruction = global_instruction
 
   async def before_model_callback(
-      self, *, callback_context: CallbackContext, llm_request: LlmRequest
+      self, *, callback_context: CallbackContext[Any], llm_request: LlmRequest
   ) -> Optional[LlmResponse]:
     """Apply global instructions to the LLM request.
 
@@ -105,7 +106,7 @@ class GlobalInstructionPlugin(BasePlugin):
     return None
 
   async def _resolve_global_instruction(
-      self, readonly_context: ReadonlyContext
+      self, readonly_context: ReadonlyContext[Any]
   ) -> str:
     """Resolve the global instruction, handling both string and InstructionProvider.
 

@@ -158,14 +158,14 @@ def check_interception(
 
 def create_mock_context(
     *,
-    parent_ctx: Context,
+    parent_ctx: Context[Any],
     node: BaseNode,
     run_id: str,
     result: InterceptionResult,
     ancestors: list[str],
     node_path: str | None = None,
     branch: str | None = None,
-) -> Context:
+) -> Context[Any]:
   """Build a Context with cached results (no execution)."""
   ic = parent_ctx._invocation_context  # pylint: disable=protected-access
   if branch:

@@ -213,7 +213,7 @@ class OpenAPIToolset(BaseToolset):
 
   @override
   async def get_tools(
-      self, readonly_context: Optional[ReadonlyContext] = None
+      self, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> List[RestApiTool]:
     """Get all tools in the toolset."""
     return [

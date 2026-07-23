@@ -104,7 +104,7 @@ class ComputerUseTool(FunctionTool):
 
   @override
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any]
   ) -> Any:
     """Run the computer control function with normalized coordinates."""
 
@@ -192,7 +192,7 @@ class ComputerUseTool(FunctionTool):
 
   @override
   async def process_llm_request(
-      self, *, tool_context: ToolContext, llm_request: LlmRequest
+      self, *, tool_context: ToolContext[Any], llm_request: LlmRequest
   ) -> None:
     """ComputerUseToolset will add this tool to the LLM request and add computer use configuration to the LLM request."""
     pass

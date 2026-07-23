@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any
 
 from typing import TYPE_CHECKING
 
@@ -62,7 +63,7 @@ class GoogleSearchTool(BaseTool):
   async def process_llm_request(
       self,
       *,
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       llm_request: LlmRequest,
   ) -> None:
     # If a custom model is specified, use it instead of the original model

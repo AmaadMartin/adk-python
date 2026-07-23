@@ -102,7 +102,7 @@ class ToolboxToolset(BaseToolset):
 
   @override
   async def get_tools(
-      self, readonly_context: Optional[ReadonlyContext] = None
+      self, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> list[BaseTool]:
     return await self._delegate.get_tools(readonly_context)
 

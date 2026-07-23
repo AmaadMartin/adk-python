@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
-from typing import Awaitable
+from typing import Awaitable, Any
 from typing import Callable
 from typing import Union
 
@@ -35,13 +35,13 @@ logger = logging.getLogger('google_adk.' + __name__)
 # Type alias for agent instruction providers: a callable that receives a
 # ReadonlyContext and returns an instruction string (sync or async).
 InstructionProvider: TypeAlias = Callable[
-    [ReadonlyContext], Union[str, Awaitable[str]]
+    [ReadonlyContext[Any]], Union[str, Awaitable[str]]
 ]
 
 
 async def inject_session_state(
     template: str,
-    readonly_context: ReadonlyContext,
+    readonly_context: ReadonlyContext[Any],
 ) -> str:
   """Populates values in the instruction template, e.g. state, artifact, etc.
 

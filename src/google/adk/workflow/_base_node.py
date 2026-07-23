@@ -146,7 +146,7 @@ class BaseNode(BaseModel):
   async def run(
       self,
       *,
-      ctx: Context,
+      ctx: Context[Any],
       node_input: Any,
   ) -> AsyncGenerator[Event, None]:
     """Public entry point. Calls _run_impl, normalizes yields to Event.
@@ -181,7 +181,7 @@ class BaseNode(BaseModel):
   async def _run_impl(
       self,
       *,
-      ctx: Context,
+      ctx: Context[Any],
       node_input: Any,
   ) -> AsyncGenerator[Any, None]:
     """Override point for node execution logic.

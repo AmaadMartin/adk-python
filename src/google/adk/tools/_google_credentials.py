@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any
 
 import json
 from typing import List
@@ -147,7 +148,7 @@ class GoogleCredentialsManager:
     self.credentials_config = credentials_config
 
   async def get_valid_credentials(
-      self, tool_context: ToolContext
+      self, tool_context: ToolContext[Any]
   ) -> Optional[google.auth.credentials.Credentials]:
     """Get valid credentials, handling refresh and OAuth flow as needed.
 
@@ -223,7 +224,7 @@ class GoogleCredentialsManager:
     return await self._perform_oauth_flow(tool_context)
 
   async def _perform_oauth_flow(
-      self, tool_context: ToolContext
+      self, tool_context: ToolContext[Any]
   ) -> Optional[google.oauth2.credentials.Credentials]:
     """Perform OAuth flow to get new credentials.
 

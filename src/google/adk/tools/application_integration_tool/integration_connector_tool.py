@@ -154,7 +154,7 @@ class IntegrationConnectorTool(BaseTool):
 
   @override
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: Optional[ToolContext]
+      self, *, args: dict[str, Any], tool_context: Optional[ToolContext[Any]]
   ) -> Dict[str, Any]:
 
     tool_auth_handler = ToolAuthHandler.from_tool_context(

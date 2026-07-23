@@ -59,7 +59,7 @@ class NodeRunner:
       self,
       *,
       node: BaseNode,
-      parent_ctx: Context,
+      parent_ctx: Context[Any],
       run_id: str | None = None,
       # Output delegation (use_as_output)
       use_as_output: bool = False,
@@ -115,7 +115,7 @@ class NodeRunner:
       node_input: Any = None,
       *,
       resume_inputs: dict[str, Any] | None = None,
-  ) -> Context:
+  ) -> Context[Any]:
     """Drive node.run(), enqueue events, return child Context.
 
     The caller reads ctx.output, ctx.route, and ctx.interrupt_ids
@@ -190,7 +190,7 @@ class NodeRunner:
       self,
       resume_inputs: dict[str, Any] | None,
       attempt_count: int = 1,
-  ) -> Context:
+  ) -> Context[Any]:
     """Create a child Context for the node, inheriting from parent.
 
     If prior_output or prior_interrupt_ids were provided at
@@ -260,7 +260,7 @@ class NodeRunner:
 
   async def _execute_node(
       self,
-      ctx: Context,
+      ctx: Context[Any],
       node_input: Any,
   ) -> None:
     """Iterate node.run(), enqueue events, write results to ctx."""
@@ -279,7 +279,7 @@ class NodeRunner:
       # the caller reads ctx.interrupt_ids.
       pass
 
-  async def _run_node_loop(self, ctx: Context, node_input: Any) -> None:
+  async def _run_node_loop(self, ctx: Context[Any], node_input: Any) -> None:
     """Iterate node.run(), track events in context, and enqueue them."""
     from ..utils.context_utils import Aclosing
 
@@ -292,7 +292,7 @@ class NodeRunner:
     logger.debug("node %s execute loop end.", ctx.node_path)
 
   async def _run_node_loop_with_timeout(
-      self, ctx: Context, node_input: Any, timeout: float
+      self, ctx: Context[Any], node_input: Any, timeout: float
   ) -> None:
     try:
       await asyncio.wait_for(
@@ -303,7 +303,7 @@ class NodeRunner:
 
       raise NodeTimeoutError(node_name=self._node.name, timeout=timeout) from e
 
-  def _track_event_in_context(self, event: Event, ctx: Context) -> None:
+  def _track_event_in_context(self, event: Event, ctx: Context[Any]) -> None:
     """Write yielded event results to ctx (source of truth)."""
     if event.output is not None:
       ctx.output = event.output
@@ -335,7 +335,7 @@ class NodeRunner:
       for key, value in event.actions.state_delta.items():
         _validate_state_entry(ctx.state._schema, key, value)
 
-  async def _enqueue_event(self, event: Event, ctx: Context) -> None:
+  async def _enqueue_event(self, event: Event, ctx: Context[Any]) -> None:
     """Enrich and enqueue event to the session.
 
     Suppresses output if output is delegated via use_as_output (since the child
@@ -357,7 +357,7 @@ class NodeRunner:
     if event.node_info.message_as_output:
       ctx._output_delegated = True
 
-  async def _flush_output_and_deltas(self, ctx: Context) -> None:
+  async def _flush_output_and_deltas(self, ctx: Context[Any]) -> None:
     """Emit deferred output and/or unflushed state/artifact deltas."""
     from ..events.event import Event
     from ..events.event_actions import EventActions
@@ -397,7 +397,7 @@ class NodeRunner:
     if has_unflushed_route:
       ctx._route_emitted = True
 
-  def _flush_deltas(self, event: Event, ctx: Context) -> None:
+  def _flush_deltas(self, event: Event, ctx: Context[Any]) -> None:
     """Move pending state/artifact deltas from ctx onto the event.
 
     TODO: Handle non-persisted states (e.g. `temp:` prefixed keys)
@@ -419,7 +419,7 @@ class NodeRunner:
       event.actions.artifact_delta.update(artifact_delta)
       artifact_delta.clear()
 
-  def _enrich_event(self, event: Event, ctx: Context) -> None:
+  def _enrich_event(self, event: Event, ctx: Context[Any]) -> None:
     """Set author, node_info, invocation_id on the event."""
     # TODO: revisit after we settle Event.author logic for content/message.
     event.author = ctx.event_author or self._node.name

@@ -140,7 +140,7 @@ class ReflectAndRetryToolPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       result: Any,
   ) -> Optional[dict[str, Any]]:
     """Handles successful tool calls or extracts and processes errors.
@@ -179,7 +179,7 @@ class ReflectAndRetryToolPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       result: Any,
   ) -> Optional[dict[str, Any]]:
     """Extracts an error from a successful tool result and triggers retry logic.
@@ -206,7 +206,7 @@ class ReflectAndRetryToolPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       error: Exception,
   ) -> Optional[dict[str, Any]]:
     """Handles tool exceptions by providing reflection guidance.
@@ -226,7 +226,7 @@ class ReflectAndRetryToolPlugin(BasePlugin):
       self,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       error: Any,
   ) -> Optional[dict[str, Any]]:
     """Central, thread-safe logic for processing tool errors.
@@ -264,7 +264,7 @@ class ReflectAndRetryToolPlugin(BasePlugin):
       else:
         return self._get_tool_retry_exceed_msg(tool, tool_args, error)
 
-  def _get_scope_key(self, tool_context: ToolContext) -> str:
+  def _get_scope_key(self, tool_context: ToolContext[Any]) -> str:
     """Returns a unique key for the state dictionary based on the scope.
 
     This method can be overridden in a subclass to implement custom scoping
@@ -277,7 +277,7 @@ class ReflectAndRetryToolPlugin(BasePlugin):
     raise ValueError(f"Unknown scope: {self.scope}")
 
   async def _reset_failures_for_tool(
-      self, tool_context: ToolContext, tool_name: str
+      self, tool_context: ToolContext[Any], tool_name: str
   ) -> None:
     """Atomically resets the failure count for a tool and cleans up state."""
     scope = self._get_scope_key(tool_context)

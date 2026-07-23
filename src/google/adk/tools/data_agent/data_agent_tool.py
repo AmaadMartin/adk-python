@@ -214,7 +214,7 @@ def ask_data_agent(
     *,
     credentials: Credentials,
     settings: DataAgentToolConfig,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any],
 ) -> dict[str, Any]:
   """Asks a question to a data agent.
 

@@ -47,7 +47,7 @@ class ToolPredicate(Protocol):
   """
 
   def __call__(
-      self, tool: BaseTool, readonly_context: Optional[ReadonlyContext] = None
+      self, tool: BaseTool, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> bool:
     """Decide whether the passed-in tool should be exposed to LLM based on the
 
@@ -87,7 +87,7 @@ class BaseToolset(ABC):
   @abstractmethod
   async def get_tools(
       self,
-      readonly_context: Optional[ReadonlyContext] = None,
+      readonly_context: Optional[ReadonlyContext[Any]] = None,
   ) -> list[BaseTool]:
     """Return all tools in the toolset based on the provided context.
 
@@ -102,7 +102,7 @@ class BaseToolset(ABC):
   @final
   async def get_tools_with_prefix(
       self,
-      readonly_context: Optional[ReadonlyContext] = None,
+      readonly_context: Optional[ReadonlyContext[Any]] = None,
   ) -> list[BaseTool]:
     """Return all tools with optional prefix applied to tool names.
 
@@ -192,7 +192,7 @@ class BaseToolset(ABC):
     raise ValueError(f"from_config() not implemented for toolset: {cls}")
 
   def _is_tool_selected(
-      self, tool: BaseTool, readonly_context: Optional[ReadonlyContext]
+      self, tool: BaseTool, readonly_context: Optional[ReadonlyContext[Any]]
   ) -> bool:
     if not self.tool_filter:
       return True
@@ -206,7 +206,7 @@ class BaseToolset(ABC):
     return False
 
   async def process_llm_request(
-      self, *, tool_context: ToolContext, llm_request: LlmRequest
+      self, *, tool_context: ToolContext[Any], llm_request: LlmRequest
   ) -> None:
     """Processes the outgoing LLM request for this toolset. This method will be
     called before each tool processes the llm request.

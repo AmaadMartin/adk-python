@@ -37,7 +37,7 @@ class InMemoryCredentialService(BaseCredentialService):
   async def load_credential(
       self,
       auth_config: AuthConfig,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any],
   ) -> Optional[AuthCredential]:
     credential_bucket = self._get_bucket_for_current_context(callback_context)
     return credential_bucket.get(auth_config.credential_key)
@@ -46,7 +46,7 @@ class InMemoryCredentialService(BaseCredentialService):
   async def save_credential(
       self,
       auth_config: AuthConfig,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any],
   ) -> None:
     credential_bucket = self._get_bucket_for_current_context(callback_context)
     credential_bucket[auth_config.credential_key] = (
@@ -54,7 +54,7 @@ class InMemoryCredentialService(BaseCredentialService):
     )
 
   def _get_bucket_for_current_context(
-      self, callback_context: CallbackContext
+      self, callback_context: CallbackContext[Any]
   ) -> str:
     app_name = callback_context._invocation_context.app_name
     user_id = callback_context._invocation_context.user_id
