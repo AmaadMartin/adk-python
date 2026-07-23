@@ -19,12 +19,20 @@ from __future__ import annotations
 from collections.abc import Mapping
 from collections.abc import Sequence
 from typing import Any
+from typing import Generic
 from typing import TYPE_CHECKING
+from typing import TypeVar
 
 from opentelemetry import context as context_api
 from typing_extensions import override
 
 from .readonly_context import ReadonlyContext
+
+_StateValueT = TypeVar("_StateValueT")
+_OutputT = TypeVar("_OutputT")
+_ResumeInputsT = TypeVar("_ResumeInputsT")
+_NodeInputT = TypeVar("_NodeInputT")
+_NodeOutputT = TypeVar("_NodeOutputT")
 
 if TYPE_CHECKING:
   from google.genai import types
@@ -51,7 +59,7 @@ _MAX_PARENT_DEPTH = 50
 
 
 def _derive_scheduler(
-    parent_ctx: Context | None,
+    parent_ctx: Context[Any, Any, Any] | None,
 ) -> ScheduleDynamicNode | None:
   """Derives the dynamic node scheduler from the parent context."""
   if parent_ctx:
@@ -115,7 +123,7 @@ def _derive_node_path(
   return derived_node_path, derived_run_id
 
 
-class Context(ReadonlyContext):
+class Context(ReadonlyContext[_StateValueT], Generic[_StateValueT, _OutputT, _ResumeInputsT]):
   """The context within an agent run.
 
   When used in a workflow, additional fields under the ``Workflow-specific
@@ -132,7 +140,7 @@ class Context(ReadonlyContext):
       function_call_id: str | None = None,
       tool_confirmation: ToolConfirmation | None = None,
       # Workflow Execution
-      parent_ctx: Context | None = None,
+      parent_ctx: Context[Any, Any, Any] | None = None,
       node: BaseNode | None = None,
       node_path: str | None = None,
       run_id: str = '',
@@ -276,13 +284,13 @@ class Context(ReadonlyContext):
 
   @property
   @override
-  def state(self) -> State:
+  def state(self) -> _StateValueT:
     """The delta-aware state of the current session.
 
     For any state change, you can mutate this object directly,
     e.g. `ctx.state['foo'] = 'bar'`
     """
-    return self._state
+    return self._state  # type: ignore[return-value]
 
   @property
   def actions(self) -> EventActions:
@@ -300,7 +308,7 @@ class Context(ReadonlyContext):
   # ============================================================================
 
   @property
-  def parent_ctx(self) -> Context | None:
+  def parent_ctx(self) -> Context[Any, Any, Any] | None:
     """Returns the parent node's Context."""
     return self._parent_ctx
 
@@ -325,9 +333,9 @@ class Context(ReadonlyContext):
     return self._attempt_count
 
   @property
-  def resume_inputs(self) -> dict[str, Any]:
+  def resume_inputs(self) -> _ResumeInputsT:
     """Returns inputs for resuming node, keyed by interrupt id."""
-    return self._resume_inputs
+    return self._resume_inputs  # type: ignore[return-value]
 
   @property
   def error(self) -> Exception | None:
@@ -340,7 +348,7 @@ class Context(ReadonlyContext):
     return self._error_node_path
 
   @property
-  def output(self) -> Any:
+  def output(self) -> _OutputT | None:
     """The node's result value. Source of truth for node output.
 
     Set once per run. Also set by the framework when the node
@@ -354,7 +362,7 @@ class Context(ReadonlyContext):
     - Set when interrupt_ids is non-empty (output and interrupt
       are mutually exclusive).
     """
-    return self._output_value
+    return self._output_value  # type: ignore[no-any-return]
 
   @output.setter
   def output(self, value: Any) -> None:
@@ -430,7 +438,7 @@ class Context(ReadonlyContext):
       override_branch: str | None = None,
       override_isolation_scope: str | None = None,
       raise_on_wait: bool = False,
-  ) -> Any:
+  ) -> _NodeOutputT | None:
     """Executes a node dynamically.
 
     This method allows a node within a workflow to trigger the run of
@@ -465,7 +473,7 @@ class Context(ReadonlyContext):
     Returns:
       The output of the dynamically executed node, once it finishes executing.
     """
-    return await self._run_node_internal(
+    return await self._run_node_internal(  # type: ignore[no-any-return]
         node,
         node_input,
         use_as_output=use_as_output,
@@ -563,7 +571,7 @@ class Context(ReadonlyContext):
           )
           curr_run_id = str(curr_parent_ctx._child_run_counters[curr_node.name])
 
-        child_ctx = await curr_parent_ctx._workflow_scheduler(
+        child_ctx = await curr_parent_ctx._workflow_scheduler(  # type: ignore[misc]
             curr_parent_ctx,
             curr_node,
             curr_input,
@@ -639,7 +647,7 @@ class Context(ReadonlyContext):
 
         target_agent, next_parent_ctx = resolve_and_derive_transfer_context(
             target_name=target_name,
-            current_agent=curr_node,
+            current_agent=curr_node,  # type: ignore[arg-type]
             root_agent=root_agent,
             curr_ctx=child_ctx,
             curr_parent_ctx=curr_parent_ctx,
@@ -814,7 +822,7 @@ class Context(ReadonlyContext):
     """
     from ..auth.auth_handler import AuthHandler
 
-    return AuthHandler(auth_config).get_auth_response(self.state)
+    return AuthHandler(auth_config).get_auth_response(self._state)
 
   def request_credential(self, auth_config: AuthConfig) -> None:
     """Requests a credential for the current tool call.
@@ -1022,7 +1030,7 @@ class Context(ReadonlyContext):
       override_branch: str | None = None,
       override_isolation_scope: str | None = None,
       resume_inputs: dict[str, Any] | None = None,
-  ) -> Context:
+  ) -> Context[Any, Any, Any]:
     """Run a node directly via NodeRunner without an orchestrator."""
     from ..workflow._node_runner import NodeRunner
 
