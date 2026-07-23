@@ -34,7 +34,7 @@ class OAuth2CredentialExchanger(BaseAuthCredentialExchanger):
       self,
       auth_scheme: AuthScheme,
       auth_credential: Optional[AuthCredential] = None,
-  ):
+  ) -> None:
     if not auth_credential:
       raise ValueError(
           "auth_credential is empty. Please create AuthCredential using"
@@ -71,7 +71,8 @@ class OAuth2CredentialExchanger(BaseAuthCredentialExchanger):
         HTTP bearer token cannot be generated, return the original credential.
     """
 
-    if not auth_credential.oauth2.access_token:
+    assert auth_credential is not None
+    if not auth_credential.oauth2 or not auth_credential.oauth2.access_token:
       return auth_credential
 
     # Return the access token as a bearer token.
@@ -103,17 +104,71 @@ class OAuth2CredentialExchanger(BaseAuthCredentialExchanger):
     Raises:
         ValueError: If the auth scheme or auth credential is invalid.
     """
-    # TODO: Implement token refresh flow
-
     self._check_scheme_credential_type(auth_scheme, auth_credential)
+    assert auth_credential is not None
 
     # If token is already HTTPBearer token, do nothing assuming that this token
     #  is valid.
     if auth_credential.http:
       return auth_credential
 
+    if (
+        auth_credential.oauth2
+        and auth_credential.oauth2.refresh_token
+        and not auth_credential.oauth2.access_token
+    ):
+      token_endpoint = getattr(auth_scheme, "token_endpoint", None)
+      if token_endpoint is None:
+        flows = getattr(auth_scheme, "flows", None)
+        if flows:
+          if flows.authorizationCode and flows.authorizationCode.tokenUrl:
+            token_endpoint = flows.authorizationCode.tokenUrl
+          elif flows.password and flows.password.tokenUrl:
+            token_endpoint = flows.password.tokenUrl
+
+      if not token_endpoint:
+        raise ValueError(
+            "Could not resolve token_endpoint from auth_scheme for refresh"
+            " token flow."
+        )
+
+      import json
+      from urllib.error import HTTPError
+      import urllib.parse
+      import urllib.request
+
+      data = {
+          "grant_type": "refresh_token",
+          "refresh_token": auth_credential.oauth2.refresh_token,
+      }
+      if auth_credential.oauth2.client_id:
+        data["client_id"] = auth_credential.oauth2.client_id
+      if auth_credential.oauth2.client_secret:
+        data["client_secret"] = auth_credential.oauth2.client_secret
+
+      encoded_data = urllib.parse.urlencode(data).encode("utf-8")
+      req = urllib.request.Request(
+          token_endpoint, data=encoded_data, method="POST"
+      )
+      req.add_header("Content-Type", "application/x-www-form-urlencoded")
+
+      try:
+        with urllib.request.urlopen(req) as response:
+          response_data = json.loads(response.read().decode("utf-8"))
+          if "access_token" in response_data:
+            auth_credential.oauth2.access_token = response_data["access_token"]
+          if "expires_in" in response_data:
+            auth_credential.oauth2.expires_in = response_data["expires_in"]
+      except HTTPError as e:
+        error_msg = e.read().decode("utf-8")
+        raise ValueError(
+            f"Failed to refresh token: HTTP {e.code} API Error: {error_msg}"
+        )
+      except Exception as e:
+        raise ValueError(f"Failed to refresh token: {e}")
+
     # If access token is exchanged, exchange a HTTPBearer token.
-    if auth_credential.oauth2.access_token:
+    if auth_credential.oauth2 and auth_credential.oauth2.access_token:
       return self.generate_auth_token(auth_credential)
 
-    return None
+    return None  # type: ignore[return-value]

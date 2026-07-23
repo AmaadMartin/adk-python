@@ -630,6 +630,7 @@ def _convert_interaction_step_to_parts(step: Step) -> list[types.Part]:
         types.Part(
             function_response=types.FunctionResponse(
                 id=step.call_id or '',
+                name=step.name,
                 response=_function_result_to_response(step.result),
             )
         )
@@ -1003,6 +1004,7 @@ def _handle_function_result(
   part = types.Part(
       function_response=types.FunctionResponse(
           id=delta.call_id or '',
+          name=delta.name,  # type: ignore[union-attr]
           response=_function_result_to_response(delta.result),
       )
   )
@@ -1053,7 +1055,7 @@ def convert_interaction_event_to_llm_response(
     if isinstance(event.step, FunctionCallStep):
       fc = types.FunctionCall(
           id=event.step.id,
-          name=event.step.name,
+          name=event.step.name,  # type: ignore[union-attr]
           partial_args=[],
       )
       part = types.Part(function_call=fc)
