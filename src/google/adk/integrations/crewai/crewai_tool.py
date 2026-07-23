@@ -60,7 +60,7 @@ class CrewaiTool(FunctionTool):
 
   @override
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any, Any, Any]
   ) -> Any:
     """Override run_async to handle CrewAI-specific parameter filtering.
 

@@ -345,7 +345,7 @@ class AgentBuilderAssistant:
   @staticmethod
   def _load_instruction_with_schema(
       model: Union[str, BaseLlm],
-  ) -> Callable[[ReadonlyContext], str]:
+  ) -> Callable[[ReadonlyContext[Any]], str]:
     """Load instruction template and embed ADK AgentConfig schema content."""
     instruction_template = (
         AgentBuilderAssistant._load_embedded_schema_instruction_template()
@@ -359,8 +359,8 @@ class AgentBuilderAssistant:
         else getattr(model, "model_name", str(model))
     )
 
-    # Return a function that accepts ReadonlyContext and returns the instruction
-    def instruction_provider(context: ReadonlyContext) -> str:
+    # Return a function that accepts ReadonlyContext[Any] and returns the instruction
+    def instruction_provider(context: ReadonlyContext[Any]) -> str:
       # Extract project folder name from session state
       project_folder_name = AgentBuilderAssistant._extract_project_folder_name(
           context
@@ -377,7 +377,7 @@ class AgentBuilderAssistant:
     return instruction_provider
 
   @staticmethod
-  def _extract_project_folder_name(context: ReadonlyContext) -> str:
+  def _extract_project_folder_name(context: ReadonlyContext[Any]) -> str:
     """Extract project folder name from session state using resolve_file_path."""
     from .utils.resolve_root_directory import resolve_file_path
 

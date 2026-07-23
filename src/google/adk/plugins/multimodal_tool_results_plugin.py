@@ -50,10 +50,10 @@ class MultimodalToolResultsPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
       result: dict[str, Any],
   ) -> Optional[dict[str, Any]]:
-    """Saves parts returned by the tool in ToolContext.
+    """Saves parts returned by the tool in ToolContext[Any, Any, Any].
 
     Later these are passed to LLM's context as-is.
     No-op if tool doesn't return list[google.genai.types.Part] or google.genai.types.Part.
@@ -77,7 +77,10 @@ class MultimodalToolResultsPlugin(BasePlugin):
     return None
 
   async def before_model_callback(
-      self, *, callback_context: CallbackContext, llm_request: LlmRequest
+      self,
+      *,
+      callback_context: CallbackContext[Any, Any, Any],
+      llm_request: LlmRequest,
   ) -> Optional[LlmResponse]:
     """Attach saved list[google.genai.types.Part] returned by the tool to llm_request."""
 

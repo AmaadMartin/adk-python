@@ -53,7 +53,7 @@ _MAX_PARENT_DEPTH = 50
 
 
 def _derive_scheduler(
-    parent_ctx: Context | None,
+    parent_ctx: Context[Any, Any, Any] | None,
 ) -> ScheduleDynamicNode | None:
   """Derives the dynamic node scheduler from the parent context."""
   if parent_ctx:
@@ -142,7 +142,7 @@ class Context(
       function_call_id: str | None = None,
       tool_confirmation: ToolConfirmation | None = None,
       # Workflow Execution
-      parent_ctx: Context | None = None,
+      parent_ctx: Context[Any, Any, Any] | None = None,
       node: BaseNode | None = None,
       node_path: str | None = None,
       run_id: str = '',
@@ -150,7 +150,7 @@ class Context(
       attempt_count: int = 1,
       use_as_output: bool = False,
   ) -> None:
-    """Initializes the Context.
+    """Initializes the Context[Any, Any, Any].
 
     Args:
       invocation_context: The invocation context.
@@ -159,7 +159,7 @@ class Context(
         for tool-specific methods like request_credential and
         request_confirmation.
       tool_confirmation: The tool confirmation of the current tool call.
-      parent_ctx: The parent node's Context.
+      parent_ctx: The parent node's Context[Any, Any, Any].
       node: The current node.
       node_path: The path of the current node in the workflow graph. If not
         provided, it will be derived from parent_ctx and node.
@@ -310,8 +310,8 @@ class Context(
   # ============================================================================
 
   @property
-  def parent_ctx(self) -> Context | None:
-    """Returns the parent node's Context."""
+  def parent_ctx(self) -> Context[Any, Any, Any] | None:
+    """Returns the parent node's Context[Any, Any, Any]."""
     return self._parent_ctx
 
   @property
@@ -507,7 +507,7 @@ class Context(
 
     See public ``run_node`` for public argument details.
     Additional internal args:
-      return_ctx: If True, returns the child's Context instead of its output.
+      return_ctx: If True, returns the child's Context[Any, Any, Any] instead of its output.
     """
 
     if not self._node_rerun_on_resume:
@@ -604,7 +604,7 @@ class Context(
           child_ctx.actions.transfer_to_agent if child_ctx else None
       )
 
-      # Post-Execution Validation: If the caller expects the raw output (not the Context),
+      # Post-Execution Validation: If the caller expects the raw output (not the Context[Any, Any, Any]),
       # we check for errors or interrupts and raise them immediately.
       if not return_ctx:
         if child_ctx.error:
@@ -644,7 +644,7 @@ class Context(
         if not root_agent:
           raise ValueError(f'Cannot find root_agent on node {curr_node.name}')
 
-        # Local import to avoid runtime circular dependencies with Context
+        # Local import to avoid runtime circular dependencies with Context[Any, Any, Any]
         from ..workflow.utils._transfer_utils import resolve_and_derive_transfer_context
 
         target_agent, next_parent_ctx = resolve_and_derive_transfer_context(
@@ -901,7 +901,7 @@ class Context(
 
     Example:
       ```python
-      async def my_after_agent_callback(ctx: Context):
+      async def my_after_agent_callback(ctx: Context[Any, Any, Any]):
           # Save conversation to memory at the end of each interaction
           await ctx.add_session_to_memory()
       ```
@@ -1032,7 +1032,7 @@ class Context(
       override_branch: str | None = None,
       override_isolation_scope: str | None = None,
       resume_inputs: dict[str, Any] | None = None,
-  ) -> Context:
+  ) -> Context[Any, Any, Any]:
     """Run a node directly via NodeRunner without an orchestrator."""
     from ..workflow._node_runner import NodeRunner
 

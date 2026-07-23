@@ -65,7 +65,7 @@ class ProgressCallbackFactory(Protocol):
 
   This protocol allows users to create different progress callbacks for
   different tools based on tool name and runtime context. The factory receives
-  the tool name, a CallbackContext for accessing and modifying session state,
+  the tool name, a CallbackContext[Any, Any, Any] for accessing and modifying session state,
   and additional keyword arguments for forward compatibility.
 
   Example usage::
@@ -73,7 +73,7 @@ class ProgressCallbackFactory(Protocol):
     def my_callback_factory(
         tool_name: str,
         *,
-        callback_context: CallbackContext | None = None,
+        callback_context: CallbackContext[Any, Any, Any] | None = None,
         **kwargs
     ) -> ProgressFnT | None:
       session_id = callback_context.session.id if callback_context else "N/A"
@@ -101,7 +101,7 @@ class ProgressCallbackFactory(Protocol):
       self,
       tool_name: str,
       *,
-      callback_context: CallbackContext | None = None,
+      callback_context: CallbackContext[Any, Any, Any] | None = None,
       **kwargs: Any,
   ) -> ProgressFnT | None:
     """Create a progress callback for a specific tool.
@@ -141,7 +141,7 @@ class McpTool(BaseAuthenticatedTool):
       require_confirmation: bool | Callable[..., bool] = False,
       header_provider: (
           Callable[
-              [ReadonlyContext],
+              [ReadonlyContext[Any]],
               dict[str, str] | Awaitable[dict[str, str]],
           ]
           | None
@@ -284,7 +284,7 @@ class McpTool(BaseAuthenticatedTool):
 
   @override
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any, Any, Any]
   ) -> Any:
     current_debug: list[dict[str, Any]] = []
     debug_token = (
@@ -377,7 +377,11 @@ class McpTool(BaseAuthenticatedTool):
   @retry_on_errors
   @override
   async def _run_async_impl(
-      self, *, args, tool_context: ToolContext, credential: AuthCredential
+      self,
+      *,
+      args,
+      tool_context: ToolContext[Any, Any, Any],
+      credential: AuthCredential,
   ) -> dict[str, Any]:
     """Runs the tool asynchronously.
 
@@ -393,7 +397,7 @@ class McpTool(BaseAuthenticatedTool):
     dynamic_headers = None
     if self._header_provider:
       dynamic_headers = self._header_provider(
-          ReadonlyContext(tool_context._invocation_context)  # pylint: disable=protected-access
+          ReadonlyContext[Any](tool_context._invocation_context)  # pylint: disable=protected-access
       )
       if inspect.isawaitable(dynamic_headers):
         dynamic_headers = await dynamic_headers
@@ -476,7 +480,7 @@ class McpTool(BaseAuthenticatedTool):
     return None
 
   def _resolve_progress_callback(
-      self, tool_context: ToolContext
+      self, tool_context: ToolContext[Any, Any, Any]
   ) -> ProgressFnT | None:
     """Resolve the progress callback for the current invocation.
 
@@ -510,7 +514,7 @@ class McpTool(BaseAuthenticatedTool):
     return self._progress_callback
 
   async def _get_headers(
-      self, tool_context: ToolContext, credential: AuthCredential
+      self, tool_context: ToolContext[Any, Any, Any], credential: AuthCredential
   ) -> dict[str, str] | None:
     """Extracts authentication headers from credentials.
 

@@ -139,7 +139,7 @@ class _LiveSession:
         async for _ in agen:
           pass
 
-      callback_context = CallbackContext(invocation_context)
+      callback_context = CallbackContext[Any, Any, Any](invocation_context)
       # By default, live API calls do not include before_model_callback and
       # after_model_callback. These callbacks are needed by the plugins to
       # include the agent instructions and tool declarations in the eval

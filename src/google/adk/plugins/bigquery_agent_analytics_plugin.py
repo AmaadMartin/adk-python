@@ -267,7 +267,7 @@ def _find_transfer_target(agent: Any, agent_name: str) -> Any:
 def _get_tool_origin(
     tool: "BaseTool",
     tool_args: Optional[dict[str, Any]] = None,
-    tool_context: Optional["ToolContext"] = None,
+    tool_context: Optional["ToolContext[Any, Any, Any]"] = None,
 ) -> str:
   """Returns the provenance category of a tool.
 
@@ -1170,7 +1170,7 @@ class TraceManager:
     return records
 
   @staticmethod
-  def init_trace(callback_context: CallbackContext) -> None:
+  def init_trace(callback_context: CallbackContext[Any, Any, Any]) -> None:
     # Always refresh root_agent_name — it can change between
     # invocations (e.g. different root agents in the same task).
     try:
@@ -1183,7 +1183,9 @@ class TraceManager:
     TraceManager._get_records()
 
   @staticmethod
-  def get_trace_id(callback_context: CallbackContext) -> Optional[str]:
+  def get_trace_id(
+      callback_context: CallbackContext[Any, Any, Any],
+  ) -> Optional[str]:
     """Gets the trace ID from the current span stack or invocation_id."""
     records = _span_records_ctx.get()
     if records:
@@ -1199,7 +1201,7 @@ class TraceManager:
 
   @staticmethod
   def push_span(
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any, Any, Any],
       span_name: Optional[str] = "adk-span",
   ) -> str:
     """Pushes a BQAA-internal span record onto the stack.
@@ -1249,7 +1251,7 @@ class TraceManager:
 
   @staticmethod
   def attach_current_span(
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any, Any, Any],
   ) -> str:
     """Records the ambient OTel span's IDs on the stack without owning it.
 
@@ -1284,7 +1286,7 @@ class TraceManager:
 
   @staticmethod
   def ensure_invocation_span(
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any, Any, Any],
   ) -> None:
     """Ensures a root span exists on the plugin stack for this invocation.
 
@@ -3886,7 +3888,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
   @staticmethod
   def _resolve_ids(
       event_data: EventData,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any, Any, Any],
   ) -> tuple[Optional[str], Optional[str], Optional[str]]:
     """Resolves trace_id, span_id, and parent_span_id for a log row.
 
@@ -3971,12 +3973,12 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
 
   @staticmethod
   def _resolve_agent_label(
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any, Any, Any],
       source_event: Optional["Event"],
   ) -> Optional[str]:
     """Resolves the ``agent`` column without raising when no agent is set.
 
-    ``CallbackContext.agent_name`` dereferences
+    ``CallbackContext[Any, Any, Any].agent_name`` dereferences
     ``InvocationContext.agent.name`` with no None guard, but ``agent`` is
     legitimately ``None`` for workflow-driven invocations with deterministic
     nodes. Reading it at row-build time then raised ``AttributeError``, which
@@ -3998,7 +4000,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
 
   def _build_adk_envelope(
       self,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any, Any, Any],
       source_event: Optional["Event"],
   ) -> dict[str, Any]:
     """Builds the ``attributes.adk`` envelope.
@@ -4105,7 +4107,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
   def _enrich_attributes(
       self,
       event_data: EventData,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any, Any, Any],
   ) -> dict[str, Any]:
     """Builds the attributes dict from EventData and enrichments.
 
@@ -4240,7 +4242,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
   async def _log_event(
       self,
       event_type: str,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any, Any, Any],
       raw_content: Any = None,
       is_truncated: bool = False,
       event_data: Optional[EventData] = None,
@@ -4410,7 +4412,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
         invocation_context: The context of the current invocation.
         user_message: The message content received from the user.
     """
-    callback_ctx = CallbackContext(invocation_context)
+    callback_ctx = CallbackContext[Any, Any, Any](invocation_context)
     TraceManager.ensure_invocation_span(callback_ctx)
     await self._log_event(
         "USER_MESSAGE_RECEIVED",
@@ -4502,7 +4504,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
         invocation_context: The context for the current invocation.
         event: The event raised by the runner.
     """
-    callback_ctx = CallbackContext(invocation_context)
+    callback_ctx = CallbackContext[Any, Any, Any](invocation_context)
 
     # --- State delta logging ---
     if event.actions.state_delta:
@@ -4785,7 +4787,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
         invocation_context: The context of the current invocation.
     """
     await self._ensure_started()
-    callback_ctx = CallbackContext(invocation_context)
+    callback_ctx = CallbackContext[Any, Any, Any](invocation_context)
     TraceManager.ensure_invocation_span(callback_ctx)
     await self._log_event(
         "INVOCATION_STARTING",
@@ -4805,7 +4807,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
       # Capture trace_id BEFORE popping the invocation-root span so
       # that INVOCATION_COMPLETED shares the same trace_id as all
       # earlier events in this invocation (fixes #4645).
-      callback_ctx = CallbackContext(invocation_context)
+      callback_ctx = CallbackContext[Any, Any, Any](invocation_context)
       trace_id = TraceManager.get_trace_id(callback_ctx)
 
       # Pop the invocation-root span pushed by ensure_invocation_span.
@@ -4833,7 +4835,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
 
   @_safe_callback
   async def before_agent_callback(
-      self, *, agent: Any, callback_context: CallbackContext
+      self, *, agent: Any, callback_context: CallbackContext[Any, Any, Any]
   ) -> None:
     """Callback before an agent starts processing.
 
@@ -4851,7 +4853,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
 
   @_safe_callback
   async def after_agent_callback(
-      self, *, agent: Any, callback_context: CallbackContext
+      self, *, agent: Any, callback_context: CallbackContext[Any, Any, Any]
   ) -> None:
     """Callback after an agent completes processing.
 
@@ -4876,7 +4878,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
   async def before_model_callback(
       self,
       *,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any, Any, Any],
       llm_request: LlmRequest,
   ) -> None:
     """Callback before LLM call.
@@ -4945,7 +4947,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
   async def after_model_callback(
       self,
       *,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any, Any, Any],
       llm_response: "LlmResponse",
   ) -> None:
     """Callback after LLM call.
@@ -5047,7 +5049,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
   async def on_model_error_callback(
       self,
       *,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any, Any, Any],
       llm_request: LlmRequest,
       error: Exception,
   ) -> None:
@@ -5079,7 +5081,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
   ) -> None:
     """Callback before tool execution.
 
@@ -5111,7 +5113,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
       result: dict[str, Any],
   ) -> None:
     """Callback after tool execution.
@@ -5153,7 +5155,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
       error: Exception,
   ) -> None:
     """Callback on tool error.
@@ -5195,7 +5197,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
       self,
       *,
       agent: Any,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any, Any, Any],
       error: Exception,
   ) -> None:
     """Callback when an agent execution fails with an unhandled exception.
@@ -5256,7 +5258,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
         error: The exception that escaped runner execution.
     """
     try:
-      callback_ctx = CallbackContext(invocation_context)
+      callback_ctx = CallbackContext[Any, Any, Any](invocation_context)
       trace_id = TraceManager.get_trace_id(callback_ctx)
 
       # Guarded pop: only consume the invocation-root span. If the failure

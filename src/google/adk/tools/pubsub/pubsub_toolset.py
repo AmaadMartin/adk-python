@@ -56,7 +56,7 @@ class PubSubToolset(BaseToolset):
     )
 
   def _is_tool_selected(
-      self, tool: BaseTool, readonly_context: ReadonlyContext
+      self, tool: BaseTool, readonly_context: ReadonlyContext[Any]
   ) -> bool:
     if self.tool_filter is None:
       return True
@@ -71,7 +71,7 @@ class PubSubToolset(BaseToolset):
 
   @override
   async def get_tools(
-      self, readonly_context: ReadonlyContext | None = None
+      self, readonly_context: ReadonlyContext[Any] | None = None
   ) -> list[BaseTool]:
     """Get tools from the toolset."""
     all_tools = [

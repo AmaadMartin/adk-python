@@ -16,6 +16,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 import logging
+from typing import Any
 from typing import Callable
 from typing import Optional
 
@@ -130,7 +131,10 @@ class ContextFilterPlugin(BasePlugin):
     self._remove_amount = remove_amount
 
   async def before_model_callback(
-      self, *, callback_context: CallbackContext, llm_request: LlmRequest
+      self,
+      *,
+      callback_context: CallbackContext[Any, Any, Any],
+      llm_request: LlmRequest,
   ) -> Optional[LlmResponse]:
     """Filters the LLM request's context before it is sent to the model."""
     try:

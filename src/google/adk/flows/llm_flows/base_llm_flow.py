@@ -18,6 +18,7 @@ from abc import ABC
 import asyncio
 import inspect
 import logging
+from typing import Any
 from typing import AsyncGenerator
 from typing import Optional
 from typing import TYPE_CHECKING
@@ -144,7 +145,7 @@ async def _resolve_toolset_auth(
     return
 
   pending_auth_requests: dict[str, AuthConfig] = {}
-  callback_context = CallbackContext(invocation_context)
+  callback_context = CallbackContext[Any, Any, Any](invocation_context)
 
   for tool_union in agent.tools:
     if not isinstance(tool_union, BaseToolset):
@@ -221,7 +222,7 @@ async def _handle_before_model_callback(
   """
   agent = invocation_context.agent
 
-  callback_context = CallbackContext(
+  callback_context = CallbackContext[Any, Any, Any](
       invocation_context, event_actions=model_response_event.actions
   )
 
@@ -274,7 +275,7 @@ async def _handle_after_model_callback(
   async def _maybe_add_grounding_metadata(
       response: Optional[LlmResponse] = None,
   ) -> Optional[LlmResponse]:
-    readonly_context = ReadonlyContext(invocation_context)
+    readonly_context = ReadonlyContext[Any](invocation_context)
     if (tools := invocation_context.canonical_tools_cache) is None:
       tools = await agent.canonical_tools(readonly_context)
       invocation_context.canonical_tools_cache = tools
@@ -292,7 +293,7 @@ async def _handle_after_model_callback(
     response.grounding_metadata = ground_metadata
     return response
 
-  callback_context = CallbackContext(
+  callback_context = CallbackContext[Any, Any, Any](
       invocation_context, event_actions=model_response_event.actions
   )
 
@@ -359,7 +360,7 @@ async def _run_and_handle_error(
 
   async def _run_on_model_error_callbacks(
       *,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any, Any, Any],
       llm_request: LlmRequest,
       error: Exception,
   ) -> Optional[LlmResponse]:
@@ -397,7 +398,7 @@ async def _run_and_handle_error(
           tel_ctx.record_llm_response(invocation_context, llm_response)
           yield llm_response
   except Exception as model_error:
-    callback_context = CallbackContext(
+    callback_context = CallbackContext[Any, Any, Any](
         invocation_context, event_actions=model_response_event.actions
     )
     if call_llm_span is not None:
@@ -466,7 +467,7 @@ async def _process_agent_tools(
   resolved_tools_per_union = await asyncio.gather(*(
       _convert_tool_union_to_tools(
           tool_union,
-          ReadonlyContext(invocation_context),
+          ReadonlyContext[Any](invocation_context),
           model,
           multiple_tools,
       )
@@ -477,7 +478,7 @@ async def _process_agent_tools(
   # to ``llm_request`` and reads of its state (model, config.tools,
   # tools_dict) preserve today's ordering semantics exactly.
   for tool_union, tools in zip(agent.tools, resolved_tools_per_union):
-    tool_context = ToolContext(invocation_context)
+    tool_context = ToolContext[Any, Any, Any](invocation_context)
 
     # If it's a toolset, process it first
     if isinstance(tool_union, BaseToolset):

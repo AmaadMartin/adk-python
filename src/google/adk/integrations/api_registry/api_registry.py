@@ -57,7 +57,7 @@ class ApiRegistry:
       api_registry_project_id: str,
       location: str = "global",
       header_provider: (
-          Callable[[ReadonlyContext], dict[str, str]] | None
+          Callable[[ReadonlyContext[Any]], dict[str, str]] | None
       ) = None,
   ):
     """Initialize the API Registry.

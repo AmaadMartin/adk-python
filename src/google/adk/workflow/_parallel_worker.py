@@ -74,7 +74,7 @@ class _ParallelWorker(BaseNode):
   async def _run_impl(
       self,
       *,
-      ctx: Context,
+      ctx: Context[Any, Any, Any],
       node_input: Any,
   ) -> AsyncGenerator[Any, None]:
     if not isinstance(node_input, list):

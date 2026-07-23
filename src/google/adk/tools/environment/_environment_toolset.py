@@ -80,7 +80,7 @@ class EnvironmentToolset(BaseToolset):
   @override
   async def get_tools(
       self,
-      readonly_context: Optional[ReadonlyContext] = None,
+      readonly_context: Optional[ReadonlyContext[Any]] = None,
   ) -> list[BaseTool]:
     if not self._environment_initialized:
       await self._environment.initialize()
@@ -96,7 +96,7 @@ class EnvironmentToolset(BaseToolset):
 
   @override
   async def process_llm_request(
-      self, *, tool_context: ToolContext, llm_request: LlmRequest
+      self, *, tool_context: ToolContext[Any, Any, Any], llm_request: LlmRequest
   ) -> None:
     """Inject environment-level system instruction."""
     if not self._environment_initialized:

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import hashlib
 import logging
+from typing import Any
 from typing import Literal
 from typing import Optional
 
@@ -47,9 +48,9 @@ class AuthPreparationResult(BaseModel):
 
 
 class ToolContextCredentialStore:
-  """Handles storage and retrieval of credentials within a ToolContext."""
+  """Handles storage and retrieval of credentials within a ToolContext[Any, Any, Any]."""
 
-  def __init__(self, tool_context: ToolContext):
+  def __init__(self, tool_context: ToolContext[Any, Any, Any]):
     self.tool_context = tool_context
 
   def _legacy_stable_digest(self, text: str) -> str:
@@ -166,7 +167,7 @@ class ToolAuthHandler:
 
   def __init__(
       self,
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
       auth_scheme: Optional[AuthScheme],
       auth_credential: Optional[AuthCredential],
       credential_exchanger: Optional[BaseAuthCredentialExchanger] = None,
@@ -213,14 +214,14 @@ class ToolAuthHandler:
   @classmethod
   def from_tool_context(
       cls,
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
       auth_scheme: Optional[AuthScheme],
       auth_credential: Optional[AuthCredential],
       credential_exchanger: Optional[BaseAuthCredentialExchanger] = None,
       *,
       credential_key: Optional[str] = None,
   ) -> "ToolAuthHandler":
-    """Creates a ToolAuthHandler instance from a ToolContext."""
+    """Creates a ToolAuthHandler instance from a ToolContext[Any, Any, Any]."""
     credential_store = ToolContextCredentialStore(tool_context)
     return cls(
         tool_context,

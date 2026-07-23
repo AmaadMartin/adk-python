@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 from typing import TYPE_CHECKING
 
 from typing_extensions import override
@@ -47,7 +48,7 @@ class PreloadMemoryTool(BaseTool):
   async def process_llm_request(
       self,
       *,
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
       llm_request: LlmRequest,
   ) -> None:
     user_content = tool_context.user_content

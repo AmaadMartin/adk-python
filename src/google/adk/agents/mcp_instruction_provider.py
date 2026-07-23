@@ -53,7 +53,7 @@ class McpInstructionProvider(InstructionProvider):
     )
     self.prompt_name = prompt_name
 
-  async def __call__(self, context: ReadonlyContext) -> str:
+  async def __call__(self, context: ReadonlyContext[Any]) -> str:
     """Fetches the instruction from the MCP server.
 
     Args:
