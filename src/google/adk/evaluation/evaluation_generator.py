@@ -178,8 +178,9 @@ class _LiveSession:
             )
 
             if isinstance(self.runner.agent, Agent):
+              from ..agents.readonly_context import ReadonlyContext
               resolved_tools = await self.runner.agent.canonical_tools(
-                  inv_context
+                  ReadonlyContext(inv_context)
               )
               tools_dict = {t.name: t for t in resolved_tools}
             else:

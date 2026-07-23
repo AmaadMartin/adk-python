@@ -798,7 +798,7 @@ class LlmAgent(BaseAgent, abc.ABC):
   @property
   def canonical_before_tool_callbacks(
       self,
-  ) -> list[BeforeToolCallback]:
+  ) -> list[_SingleBeforeToolCallback]:
     """The resolved self.before_tool_callback field as a list of BeforeToolCallback.
 
     This method is only for use by Agent Development Kit.
@@ -812,7 +812,7 @@ class LlmAgent(BaseAgent, abc.ABC):
   @property
   def canonical_after_tool_callbacks(
       self,
-  ) -> list[AfterToolCallback]:
+  ) -> list[_SingleAfterToolCallback]:
     """The resolved self.after_tool_callback field as a list of AfterToolCallback.
 
     This method is only for use by Agent Development Kit.
@@ -826,7 +826,7 @@ class LlmAgent(BaseAgent, abc.ABC):
   @property
   def canonical_on_tool_error_callbacks(
       self,
-  ) -> list[OnToolErrorCallback]:
+  ) -> list[_SingleOnToolErrorCallback]:
     """The resolved self.on_tool_error_callback field as a list of OnToolErrorCallback.
 
     This method is only for use by Agent Development Kit.

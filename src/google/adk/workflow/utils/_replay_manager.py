@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Any
 
 # Copyright 2026 Google LLC
@@ -16,7 +17,6 @@ from typing import Any
 
 """ReplayManager — unified orchestrator for event rehydration, interception, and sequence barriers."""
 
-from __future__ import annotations
 
 import logging
 

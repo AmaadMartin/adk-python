@@ -358,12 +358,12 @@ def _build_llm_agent_description_with_instructions(agent: LlmAgent) -> str:
     description_parts.append(agent.description)
 
   # Add instruction (with pronoun replacement) - only for LlmAgent
-  if agent.instruction:
+  if isinstance(agent.instruction, str) and agent.instruction:
     instruction = _replace_pronouns(agent.instruction)
     description_parts.append(instruction)
 
   # Add global instruction (with pronoun replacement) - only for LlmAgent
-  if agent.global_instruction:
+  if isinstance(agent.global_instruction, str) and agent.global_instruction:
     global_instruction = _replace_pronouns(agent.global_instruction)
     description_parts.append(global_instruction)
 

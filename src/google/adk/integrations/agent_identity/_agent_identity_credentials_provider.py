@@ -1,3 +1,4 @@
+from __future__ import annotations
 from typing import Any
 
 # Copyright 2026 Google LLC
@@ -16,7 +17,6 @@ from typing import Any
 
 """Credentials Provider using the Agent Identity service."""
 
-from __future__ import annotations
 
 import asyncio
 import logging
