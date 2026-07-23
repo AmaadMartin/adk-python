@@ -551,7 +551,7 @@ async def test_run_once_cli_multiple_interrupts(
       ev = Event(
           author="model",
           content=content, # pytype: disable=wrong-arg-types
-          long_running_tool_ids=[fc1.id, fc2.id]
+          long_running_tool_ids={str(fc1.id), str(fc2.id)}
       )
       sess.events.append(ev)
       return sess
@@ -589,7 +589,7 @@ async def test_run_once_cli_credential_resume(
       fc = cli.types.FunctionCall(id="auth_1", name="adk_request_credential", args={})
       ev = cli.types.Content(role="model", parts=[cli.types.Part(function_call=fc)])
       from google.adk.events.event import Event
-      sess.events.append(Event(author="model", content=ev, long_running_tool_ids=[fc.id])) # pytype: disable=wrong-arg-types
+      sess.events.append(Event(author="model", content=ev, long_running_tool_ids={str(fc.id)})) # pytype: disable=wrong-arg-types
       return sess
 
   monkeypatch.setattr(
