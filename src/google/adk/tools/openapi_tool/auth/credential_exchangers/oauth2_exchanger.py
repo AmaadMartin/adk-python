@@ -34,7 +34,7 @@ class OAuth2CredentialExchanger(BaseAuthCredentialExchanger):
       self,
       auth_scheme: AuthScheme,
       auth_credential: Optional[AuthCredential] = None,
-  ):
+  ) -> None:
     if not auth_credential:
       raise ValueError(
           "auth_credential is empty. Please create AuthCredential using"
@@ -71,7 +71,8 @@ class OAuth2CredentialExchanger(BaseAuthCredentialExchanger):
         HTTP bearer token cannot be generated, return the original credential.
     """
 
-    if not auth_credential.oauth2.access_token:
+    assert auth_credential is not None
+    if not auth_credential.oauth2 or not auth_credential.oauth2.access_token:
       return auth_credential
 
     # Return the access token as a bearer token.
@@ -104,6 +105,7 @@ class OAuth2CredentialExchanger(BaseAuthCredentialExchanger):
         ValueError: If the auth scheme or auth credential is invalid.
     """
     self._check_scheme_credential_type(auth_scheme, auth_credential)
+    assert auth_credential is not None
 
     # If token is already HTTPBearer token, do nothing assuming that this token
     #  is valid.
@@ -165,4 +167,4 @@ class OAuth2CredentialExchanger(BaseAuthCredentialExchanger):
     if auth_credential.oauth2 and auth_credential.oauth2.access_token:
       return self.generate_auth_token(auth_credential)
 
-    return None
+    return None  # type: ignore[return-value]
