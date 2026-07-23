@@ -92,9 +92,6 @@ class State:
     """Sets the value of the state dict for the given key."""
     if self._schema is not None and isinstance(self._schema, type):
       _validate_state_entry(self._schema, key, value)
-    # TODO: make new change only store in delta, so that self._value is only
-    #   updated at the storage commit time.
-    self._value[key] = value
     self._delta[key] = value
 
   def __contains__(self, key: str) -> bool:
@@ -124,7 +121,6 @@ class State:
     if self._schema is not None and isinstance(self._schema, type):
       for key, value in delta.items():
         _validate_state_entry(self._schema, key, value)
-    self._value.update(delta)
     self._delta.update(delta)
 
   def to_dict(self) -> dict[str, Any]:
