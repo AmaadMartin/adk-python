@@ -13,7 +13,9 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any, Optional
 
+from typing import Any
 from typing import List
 from typing import Optional
 from typing import Union
@@ -71,7 +73,7 @@ class SpannerToolset(BaseToolset):
     )
 
   def _is_tool_selected(
-      self, tool: BaseTool, readonly_context: ReadonlyContext
+      self, tool: BaseTool, readonly_context: Optional[ReadonlyContext[Any]]
   ) -> bool:
     if self.tool_filter is None:
       return True
@@ -86,7 +88,7 @@ class SpannerToolset(BaseToolset):
 
   @override
   async def get_tools(
-      self, readonly_context: Optional[ReadonlyContext] = None
+      self, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> List[BaseTool]:
     """Get tools from the toolset."""
     all_tools = [

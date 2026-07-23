@@ -144,7 +144,10 @@ class LoggingPlugin(BasePlugin):
 
   @override
   async def before_agent_callback(
-      self, *, agent: BaseAgent, callback_context: CallbackContext
+      self,
+      *,
+      agent: BaseAgent,
+      callback_context: CallbackContext[Any, Any, Any],
   ) -> Optional[types.Content]:
     """Log agent execution start."""
     self._log(f"🤖 AGENT STARTING")
@@ -156,7 +159,10 @@ class LoggingPlugin(BasePlugin):
 
   @override
   async def after_agent_callback(
-      self, *, agent: BaseAgent, callback_context: CallbackContext
+      self,
+      *,
+      agent: BaseAgent,
+      callback_context: CallbackContext[Any, Any, Any],
   ) -> Optional[types.Content]:
     """Log agent execution completion."""
     self._log(f"🤖 AGENT COMPLETED")
@@ -166,7 +172,10 @@ class LoggingPlugin(BasePlugin):
 
   @override
   async def before_model_callback(
-      self, *, callback_context: CallbackContext, llm_request: LlmRequest
+      self,
+      *,
+      callback_context: CallbackContext[Any, Any, Any],
+      llm_request: LlmRequest,
   ) -> Optional[LlmResponse]:
     """Log LLM request before sending to model."""
     self._log(f"🧠 LLM REQUEST")
@@ -192,7 +201,10 @@ class LoggingPlugin(BasePlugin):
 
   @override
   async def after_model_callback(
-      self, *, callback_context: CallbackContext, llm_response: LlmResponse
+      self,
+      *,
+      callback_context: CallbackContext[Any, Any, Any],
+      llm_response: LlmResponse,
   ) -> Optional[LlmResponse]:
     """Log LLM response after receiving from model."""
     self._log(f"🧠 LLM RESPONSE")
@@ -224,7 +236,7 @@ class LoggingPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
   ) -> Optional[dict[str, Any]]:
     """Log tool execution start."""
     self._log(f"🔧 TOOL STARTING")
@@ -240,7 +252,7 @@ class LoggingPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
       result: dict[str, Any],
   ) -> Optional[dict[str, Any]]:
     """Log tool execution completion."""
@@ -255,7 +267,7 @@ class LoggingPlugin(BasePlugin):
   async def on_model_error_callback(
       self,
       *,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any, Any, Any],
       llm_request: LlmRequest,
       error: Exception,
   ) -> Optional[LlmResponse]:
@@ -272,7 +284,7 @@ class LoggingPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
       error: Exception,
   ) -> Optional[dict[str, Any]]:
     """Log tool error."""

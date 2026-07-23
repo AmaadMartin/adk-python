@@ -1,3 +1,6 @@
+from __future__ import annotations
+from typing import Any
+
 # Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +17,6 @@
 
 """Credentials Provider using the Agent Identity service."""
 
-from __future__ import annotations
 
 import asyncio
 import logging
@@ -140,7 +142,7 @@ class _AgentIdentityCredentialsProvider:
     raise TimeoutError("Timeout waiting for credentials.")
 
   @staticmethod
-  def _is_consent_completed(context: CallbackContext) -> bool:
+  def _is_consent_completed(context: CallbackContext[Any, Any, Any]) -> bool:
     """Checks if the user consent flow is completed for the current function
 
     call.
@@ -177,7 +179,7 @@ class _AgentIdentityCredentialsProvider:
   async def get_auth_credential(
       self,
       auth_scheme: GcpAuthProviderScheme,
-      context: CallbackContext | None = None,
+      context: CallbackContext[Any, Any, Any] | None = None,
   ) -> AuthCredential:
     """Retrieves credentials using the Agent Identity Credentials service.
 

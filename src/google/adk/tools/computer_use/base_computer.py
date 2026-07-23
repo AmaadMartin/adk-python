@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import abc
 from enum import Enum
+from typing import Any
 from typing import Literal
 from typing import Optional
 from typing import TYPE_CHECKING
@@ -64,7 +65,7 @@ class BaseComputer(abc.ABC):
   computer environments, including web browsers and other interactive systems.
   """
 
-  async def prepare(self, tool_context: "ToolContext") -> None:
+  async def prepare(self, tool_context: "ToolContext[Any, Any, Any]") -> None:
     """Called before each tool invocation to prepare resources.
 
     Override this to set up session-level resources (sandbox, tokens, etc.)

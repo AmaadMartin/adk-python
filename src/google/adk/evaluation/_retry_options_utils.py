@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from typing import Optional
 
 from google.genai import types
@@ -70,7 +71,10 @@ class EnsureRetryOptionsPlugin(BasePlugin):
 
   @override
   async def before_model_callback(
-      self, *, callback_context: CallbackContext, llm_request: LlmRequest
+      self,
+      *,
+      callback_context: CallbackContext[Any, Any, Any],
+      llm_request: LlmRequest,
   ) -> Optional[LlmResponse]:
     add_default_retry_options_if_not_present(llm_request)
     return None

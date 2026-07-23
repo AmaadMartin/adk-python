@@ -110,7 +110,7 @@ class McpToolset(BaseToolset):
       require_confirmation: Union[bool, Callable[..., bool]] = False,
       header_provider: (
           Callable[
-              [ReadonlyContext],
+              [ReadonlyContext[Any]],
               dict[str, str] | Awaitable[dict[str, str]],
           ]
           | None
@@ -144,7 +144,7 @@ class McpToolset(BaseToolset):
       auth_credential: The auth credential of the tool for tool calling
       require_confirmation: Whether tools in this toolset require confirmation.
         Can be a single boolean or a callable to apply to all tools.
-      header_provider: A callable that takes a ReadonlyContext and returns a
+      header_provider: A callable that takes a ReadonlyContext[Any] and returns a
         dictionary of headers to be used for the MCP session.
       progress_callback: Optional callback to receive progress notifications
         from MCP server during long-running tool execution. Can be either:  - A
@@ -154,7 +154,7 @@ class McpToolset(BaseToolset):
         receives (tool_name, callback_context, **kwargs) and returns a
         ProgressFnT or None. This allows different tools to have different
         progress handling logic and access/modify session state via the
-        CallbackContext. The **kwargs parameter allows for future extensibility.
+        CallbackContext[Any, Any, Any]. The **kwargs parameter allows for future extensibility.
       use_mcp_resources: Whether the agent should have access to MCP resources.
         This will add a `load_mcp_resource` tool to the toolset and include
         available resources in the agent context. Defaults to False.
@@ -202,7 +202,7 @@ class McpToolset(BaseToolset):
     self._use_mcp_resources = use_mcp_resources
 
   def _get_auth_headers(
-      self, readonly_context: Optional[ReadonlyContext] = None
+      self, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> Optional[Dict[str, str]]:
     """Build authentication headers from exchanged credential.
 
@@ -312,7 +312,8 @@ class McpToolset(BaseToolset):
       self,
   ) -> Optional[
       Callable[
-          [ReadonlyContext], Union[Dict[str, str], Awaitable[Dict[str, str]]]
+          [ReadonlyContext[Any]],
+          Union[Dict[str, str], Awaitable[Dict[str, str]]],
       ]
   ]:
     return self._header_provider
@@ -325,7 +326,7 @@ class McpToolset(BaseToolset):
       self,
       coroutine_func: Callable[[Any], Awaitable[T]],
       error_message: str,
-      readonly_context: Optional[ReadonlyContext] = None,
+      readonly_context: Optional[ReadonlyContext[Any]] = None,
   ) -> T:
     """Creates a session and executes a coroutine with it."""
     headers: Dict[str, str] = {}
@@ -364,12 +365,12 @@ class McpToolset(BaseToolset):
   @retry_on_errors
   async def get_tools(
       self,
-      readonly_context: Optional[ReadonlyContext] = None,
+      readonly_context: Optional[ReadonlyContext[Any]] = None,
   ) -> List[BaseTool]:
     """Return all tools in the toolset based on the provided context.
 
     Args:
-        readonly_context: Context used to filter tools available to the agent.
+        readonly_context: Context[Any, Any, Any] used to filter tools available to the agent.
           If None, all tools in the toolset are returned.
 
     Returns:
@@ -414,13 +415,13 @@ class McpToolset(BaseToolset):
     return tools
 
   async def read_resource(
-      self, name: str, readonly_context: Optional[ReadonlyContext] = None
+      self, name: str, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> Any:
     """Fetches and returns a list of contents of the named resource.
 
     Args:
       name: The name of the resource to fetch.
-      readonly_context: Context used to provide headers for the MCP session.
+      readonly_context: Context[Any, Any, Any] used to provide headers for the MCP session.
 
     Returns:
       List of contents of the resource.
@@ -437,7 +438,7 @@ class McpToolset(BaseToolset):
     return result.contents
 
   async def list_resources(
-      self, readonly_context: Optional[ReadonlyContext] = None
+      self, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> list[str]:
     """Returns a list of resource names available on the MCP server."""
     result: ListResourcesResult = await self._execute_with_session(
@@ -448,7 +449,7 @@ class McpToolset(BaseToolset):
     return [resource.name for resource in result.resources]
 
   async def get_resource_info(
-      self, name: str, readonly_context: Optional[ReadonlyContext] = None
+      self, name: str, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> dict[str, Any]:
     """Returns metadata about a specific resource (name, MIME type, etc.)."""
     result: ListResourcesResult = await self._execute_with_session(

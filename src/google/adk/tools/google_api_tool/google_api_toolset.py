@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -103,7 +104,7 @@ class GoogleApiToolset(BaseToolset):
 
   @override
   async def get_tools(
-      self, readonly_context: Optional[ReadonlyContext] = None
+      self, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> List[GoogleApiTool]:
     """Get all tools in the toolset."""
     return [

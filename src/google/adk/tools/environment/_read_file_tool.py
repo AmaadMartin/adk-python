@@ -99,7 +99,7 @@ class ReadFileTool(BaseTool):
 
   @override
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any, Any, Any]
   ) -> Any:
     path = args.get('path', '')
     if not path:

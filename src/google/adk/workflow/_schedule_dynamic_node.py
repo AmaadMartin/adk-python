@@ -38,7 +38,7 @@ class ScheduleDynamicNode(Protocol):
      interrupts.
 
   Args:
-    ctx: The calling node's Context.
+    ctx: The calling node's Context[Any, Any, Any].
     node: The node to execute. Usually a subclass of `BaseNode`.
     node_input: Input data for the node. Must match the node's input schema if
       defined.
@@ -52,7 +52,7 @@ class ScheduleDynamicNode(Protocol):
     override_branch: Optional specific branch name to use, overriding defaults.
 
   Returns:
-    Awaitable[Context]: A future that resolves to the child node's Context,
+    Awaitable[Context[Any, Any, Any]]: A future that resolves to the child node's Context[Any, Any, Any],
     which will contain the output, routing information, and any active
     interrupt IDs.
 
@@ -65,7 +65,7 @@ class ScheduleDynamicNode(Protocol):
 
   def __call__(
       self,
-      ctx: Context,
+      ctx: Context[Any, Any, Any],
       node: Any,
       node_input: Any,
       *,
@@ -75,5 +75,5 @@ class ScheduleDynamicNode(Protocol):
       use_sub_branch: bool = False,
       override_branch: str | None = None,
       override_isolation_scope: str | None = None,
-  ) -> Awaitable[Context]:
+  ) -> Awaitable[Context[Any, Any, Any]]:
     ...

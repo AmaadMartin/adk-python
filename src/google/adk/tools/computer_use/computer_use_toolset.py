@@ -81,7 +81,9 @@ class ComputerUseToolset(BaseToolset):
 
     @functools.wraps(method)
     async def wrapper(
-        *args: Any, tool_context: ToolContext = None, **kwargs: Any
+        *args: Any,
+        tool_context: ToolContext[Any, Any, Any] = None,
+        **kwargs: Any,
     ) -> Any:
       # Prepare computer before each tool call
       # Computers that need session state (e.g., AgentEngineSandboxComputer)
@@ -100,7 +102,7 @@ class ComputerUseToolset(BaseToolset):
             "tool_context",
             inspect.Parameter.KEYWORD_ONLY,
             default=None,
-            annotation=ToolContext,
+            annotation=ToolContext[Any, Any, Any],
         )
     ]
     wrapper.__signature__ = orig_sig.replace(parameters=new_params)
@@ -180,7 +182,7 @@ class ComputerUseToolset(BaseToolset):
   @override
   async def get_tools(
       self,
-      readonly_context: Optional[ReadonlyContext] = None,
+      readonly_context: Optional[ReadonlyContext[Any]] = None,
   ) -> list[ComputerUseTool]:
     if self._tools:
       return self._tools
@@ -238,7 +240,7 @@ class ComputerUseToolset(BaseToolset):
 
   @override
   async def process_llm_request(
-      self, *, tool_context: ToolContext, llm_request: LlmRequest
+      self, *, tool_context: ToolContext[Any, Any, Any], llm_request: LlmRequest
   ) -> None:
     """Add its tools to the LLM request and add computer use configuration to the LLM request."""
     try:

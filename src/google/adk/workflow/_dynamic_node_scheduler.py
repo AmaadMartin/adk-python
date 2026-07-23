@@ -58,7 +58,7 @@ class DynamicNodeRun:
   output: Any = None
   """The final output of the node once it completes."""
 
-  task: asyncio.Task[Context] | None = None
+  task: asyncio.Task[Context[Any, Any, Any]] | None = None
   """The running asyncio Task for this node execution."""
 
   transfer_to_agent: str | None = None
@@ -99,7 +99,7 @@ class DynamicNodeState:
   replay_manager: ReplayManager = field(default_factory=ReplayManager)
   """The replay manager for this loop state, containing event indexes."""
 
-  def get_dynamic_tasks(self) -> list[asyncio.Task[Context]]:
+  def get_dynamic_tasks(self) -> list[asyncio.Task[Context[Any, Any, Any]]]:
     """Get all active dynamic node tasks."""
     return [
         run.task
@@ -127,7 +127,7 @@ class DynamicNodeScheduler(ScheduleDynamicNode):
 
   async def __call__(
       self,
-      ctx: Context,
+      ctx: Context[Any, Any, Any],
       node: BaseNode,
       node_input: Any,
       *,
@@ -137,11 +137,11 @@ class DynamicNodeScheduler(ScheduleDynamicNode):
       use_sub_branch: bool = False,
       override_branch: str | None = None,
       override_isolation_scope: str | None = None,
-  ) -> Context:
+  ) -> Context[Any, Any, Any]:
     """Schedule a dynamic node: dedup, resume, or fresh run.
 
     Args:
-      ctx: The calling node's Context.
+      ctx: The calling node's Context[Any, Any, Any].
       node: The BaseNode to execute (original, before renaming).
       node_input: Input data for the node.
       node_name: Deterministic tracking name from ctx.run_node().
@@ -153,7 +153,7 @@ class DynamicNodeScheduler(ScheduleDynamicNode):
       override_branch: Optional branch to use instead of parent's branch.
 
     Returns:
-      Child Context with output, route, and interrupt_ids set.
+      Child Context[Any, Any, Any] with output, route, and interrupt_ids set.
     """
     curr_parent_path = ctx.node_path if ctx else None
     base_path_builder = (
@@ -226,7 +226,7 @@ class DynamicNodeScheduler(ScheduleDynamicNode):
 
   async def _check_existing_run(
       self,
-      curr_parent_ctx: Context | None,
+      curr_parent_ctx: Context[Any, Any, Any] | None,
       curr_node: BaseNode,
       curr_name: str,
       node_path: str,
@@ -236,7 +236,7 @@ class DynamicNodeScheduler(ScheduleDynamicNode):
       use_sub_branch: bool,
       override_branch: str | None,
       override_isolation_scope: str | None = None,
-  ) -> tuple[Context | None, bool]:
+  ) -> tuple[Context[Any, Any, Any] | None, bool]:
     """Scan and process cached status for waiting or completed runs.
 
     Returns a tuple of (child_ctx, run_completed_flag).
@@ -325,7 +325,9 @@ class DynamicNodeScheduler(ScheduleDynamicNode):
 
   # --- Lazy scan ---
 
-  def _rehydrate_from_events(self, ctx: Context, node_path: str) -> None:
+  def _rehydrate_from_events(
+      self, ctx: Context[Any, Any, Any], node_path: str
+  ) -> None:
     """Scan session events for a dynamic node's prior state."""
     logger.debug('node %s rehydrate start.', node_path)
     ic = ctx._invocation_context  # pylint: disable=protected-access
@@ -354,7 +356,7 @@ class DynamicNodeScheduler(ScheduleDynamicNode):
 
   async def _run_node_internal(
       self,
-      ctx: Context,
+      ctx: Context[Any, Any, Any],
       node: BaseNode,
       name: str,
       node_path: str,
@@ -365,7 +367,7 @@ class DynamicNodeScheduler(ScheduleDynamicNode):
       use_sub_branch: bool = False,
       override_branch: str | None = None,
       override_isolation_scope: str | None = None,
-  ) -> Context:
+  ) -> Context[Any, Any, Any]:
     """Unified runner for both fresh and resume executions."""
     if is_fresh:
       state = NodeState(
@@ -409,7 +411,7 @@ class DynamicNodeScheduler(ScheduleDynamicNode):
   def _record_result(
       self,
       run: DynamicNodeRun,
-      child_ctx: Context,
+      child_ctx: Context[Any, Any, Any],
       node: BaseNode,
   ) -> None:
     """Update dynamic node state after execution."""

@@ -1,3 +1,6 @@
+from __future__ import annotations
+from typing import Any
+
 # Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,7 +17,6 @@
 
 """ReplayManager — unified orchestrator for event rehydration, interception, and sequence barriers."""
 
-from __future__ import annotations
 
 import logging
 
@@ -49,7 +51,7 @@ class ReplayManager:
     """Sequence barrier for deterministic replay ordering."""
     return self._sequence_barrier
 
-  def _ensure_index(self, ctx: Context) -> None:
+  def _ensure_index(self, ctx: Context[Any, Any, Any]) -> None:
     """Ensures event indexes are initialized and up-to-date with current session.
 
     In multi-turn sessions, new events are added to session history on each turn.
@@ -113,7 +115,7 @@ class ReplayManager:
       self._transitive_events_by_parent.setdefault("", []).append(event)
 
   def get_events_for_rehydration(
-      self, ctx: Context, node_path: str
+      self, ctx: Context[Any, Any, Any], node_path: str
   ) -> list[Event]:
     """Retrieves pre-filtered session events relevant to rehydrating a node path.
 
@@ -169,7 +171,7 @@ class ReplayManager:
   def _scan_sequence(
       self,
       events: list[Event],
-      ctx: Context,
+      ctx: Context[Any, Any, Any],
       base_path: str,
       strict_direct_child: bool = False,
   ) -> list[str]:
@@ -198,7 +200,7 @@ class ReplayManager:
     return sequence
 
   def scan_workflow_events(
-      self, ctx: Context
+      self, ctx: Context[Any, Any, Any]
   ) -> tuple[dict[str, _ChildScanState], list[str]]:
     """Scan session events for direct child workflow nodes and initialize sequence barrier."""
     ic = ctx._invocation_context
@@ -226,7 +228,7 @@ class ReplayManager:
     return raw_results, sequence
 
   def prepare_parent_sequence_barrier(
-      self, ctx: Context, parent_path: str
+      self, ctx: Context[Any, Any, Any], parent_path: str
   ) -> ReplaySequenceBarrier:
     """Ensure a sequence barrier is set up for dynamic nodes under parent_path."""
     if parent_path not in self._parent_sequence_barriers:

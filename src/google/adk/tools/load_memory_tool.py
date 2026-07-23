@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from typing import TYPE_CHECKING
 
 from google.genai import types
@@ -36,7 +37,7 @@ class LoadMemoryResponse(BaseModel):
 
 
 async def load_memory(
-    query: str, tool_context: ToolContext
+    query: str, tool_context: ToolContext[Any, Any, Any]
 ) -> LoadMemoryResponse:
   """Loads the memory for the current user.
 
@@ -91,7 +92,7 @@ class LoadMemoryTool(FunctionTool):
   async def process_llm_request(
       self,
       *,
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
       llm_request: LlmRequest,
   ) -> None:
     await super().process_llm_request(

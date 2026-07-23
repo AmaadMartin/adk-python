@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import copy
 import logging
+from typing import Any
 from typing import Optional
 import urllib.parse
 
@@ -151,7 +152,10 @@ class SaveFilesAsArtifactsPlugin(BasePlugin):
       return None
 
   async def before_agent_callback(
-      self, *, agent: BaseAgent, callback_context: CallbackContext
+      self,
+      *,
+      agent: BaseAgent,
+      callback_context: CallbackContext[Any, Any, Any],
   ) -> Optional[types.Content]:
     """Writes the pending delta to event actions."""
     pending_delta = callback_context.state.get(self.name + ":pending_delta")

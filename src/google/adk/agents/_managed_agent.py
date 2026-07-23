@@ -152,7 +152,7 @@ class ManagedAgent(BaseAgent):
   A plain string may embed ``{var}``, ``{artifact.name}``, or ``{var?}``
   placeholders that are resolved from session state / artifacts at request time
   (see ``inject_session_state``). An ``InstructionProvider`` callable is invoked
-  with a ``ReadonlyContext`` and bypasses placeholder injection (it manages
+  with a ``ReadonlyContext[Any]`` and bypasses placeholder injection (it manages
   state itself). Empty by default, in which case no system instruction is sent.
   """
 
@@ -210,7 +210,7 @@ class ManagedAgent(BaseAgent):
     return self._api_client
 
   async def canonical_instruction(
-      self, ctx: ReadonlyContext
+      self, ctx: ReadonlyContext[Any]
   ) -> tuple[str, bool]:
     """Resolves ``self.instruction`` for the current context.
 
@@ -249,14 +249,14 @@ class ManagedAgent(BaseAgent):
     # real call uses ``agent=self.agent_id``.
     llm_request = LlmRequest(config=types.GenerateContentConfig())
     llm_request._is_managed_agent = True
-    tool_context = ToolContext(ctx)
+    tool_context = ToolContext[Any, Any, Any](ctx)
     mcp_params: list[ToolParam] = []
 
     for tool in self.tools:
       if isinstance(tool, RemoteMcpServer):
         resolved_headers = dict(tool.headers or {})
         if tool.header_provider is not None:
-          dynamic = tool.header_provider(ReadonlyContext(ctx))
+          dynamic = tool.header_provider(ReadonlyContext[Any](ctx))
           if inspect.isawaitable(dynamic):
             dynamic = await dynamic
           if dynamic:
@@ -351,7 +351,7 @@ class ManagedAgent(BaseAgent):
 
   @override
   async def _run_impl(
-      self, *, ctx: Context, node_input: Any
+      self, *, ctx: Context[Any, Any, Any], node_input: Any
   ) -> AsyncGenerator[Event, None]:
     """Runs the ManagedAgent as a node, threading node_input into user_content.
 
@@ -396,12 +396,12 @@ class ManagedAgent(BaseAgent):
     interaction_tools = await self._resolve_backend_tools(ctx)
 
     raw_si, bypass_state_injection = await self.canonical_instruction(
-        ReadonlyContext(ctx)
+        ReadonlyContext[Any](ctx)
     )
     system_instruction = raw_si
     if not bypass_state_injection:
       system_instruction = await inject_session_state(
-          raw_si, ReadonlyContext(ctx)
+          raw_si, ReadonlyContext[Any](ctx)
       )
 
     create_kwargs: dict[str, Any] = {

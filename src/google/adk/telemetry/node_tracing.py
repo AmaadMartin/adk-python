@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from dataclasses import field
 import sys
 import time
+from typing import Any
 from typing import TYPE_CHECKING
 
 from opentelemetry import context as context_api
@@ -60,7 +61,7 @@ _ENTRYPOINT_WORKFLOW_KEY = context_api.create_key(
 class TelemetryContext:
   """Telemetry specific context tied to the lifetime of the span."""
 
-  otel_context: context_api.Context
+  otel_context: context_api.Context[Any, Any, Any]
   """OTel context holding the current trace span."""
 
   _associated_event_ids: list[str] = field(default_factory=list)
@@ -73,7 +74,7 @@ class TelemetryContext:
 
 @asynccontextmanager
 async def start_as_current_node_span(
-    context: Context, node: BaseNode
+    context: Context[Any, Any, Any], node: BaseNode
 ) -> AsyncIterator[TelemetryContext]:
   """Creates a scope-based OpenTelemetry span, representing a node invocation.
 
@@ -94,11 +95,11 @@ async def start_as_current_node_span(
   We will create a proposal to standardize them.
 
   Args:
-    context: Context in which the span is created.
+    context: Context[Any, Any, Any] in which the span is created.
     node: The node to be invoked inside the created span.
 
   Yields:
-    Context with the started span.
+    Context[Any, Any, Any] with the started span.
   """
 
   from ..agents.base_agent import BaseAgent
@@ -117,7 +118,7 @@ async def start_as_current_node_span(
 
 @contextmanager
 def _invoke_agent_span(
-    context: Context, agent: BaseAgent
+    context: Context[Any, Any, Any], agent: BaseAgent
 ) -> Iterator[TelemetryContext]:
   """Passes through an agent node; agents emit their own `invoke_agent` span."""
   del agent
@@ -130,7 +131,7 @@ def _invoke_agent_span(
 
 @contextmanager
 def _invoke_workflow_span(
-    context: Context, workflow: Workflow
+    context: Context[Any, Any, Any], workflow: Workflow
 ) -> Iterator[TelemetryContext]:
   """Opens an `invoke_workflow` span plus its duration metric for ``node``."""
   with _use_invoke_workflow_span(
@@ -145,7 +146,7 @@ def _invoke_workflow_span(
 
 @contextmanager
 def _invoke_node_span(
-    context: Context, node: BaseNode
+    context: Context[Any, Any, Any], node: BaseNode
 ) -> Iterator[TelemetryContext]:
   """Opens an `invoke_node` span for a plain node."""
   with tracer.start_as_current_span(
@@ -177,7 +178,7 @@ def _use_invoke_workflow_span(
     workflow_name: str,
     conversation_id: str,
     *,
-    otel_context: context_api.Context | None = None,
+    otel_context: context_api.Context[Any, Any, Any] | None = None,
 ) -> Iterator[Span]:
   """Opens an `invoke_workflow {workflow_name}` span."""
   if otel_context is None:

@@ -139,7 +139,7 @@ class _LiveSession:
         async for _ in agen:
           pass
 
-      callback_context = CallbackContext(invocation_context)
+      callback_context = CallbackContext[Any, Any, Any](invocation_context)
       # By default, live API calls do not include before_model_callback and
       # after_model_callback. These callbacks are needed by the plugins to
       # include the agent instructions and tool declarations in the eval
@@ -178,8 +178,9 @@ class _LiveSession:
             )
 
             if isinstance(self.runner.agent, Agent):
+              from ..agents.readonly_context import ReadonlyContext
               resolved_tools = await self.runner.agent.canonical_tools(
-                  inv_context
+                  ReadonlyContext(inv_context)
               )
               tools_dict = {t.name: t for t in resolved_tools}
             else:

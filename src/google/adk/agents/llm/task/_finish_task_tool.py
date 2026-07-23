@@ -115,7 +115,7 @@ class FinishTaskTool(BaseTool):
 
   @override
   async def process_llm_request(
-      self, *, tool_context: ToolContext, llm_request: LlmRequest
+      self, *, tool_context: ToolContext[Any, Any, Any], llm_request: LlmRequest
   ) -> None:
     """Process the outgoing LLM request to add tool and instructions.
 
@@ -148,7 +148,7 @@ no accompanying text output."""
       self,
       *,
       args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
   ) -> str | dict[str, str]:
     """Execute the finish_task tool.
 

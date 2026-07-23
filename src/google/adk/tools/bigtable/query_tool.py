@@ -39,7 +39,7 @@ async def execute_sql(
     query: str,
     credentials: Credentials,
     settings: BigtableToolSettings,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any, Any, Any],
     parameters: Dict[str, Any] | None = None,
     parameter_types: Dict[str, Any] | None = None,
     _view_parameters: Dict[str, Any] | None = None,
@@ -53,7 +53,7 @@ async def execute_sql(
       query (str): The Bigtable SQL query to be executed.
       credentials (Credentials): The credentials to use for the request.
       settings (BigtableToolSettings): The configuration for the tool.
-      tool_context (ToolContext): The context for the tool.
+      tool_context (ToolContext[Any, Any, Any]): The context for the tool.
       parameters (dict): properties for parameter replacement. Keys must match
         the names used in ``query``.
       parameter_types (dict): maps explicit types for one or more param values.

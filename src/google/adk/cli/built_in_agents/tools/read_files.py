@@ -26,7 +26,7 @@ from ..utils.resolve_root_directory import resolve_file_paths
 
 
 async def read_files(
-    file_paths: List[str], tool_context: ToolContext
+    file_paths: List[str], tool_context: ToolContext[Any, Any, Any]
 ) -> Dict[str, Any]:
   """Read content from multiple files.
 

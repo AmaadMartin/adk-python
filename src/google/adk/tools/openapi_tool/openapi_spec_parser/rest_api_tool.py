@@ -113,7 +113,7 @@ class RestApiTool(BaseTool):
       should_parse_operation=True,
       ssl_verify: Optional[Union[bool, str, ssl.SSLContext]] = None,
       header_provider: Optional[
-          Callable[[ReadonlyContext], Dict[str, str]]
+          Callable[[ReadonlyContext[Any]], Dict[str, str]]
       ] = None,
       httpx_client_factory: Optional[HttpxClientFactory] = None,
       *,
@@ -150,7 +150,7 @@ class RestApiTool(BaseTool):
             Path to a CA bundle file or directory for custom CA -
             ssl.SSLContext: Custom SSL context for advanced configuration
         header_provider: A callable that returns a dictionary of headers to be
-          included in API requests. The callable receives the ReadonlyContext as
+          included in API requests. The callable receives the ReadonlyContext[Any] as
           an argument, allowing dynamic header generation based on the current
           context. Useful for adding custom headers like correlation IDs,
           authentication tokens, or other request metadata.
@@ -202,7 +202,7 @@ class RestApiTool(BaseTool):
       parsed: ParsedOperation,
       ssl_verify: Optional[Union[bool, str, ssl.SSLContext]] = None,
       header_provider: Optional[
-          Callable[[ReadonlyContext], Dict[str, str]]
+          Callable[[ReadonlyContext[Any]], Dict[str, str]]
       ] = None,
       httpx_client_factory: Optional[HttpxClientFactory] = None,
   ) -> "RestApiTool":
@@ -212,7 +212,7 @@ class RestApiTool(BaseTool):
         parsed: A ParsedOperation object.
         ssl_verify: SSL certificate verification option.
         header_provider: A callable that returns a dictionary of headers to be
-          included in API requests. The callable receives the ReadonlyContext as
+          included in API requests. The callable receives the ReadonlyContext[Any] as
           an argument, allowing dynamic header generation based on the current
           context. Useful for adding custom headers like correlation IDs,
           authentication tokens, or other request metadata.
@@ -482,12 +482,18 @@ class RestApiTool(BaseTool):
 
   @override
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: Optional[ToolContext]
+      self,
+      *,
+      args: dict[str, Any],
+      tool_context: Optional[ToolContext[Any, Any, Any]],
   ) -> Dict[str, Any]:
     return await self.call(args=args, tool_context=tool_context)
 
   async def call(
-      self, *, args: dict[str, Any], tool_context: Optional[ToolContext]
+      self,
+      *,
+      args: dict[str, Any],
+      tool_context: Optional[ToolContext[Any, Any, Any]],
   ) -> Dict[str, Any]:
     """Executes the REST API call.
 

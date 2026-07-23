@@ -81,7 +81,7 @@ NOTE: Call when you need access to resources.""",
 
   @override
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any, Any, Any]
   ) -> Any:
     resource_names: list[str] = args.get("resource_names", [])
     return {
@@ -94,7 +94,7 @@ NOTE: Call when you need access to resources.""",
 
   @override
   async def process_llm_request(
-      self, *, tool_context: ToolContext, llm_request: LlmRequest
+      self, *, tool_context: ToolContext[Any, Any, Any], llm_request: LlmRequest
   ) -> None:
     await super().process_llm_request(
         tool_context=tool_context,
@@ -105,7 +105,7 @@ NOTE: Call when you need access to resources.""",
     )
 
   async def _append_resources_to_llm_request(
-      self, *, tool_context: ToolContext, llm_request: LlmRequest
+      self, *, tool_context: ToolContext[Any, Any, Any], llm_request: LlmRequest
   ) -> None:
     try:
       resource_names = await self._mcp_toolset.list_resources()

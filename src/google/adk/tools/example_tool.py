@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from typing import TYPE_CHECKING
 from typing import Union
 
@@ -53,7 +54,7 @@ class ExampleTool(BaseTool):
 
   @override
   async def process_llm_request(
-      self, *, tool_context: ToolContext, llm_request: LlmRequest
+      self, *, tool_context: ToolContext[Any, Any, Any], llm_request: LlmRequest
   ) -> None:
     parts = tool_context.user_content.parts
     if not parts or not parts[0].text:

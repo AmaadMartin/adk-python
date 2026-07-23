@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from typing import TYPE_CHECKING
 
 from google.genai import types
@@ -47,7 +48,7 @@ class GoogleMapsGroundingTool(BaseTool):
   async def process_llm_request(
       self,
       *,
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
       llm_request: LlmRequest,
   ) -> None:
     model_check_disabled = is_gemini_model_id_check_disabled()

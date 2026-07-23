@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 from typing import List
 from typing import Optional
 
@@ -72,7 +73,7 @@ class BuiltInPlanner(BasePlanner):
   @override
   def build_planning_instruction(
       self,
-      readonly_context: ReadonlyContext,
+      readonly_context: ReadonlyContext[Any],
       llm_request: LlmRequest,
   ) -> Optional[str]:
     return
@@ -80,7 +81,7 @@ class BuiltInPlanner(BasePlanner):
   @override
   def process_planning_response(
       self,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any, Any, Any],
       response_parts: List[types.Part],
   ) -> Optional[List[types.Part]]:
     return

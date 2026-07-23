@@ -19,7 +19,9 @@ from __future__ import annotations
 from collections.abc import Mapping
 from collections.abc import Sequence
 from typing import Any
+from typing import Generic
 from typing import TYPE_CHECKING
+from typing import TypeVar
 
 from opentelemetry import context as context_api
 from typing_extensions import override
@@ -51,7 +53,7 @@ _MAX_PARENT_DEPTH = 50
 
 
 def _derive_scheduler(
-    parent_ctx: Context | None,
+    parent_ctx: Context[Any, Any, Any] | None,
 ) -> ScheduleDynamicNode | None:
   """Derives the dynamic node scheduler from the parent context."""
   if parent_ctx:
@@ -115,7 +117,15 @@ def _derive_node_path(
   return derived_node_path, derived_run_id
 
 
-class Context(ReadonlyContext):
+_StateValueT = TypeVar('_StateValueT')
+_OutputT = TypeVar('_OutputT')
+_ResumeInputsT = TypeVar('_ResumeInputsT')
+
+
+class Context(
+    ReadonlyContext[_StateValueT],
+    Generic[_StateValueT, _OutputT, _ResumeInputsT],
+):
   """The context within an agent run.
 
   When used in a workflow, additional fields under the ``Workflow-specific
@@ -132,15 +142,15 @@ class Context(ReadonlyContext):
       function_call_id: str | None = None,
       tool_confirmation: ToolConfirmation | None = None,
       # Workflow Execution
-      parent_ctx: Context | None = None,
+      parent_ctx: Context[Any, Any, Any] | None = None,
       node: BaseNode | None = None,
       node_path: str | None = None,
       run_id: str = '',
-      resume_inputs: dict[str, Any] | None = None,
+      resume_inputs: dict[str, _ResumeInputsT] | None = None,
       attempt_count: int = 1,
       use_as_output: bool = False,
   ) -> None:
-    """Initializes the Context.
+    """Initializes the Context[Any, Any, Any].
 
     Args:
       invocation_context: The invocation context.
@@ -149,7 +159,7 @@ class Context(ReadonlyContext):
         for tool-specific methods like request_credential and
         request_confirmation.
       tool_confirmation: The tool confirmation of the current tool call.
-      parent_ctx: The parent node's Context.
+      parent_ctx: The parent node's Context[Any, Any, Any].
       node: The current node.
       node_path: The path of the current node in the workflow graph. If not
         provided, it will be derived from parent_ctx and node.
@@ -208,7 +218,7 @@ class Context(ReadonlyContext):
     self._child_run_counters: dict[str, int] = {}
     self._attempt_count = attempt_count
     self._output_delegated = False
-    self._output_value: Any = None
+    self._output_value: _OutputT | None = None
     self._output_emitted: bool = False
     self._route_value: RouteValue | list[RouteValue] | None = None
     self._route_emitted: bool = False
@@ -300,8 +310,8 @@ class Context(ReadonlyContext):
   # ============================================================================
 
   @property
-  def parent_ctx(self) -> Context | None:
-    """Returns the parent node's Context."""
+  def parent_ctx(self) -> Context[Any, Any, Any] | None:
+    """Returns the parent node's Context[Any, Any, Any]."""
     return self._parent_ctx
 
   @property
@@ -325,7 +335,7 @@ class Context(ReadonlyContext):
     return self._attempt_count
 
   @property
-  def resume_inputs(self) -> dict[str, Any]:
+  def resume_inputs(self) -> dict[str, _ResumeInputsT]:
     """Returns inputs for resuming node, keyed by interrupt id."""
     return self._resume_inputs
 
@@ -340,7 +350,7 @@ class Context(ReadonlyContext):
     return self._error_node_path
 
   @property
-  def output(self) -> Any:
+  def output(self) -> _OutputT | None:
     """The node's result value. Source of truth for node output.
 
     Set once per run. Also set by the framework when the node
@@ -357,7 +367,7 @@ class Context(ReadonlyContext):
     return self._output_value
 
   @output.setter
-  def output(self, value: Any) -> None:
+  def output(self, value: _OutputT) -> None:
     if self._output_value is not None:
       raise ValueError(
           'Output already set. A node can produce at most one output.'
@@ -490,14 +500,14 @@ class Context(ReadonlyContext):
       override_isolation_scope: str | None = None,
       raise_on_wait: bool = False,
       return_ctx: bool = False,
-      resume_inputs: dict[str, Any] | None = None,
+      resume_inputs: dict[str, _ResumeInputsT] | None = None,
       skip_run_id_validation: bool = False,
   ) -> Any:
     """Executes a node dynamically (Internal Orchestration API).
 
     See public ``run_node`` for public argument details.
     Additional internal args:
-      return_ctx: If True, returns the child's Context instead of its output.
+      return_ctx: If True, returns the child's Context[Any, Any, Any] instead of its output.
     """
 
     if not self._node_rerun_on_resume:
@@ -594,7 +604,7 @@ class Context(ReadonlyContext):
           child_ctx.actions.transfer_to_agent if child_ctx else None
       )
 
-      # Post-Execution Validation: If the caller expects the raw output (not the Context),
+      # Post-Execution Validation: If the caller expects the raw output (not the Context[Any, Any, Any]),
       # we check for errors or interrupts and raise them immediately.
       if not return_ctx:
         if child_ctx.error:
@@ -634,7 +644,7 @@ class Context(ReadonlyContext):
         if not root_agent:
           raise ValueError(f'Cannot find root_agent on node {curr_node.name}')
 
-        # Local import to avoid runtime circular dependencies with Context
+        # Local import to avoid runtime circular dependencies with Context[Any, Any, Any]
         from ..workflow.utils._transfer_utils import resolve_and_derive_transfer_context
 
         target_agent, next_parent_ctx = resolve_and_derive_transfer_context(
@@ -891,7 +901,7 @@ class Context(ReadonlyContext):
 
     Example:
       ```python
-      async def my_after_agent_callback(ctx: Context):
+      async def my_after_agent_callback(ctx: Context[Any, Any, Any]):
           # Save conversation to memory at the end of each interaction
           await ctx.add_session_to_memory()
       ```
@@ -1022,7 +1032,7 @@ class Context(ReadonlyContext):
       override_branch: str | None = None,
       override_isolation_scope: str | None = None,
       resume_inputs: dict[str, Any] | None = None,
-  ) -> Context:
+  ) -> Context[Any, Any, Any]:
     """Run a node directly via NodeRunner without an orchestrator."""
     from ..workflow._node_runner import NodeRunner
 

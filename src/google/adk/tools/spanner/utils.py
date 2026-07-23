@@ -51,7 +51,7 @@ def execute_sql(
     query: str,
     credentials: Credentials,
     settings: SpannerToolSettings,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any, Any, Any],
     params: Optional[dict[str, Any]] = None,
     params_types: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:
@@ -65,7 +65,7 @@ def execute_sql(
       query (str): The Spanner SQL query to be executed.
       credentials (Credentials): The credentials to use for the request.
       settings (SpannerToolSettings): The settings for the tool.
-      tool_context (ToolContext): The context for the tool.
+      tool_context (ToolContext[Any, Any, Any]): The context for the tool.
       params (dict): values for parameter replacement.  Keys must match the
         names used in ``query``.
       params_types (dict): maps explicit types for one or more param values.
