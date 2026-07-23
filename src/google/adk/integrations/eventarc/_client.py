@@ -166,8 +166,8 @@ async def get_publisher_client(
 
     info = client_info.ClientInfo(user_agent=final_user_agent)  # type: ignore[no-untyped-call]
 
-    client = typing.cast(
-        PublisherAsyncClient,  # type: ignore[redundant-cast]
+    client = typing.cast(  # type: ignore[redundant-cast]
+        PublisherAsyncClient,
         eventarc_publishing_v1.PublisherAsyncClient(
             credentials=credentials,
             client_info=info,
