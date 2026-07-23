@@ -112,7 +112,11 @@ class OAuth2CredentialExchanger(BaseAuthCredentialExchanger):
     if auth_credential.http:
       return auth_credential
 
-    if auth_credential.oauth2 and auth_credential.oauth2.refresh_token:
+    if (
+        auth_credential.oauth2
+        and auth_credential.oauth2.refresh_token
+        and not auth_credential.oauth2.access_token
+    ):
       token_endpoint = getattr(auth_scheme, "token_endpoint", None)
       if token_endpoint is None:
         flows = getattr(auth_scheme, "flows", None)
