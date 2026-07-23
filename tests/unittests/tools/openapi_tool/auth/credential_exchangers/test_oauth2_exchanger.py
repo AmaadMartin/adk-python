@@ -15,6 +15,7 @@
 """Tests for OAuth2CredentialExchanger."""
 
 import copy
+from typing import Any
 from unittest.mock import MagicMock
 
 from google.adk.auth.auth_credential import AuthCredential
@@ -153,8 +154,8 @@ def test_exchange_credential_auth_missing(oauth2_exchanger, auth_scheme):
 
 
 def test_exchange_credential_refresh_token_success(
-    oauth2_exchanger, auth_scheme, monkeypatch
-):
+    oauth2_exchanger: Any, auth_scheme: Any, monkeypatch: Any
+) -> None:
   """Test successful refresh token flow."""
   import json
   import urllib.request
@@ -176,7 +177,7 @@ def test_exchange_credential_refresh_token_success(
   mock_urlopen = MagicMock()
   mock_urlopen.__enter__.return_value = mock_response
 
-  def mock_urlopen_cm(*args, **kwargs):
+  def mock_urlopen_cm(*args: Any, **kwargs: Any) -> Any:
     return mock_urlopen
 
   monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen_cm)
@@ -188,12 +189,13 @@ def test_exchange_credential_refresh_token_success(
   assert updated_credential.auth_type == AuthCredentialTypes.HTTP
   assert updated_credential.http.scheme == "bearer"
   assert updated_credential.http.credentials.token == "new_access_token"
+  assert auth_credential.oauth2 is not None
   assert auth_credential.oauth2.expires_in == 3600
 
 
 def test_exchange_credential_refresh_token_http_error(
-    oauth2_exchanger, auth_scheme, monkeypatch
-):
+    oauth2_exchanger: Any, auth_scheme: Any, monkeypatch: Any
+) -> None:
   """Test refresh token flow failure (HTTP 400)."""
   from urllib.error import HTTPError
   import urllib.request
@@ -206,10 +208,10 @@ def test_exchange_credential_refresh_token_http_error(
       ),
   )
 
-  def mock_urlopen_error(req):
+  def mock_urlopen_error(req: Any) -> Any:
     fp = MagicMock()
     fp.read.return_value = b'{"error":"invalid_grant"}'
-    raise HTTPError(req.full_url, 400, "Bad Request", {}, fp)
+    raise HTTPError(req.full_url, 400, "Bad Request", MagicMock(), fp)
 
   monkeypatch.setattr(urllib.request, "urlopen", mock_urlopen_error)
 
@@ -220,7 +222,7 @@ def test_exchange_credential_refresh_token_http_error(
   assert "invalid_grant" in str(exc_info.value)
 
 
-def test_exchange_credential_refresh_token_no_token_url(oauth2_exchanger):
+def test_exchange_credential_refresh_token_no_token_url(oauth2_exchanger: Any) -> None:
   """Test refresh token failure when tokenUrl is missing."""
   auth_scheme_no_url = OpenIdConnectWithConfig(
       type_=AuthSchemeType.openIdConnect,
