@@ -222,7 +222,9 @@ def test_exchange_credential_refresh_token_http_error(
   assert "invalid_grant" in str(exc_info.value)
 
 
-def test_exchange_credential_refresh_token_no_token_url(oauth2_exchanger: Any) -> None:
+def test_exchange_credential_refresh_token_no_token_url(
+    oauth2_exchanger: Any,
+) -> None:
   """Test refresh token failure when tokenUrl is missing."""
   auth_scheme_no_url = OpenIdConnectWithConfig(
       type_=AuthSchemeType.openIdConnect,
