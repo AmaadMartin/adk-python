@@ -664,7 +664,7 @@ async def run_once_cli(
         interrupt_event = e
         break
 
-    if interrupt_event:
+    if interrupt_event and interrupt_event.long_running_tool_ids:
       interrupt_ids = list(interrupt_event.long_running_tool_ids)
       
       if len(interrupt_ids) > 1:
