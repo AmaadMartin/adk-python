@@ -134,7 +134,7 @@ class BaseTool(ABC):
     return None
 
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any]
   ) -> Any:
     """Runs the tool with the given arguments and context.
 
@@ -153,7 +153,7 @@ class BaseTool(ABC):
     raise NotImplementedError(f"{type(self)} is not implemented")
 
   async def process_llm_request(
-      self, *, tool_context: ToolContext, llm_request: LlmRequest
+      self, *, tool_context: ToolContext[Any], llm_request: LlmRequest
   ) -> None:
     """Processes the outgoing LLM request for this tool.
 

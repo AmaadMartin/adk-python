@@ -51,7 +51,7 @@ def execute_sql(
     query: str,
     credentials: Credentials,
     settings: SpannerToolSettings,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any],
     params: Optional[dict[str, Any]] = None,
     params_types: Optional[dict[str, Any]] = None,
 ) -> dict[str, Any]:

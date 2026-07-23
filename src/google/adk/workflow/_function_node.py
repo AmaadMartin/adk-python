@@ -320,7 +320,7 @@ class FunctionNode(BaseNode):
     if response_schema is not None:
       self.output_schema = response_schema
 
-  def _bind_parameters(self, ctx: Context, node_input: Any) -> dict[str, Any]:
+  def _bind_parameters(self, ctx: Context[Any], node_input: Any) -> dict[str, Any]:
     """Binds function parameters from the appropriate data source.
 
     In ``'node_input'`` mode, non-context parameters are looked up in the
@@ -391,7 +391,7 @@ class FunctionNode(BaseNode):
         )
     return kwargs
 
-  def _to_event(self, ctx: Context, data: Any) -> Event | None:
+  def _to_event(self, ctx: Context[Any], data: Any) -> Event | None:
     """Converts a function return value to an Event.
 
     Pass-through types (returned as-is): Event, RequestInput.
@@ -505,7 +505,7 @@ class FunctionNode(BaseNode):
   async def _run_impl(
       self,
       *,
-      ctx: Context,
+      ctx: Context[Any],
       node_input: Any,
   ) -> AsyncGenerator[Any, None]:
     # --- Auth gate ---

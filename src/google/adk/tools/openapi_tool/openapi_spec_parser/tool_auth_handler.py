@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any
 
 import hashlib
 import logging
@@ -49,7 +50,7 @@ class AuthPreparationResult(BaseModel):
 class ToolContextCredentialStore:
   """Handles storage and retrieval of credentials within a ToolContext."""
 
-  def __init__(self, tool_context: ToolContext):
+  def __init__(self, tool_context: ToolContext[Any]):
     self.tool_context = tool_context
 
   def _legacy_stable_digest(self, text: str) -> str:
@@ -166,7 +167,7 @@ class ToolAuthHandler:
 
   def __init__(
       self,
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       auth_scheme: Optional[AuthScheme],
       auth_credential: Optional[AuthCredential],
       credential_exchanger: Optional[BaseAuthCredentialExchanger] = None,
@@ -213,7 +214,7 @@ class ToolAuthHandler:
   @classmethod
   def from_tool_context(
       cls,
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       auth_scheme: Optional[AuthScheme],
       auth_credential: Optional[AuthCredential],
       credential_exchanger: Optional[BaseAuthCredentialExchanger] = None,

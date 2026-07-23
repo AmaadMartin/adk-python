@@ -61,7 +61,7 @@ class JoinNode(BaseNode):
   async def _run_impl(
       self,
       *,
-      ctx: Context,
+      ctx: Context[Any],
       node_input: Any,
   ) -> AsyncGenerator[Any, None]:
     """JoinNode simply passes through the aggregated inputs provided by the orchestrator."""

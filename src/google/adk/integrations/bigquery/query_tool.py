@@ -38,7 +38,7 @@ def _execute_sql(
     query: str,
     credentials: Credentials,
     settings: BigQueryToolConfig,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any],
     dry_run: bool = False,
     caller_id: Optional[str] = None,
 ) -> dict[str, Any]:
@@ -201,7 +201,7 @@ def execute_sql(
     query: str,
     credentials: Credentials,
     settings: BigQueryToolConfig,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any],
     dry_run: bool = False,
 ) -> dict[str, Any]:
   """Run a BigQuery or BigQuery ML SQL query in the project and return the result.
@@ -779,7 +779,7 @@ def forecast(
     *,
     credentials: Credentials,
     settings: BigQueryToolConfig,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any],
 ) -> dict[str, Any]:
   """Run a BigQuery AI time series forecast using AI.FORECAST.
 
@@ -951,7 +951,7 @@ def analyze_contribution(
     is_test_col: str,
     credentials: Credentials,
     settings: BigQueryToolConfig,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any],
     top_k_insights: int = 30,
     pruning_method: str = "PRUNE_REDUNDANT_INSIGHTS",
 ) -> dict[str, Any]:
@@ -1155,7 +1155,7 @@ def detect_anomalies(
     *,
     credentials: Credentials,
     settings: BigQueryToolConfig,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any],
 ) -> dict[str, Any]:
   """Run a BigQuery time series ARIMA_PLUS model training and anomaly detection using CREATE MODEL and ML.DETECT_ANOMALIES clauses.
 

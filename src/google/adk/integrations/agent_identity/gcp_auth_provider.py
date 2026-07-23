@@ -45,7 +45,7 @@ class GcpAuthProvider(BaseAuthProvider):
   async def get_auth_credential(
       self,
       auth_config: AuthConfig,
-      context: CallbackContext | None = None,
+      context: CallbackContext[Any] | None = None,
   ) -> AuthCredential:
     """Retrieves credentials using the Credentials service.
 

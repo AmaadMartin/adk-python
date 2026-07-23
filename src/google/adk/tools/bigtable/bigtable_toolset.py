@@ -96,7 +96,7 @@ class BigtableParameterizedViewTool(GoogleTool):
       credentials: Credentials,
       tool_settings: BaseModel,
       args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
   ) -> Any:
     args_to_call = args.copy()
     signature = inspect.signature(self.func)
@@ -154,7 +154,7 @@ class BigtableToolset(BaseToolset):
     self.view_parameter_names = view_parameter_names
 
   def _is_tool_selected(
-      self, tool: BaseTool, readonly_context: ReadonlyContext
+      self, tool: BaseTool, readonly_context: ReadonlyContext[Any]
   ) -> bool:
     if self.tool_filter is None:
       return True
@@ -169,7 +169,7 @@ class BigtableToolset(BaseToolset):
 
   @override
   async def get_tools(
-      self, readonly_context: Optional[ReadonlyContext] = None
+      self, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> List[BaseTool]:
     """Get tools from the toolset."""
     all_tools = [

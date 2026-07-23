@@ -80,7 +80,7 @@ class ReplayPlugin(BasePlugin):
       self, *, invocation_context: InvocationContext
   ) -> Optional[types.Content]:
     """Load replay recordings when enabled."""
-    ctx = CallbackContext(invocation_context)
+    ctx = CallbackContext[Any](invocation_context)
     if self._is_replay_mode_on(ctx):
       # Load the replay state for this invocation
       self._load_invocation_state(ctx)
@@ -92,7 +92,7 @@ class ReplayPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
   ) -> Optional[dict]:
     """Replay tool response from recordings instead of executing tool."""
     if not self._is_replay_mode_on(tool_context):
@@ -130,7 +130,7 @@ class ReplayPlugin(BasePlugin):
       self, *, invocation_context: InvocationContext
   ) -> None:
     """Clean up replay state after invocation completes."""
-    ctx = CallbackContext(invocation_context)
+    ctx = CallbackContext[Any](invocation_context)
     if not self._is_replay_mode_on(ctx):
       return None
 
@@ -139,7 +139,7 @@ class ReplayPlugin(BasePlugin):
     logger.debug("Cleaned up replay state for invocation %s", ctx.invocation_id)
 
   # Private helpers
-  def _is_replay_mode_on(self, callback_context: CallbackContext) -> bool:
+  def _is_replay_mode_on(self, callback_context: CallbackContext[Any]) -> bool:
     """Check if replay mode is enabled for this invocation."""
     session_state = callback_context.state
     if not (config := session_state.get("_adk_replay_config")):
@@ -151,14 +151,14 @@ class ReplayPlugin(BasePlugin):
     return case_dir and msg_index is not None
 
   def _get_invocation_state(
-      self, callback_context: CallbackContext
+      self, callback_context: CallbackContext[Any]
   ) -> Optional[_InvocationReplayState]:
     """Get existing replay state for this invocation."""
     invocation_id = callback_context.invocation_id
     return self._invocation_states.get(invocation_id)
 
   def _load_invocation_state(
-      self, callback_context: CallbackContext
+      self, callback_context: CallbackContext[Any]
   ) -> _InvocationReplayState:
     """Load and store replay state for this invocation."""
     invocation_id = callback_context.invocation_id

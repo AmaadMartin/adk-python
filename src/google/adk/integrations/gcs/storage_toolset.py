@@ -65,7 +65,7 @@ class GCSToolset(BaseToolset):
 
   @override
   async def get_tools(
-      self, readonly_context: ReadonlyContext | None = None
+      self, readonly_context: ReadonlyContext[Any] | None = None
   ) -> list[BaseTool]:
     """Get tools from the toolset."""
     all_tools = []

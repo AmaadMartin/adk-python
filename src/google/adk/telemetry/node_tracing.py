@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any
 
 from collections.abc import AsyncIterator
 from collections.abc import Iterator
@@ -73,7 +74,7 @@ class TelemetryContext:
 
 @asynccontextmanager
 async def start_as_current_node_span(
-    context: Context, node: BaseNode
+    context: Context[Any], node: BaseNode
 ) -> AsyncIterator[TelemetryContext]:
   """Creates a scope-based OpenTelemetry span, representing a node invocation.
 
@@ -117,7 +118,7 @@ async def start_as_current_node_span(
 
 @contextmanager
 def _invoke_agent_span(
-    context: Context, agent: BaseAgent
+    context: Context[Any], agent: BaseAgent
 ) -> Iterator[TelemetryContext]:
   """Passes through an agent node; agents emit their own `invoke_agent` span."""
   del agent
@@ -130,7 +131,7 @@ def _invoke_agent_span(
 
 @contextmanager
 def _invoke_workflow_span(
-    context: Context, workflow: Workflow
+    context: Context[Any], workflow: Workflow
 ) -> Iterator[TelemetryContext]:
   """Opens an `invoke_workflow` span plus its duration metric for ``node``."""
   with _use_invoke_workflow_span(
@@ -145,7 +146,7 @@ def _invoke_workflow_span(
 
 @contextmanager
 def _invoke_node_span(
-    context: Context, node: BaseNode
+    context: Context[Any], node: BaseNode
 ) -> Iterator[TelemetryContext]:
   """Opens an `invoke_node` span for a plain node."""
   with tracer.start_as_current_span(

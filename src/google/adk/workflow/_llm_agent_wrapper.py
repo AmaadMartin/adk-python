@@ -132,7 +132,7 @@ def _safe_canonical_tools_dict(agent: Any) -> dict:
 
 
 async def _dispatch_task_fc(
-    parent_agent: Any, fc: types.FunctionCall, ctx: Context
+    parent_agent: Any, fc: types.FunctionCall, ctx: Context[Any]
 ) -> Any:
   """Dispatch a task-delegation FC via ``ctx.run_node`` and return the output.
 
@@ -184,7 +184,7 @@ def _synthesize_task_fr_event(fc: types.FunctionCall, output: Any) -> Event:
   )
 
 
-def prepare_llm_agent_context(agent: Any, ctx: Context) -> Context:
+def prepare_llm_agent_context(agent: Any, ctx: Context[Any]) -> Context[Any]:
   """Prepares the context for running LlmAgent as a node."""
   if agent.mode != 'single_turn':
     return ctx
@@ -204,7 +204,7 @@ def prepare_llm_agent_context(agent: Any, ctx: Context) -> Context:
   return agent_ctx
 
 
-def prepare_llm_agent_input(agent: Any, ctx: Context, node_input: Any) -> None:
+def prepare_llm_agent_input(agent: Any, ctx: Context[Any], node_input: Any) -> None:
   """Prepares the input for running LlmAgent as a node.
 
   For ``single_turn`` mode, append a user-role event with the input
@@ -237,7 +237,7 @@ def prepare_llm_agent_input(agent: Any, ctx: Context, node_input: Any) -> None:
   ctx.session.events.append(user_event)
 
 
-def process_llm_agent_output(agent: Any, ctx: Context, event: Event) -> None:
+def process_llm_agent_output(agent: Any, ctx: Context[Any], event: Event) -> None:
   """Processes the output of LlmAgent run as a node."""
   if (
       event.get_function_calls()
@@ -271,7 +271,7 @@ def process_llm_agent_output(agent: Any, ctx: Context, event: Event) -> None:
 async def run_llm_agent_as_node(
     agent: Any,
     *,
-    ctx: Context,
+    ctx: Context[Any],
     node_input: Any,
 ) -> AsyncGenerator[Any, None]:
   """Runs an LlmAgent as a workflow node."""

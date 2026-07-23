@@ -43,7 +43,7 @@ class BaseAuthProvider(ABC):
 
   @abstractmethod
   async def get_auth_credential(
-      self, auth_config: AuthConfig, context: CallbackContext
+      self, auth_config: AuthConfig, context: CallbackContext[Any]
   ) -> AuthCredential | None:
     """Provide an AuthCredential asynchronously.
 

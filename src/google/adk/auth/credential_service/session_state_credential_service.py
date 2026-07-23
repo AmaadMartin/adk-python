@@ -36,7 +36,7 @@ class SessionStateCredentialService(BaseCredentialService):
   async def load_credential(
       self,
       auth_config: AuthConfig,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any],
   ) -> Optional[AuthCredential]:
     """
     Loads the credential by auth config and current callback context from the
@@ -60,7 +60,7 @@ class SessionStateCredentialService(BaseCredentialService):
   async def save_credential(
       self,
       auth_config: AuthConfig,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any],
   ) -> None:
     """
     Saves the exchanged_auth_credential in auth config to the backend credential

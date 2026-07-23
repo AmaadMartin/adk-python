@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any
 
 import asyncio
 import logging
@@ -165,7 +166,7 @@ class _IamConnectorCredentialsProvider:
     raise TimeoutError("Timeout waiting for credentials.")
 
   @staticmethod
-  def _is_consent_completed(context: CallbackContext) -> bool:
+  def _is_consent_completed(context: CallbackContext[Any]) -> bool:
     """Checks if the user consent flow is completed for the current function call."""
     if not context.function_call_id:
       return False
@@ -199,7 +200,7 @@ class _IamConnectorCredentialsProvider:
   async def get_auth_credential(
       self,
       auth_scheme: GcpAuthProviderScheme,
-      context: CallbackContext | None = None,
+      context: CallbackContext[Any] | None = None,
   ) -> AuthCredential:
     """Retrieves credentials using the IAM Connector Credentials service.
 

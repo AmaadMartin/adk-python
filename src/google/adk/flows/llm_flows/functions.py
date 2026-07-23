@@ -71,7 +71,7 @@ _TOOL_THREAD_POOL_LOCK = threading.Lock()
 
 def _detect_error_type_for_telemetry(
     tool: BaseTool,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any],
     function_response: Any,
 ) -> Optional[str]:
   """Detects an error type from a tool response for telemetry purposes.
@@ -159,7 +159,7 @@ def _is_sync_tool(tool: BaseTool) -> bool:
 async def _call_tool_in_thread_pool(
     tool: BaseTool,
     args: dict[str, Any],
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any],
     max_workers: int = 4,
 ) -> Any:
   """Runs a tool in a thread pool to avoid blocking the event loop.
@@ -502,7 +502,7 @@ async def _execute_single_function_call_async(
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       error: Exception,
   ) -> Optional[dict[str, Any]]:
     """Runs the on_tool_error_callbacks for the given tool."""
@@ -745,7 +745,7 @@ async def _execute_single_function_call_live(
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       error: Exception,
   ) -> Optional[dict[str, Any]]:
     """Runs the on_tool_error_callbacks for the given tool."""
@@ -1040,7 +1040,7 @@ async def _process_function_live_helper(
     async def run_tool_and_update_queue(
         tool: BaseTool,
         function_args: dict[str, Any],
-        tool_context: ToolContext,
+        tool_context: ToolContext[Any],
     ) -> None:
       try:
         async with Aclosing(
@@ -1141,9 +1141,9 @@ def _create_tool_context(
     invocation_context: InvocationContext,
     function_call: types.FunctionCall,
     tool_confirmation: Optional[ToolConfirmation] = None,
-) -> ToolContext:
+) -> ToolContext[Any]:
   """Creates a ToolContext object."""
-  return ToolContext(
+  return ToolContext[Any](
       invocation_context=invocation_context,
       function_call_id=function_call.id,
       tool_confirmation=tool_confirmation,
@@ -1155,7 +1155,7 @@ def _get_tool_and_context(
     function_call: types.FunctionCall,
     tools_dict: dict[str, BaseTool],
     tool_confirmation: Optional[ToolConfirmation] = None,
-) -> tuple[BaseTool, ToolContext]:
+) -> tuple[BaseTool, ToolContext[Any]]:
   """Returns the tool and tool context corresponding to the function call."""
   tool = _get_tool(function_call, tools_dict)
   tool_context = _create_tool_context(
@@ -1214,7 +1214,7 @@ def _try_decode_computer_use_image(
 async def __call_tool_live(
     tool: BaseTool,
     args: dict[str, object],
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any],
     invocation_context: InvocationContext,
 ) -> AsyncGenerator[Event, None]:
   """Calls the tool asynchronously (awaiting the coroutine)."""
@@ -1232,7 +1232,7 @@ async def __call_tool_live(
 async def __call_tool_async(
     tool: BaseTool,
     args: dict[str, Any],
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any],
 ) -> Any:
   """Calls the tool."""
   return await tool.run_async(args=args, tool_context=tool_context)
@@ -1241,7 +1241,7 @@ async def __call_tool_async(
 def __build_response_event(
     tool: BaseTool,
     function_result: dict[str, object],
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any],
     invocation_context: InvocationContext,
 ) -> Event:
   # Capture the raw result for display purposes before any normalization.

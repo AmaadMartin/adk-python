@@ -42,7 +42,7 @@ class PlanReActPlanner(BasePlanner):
   @override
   def build_planning_instruction(
       self,
-      readonly_context: ReadonlyContext,
+      readonly_context: ReadonlyContext[Any],
       llm_request: LlmRequest,
   ) -> str:
     return self._build_nl_planner_instruction()
@@ -50,7 +50,7 @@ class PlanReActPlanner(BasePlanner):
   @override
   def process_planning_response(
       self,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any],
       response_parts: List[types.Part],
   ) -> Optional[List[types.Part]]:
     if not response_parts:

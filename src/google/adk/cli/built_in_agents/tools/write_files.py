@@ -31,7 +31,7 @@ from ..utils.resolve_root_directory import resolve_file_path
 
 async def write_files(
     files: Dict[str, str],
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any],
     create_backup: bool = False,
     create_directories: bool = True,
 ) -> Dict[str, Any]:

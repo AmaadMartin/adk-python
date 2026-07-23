@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any
 
 import logging
 from typing import Optional
@@ -112,7 +113,7 @@ class VertexAiSearchTool(BaseTool):
     self.bypass_multi_tools_limit = bypass_multi_tools_limit
 
   def _build_vertex_ai_search_config(
-      self, readonly_context: ReadonlyContext
+      self, readonly_context: ReadonlyContext[Any]
   ) -> types.VertexAISearch:
     """Builds the VertexAISearch configuration.
 
@@ -139,7 +140,7 @@ class VertexAiSearchTool(BaseTool):
   async def process_llm_request(
       self,
       *,
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       llm_request: LlmRequest,
   ) -> None:
     model_check_disabled = is_gemini_model_id_check_disabled()

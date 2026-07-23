@@ -36,7 +36,7 @@ async def execute_sql(
     query: str,
     credentials: Credentials,
     settings: SpannerToolSettings,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any],
 ) -> dict[str, Any]:
   """Run a Spanner Read-Only query in the spanner database and return the result.
 

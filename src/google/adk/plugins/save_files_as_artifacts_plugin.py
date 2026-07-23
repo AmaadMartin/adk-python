@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any
 
 import copy
 import logging
@@ -151,7 +152,7 @@ class SaveFilesAsArtifactsPlugin(BasePlugin):
       return None
 
   async def before_agent_callback(
-      self, *, agent: BaseAgent, callback_context: CallbackContext
+      self, *, agent: BaseAgent, callback_context: CallbackContext[Any]
   ) -> Optional[types.Content]:
     """Writes the pending delta to event actions."""
     pending_delta = callback_context.state.get(self.name + ":pending_delta")
