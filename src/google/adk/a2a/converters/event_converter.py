@@ -89,9 +89,9 @@ def _serialize_metadata_value(value: Any) -> str:
   Returns:
     String representation of the value.
   """
-  if hasattr(value, "model_dump"):
+  if hasattr(value, "model_dump_json"):
     try:
-      return value.model_dump(mode="json", exclude_none=True, by_alias=True)
+      return str(value.model_dump_json(exclude_none=True, by_alias=True))
     except Exception as e:
       logger.warning("Failed to serialize metadata value: %s", e)
       return str(value)

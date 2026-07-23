@@ -436,8 +436,8 @@ def convert_a2a_task_to_event(
 
   try:
     event_actions = EventActions()
-    output_parts = []
-    long_running_function_ids = set()
+    output_parts: list[genai_types.Part] = []
+    long_running_function_ids: set[str] = set()
     if a2a_task.artifacts:
       artifact_parts = [
           part for artifact in a2a_task.artifacts for part in artifact.parts

@@ -110,7 +110,9 @@ class A2aRemoteAgentConfig(BaseModel):
 
   request_interceptors: Optional[list[RequestInterceptor]] = None
 
-  def __deepcopy__(self, memo):
+  def __deepcopy__(self, memo: dict[int, Any] | None = None) -> A2aRemoteAgentConfig:
+    if memo is None:
+      memo = {}
     cls = self.__class__
     copied_values = {}
     for k, v in self.__dict__.items():

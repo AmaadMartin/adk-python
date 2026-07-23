@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import inspect
 import logging
+from typing import Any
 from typing import Awaitable
 from typing import Callable
 from typing import Optional
@@ -49,7 +50,7 @@ logger = logging.getLogger('google_adk.' + __name__)
 
 
 @a2a_experimental
-class _A2aAgentExecutor(AgentExecutor):
+class _A2aAgentExecutor(AgentExecutor):  # type: ignore[misc]
   """An AgentExecutor that runs an ADK Agent against an A2A request and
 
   publishes updates to an event queue.
@@ -66,7 +67,7 @@ class _A2aAgentExecutor(AgentExecutor):
     self._config = config or A2aAgentExecutorConfig()
 
   @override
-  async def cancel(self, context: RequestContext, event_queue: EventQueue):
+  async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
     """Cancel the execution."""
     # TODO: Implement proper cancellation logic if needed
     raise NotImplementedError('Cancellation is not supported')
@@ -76,7 +77,7 @@ class _A2aAgentExecutor(AgentExecutor):
       self,
       context: RequestContext,
       event_queue: EventQueue,
-  ):
+  ) -> None:
     """Executes an A2A request and publishes updates to the event queue
 
     specified. It runs as following:
@@ -103,8 +104,8 @@ class _A2aAgentExecutor(AgentExecutor):
 
       executor_context = ExecutorContext(
           app_name=runner.app_name,
-          user_id=run_request.user_id,
-          session_id=run_request.session_id,
+          user_id=run_request.user_id or "",
+          session_id=run_request.session_id or "",
           runner=runner,
       )
 
@@ -180,7 +181,7 @@ class _A2aAgentExecutor(AgentExecutor):
       event_queue: EventQueue,
       runner: Runner,
       run_request: AgentRunRequest,
-  ):
+  ) -> None:
     agents_artifact: dict[str, str] = {}
     error_event = None
     long_running_functions = LongRunningFunctions(
@@ -254,6 +255,8 @@ class _A2aAgentExecutor(AgentExecutor):
       else:
         resolved_runner = result
 
+      from typing import cast
+      resolved_runner = cast(Runner, resolved_runner)
       self._runner = resolved_runner
       return resolved_runner
 
@@ -266,10 +269,10 @@ class _A2aAgentExecutor(AgentExecutor):
       self,
       run_request: AgentRunRequest,
       runner: Runner,
-  ):
-    session_id = run_request.session_id
+  ) -> None:
+    session_id = run_request.session_id or ""
     # create a new session if not exists
-    user_id = run_request.user_id
+    user_id = run_request.user_id or ""
     session = await runner.session_service.get_session(
         app_name=runner.app_name,
         user_id=user_id,
@@ -289,7 +292,7 @@ class _A2aAgentExecutor(AgentExecutor):
 
   def _get_invocation_metadata(
       self, executor_context: ExecutorContext
-  ) -> dict[str, str]:
+  ) -> dict[str, Any]:
     return {
         _get_adk_metadata_key('app_name'): executor_context.app_name,
         _get_adk_metadata_key('user_id'): executor_context.user_id,

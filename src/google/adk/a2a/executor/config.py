@@ -98,9 +98,7 @@ class A2aAgentExecutorConfig(BaseModel):
   )
   """Set up the default event converter implementation to be used by the legacy agent executor implementation."""
 
-  adk_event_converter: AdkEventToA2AEventsConverterImpl = (
-      convert_event_to_a2a_events_impl
-  )
+  adk_event_converter: AdkEventToA2AEventsConverterImpl = convert_event_to_a2a_events_impl  # type: ignore[assignment]
   """Set up the imlp event converter implementation to be used by the new agent executor implementation."""
 
   execute_interceptors: Optional[list[ExecuteInterceptor]] = None

@@ -64,7 +64,8 @@ async def execute_after_request_interceptors(
   if request_interceptors:
     for interceptor in reversed(request_interceptors):
       if interceptor.after_request:
-        event = await interceptor.after_request(ctx, a2a_response, event)
-        if not event:
+        new_event = await interceptor.after_request(ctx, a2a_response, event)
+        if not new_event:
           return None
+        event = new_event
   return event
