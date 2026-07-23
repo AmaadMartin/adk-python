@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any
 from typing import Dict
 from typing import List
 from typing import Optional
@@ -358,12 +359,12 @@ def _build_llm_agent_description_with_instructions(agent: LlmAgent) -> str:
     description_parts.append(agent.description)
 
   # Add instruction (with pronoun replacement) - only for LlmAgent
-  if agent.instruction:
+  if agent.instruction and isinstance(agent.instruction, str):
     instruction = _replace_pronouns(agent.instruction)
     description_parts.append(instruction)
 
   # Add global instruction (with pronoun replacement) - only for LlmAgent
-  if agent.global_instruction:
+  if agent.global_instruction and isinstance(agent.global_instruction, str):
     global_instruction = _replace_pronouns(agent.global_instruction)
     description_parts.append(global_instruction)
 
@@ -508,7 +509,7 @@ def _get_default_description(agent: BaseNode) -> str:
   return 'A custom agent'
 
 
-def _extract_inputs_from_examples(examples: Optional[list[dict]]) -> list[str]:
+def _extract_inputs_from_examples(examples: Optional[list[dict[str, Any]]]) -> list[str]:
   """Extracts only the input strings so they can be added to an AgentSkill."""
   if examples is None:
     return []
@@ -537,7 +538,7 @@ def _extract_inputs_from_examples(examples: Optional[list[dict]]) -> list[str]:
 
 async def _extract_examples_from_agent(
     agent: BaseNode,
-) -> Optional[List[Dict]]:
+) -> Optional[list[dict[str, Any]]]:
   """Extract examples from example_tool if configured; otherwise, from agent instruction."""
   if not isinstance(agent, LlmAgent):
     return None
@@ -552,15 +553,17 @@ async def _extract_examples_from_agent(
     logger.warning('Failed to extract examples from tools: %s', e)
 
   # If no example_tool found, try to extract examples from instruction
-  if agent.instruction:
+  if agent.instruction and isinstance(agent.instruction, str):
     return _extract_examples_from_instruction(agent.instruction)
 
   return None
 
 
-def _convert_example_tool_examples(tool: ExampleTool) -> List[Dict]:
+def _convert_example_tool_examples(tool: ExampleTool) -> list[dict[str, Any]]:
   """Convert ExampleTool examples to the expected format."""
-  examples = []
+  examples: list[dict[str, Any]] = []
+  if not isinstance(tool.examples, list):
+    return examples
   for example in tool.examples:
     examples.append({
         'input': (
@@ -578,7 +581,7 @@ def _convert_example_tool_examples(tool: ExampleTool) -> List[Dict]:
 
 def _extract_examples_from_instruction(
     instruction: str,
-) -> Optional[List[Dict]]:
+) -> Optional[list[dict[str, Any]]]:
   """Extract examples from agent instruction text using regex patterns."""
   examples = []
 
@@ -622,6 +625,7 @@ def _get_output_modes(agent: BaseNode) -> Optional[List[str]]:
       and agent.generate_content_config
       and hasattr(agent.generate_content_config, 'response_modalities')
   ):
-    return agent.generate_content_config.response_modalities
+    from typing import cast
+    return cast(Optional[list[str]], agent.generate_content_config.response_modalities)
 
   return None

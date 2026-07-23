@@ -14,6 +14,7 @@
 
 """A2A agents package."""
 
+from typing import Any
 from ...utils._dependency import missing_extra
 
 __all__ = [
@@ -23,7 +24,7 @@ __all__ = [
 ]
 
 
-def __getattr__(name: str):
+def __getattr__(name: str) -> Any:
   if name in [
       "A2aRemoteAgentConfig",
       "ParametersConfig",

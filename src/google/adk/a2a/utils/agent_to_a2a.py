@@ -16,6 +16,8 @@ from __future__ import annotations
 
 from contextlib import asynccontextmanager
 import logging
+from typing import Any
+from typing import AsyncContextManager
 from typing import AsyncIterator
 from typing import Callable
 
@@ -85,7 +87,7 @@ def to_a2a(
     push_config_store: PushNotificationConfigStore | None = None,
     task_store: TaskStore | None = None,
     runner: Runner | None = None,
-    lifespan: Callable[[Starlette], AsyncIterator[None]] | None = None,
+    lifespan: Callable[[Starlette], AsyncContextManager[None]] | None = None,
     agent_executor_factory: Callable[[Runner], A2aAgentExecutor] | None = None,
 ) -> Starlette:
   """Convert an ADK BaseAgent or Workflow to an A2A Starlette application.
@@ -152,13 +154,13 @@ def to_a2a(
 
   def create_runner() -> Runner:
     """Create a runner for the agent or workflow."""
-    runner_kwargs = {
+    runner_kwargs: dict[str, Any] = {
         "app_name": agent.name or "adk_agent",
         # Use minimal services - in a real implementation these could be configured
-        "artifact_service": InMemoryArtifactService(),
-        "session_service": InMemorySessionService(),
-        "memory_service": InMemoryMemoryService(),
-        "credential_service": InMemoryCredentialService(),
+        "artifact_service": InMemoryArtifactService(),  # type: ignore[no-untyped-call]
+        "session_service": InMemorySessionService(),  # type: ignore[no-untyped-call]
+        "memory_service": InMemoryMemoryService(),  # type: ignore[no-untyped-call]
+        "credential_service": InMemoryCredentialService(),  # type: ignore[no-untyped-call]
     }
     if isinstance(agent, Workflow):
       runner_kwargs["node"] = agent
@@ -189,7 +191,7 @@ def to_a2a(
   )
 
   # Build the agent card and configure A2A routes
-  async def setup_a2a(app: Starlette):
+  async def setup_a2a(app: Starlette) -> None:
     # Use provided agent card or build one asynchronously
     if provided_agent_card is not None:
       final_agent_card = provided_agent_card
