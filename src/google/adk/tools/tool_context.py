@@ -15,7 +15,7 @@
 from __future__ import annotations
 
 import importlib
-from typing import Any
+from typing import Any, TypeVar
 from typing import TYPE_CHECKING
 
 from ..agents.callback_context import CallbackContext as CallbackContext
@@ -24,7 +24,8 @@ from ..agents.context import Context
 if TYPE_CHECKING:
   pass
 
-ToolContext = Context
+StateT = TypeVar('StateT')
+ToolContext = Context[StateT]
 
 _LAZY_REEXPORTS: dict[str, tuple[str, str]] = {
     'AuthCredential': ('google.adk.auth.auth_credential', 'AuthCredential'),
