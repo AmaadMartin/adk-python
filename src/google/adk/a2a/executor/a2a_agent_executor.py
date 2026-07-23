@@ -28,6 +28,7 @@ from a2a.types import Message
 from a2a.types import TaskArtifactUpdateEvent
 from google.adk.platform import uuid as platform_uuid
 from google.adk.runners import Runner
+from google.adk.sessions.session import Session
 from typing_extensions import override
 
 from .. import _compat
@@ -48,7 +49,7 @@ logger = logging.getLogger('google_adk.' + __name__)
 
 
 @a2a_experimental
-class A2aAgentExecutor(AgentExecutor):
+class A2aAgentExecutor(AgentExecutor):  # type: ignore[misc]
   """An AgentExecutor that runs an ADK Agent against an A2A request and
 
   publishes updates to an event queue.
@@ -74,7 +75,7 @@ class A2aAgentExecutor(AgentExecutor):
     self._config = config or A2aAgentExecutorConfig()
     self._use_legacy = use_legacy
     self._force_new_version = force_new_version
-    self._executor_impl = None
+    self._executor_impl: ExecutorImpl | None = None
 
   async def _resolve_runner(self) -> Runner:
     """Resolve the runner, handling cases where it's a callable that returns a Runner."""
@@ -92,6 +93,8 @@ class A2aAgentExecutor(AgentExecutor):
         resolved_runner = result
 
       # Cache the resolved runner for future calls
+      from typing import cast
+      resolved_runner = cast(Runner, resolved_runner)
       self._runner = resolved_runner
       return resolved_runner
 
@@ -101,7 +104,7 @@ class A2aAgentExecutor(AgentExecutor):
     )
 
   @override
-  async def cancel(self, context: RequestContext, event_queue: EventQueue):
+  async def cancel(self, context: RequestContext, event_queue: EventQueue) -> None:
     """Cancel the execution."""
     if self._executor_impl:
       await self._executor_impl.cancel(context, event_queue)
@@ -115,7 +118,7 @@ class A2aAgentExecutor(AgentExecutor):
       self,
       context: RequestContext,
       event_queue: EventQueue,
-  ):
+  ) -> None:
     """Executes an A2A request and publishes updates to the event queue
 
     specified. It runs as following:
@@ -135,6 +138,7 @@ class A2aAgentExecutor(AgentExecutor):
             runner=self._runner,
             config=self._config,
         )
+      assert self._executor_impl is not None
       await self._executor_impl.execute(context, event_queue)
       return
 
@@ -180,7 +184,7 @@ class A2aAgentExecutor(AgentExecutor):
       self,
       context: RequestContext,
       event_queue: EventQueue,
-  ):
+  ) -> None:
     # Resolve the runner instance
     runner = await self._resolve_runner()
 
@@ -202,8 +206,8 @@ class A2aAgentExecutor(AgentExecutor):
 
     executor_context = ExecutorContext(
         app_name=runner.app_name,
-        user_id=run_request.user_id,
-        session_id=run_request.session_id,
+        user_id=run_request.user_id or "",
+        session_id=run_request.session_id or "",
         runner=runner,
     )
 
@@ -312,11 +316,11 @@ class A2aAgentExecutor(AgentExecutor):
       context: RequestContext,
       run_request: AgentRunRequest,
       runner: Runner,
-  ):
+  ) -> Session:
 
-    session_id = run_request.session_id
+    session_id = run_request.session_id or ""
     # create a new session if not exists
-    user_id = run_request.user_id
+    user_id = run_request.user_id or ""
     session = await runner.session_service.get_session(
         app_name=runner.app_name,
         user_id=user_id,
@@ -334,7 +338,7 @@ class A2aAgentExecutor(AgentExecutor):
 
     return session
 
-  def _check_new_version_extension(self, context: RequestContext):
+  def _check_new_version_extension(self, context: RequestContext) -> bool:
     """Check if the extension for the new version is requested and activate it."""
     if _NEW_A2A_ADK_INTEGRATION_EXTENSION in context.requested_extensions:
       _compat.add_activated_extension(
