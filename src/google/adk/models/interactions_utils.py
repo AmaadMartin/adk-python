@@ -1004,7 +1004,7 @@ def _handle_function_result(
   part = types.Part(
       function_response=types.FunctionResponse(
           id=delta.call_id or '',
-          name=delta.name,
+          name=getattr(delta, 'name', ''),  # type: ignore[union-attr]
           response=_function_result_to_response(delta.result),
       )
   )
