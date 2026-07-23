@@ -182,7 +182,7 @@ class FunctionNode(BaseNode):
 
     Args:
       func: A sync/async function or sync/async generator function that forms
-        the node's logic. It can accept 'ctx: Context' and 'node_input: Any' as
+        the node's logic. It can accept 'ctx: Context[Any, Any, Any]' and 'node_input: Any' as
         arguments, depending on its signature. If the function is not a
         generator, its return value will be wrapped in an Event, unless the
         return value is None.
@@ -320,7 +320,9 @@ class FunctionNode(BaseNode):
     if response_schema is not None:
       self.output_schema = response_schema
 
-  def _bind_parameters(self, ctx: Context, node_input: Any) -> dict[str, Any]:
+  def _bind_parameters(
+      self, ctx: Context[Any, Any, Any], node_input: Any
+  ) -> dict[str, Any]:
     """Binds function parameters from the appropriate data source.
 
     In ``'node_input'`` mode, non-context parameters are looked up in the
@@ -391,7 +393,7 @@ class FunctionNode(BaseNode):
         )
     return kwargs
 
-  def _to_event(self, ctx: Context, data: Any) -> Event | None:
+  def _to_event(self, ctx: Context[Any, Any, Any], data: Any) -> Event | None:
     """Converts a function return value to an Event.
 
     Pass-through types (returned as-is): Event, RequestInput.
@@ -505,7 +507,7 @@ class FunctionNode(BaseNode):
   async def _run_impl(
       self,
       *,
-      ctx: Context,
+      ctx: Context[Any, Any, Any],
       node_input: Any,
   ) -> AsyncGenerator[Any, None]:
     # --- Auth gate ---

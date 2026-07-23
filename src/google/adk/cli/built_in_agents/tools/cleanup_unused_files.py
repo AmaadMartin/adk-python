@@ -26,7 +26,7 @@ from ..utils.resolve_root_directory import resolve_file_paths
 
 async def cleanup_unused_files(
     used_files: list[str],
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any, Any, Any],
     file_patterns: list[str] | None = None,
     exclude_patterns: list[str] | None = None,
 ) -> dict[str, Any]:

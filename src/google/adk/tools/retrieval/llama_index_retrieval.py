@@ -36,6 +36,6 @@ class LlamaIndexRetrieval(BaseRetrievalTool):
 
   @override
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any, Any, Any]
   ) -> Any:
     return self.retriever.retrieve(args['query'])[0].text

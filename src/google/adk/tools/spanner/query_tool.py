@@ -36,7 +36,7 @@ async def execute_sql(
     query: str,
     credentials: Credentials,
     settings: SpannerToolSettings,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any, Any, Any],
 ) -> dict[str, Any]:
   """Run a Spanner Read-Only query in the spanner database and return the result.
 
@@ -48,7 +48,7 @@ async def execute_sql(
       query (str): The Spanner SQL query to be executed.
       credentials (Credentials): The credentials to use for the request.
       settings (SpannerToolSettings): The settings for the tool.
-      tool_context (ToolContext): The context for the tool.
+      tool_context (ToolContext[Any, Any, Any]): The context for the tool.
 
   Returns:
       dict: Dictionary with the result of the query.
@@ -107,7 +107,7 @@ Args:
     query (str): The Spanner SQL query to be executed.
     credentials (Credentials): The credentials to use for the request.
     settings (SpannerToolSettings): The settings for the tool.
-    tool_context (ToolContext): The context for the tool.
+    tool_context (ToolContext[Any, Any, Any]): The context for the tool.
 
 Returns:
     dict: Dictionary with the result of the query.

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from typing import Optional
 
 from .long_running_tool import LongRunningFunctionTool
@@ -21,7 +22,7 @@ from .tool_context import ToolContext
 
 
 def get_user_choice(
-    options: list[str], tool_context: ToolContext
+    options: list[str], tool_context: ToolContext[Any, Any, Any]
 ) -> Optional[str]:
   """Provides the options to the user and asks them to choose one."""
   tool_context.actions.skip_summarization = True

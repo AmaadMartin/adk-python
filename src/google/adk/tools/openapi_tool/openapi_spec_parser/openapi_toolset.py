@@ -77,7 +77,7 @@ class OpenAPIToolset(BaseToolset):
       tool_name_prefix: Optional[str] = None,
       ssl_verify: Optional[Union[bool, str, ssl.SSLContext]] = None,
       header_provider: Optional[
-          Callable[[ReadonlyContext], Dict[str, str]]
+          Callable[[ReadonlyContext[Any]], Dict[str, str]]
       ] = None,
       httpx_client_factory: Optional[HttpxClientFactory] = None,
       preserve_property_names: bool = False,
@@ -128,7 +128,7 @@ class OpenAPIToolset(BaseToolset):
           This is useful for enterprise environments where requests go through a
           TLS-intercepting proxy with a custom CA certificate.
       header_provider: A callable that returns a dictionary of headers to be
-        included in API requests. The callable receives the ReadonlyContext as
+        included in API requests. The callable receives the ReadonlyContext[Any] as
         an argument, allowing dynamic header generation based on the current
         context. Useful for adding custom headers like correlation IDs,
         authentication tokens, or other request metadata.
@@ -213,7 +213,7 @@ class OpenAPIToolset(BaseToolset):
 
   @override
   async def get_tools(
-      self, readonly_context: Optional[ReadonlyContext] = None
+      self, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> List[RestApiTool]:
     """Get all tools in the toolset."""
     return [

@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import logging
 import re
+from typing import Any
 from typing import Awaitable
 from typing import Callable
 from typing import Union
@@ -33,15 +34,15 @@ __all__ = [
 logger = logging.getLogger('google_adk.' + __name__)
 
 # Type alias for agent instruction providers: a callable that receives a
-# ReadonlyContext and returns an instruction string (sync or async).
+# ReadonlyContext[Any] and returns an instruction string (sync or async).
 InstructionProvider: TypeAlias = Callable[
-    [ReadonlyContext], Union[str, Awaitable[str]]
+    [ReadonlyContext[Any]], Union[str, Awaitable[str]]
 ]
 
 
 async def inject_session_state(
     template: str,
-    readonly_context: ReadonlyContext,
+    readonly_context: ReadonlyContext[Any],
 ) -> str:
   """Populates values in the instruction template, e.g. state, artifact, etc.
 
@@ -54,7 +55,7 @@ async def inject_session_state(
   from google.adk.utils.instructions_utils import inject_session_state
 
   async def build_instruction(
-      readonly_context: ReadonlyContext,
+      readonly_context: ReadonlyContext[Any],
   ) -> str:
     return await inject_session_state(
         'You can inject a state variable like {var_name} or an artifact '
@@ -132,12 +133,15 @@ async def inject_session_state(
       else:
         if optional:
           logger.debug(
-              'Context variable %s not found, replacing with empty string',
+              'Context[Any, Any, Any] variable %s not found, replacing with'
+              ' empty string',
               var_name,
           )
           return ''
         else:
-          raise KeyError(f'Context variable not found: `{var_name}`.')
+          raise KeyError(
+              f'Context[Any, Any, Any] variable not found: `{var_name}`.'
+          )
 
   return await _async_sub(r'{+[^{}]*}+', _replace_match, template)
 

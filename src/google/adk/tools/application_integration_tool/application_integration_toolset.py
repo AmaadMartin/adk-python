@@ -304,7 +304,7 @@ class ApplicationIntegrationToolset(BaseToolset):  # type: ignore[misc]
   @override
   async def get_tools(
       self,
-      readonly_context: Optional[ReadonlyContext] = None,
+      readonly_context: Optional[ReadonlyContext[Any]] = None,
   ) -> List[BaseTool]:
     if self._openapi_toolset is not None:
       return cast(

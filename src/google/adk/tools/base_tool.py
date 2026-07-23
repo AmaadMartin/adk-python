@@ -40,8 +40,8 @@ if TYPE_CHECKING:
   from ..models.llm_request import LlmRequest
   from .tool_configs import ToolArgsConfig
 
-# Re-exported for backward compatibility: existing code imports ToolContext
-# from this module and annotates tool methods with base_tool.ToolContext, which
+# Re-exported for backward compatibility: existing code imports ToolContext[Any, Any, Any]
+# from this module and annotates tool methods with base_tool.ToolContext[Any, Any, Any], which
 # ADK resolves at runtime via get_type_hints(), so it must be importable here.
 from .tool_context import ToolContext  # pylint: disable=unused-import
 
@@ -134,7 +134,7 @@ class BaseTool(ABC):
     return None
 
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any, Any, Any]
   ) -> Any:
     """Runs the tool with the given arguments and context.
 
@@ -153,7 +153,7 @@ class BaseTool(ABC):
     raise NotImplementedError(f"{type(self)} is not implemented")
 
   async def process_llm_request(
-      self, *, tool_context: ToolContext, llm_request: LlmRequest
+      self, *, tool_context: ToolContext[Any, Any, Any], llm_request: LlmRequest
   ) -> None:
     """Processes the outgoing LLM request for this tool.
 

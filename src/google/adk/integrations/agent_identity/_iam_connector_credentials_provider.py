@@ -1,3 +1,20 @@
+from __future__ import annotations
+
+import asyncio
+import logging
+import os
+import time
+from typing import Any
+
+from google.adk.agents.callback_context import CallbackContext
+from google.adk.auth.auth_credential import AuthCredential
+from google.adk.auth.auth_credential import AuthCredentialTypes
+from google.adk.auth.auth_credential import HttpAuth
+from google.adk.auth.auth_credential import HttpCredentials
+from google.adk.auth.auth_credential import OAuth2Auth
+from google.adk.flows.llm_flows.functions import REQUEST_EUC_FUNCTION_CALL_NAME
+from google.api_core.client_options import ClientOptions
+
 # Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,21 +29,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import annotations
-
-import asyncio
-import logging
-import os
-import time
-
-from google.adk.agents.callback_context import CallbackContext
-from google.adk.auth.auth_credential import AuthCredential
-from google.adk.auth.auth_credential import AuthCredentialTypes
-from google.adk.auth.auth_credential import HttpAuth
-from google.adk.auth.auth_credential import HttpCredentials
-from google.adk.auth.auth_credential import OAuth2Auth
-from google.adk.flows.llm_flows.functions import REQUEST_EUC_FUNCTION_CALL_NAME
-from google.api_core.client_options import ClientOptions
 
 try:
   from google.cloud.iamconnectorcredentials_v1alpha import IAMConnectorCredentialsServiceClient as Client
@@ -165,7 +167,7 @@ class _IamConnectorCredentialsProvider:
     raise TimeoutError("Timeout waiting for credentials.")
 
   @staticmethod
-  def _is_consent_completed(context: CallbackContext) -> bool:
+  def _is_consent_completed(context: CallbackContext[Any, Any, Any]) -> bool:
     """Checks if the user consent flow is completed for the current function call."""
     if not context.function_call_id:
       return False
@@ -199,7 +201,7 @@ class _IamConnectorCredentialsProvider:
   async def get_auth_credential(
       self,
       auth_scheme: GcpAuthProviderScheme,
-      context: CallbackContext | None = None,
+      context: CallbackContext[Any, Any, Any] | None = None,
   ) -> AuthCredential:
     """Retrieves credentials using the IAM Connector Credentials service.
 

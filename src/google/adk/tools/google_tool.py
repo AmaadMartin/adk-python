@@ -72,7 +72,7 @@ class GoogleTool(FunctionTool):
 
   @override
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any, Any, Any]
   ) -> Any:
     """Main entry point for tool execution with credential handling.
 
@@ -117,7 +117,7 @@ class GoogleTool(FunctionTool):
       credentials: Credentials,
       tool_settings: BaseModel,
       args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
   ) -> Any:
     """Execute the tool's specific logic with valid credentials.
 

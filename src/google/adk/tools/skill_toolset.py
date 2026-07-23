@@ -128,7 +128,7 @@ class ListSkillsTool(BaseTool):
     )
 
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any, Any, Any]
   ) -> Any:
     skills = self._toolset._list_skills()
     return prompt.format_skills_as_xml(skills)
@@ -168,7 +168,7 @@ class SearchSkillsTool(BaseTool):
     )
 
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any, Any, Any]
   ) -> Any:
     query = args.get("query")
     if not query:
@@ -223,7 +223,7 @@ class LoadSkillTool(BaseTool):
     )
 
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any, Any, Any]
   ) -> Any:
     skill_name = args.get("skill_name")
     if not skill_name:
@@ -316,7 +316,7 @@ class LoadSkillResourceTool(BaseTool):
     )
 
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any, Any, Any]
   ) -> Any:
     skill_name: str | None = args.get("skill_name")
     file_path: str | None = args.get("file_path")
@@ -413,7 +413,7 @@ class LoadSkillResourceTool(BaseTool):
 
   @override
   async def process_llm_request(
-      self, *, tool_context: ToolContext, llm_request: Any
+      self, *, tool_context: ToolContext[Any, Any, Any], llm_request: Any
   ) -> None:
     """Injects binary content into the LLM request if the model viewed it."""
     await super().process_llm_request(
@@ -844,7 +844,7 @@ class RunSkillScriptTool(BaseTool):
     )
 
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any, Any, Any]
   ) -> Any:
     # Standardized arguments: skill_name and file_path.
     skill_name: str | None = args.get("skill_name")
@@ -1051,7 +1051,7 @@ class SkillToolset(BaseToolset):
       self._tools.append(SearchSkillsTool(self))
 
   async def get_tools(
-      self, readonly_context: ReadonlyContext | None = None
+      self, readonly_context: ReadonlyContext[Any] | None = None
   ) -> list[BaseTool]:
     """Returns the list of tools in this toolset."""
     dynamic_tools = await self._resolve_additional_tools_from_state(
@@ -1061,7 +1061,7 @@ class SkillToolset(BaseToolset):
     return [t for t in all_tools if self._is_tool_selected(t, readonly_context)]
 
   async def _resolve_additional_tools_from_state(
-      self, readonly_context: ReadonlyContext | None
+      self, readonly_context: ReadonlyContext[Any] | None
   ) -> list[BaseTool]:
     """Resolves tools listed in the "adk_additional_tools" metadata of skills."""
 
@@ -1187,7 +1187,7 @@ class SkillToolset(BaseToolset):
     )
 
   async def process_llm_request(
-      self, *, tool_context: ToolContext, llm_request: LlmRequest
+      self, *, tool_context: ToolContext[Any, Any, Any], llm_request: LlmRequest
   ) -> None:
     """Processes the outgoing LLM request to include available skills."""
     instructions = [

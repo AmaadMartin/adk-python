@@ -36,7 +36,9 @@ class VertexAiLoadProfilesTool(FunctionTool):
     super().__init__(self.load_profiles)
     self._memory_service = memory_service
 
-  async def load_profiles(self, tool_context: ToolContext) -> dict[str, Any]:
+  async def load_profiles(
+      self, tool_context: ToolContext[Any, Any, Any]
+  ) -> dict[str, Any]:
     """Loads structured user profiles for the current user."""
     profiles = await self._memory_service.retrieve_profiles(
         app_name=tool_context.session.app_name,

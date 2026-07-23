@@ -78,7 +78,7 @@ class AuthenticatedFunctionTool(FunctionTool):
 
   @override
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any, Any, Any]
   ) -> Any:
     credential = None
     if self._credentials_manager:
@@ -97,7 +97,7 @@ class AuthenticatedFunctionTool(FunctionTool):
       self,
       *,
       args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
       credential: AuthCredential,
   ) -> Any:
     args_to_call = args.copy()

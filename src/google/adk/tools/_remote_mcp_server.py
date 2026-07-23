@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from typing import Awaitable
 from typing import Callable
 from typing import TYPE_CHECKING
@@ -25,7 +26,7 @@ if TYPE_CHECKING:
   from ..agents.readonly_context import ReadonlyContext
 
   HeaderProvider = Callable[
-      [ReadonlyContext], dict[str, str] | Awaitable[dict[str, str]]
+      [ReadonlyContext[Any]], dict[str, str] | Awaitable[dict[str, str]]
   ]
 else:
   HeaderProvider = Callable[..., dict[str, str] | Awaitable[dict[str, str]]]
@@ -63,6 +64,6 @@ class RemoteMcpServer(BaseModel):
   header_provider: HeaderProvider | None = None
   """Runtime callback that mints headers (e.g. a fresh bearer token) at request
   time. Invoked by ``ManagedAgent`` during resolution (runner-driven), once per
-  turn. Receives a ``ReadonlyContext`` and returns a headers dict (or an
+  turn. Receives a ``ReadonlyContext[Any]`` and returns a headers dict (or an
   awaitable of one). Same contract as ``LlmAgent``'s
   ``McpToolset.header_provider``."""
