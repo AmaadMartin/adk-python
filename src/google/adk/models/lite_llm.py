@@ -2124,7 +2124,7 @@ def _model_response_to_generate_content_response(
     if mapped_finish_reason != types.FinishReason.STOP:
       llm_response.error_code = mapped_finish_reason
       llm_response.error_message = _finish_reason_to_error_message(
-          mapped_finish_reason
+          mapped_finish_reason  # type: ignore[arg-type]
       )
   if response.get("usage", None):
     usage_dict = response["usage"]
@@ -2861,7 +2861,7 @@ class LiteLlm(BaseLlm):
         if mapped_finish_reason != types.FinishReason.STOP:
           llm_response.error_code = mapped_finish_reason
           llm_response.error_message = _finish_reason_to_error_message(
-              mapped_finish_reason
+              mapped_finish_reason  # type: ignore[arg-type]
           )
         return llm_response
 
@@ -2882,7 +2882,7 @@ class LiteLlm(BaseLlm):
         if mapped_finish_reason != types.FinishReason.STOP:
           llm_response.error_code = mapped_finish_reason
           llm_response.error_message = _finish_reason_to_error_message(
-              mapped_finish_reason
+              mapped_finish_reason  # type: ignore[arg-type]
           )
         return llm_response
 
