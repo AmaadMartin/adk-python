@@ -185,7 +185,7 @@ class RubricBasedToolUseV1Evaluator(RubricBasedEvaluator):
 
     rubrics_text = "\n".join([
         f"*  [id: {r.rubric_id}] {r.rubric_content.text_property}"
-        for r in self._effective_rubrics_list
+        for r in self.get_effective_rubrics_list()
     ])
 
     app_details = actual_invocation.app_details
