@@ -65,8 +65,10 @@ def _patch_types_and_runner(monkeypatch: pytest.MonkeyPatch) -> None:
   # Dummy Part / Content
   class _Part:
 
-    def __init__(self, text: str | None = "") -> None:
+    def __init__(self, text: str | None = "", **kwargs: Any) -> None:
       self.text = text
+      for k, v in kwargs.items():
+        setattr(self, k, v)
 
   class _Content:
 
@@ -525,3 +527,136 @@ async def test_run_interactively_whitespace_and_exit(
 
   # verify: assistant echoed once with 'echo:hello'
   assert any("echo:hello" in m for m in echoed)
+
+
+@pytest.mark.asyncio
+async def test_run_once_cli_multiple_interrupts(
+    fake_agent, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """run_once_cli should prompt for selection when multiple interrupts exist."""
+  parent_dir, folder_name = fake_agent
+
+  # Setup mock to return a test session with multi-interrupt
+  class _TestSessionService(InMemorySessionService):
+
+    async def get_session(self, *, app_name, user_id, session_id, **kwargs):
+      # Create a fake session
+      sess = await self.create_session(
+          app_name=app_name, user_id=user_id, session_id=session_id
+      )
+
+      fc1 = cli.types.FunctionCall(
+          id="intr_1", name="adk_request_confirmation", args={}
+      )
+      fc2 = cli.types.FunctionCall(
+          id="intr_2", name="adk_request_input", args={}
+      )
+      part1 = cli.types.Part(function_call=fc1)
+      part2 = cli.types.Part(function_call=fc2)
+      content = cli.types.Content(role="model", parts=[part1, part2])
+
+      from google.adk.events.event import Event
+
+      ev = Event(
+          author="model",
+          content=content,  # pytype: disable=wrong-arg-types
+          long_running_tool_ids={str(fc1.id), str(fc2.id)},
+      )
+      sess.events.append(ev)
+      return sess
+
+  monkeypatch.setattr(
+      cli,
+      "create_session_service_from_options",
+      lambda **_: _TestSessionService(),
+  )
+
+  # Provide initial user input that should never be hit
+  monkeypatch.setattr(
+      "builtins.input", lambda *_a, **_k: pytest.fail("Should not call input()")
+  )
+
+  exit_code = await cli.run_once_cli(
+      agent_parent_dir=str(parent_dir),
+      agent_folder_name=folder_name,
+      query="my result",
+      session_id="test_sess",
+      session_service_uri="memory://",
+      memory_service_uri="memory://",
+      artifact_service_uri="memory://",
+  )
+
+  assert exit_code == 1
+
+
+@pytest.mark.asyncio
+async def test_run_once_cli_credential_resume(
+    fake_agent, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """run_once_cli should inject a credential string correctly."""
+  parent_dir, folder_name = fake_agent
+
+  class _TestSessionService(InMemorySessionService):
+
+    async def get_session(self, *, app_name, user_id, session_id, **kwargs):
+      sess = await self.create_session(
+          app_name=app_name, user_id=user_id, session_id=session_id
+      )
+      fc = cli.types.FunctionCall(
+          id="auth_1", name="adk_request_credential", args={}
+      )
+      ev = cli.types.Content(
+          role="model", parts=[cli.types.Part(function_call=fc)]
+      )
+      from google.adk.events.event import Event
+
+      sess.events.append(Event(author="model", content=ev, long_running_tool_ids={str(fc.id)}))  # pytype: disable=wrong-arg-types
+      return sess
+
+  monkeypatch.setattr(
+      cli,
+      "create_session_service_from_options",
+      lambda **_: _TestSessionService(),
+  )
+
+  captured_message = None
+
+  class _CaptureRunner:
+
+    def __init__(self, *a: Any, **k: Any) -> None:
+      pass
+
+    async def run_async(
+        self, user_id: Any, session_id: Any, new_message: Any, **k: Any
+    ) -> Any:
+      nonlocal captured_message
+      captured_message = new_message
+      from google.adk.events.event import Event
+
+      yield Event(author="assistant")
+
+    async def close(self, *a: Any, **k: Any) -> None:
+      pass
+
+  monkeypatch.setattr(cli, "Runner", _CaptureRunner)
+
+  exit_code = await cli.run_once_cli(
+      agent_parent_dir=str(parent_dir),
+      agent_folder_name=folder_name,
+      query="mysecret123",
+      session_id="test_sess_auth",
+      session_service_uri="memory://",
+      memory_service_uri="memory://",
+      artifact_service_uri="memory://",
+  )
+
+  assert exit_code == 0
+  assert captured_message is not None
+  assert captured_message.parts[0].function_response.id == "auth_1"
+  assert (
+      captured_message.parts[0].function_response.name
+      == "adk_request_credential"
+  )
+  assert captured_message.parts[0].function_response.response == {
+      "credential": "mysecret123"
+  }
