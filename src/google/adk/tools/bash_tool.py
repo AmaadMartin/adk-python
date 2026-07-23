@@ -150,7 +150,7 @@ class ExecuteBashTool(BaseTool):
     )
 
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any]
   ) -> Any:
     command = args.get("command")
     if not command:

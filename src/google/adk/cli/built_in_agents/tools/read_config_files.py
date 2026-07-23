@@ -28,7 +28,7 @@ from .read_files import read_files
 
 
 async def read_config_files(
-    file_paths: List[str], tool_context: ToolContext
+    file_paths: List[str], tool_context: ToolContext[Any]
 ) -> Dict[str, Any]:
   """Read multiple YAML configuration files and extract metadata.
 

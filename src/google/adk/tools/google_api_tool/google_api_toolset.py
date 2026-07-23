@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any
 
 import logging
 from typing import Dict
@@ -103,7 +104,7 @@ class GoogleApiToolset(BaseToolset):
 
   @override
   async def get_tools(
-      self, readonly_context: Optional[ReadonlyContext] = None
+      self, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> List[GoogleApiTool]:
     """Get all tools in the toolset."""
     return [

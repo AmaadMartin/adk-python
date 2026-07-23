@@ -59,7 +59,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger('google_adk.' + __name__)
 
 _SingleAgentCallback: TypeAlias = Callable[
-    [CallbackContext],
+    [CallbackContext[Any]],
     Union[Awaitable[Optional[types.Content]], Optional[types.Content]],
 ]
 
@@ -319,7 +319,7 @@ class BaseAgent(BaseNode, abc.ABC):
   async def _run_impl(
       self,
       *,
-      ctx: Context,
+      ctx: Context[Any],
       node_input: Any,
   ) -> AsyncGenerator[Any, None]:
     """Runs the agent as a node."""
@@ -476,7 +476,7 @@ class BaseAgent(BaseNode, abc.ABC):
     Returns:
       Optional[Event]: an event if callback provides content or changed state.
     """
-    callback_context = CallbackContext(ctx)
+    callback_context = CallbackContext[Any](ctx)
 
     # Run callbacks from the plugins.
     before_agent_callback_content = (
@@ -536,7 +536,7 @@ class BaseAgent(BaseNode, abc.ABC):
       Optional[Event]: an event if callback provides content or changed state.
     """
 
-    callback_context = CallbackContext(invocation_context)
+    callback_context = CallbackContext[Any](invocation_context)
 
     # Run callbacks from the plugins.
     after_agent_callback_content = (
@@ -598,7 +598,7 @@ class BaseAgent(BaseNode, abc.ABC):
       invocation_context: The invocation context for this agent.
       error: The exception that escaped agent execution.
     """
-    callback_context = CallbackContext(invocation_context)
+    callback_context = CallbackContext[Any](invocation_context)
     try:
       await invocation_context.plugin_manager.run_on_agent_error_callback(
           agent=self,

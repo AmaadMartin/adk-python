@@ -196,7 +196,7 @@ class BasePlugin(ABC):
     pass
 
   async def before_agent_callback(
-      self, *, agent: BaseAgent, callback_context: CallbackContext
+      self, *, agent: BaseAgent, callback_context: CallbackContext[Any]
   ) -> Optional[types.Content]:
     """Callback executed before an agent's primary logic is invoked.
 
@@ -215,7 +215,7 @@ class BasePlugin(ABC):
     pass
 
   async def after_agent_callback(
-      self, *, agent: BaseAgent, callback_context: CallbackContext
+      self, *, agent: BaseAgent, callback_context: CallbackContext[Any]
   ) -> Optional[types.Content]:
     """Callback executed after an agent's primary logic has completed.
 
@@ -231,7 +231,7 @@ class BasePlugin(ABC):
     pass
 
   async def before_model_callback(
-      self, *, callback_context: CallbackContext, llm_request: LlmRequest
+      self, *, callback_context: CallbackContext[Any], llm_request: LlmRequest
   ) -> Optional[LlmResponse]:
     """Callback executed before a request is sent to the model.
 
@@ -251,7 +251,7 @@ class BasePlugin(ABC):
     pass
 
   async def after_model_callback(
-      self, *, callback_context: CallbackContext, llm_response: LlmResponse
+      self, *, callback_context: CallbackContext[Any], llm_response: LlmResponse
   ) -> Optional[LlmResponse]:
     """Callback executed after a response is received from the model.
 
@@ -272,7 +272,7 @@ class BasePlugin(ABC):
   async def on_model_error_callback(
       self,
       *,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any],
       llm_request: LlmRequest,
       error: Exception,
   ) -> Optional[LlmResponse]:
@@ -299,7 +299,7 @@ class BasePlugin(ABC):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
   ) -> Optional[dict[str, Any]]:
     """Callback executed before a tool is called.
 
@@ -323,7 +323,7 @@ class BasePlugin(ABC):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       result: dict[str, Any],
   ) -> Optional[dict[str, Any]]:
     """Callback executed after a tool has been called.
@@ -350,7 +350,7 @@ class BasePlugin(ABC):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       error: Exception,
   ) -> Optional[dict[str, Any]]:
     """Callback executed when a tool call encounters an error.
@@ -375,7 +375,7 @@ class BasePlugin(ABC):
       self,
       *,
       agent: BaseAgent,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any],
       error: Exception,
   ) -> None:
     """Callback executed when an unhandled exception escapes agent execution.

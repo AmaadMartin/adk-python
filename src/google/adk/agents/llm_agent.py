@@ -72,7 +72,7 @@ from .readonly_context import ReadonlyContext
 logger = logging.getLogger('google_adk.' + __name__)
 
 _SingleBeforeModelCallback: TypeAlias = Callable[
-    [CallbackContext, LlmRequest],
+    [CallbackContext[Any], LlmRequest],
     Union[Awaitable[Optional[LlmResponse]], Optional[LlmResponse]],
 ]
 
@@ -82,7 +82,7 @@ BeforeModelCallback: TypeAlias = Union[
 ]
 
 _SingleAfterModelCallback: TypeAlias = Callable[
-    [CallbackContext, LlmResponse],
+    [CallbackContext[Any], LlmResponse],
     Union[Awaitable[Optional[LlmResponse]], Optional[LlmResponse]],
 ]
 
@@ -92,7 +92,7 @@ AfterModelCallback: TypeAlias = Union[
 ]
 
 _SingleOnModelErrorCallback: TypeAlias = Callable[
-    [CallbackContext, LlmRequest, Exception],
+    [CallbackContext[Any], LlmRequest, Exception],
     Union[Awaitable[Optional[LlmResponse]], Optional[LlmResponse]],
 ]
 
@@ -102,7 +102,7 @@ OnModelErrorCallback: TypeAlias = Union[
 ]
 
 _SingleBeforeToolCallback: TypeAlias = Callable[
-    [BaseTool, dict[str, Any], ToolContext],
+    [BaseTool, dict[str, Any], ToolContext[Any]],
     Union[Awaitable[Optional[dict]], Optional[dict]],
 ]
 
@@ -112,7 +112,7 @@ BeforeToolCallback: TypeAlias = Union[
 ]
 
 _SingleAfterToolCallback: TypeAlias = Callable[
-    [BaseTool, dict[str, Any], ToolContext, dict],
+    [BaseTool, dict[str, Any], ToolContext[Any], dict],
     Union[Awaitable[Optional[dict]], Optional[dict]],
 ]
 
@@ -122,7 +122,7 @@ AfterToolCallback: TypeAlias = Union[
 ]
 
 _SingleOnToolErrorCallback: TypeAlias = Callable[
-    [BaseTool, dict[str, Any], ToolContext, Exception],
+    [BaseTool, dict[str, Any], ToolContext[Any], Exception],
     Union[Awaitable[Optional[dict]], Optional[dict]],
 ]
 
@@ -136,7 +136,7 @@ ToolUnion: TypeAlias = Union[Callable, BaseTool, BaseToolset]
 
 async def _convert_tool_union_to_tools(
     tool_union: ToolUnion,
-    ctx: Optional[ReadonlyContext],
+    ctx: Optional[ReadonlyContext[Any]],
     model: Union[str, BaseLlm],
     multiple_tools: bool = False,
 ) -> list[BaseTool]:
@@ -586,7 +586,7 @@ class LlmAgent(BaseAgent, abc.ABC):
   async def _run_impl(
       self,
       *,
-      ctx: Context,
+      ctx: Context[Any],
       node_input: Any,
   ) -> AsyncGenerator[Any, None]:
     """Runs the agent as a node in a workflow graph."""
@@ -674,7 +674,7 @@ class LlmAgent(BaseAgent, abc.ABC):
     return LLMRegistry.new_llm(default_live_model)
 
   async def canonical_instruction(
-      self, ctx: ReadonlyContext
+      self, ctx: ReadonlyContext[Any]
   ) -> tuple[str, bool]:
     """The resolved self.instruction field to construct instruction for this agent.
 
@@ -698,7 +698,7 @@ class LlmAgent(BaseAgent, abc.ABC):
       return instruction, True
 
   async def canonical_global_instruction(
-      self, ctx: ReadonlyContext
+      self, ctx: ReadonlyContext[Any]
   ) -> tuple[str, bool]:
     """The resolved self.instruction field to construct global instruction.
 
@@ -732,7 +732,7 @@ class LlmAgent(BaseAgent, abc.ABC):
       return global_instruction, True
 
   async def canonical_tools(
-      self, ctx: Optional[ReadonlyContext] = None
+      self, ctx: Optional[ReadonlyContext[Any]] = None
   ) -> list[BaseTool]:
     """The resolved self.tools field as a list of BaseTool based on the context.
 

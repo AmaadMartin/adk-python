@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any
 
 import abc
 from enum import Enum
@@ -64,7 +65,7 @@ class BaseComputer(abc.ABC):
   computer environments, including web browsers and other interactive systems.
   """
 
-  async def prepare(self, tool_context: "ToolContext") -> None:
+  async def prepare(self, tool_context: "ToolContext[Any]") -> None:
     """Called before each tool invocation to prepare resources.
 
     Override this to set up session-level resources (sandbox, tokens, etc.)

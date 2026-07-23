@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any
 
 import logging
 from typing import Optional
@@ -57,7 +58,7 @@ class _RequestIntercepterPlugin(BasePlugin):
 
   @override
   async def before_model_callback(
-      self, *, callback_context: CallbackContext, llm_request: LlmRequest
+      self, *, callback_context: CallbackContext[Any], llm_request: LlmRequest
   ) -> Optional[LlmResponse]:
     # We add the llm_request to the call back context so that we can fetch
     # it later.
@@ -68,7 +69,7 @@ class _RequestIntercepterPlugin(BasePlugin):
 
   @override
   async def after_model_callback(
-      self, *, callback_context: CallbackContext, llm_response: LlmResponse
+      self, *, callback_context: CallbackContext[Any], llm_response: LlmResponse
   ) -> Optional[LlmResponse]:
     # Fetch the request_id from the callback_context
     if callback_context and _LLM_REQUEST_ID_KEY in callback_context.state:

@@ -37,7 +37,7 @@ class EnvironmentSimulationPlugin(BasePlugin):
     self._simulator_engine = simulator_engine
 
   async def before_tool_callback(
-      self, tool: BaseTool, tool_args: dict[str, Any], tool_context: ToolContext
+      self, tool: BaseTool, tool_args: dict[str, Any], tool_context: ToolContext[Any]
   ) -> Optional[Dict[str, Any]]:
     """Invokes the EnvironmentSimulationEngine before a tool call."""
     return await self._simulator_engine.simulate(tool, tool_args, tool_context)

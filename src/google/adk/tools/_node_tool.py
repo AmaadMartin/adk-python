@@ -115,7 +115,7 @@ class NodeTool(BaseTool):
       self,
       *,
       args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
   ) -> Any:
     import inspect
 

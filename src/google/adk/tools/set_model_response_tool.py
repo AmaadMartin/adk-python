@@ -141,7 +141,7 @@ class SetModelResponseTool(BaseTool):
 
   @override
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any]
   ) -> Any:
     """Process the model's response and return the validated data.
 

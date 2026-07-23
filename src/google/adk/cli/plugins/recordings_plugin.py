@@ -78,7 +78,7 @@ class RecordingsPlugin(BasePlugin):
       self, *, invocation_context: InvocationContext
   ) -> Optional[types.Content]:
     """Always create fresh per-invocation recording state when enabled."""
-    ctx = CallbackContext(invocation_context)
+    ctx = CallbackContext[Any](invocation_context)
     if self._is_record_mode_on(ctx):
       # Always create/overwrite the state for this invocation
       self._create_invocation_state(ctx)
@@ -86,7 +86,7 @@ class RecordingsPlugin(BasePlugin):
 
   @override
   async def before_model_callback(
-      self, *, callback_context: CallbackContext, llm_request: LlmRequest
+      self, *, callback_context: CallbackContext[Any], llm_request: LlmRequest
   ) -> Optional[LlmResponse]:
     """Create pending LLM recording awaiting response.
 
@@ -128,7 +128,7 @@ class RecordingsPlugin(BasePlugin):
 
   @override
   async def after_model_callback(
-      self, *, callback_context: CallbackContext, llm_response: LlmResponse
+      self, *, callback_context: CallbackContext[Any], llm_response: LlmResponse
   ) -> Optional[LlmResponse]:
     """Complete pending LLM recording for the invocation specified in session state."""
     if not self._is_record_mode_on(callback_context):
@@ -166,7 +166,7 @@ class RecordingsPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
   ) -> Optional[dict]:
     """Create pending tool recording for the invocation specified in session state."""
     if not self._is_record_mode_on(tool_context):
@@ -215,7 +215,7 @@ class RecordingsPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       result: dict,
   ) -> Optional[dict]:
     """Complete pending tool recording for the invocation specified in session state."""
@@ -265,7 +265,7 @@ class RecordingsPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       error: Exception,
   ) -> Optional[dict]:
     """Handle tool error callback with state guard.
@@ -295,7 +295,7 @@ class RecordingsPlugin(BasePlugin):
       self, *, invocation_context: InvocationContext
   ) -> None:
     """Finalize and persist recordings, then clean per-invocation state."""
-    ctx = CallbackContext(invocation_context)
+    ctx = CallbackContext[Any](invocation_context)
     if not self._is_record_mode_on(ctx):
       return None
 
@@ -349,7 +349,7 @@ class RecordingsPlugin(BasePlugin):
       self._invocation_states.pop(ctx.invocation_id, None)
 
   # Private helpers (placed after public callbacks)
-  def _is_record_mode_on(self, callback_context: CallbackContext) -> bool:
+  def _is_record_mode_on(self, callback_context: CallbackContext[Any]) -> bool:
     """Check if recording mode is enabled for this invocation.
 
     Args:
@@ -369,14 +369,14 @@ class RecordingsPlugin(BasePlugin):
     return case_dir and msg_index is not None
 
   def _get_invocation_state(
-      self, callback_context: CallbackContext
+      self, callback_context: CallbackContext[Any]
   ) -> Optional[_InvocationRecordingState]:
     """Get existing recording state for this invocation."""
     invocation_id = callback_context.invocation_id
     return self._invocation_states.get(invocation_id)
 
   def _create_invocation_state(
-      self, callback_context: CallbackContext
+      self, callback_context: CallbackContext[Any]
   ) -> _InvocationRecordingState:
     """Create and store recording state for this invocation."""
     invocation_id = callback_context.invocation_id

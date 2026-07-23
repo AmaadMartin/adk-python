@@ -220,7 +220,7 @@ class AgentTool(BaseTool):
       self,
       *,
       args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
   ) -> Any:
     from ..runners import Runner
     from ..sessions.in_memory_session_service import InMemorySessionService
@@ -369,7 +369,7 @@ class _SingleTurnAgentTool(AgentTool):
       self,
       *,
       args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
   ) -> Any:
     input_schema = _get_input_schema(self.agent)
     if input_schema:
@@ -462,7 +462,7 @@ class _TaskAgentTool(AgentTool):
       self,
       *,
       args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
   ) -> Any:
     # Framework handles task delegation dispatch directly via the wrapper.
     return None

@@ -55,7 +55,7 @@ CALLBACK_FIELD_NAMES = (
 
 async def write_config_files(
     configs: Dict[str, str],
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any],
     backup_existing: bool = False,  # Changed default to False - user should decide
     create_directories: bool = True,
 ) -> Dict[str, Any]:

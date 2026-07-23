@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any
 
 from collections.abc import Sequence
 import logging
@@ -169,7 +170,7 @@ class CredentialManager:
     """
     self._exchanger_registry.register(credential_type, exchanger_instance)
 
-  async def request_credential(self, context: CallbackContext) -> None:
+  async def request_credential(self, context: CallbackContext[Any]) -> None:
     if not hasattr(context, "request_credential"):
       raise TypeError(
           "request_credential requires a ToolContext with request_credential"
@@ -178,7 +179,7 @@ class CredentialManager:
     context.request_credential(self._auth_config)
 
   async def get_auth_credential(
-      self, context: CallbackContext
+      self, context: CallbackContext[Any]
   ) -> Optional[AuthCredential]:
     """Load and prepare authentication credential through a structured workflow."""
 
@@ -274,7 +275,7 @@ class CredentialManager:
     return credential
 
   async def _load_existing_credential(
-      self, context: CallbackContext
+      self, context: CallbackContext[Any]
   ) -> Optional[AuthCredential]:
     """Load existing credential from credential service."""
 
@@ -286,7 +287,7 @@ class CredentialManager:
     return None
 
   async def _load_from_credential_service(
-      self, context: CallbackContext
+      self, context: CallbackContext[Any]
   ) -> Optional[AuthCredential]:
     """Load credential from credential service if available."""
     credential_service = context._invocation_context.credential_service
@@ -297,7 +298,7 @@ class CredentialManager:
     return None
 
   async def _load_from_auth_response(
-      self, context: CallbackContext
+      self, context: CallbackContext[Any]
   ) -> Optional[AuthCredential]:
     """Load credential from auth response in context."""
     return context.get_auth_response(self._auth_config)
@@ -390,7 +391,7 @@ class CredentialManager:
     # Additional validation can be added here
 
   async def _save_credential(
-      self, context: CallbackContext, credential: AuthCredential
+      self, context: CallbackContext[Any], credential: AuthCredential
   ) -> None:
     """Save credential to credential service if available."""
     credential_service = context._invocation_context.credential_service

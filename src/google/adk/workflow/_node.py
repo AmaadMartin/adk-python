@@ -235,7 +235,7 @@ class Node(base_node.BaseNode):
     return copied
 
   async def run_node_impl(
-      self, *, ctx: Context, node_input: Any
+      self, *, ctx: Context[Any], node_input: Any
   ) -> AsyncGenerator[Any, None]:
     """Implement this method when designing a child class that inherits from Node.
 
@@ -247,7 +247,7 @@ class Node(base_node.BaseNode):
 
   @override
   async def _run_impl(
-      self, *, ctx: Context, node_input: Any
+      self, *, ctx: Context[Any], node_input: Any
   ) -> AsyncGenerator[Any, None]:
     """Dispatches to run_node_impl() or parallel_worker inner node."""
     if self.parallel_worker:

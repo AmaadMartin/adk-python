@@ -61,7 +61,7 @@ class VertexAiRagRetrieval(BaseRetrievalTool):
   async def process_llm_request(
       self,
       *,
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       llm_request: LlmRequest,
   ) -> None:
     # Use Gemini built-in Vertex AI RAG tool for Gemini 2 models.
@@ -91,7 +91,7 @@ class VertexAiRagRetrieval(BaseRetrievalTool):
       self,
       *,
       args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
   ) -> Any:
     from ...dependencies.vertexai import rag
 

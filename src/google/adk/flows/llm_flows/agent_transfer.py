@@ -15,6 +15,7 @@
 """Handles agent transfer for LLM flow."""
 
 from __future__ import annotations
+from typing import Any
 
 import typing
 from typing import AsyncGenerator
@@ -60,7 +61,7 @@ class _AgentTransferLlmRequestProcessor(BaseLlmRequestProcessor):
         )
     ])
 
-    tool_context = ToolContext(invocation_context)
+    tool_context = ToolContext[Any](invocation_context)
     await transfer_to_agent_tool.process_llm_request(
         tool_context=tool_context, llm_request=llm_request
     )

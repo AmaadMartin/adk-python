@@ -171,7 +171,7 @@ class PluginManager:
     )
 
   async def run_before_agent_callback(
-      self, *, agent: BaseAgent, callback_context: CallbackContext
+      self, *, agent: BaseAgent, callback_context: CallbackContext[Any]
   ) -> Optional[types.Content]:
     """Runs the `before_agent_callback` for all plugins."""
     return await self._run_callbacks(
@@ -181,7 +181,7 @@ class PluginManager:
     )
 
   async def run_after_agent_callback(
-      self, *, agent: BaseAgent, callback_context: CallbackContext
+      self, *, agent: BaseAgent, callback_context: CallbackContext[Any]
   ) -> Optional[types.Content]:
     """Runs the `after_agent_callback` for all plugins."""
     return await self._run_callbacks(
@@ -195,7 +195,7 @@ class PluginManager:
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
   ) -> Optional[dict[str, Any]]:
     """Runs the `before_tool_callback` for all plugins."""
     return await self._run_callbacks(
@@ -210,7 +210,7 @@ class PluginManager:
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       result: dict[str, Any],
   ) -> Optional[dict[str, Any]]:
     """Runs the `after_tool_callback` for all plugins."""
@@ -225,7 +225,7 @@ class PluginManager:
   async def run_on_model_error_callback(
       self,
       *,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any],
       llm_request: LlmRequest,
       error: Exception,
   ) -> Optional[LlmResponse]:
@@ -238,7 +238,7 @@ class PluginManager:
     )
 
   async def run_before_model_callback(
-      self, *, callback_context: CallbackContext, llm_request: LlmRequest
+      self, *, callback_context: CallbackContext[Any], llm_request: LlmRequest
   ) -> Optional[LlmResponse]:
     """Runs the `before_model_callback` for all plugins."""
     return await self._run_callbacks(
@@ -248,7 +248,7 @@ class PluginManager:
     )
 
   async def run_after_model_callback(
-      self, *, callback_context: CallbackContext, llm_response: LlmResponse
+      self, *, callback_context: CallbackContext[Any], llm_response: LlmResponse
   ) -> Optional[LlmResponse]:
     """Runs the `after_model_callback` for all plugins."""
     return await self._run_callbacks(
@@ -262,7 +262,7 @@ class PluginManager:
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       error: Exception,
   ) -> Optional[dict[str, Any]]:
     """Runs the `on_tool_error_callback` for all plugins."""
@@ -327,7 +327,7 @@ class PluginManager:
       self,
       *,
       agent: BaseAgent,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any],
       error: Exception,
   ) -> None:
     """Runs the `on_agent_error_callback` for all plugins."""

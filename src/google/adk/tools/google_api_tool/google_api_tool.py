@@ -61,7 +61,7 @@ class GoogleApiTool(BaseTool):
 
   @override
   async def run_async(
-      self, *, args: Dict[str, Any], tool_context: Optional[ToolContext]
+      self, *, args: Dict[str, Any], tool_context: Optional[ToolContext[Any]]
   ) -> Dict[str, Any]:
     return await self._rest_api_tool.run_async(
         args=args, tool_context=tool_context

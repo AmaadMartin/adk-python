@@ -39,7 +39,7 @@ async def execute_sql(
     query: str,
     credentials: Credentials,
     settings: BigtableToolSettings,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any],
     parameters: Dict[str, Any] | None = None,
     parameter_types: Dict[str, Any] | None = None,
     _view_parameters: Dict[str, Any] | None = None,

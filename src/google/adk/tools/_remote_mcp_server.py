@@ -25,7 +25,7 @@ if TYPE_CHECKING:
   from ..agents.readonly_context import ReadonlyContext
 
   HeaderProvider = Callable[
-      [ReadonlyContext], dict[str, str] | Awaitable[dict[str, str]]
+      [ReadonlyContext[Any]], dict[str, str] | Awaitable[dict[str, str]]
   ]
 else:
   HeaderProvider = Callable[..., dict[str, str] | Awaitable[dict[str, str]]]

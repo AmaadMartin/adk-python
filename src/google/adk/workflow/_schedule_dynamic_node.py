@@ -65,7 +65,7 @@ class ScheduleDynamicNode(Protocol):
 
   def __call__(
       self,
-      ctx: Context,
+      ctx: Context[Any],
       node: Any,
       node_input: Any,
       *,
@@ -75,5 +75,5 @@ class ScheduleDynamicNode(Protocol):
       use_sub_branch: bool = False,
       override_branch: str | None = None,
       override_isolation_scope: str | None = None,
-  ) -> Awaitable[Context]:
+  ) -> Awaitable[Context[Any]]:
     ...

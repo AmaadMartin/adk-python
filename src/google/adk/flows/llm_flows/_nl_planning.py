@@ -15,6 +15,7 @@
 """Handles NL planning related logic."""
 
 from __future__ import annotations
+from typing import Any
 
 from typing import AsyncGenerator
 from typing import Optional
@@ -90,7 +91,7 @@ class _NlPlanningResponse(BaseLlmResponseProcessor):
       return
 
     # Postprocess the LLM response.
-    callback_context = CallbackContext(invocation_context)
+    callback_context = CallbackContext[Any](invocation_context)
     processed_parts = planner.process_planning_response(
         callback_context, llm_response.content.parts
     )

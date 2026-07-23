@@ -61,10 +61,10 @@ class _ToolNode(BaseNode):
   async def _run_impl(
       self,
       *,
-      ctx: Context,
+      ctx: Context[Any],
       node_input: Any,
   ) -> AsyncGenerator[Any, None]:
-    tool_context = ToolContext(
+    tool_context = ToolContext[Any](
         invocation_context=ctx.get_invocation_context(),
         function_call_id=str(uuid.uuid4()),
     )

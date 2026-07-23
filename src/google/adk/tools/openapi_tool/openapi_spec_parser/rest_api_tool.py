@@ -482,12 +482,12 @@ class RestApiTool(BaseTool):
 
   @override
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: Optional[ToolContext]
+      self, *, args: dict[str, Any], tool_context: Optional[ToolContext[Any]]
   ) -> Dict[str, Any]:
     return await self.call(args=args, tool_context=tool_context)
 
   async def call(
-      self, *, args: dict[str, Any], tool_context: Optional[ToolContext]
+      self, *, args: dict[str, Any], tool_context: Optional[ToolContext[Any]]
   ) -> Dict[str, Any]:
     """Executes the REST API call.
 
