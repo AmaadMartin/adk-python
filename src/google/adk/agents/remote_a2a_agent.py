@@ -67,7 +67,7 @@ from ..agents.invocation_context import InvocationContext
 from ..events.event import Event
 from ..flows.llm_flows.contents import _is_other_agent_reply
 from ..flows.llm_flows.contents import _present_other_agent_message
-from ..flows.llm_flows.functions import find_matching_function_call
+
 from .base_agent import BaseAgent
 
 __all__ = [
@@ -356,7 +356,7 @@ class RemoteA2aAgent(BaseAgent):
     """
     if not ctx.session.events or ctx.session.events[-1].author != "user":
       return None
-    function_call_event = find_matching_function_call(ctx.session.events)
+    function_call_event = ctx.session.get_matching_function_call()
     if not function_call_event:
       return None
 

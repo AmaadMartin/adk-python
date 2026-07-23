@@ -71,3 +71,32 @@ class Session(BaseModel):
 
   _storage_update_marker: str | None = PrivateAttr(default=None)
   """Internal storage revision marker used for stale-session detection."""
+
+  _function_call_index: dict[str, Event] = PrivateAttr(default_factory=dict)
+  _indexed_events_count: int = PrivateAttr(default=0)
+
+  @property
+  def function_call_index(self) -> dict[str, Event]:
+    current_length = len(self.events)
+    if self._indexed_events_count < current_length:
+      for event in self.events[self._indexed_events_count:]:
+        for fc in event.get_function_calls():
+          if fc.id:
+            self._function_call_index[fc.id] = event
+      self._indexed_events_count = current_length
+    elif self._indexed_events_count > current_length:
+      self._function_call_index.clear()
+      for event in self.events:
+        for fc in event.get_function_calls():
+          if fc.id:
+            self._function_call_index[fc.id] = event
+      self._indexed_events_count = current_length
+    return self._function_call_index
+
+  def get_matching_function_call(self) -> Event | None:
+    if not self.events:
+      return None
+    responses = self.events[-1].get_function_responses()
+    if not responses or not responses[0].id:
+      return None
+    return self.function_call_index.get(responses[0].id)

@@ -543,21 +543,20 @@ class InvocationContext(BaseModel):
       self, function_response_event: Event
   ) -> Optional[Event]:
     """Finds the function call event in the current invocation that matches the function response id."""
-    from ..flows.llm_flows.functions import find_event_by_function_call_id
-
     function_responses = function_response_event.get_function_responses()
     if not function_responses:
       return None
 
-    events = self._get_events(current_invocation=True)
-    if events and events[-1].id == function_response_event.id:
-      search_space = events[:-1]
-    else:
-      search_space = events
+    fc_event = self.session.function_call_index.get(function_responses[0].id)
+    if not fc_event and hasattr(self, '_local_state') and getattr(self._local_state, 'events', None):
+      search_session = self._generate_session_with_injected_local_events(
+          function_response_event
+      )
+      fc_event = search_session.function_call_index.get(function_responses[0].id)
 
-    return find_event_by_function_call_id(
-        search_space, function_responses[0].id
-    )
+    if fc_event and fc_event.invocation_id == self.invocation_id:
+      return fc_event
+    return None
 
   def stamp_event_branch_context(self, event: Event) -> None:
     """Stamps the event with the branch and isolation scope of its matching function call."""

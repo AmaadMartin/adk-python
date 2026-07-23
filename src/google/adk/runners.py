@@ -47,8 +47,7 @@ from .errors.session_not_found_error import SessionNotFoundError
 from .events.event import Event
 from .events.event import EventActions
 from .flows.llm_flows import contents
-from .flows.llm_flows.functions import find_event_by_function_call_id
-from .flows.llm_flows.functions import find_matching_function_call
+
 from .memory.base_memory_service import BaseMemoryService
 from .platform.thread import create_thread
 from .plugins.base_plugin import BasePlugin
@@ -439,9 +438,7 @@ class Runner:
     if not function_responses:
       return invocation_id
 
-    fc_event = find_event_by_function_call_id(
-        session.events, function_responses[0].id
-    )
+    fc_event = session.function_call_index.get(function_responses[0].id)
     if not fc_event:
       raise ValueError(
           'Function call event not found for function response id:'
@@ -1768,7 +1765,7 @@ class Runner:
     # the agent that returned the corresponding function call regardless the
     # type of the agent. e.g. a remote a2a agent may surface a credential
     # request as a special long-running function tool call.
-    event = find_matching_function_call(session.events)
+    event = session.get_matching_function_call()
     is_resumable = (
         self.resumability_config and self.resumability_config.is_resumable
     )

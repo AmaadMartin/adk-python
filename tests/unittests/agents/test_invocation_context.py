@@ -540,7 +540,7 @@ class TestFindMatchingFunctionCall:
           session_service=Mock(spec=BaseSessionService),
           agent=Mock(spec=BaseAgent, name='agent'),
           invocation_id='inv_1',
-          session=Mock(spec=Session, events=events),
+          session=Session(id="test", app_name="test", user_id="test", events=events),
       )
 
     return _create_invocation_context

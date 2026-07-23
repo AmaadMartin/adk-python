@@ -624,16 +624,13 @@ class TestRemoteA2aAgentMessageHandling:
 
   def test_create_a2a_request_for_user_function_response_no_function_call(self):
     """Test function response request creation when no function call exists."""
-    with patch(
-        "google.adk.agents.remote_a2a_agent.find_matching_function_call"
-    ) as mock_find:
-      mock_find.return_value = None
+    self.mock_session.get_matching_function_call.return_value = None
 
-      result = self.agent._create_a2a_request_for_user_function_response(
-          self.mock_context
-      )
+    result = self.agent._create_a2a_request_for_user_function_response(
+        self.mock_context
+    )
 
-      assert result is None
+    assert result is None
 
   def test_create_a2a_request_for_user_function_response_success(self):
     """Test successful function response request creation."""
@@ -651,12 +648,9 @@ class TestRemoteA2aAgentMessageHandling:
     mock_latest_event.author = "user"
     self.mock_session.events = [mock_latest_event]
 
-    with patch(
-        "google.adk.agents.remote_a2a_agent.find_matching_function_call"
-    ) as mock_find:
-      mock_find.return_value = mock_function_event
+    self.mock_session.get_matching_function_call.return_value = mock_function_event
 
-      with patch(
+    with patch(
           "google.adk.agents.remote_a2a_agent.convert_event_to_a2a_message"
       ) as mock_convert:
         # Create a proper mock A2A message
@@ -1530,16 +1524,13 @@ class TestRemoteA2aAgentMessageHandlingFromFactory:
 
   def test_create_a2a_request_for_user_function_response_no_function_call(self):
     """Test function response request creation when no function call exists."""
-    with patch(
-        "google.adk.agents.remote_a2a_agent.find_matching_function_call"
-    ) as mock_find:
-      mock_find.return_value = None
+    self.mock_session.get_matching_function_call.return_value = None
 
-      result = self.agent._create_a2a_request_for_user_function_response(
-          self.mock_context
-      )
+    result = self.agent._create_a2a_request_for_user_function_response(
+        self.mock_context
+    )
 
-      assert result is None
+    assert result is None
 
   def test_create_a2a_request_for_user_function_response_success(self):
     """Test successful function response request creation."""
@@ -1557,12 +1548,9 @@ class TestRemoteA2aAgentMessageHandlingFromFactory:
     mock_latest_event.author = "user"
     self.mock_session.events = [mock_latest_event]
 
-    with patch(
-        "google.adk.agents.remote_a2a_agent.find_matching_function_call"
-    ) as mock_find:
-      mock_find.return_value = mock_function_event
+    self.mock_session.get_matching_function_call.return_value = mock_function_event
 
-      with patch(
+    with patch(
           "google.adk.agents.remote_a2a_agent.convert_event_to_a2a_message"
       ) as mock_convert:
         # Create a proper mock A2A message
