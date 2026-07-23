@@ -103,8 +103,6 @@ class OAuth2CredentialExchanger(BaseAuthCredentialExchanger):
     Raises:
         ValueError: If the auth scheme or auth credential is invalid.
     """
-    # TODO: Implement token refresh flow
-
     self._check_scheme_credential_type(auth_scheme, auth_credential)
 
     # If token is already HTTPBearer token, do nothing assuming that this token
@@ -112,8 +110,52 @@ class OAuth2CredentialExchanger(BaseAuthCredentialExchanger):
     if auth_credential.http:
       return auth_credential
 
+    if auth_credential.oauth2 and auth_credential.oauth2.refresh_token:
+      token_endpoint = getattr(auth_scheme, "token_endpoint", None)
+      if token_endpoint is None:
+        flows = getattr(auth_scheme, "flows", None)
+        if flows:
+          if flows.authorizationCode and flows.authorizationCode.tokenUrl:
+            token_endpoint = flows.authorizationCode.tokenUrl
+          elif flows.password and flows.password.tokenUrl:
+            token_endpoint = flows.password.tokenUrl
+      
+      if not token_endpoint:
+        raise ValueError("Could not resolve token_endpoint from auth_scheme for refresh token flow.")
+      
+      import urllib.request
+      import urllib.parse
+      import json
+      from urllib.error import HTTPError
+      
+      data = {
+          "grant_type": "refresh_token",
+          "refresh_token": auth_credential.oauth2.refresh_token,
+      }
+      if auth_credential.oauth2.client_id:
+        data["client_id"] = auth_credential.oauth2.client_id
+      if auth_credential.oauth2.client_secret:
+        data["client_secret"] = auth_credential.oauth2.client_secret
+
+      encoded_data = urllib.parse.urlencode(data).encode("utf-8")
+      req = urllib.request.Request(token_endpoint, data=encoded_data, method="POST")
+      req.add_header("Content-Type", "application/x-www-form-urlencoded")
+      
+      try:
+        with urllib.request.urlopen(req) as response:
+          response_data = json.loads(response.read().decode("utf-8"))
+          if "access_token" in response_data:
+            auth_credential.oauth2.access_token = response_data["access_token"]
+          if "expires_in" in response_data:
+            auth_credential.oauth2.expires_in = response_data["expires_in"]
+      except HTTPError as e:
+        error_msg = e.read().decode("utf-8")
+        raise ValueError(f"Failed to refresh token: HTTP {e.code} API Error: {error_msg}")
+      except Exception as e:
+        raise ValueError(f"Failed to refresh token: {e}")
+
     # If access token is exchanged, exchange a HTTPBearer token.
-    if auth_credential.oauth2.access_token:
+    if auth_credential.oauth2 and auth_credential.oauth2.access_token:
       return self.generate_auth_token(auth_credential)
 
     return None
