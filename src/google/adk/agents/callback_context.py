@@ -14,9 +14,13 @@
 
 from __future__ import annotations
 
+from typing import TypeVar
+
 from .context import Context
 
 # Keep ReadonlyContext for backward compatibility
 
+StateT = TypeVar('StateT')
+
 # CallbackContext is unified into Context
-CallbackContext = Context
+CallbackContext = Context[StateT]

@@ -18,13 +18,15 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from collections.abc import Sequence
-from typing import Any
+from typing import Any, Generic, TypeVar, cast
 from typing import TYPE_CHECKING
 
 from opentelemetry import context as context_api
 from typing_extensions import override
 
 from .readonly_context import ReadonlyContext
+
+StateT = TypeVar('StateT')
 
 if TYPE_CHECKING:
   from google.genai import types
@@ -51,7 +53,7 @@ _MAX_PARENT_DEPTH = 50
 
 
 def _derive_scheduler(
-    parent_ctx: Context | None,
+    parent_ctx: Context[Any] | None,
 ) -> ScheduleDynamicNode | None:
   """Derives the dynamic node scheduler from the parent context."""
   if parent_ctx:
@@ -115,7 +117,7 @@ def _derive_node_path(
   return derived_node_path, derived_run_id
 
 
-class Context(ReadonlyContext):
+class Context(ReadonlyContext[StateT]):
   """The context within an agent run.
 
   When used in a workflow, additional fields under the ``Workflow-specific
@@ -132,7 +134,7 @@ class Context(ReadonlyContext):
       function_call_id: str | None = None,
       tool_confirmation: ToolConfirmation | None = None,
       # Workflow Execution
-      parent_ctx: Context | None = None,
+      parent_ctx: Context[Any] | None = None,
       node: BaseNode | None = None,
       node_path: str | None = None,
       run_id: str = '',
@@ -300,7 +302,7 @@ class Context(ReadonlyContext):
   # ============================================================================
 
   @property
-  def parent_ctx(self) -> Context | None:
+  def parent_ctx(self) -> Context[Any] | None:
     """Returns the parent node's Context."""
     return self._parent_ctx
 
@@ -563,6 +565,8 @@ class Context(ReadonlyContext):
           )
           curr_run_id = str(curr_parent_ctx._child_run_counters[curr_node.name])
 
+        import typing
+        assert curr_parent_ctx._workflow_scheduler is not None
         child_ctx = await curr_parent_ctx._workflow_scheduler(
             curr_parent_ctx,
             curr_node,
@@ -639,7 +643,7 @@ class Context(ReadonlyContext):
 
         target_agent, next_parent_ctx = resolve_and_derive_transfer_context(
             target_name=target_name,
-            current_agent=curr_node,
+            current_agent=cast('BaseAgent', curr_node),
             root_agent=root_agent,
             curr_ctx=child_ctx,
             curr_parent_ctx=curr_parent_ctx,
@@ -1022,7 +1026,7 @@ class Context(ReadonlyContext):
       override_branch: str | None = None,
       override_isolation_scope: str | None = None,
       resume_inputs: dict[str, Any] | None = None,
-  ) -> Context:
+  ) -> Context[Any]:
     """Run a node directly via NodeRunner without an orchestrator."""
     from ..workflow._node_runner import NodeRunner
 
