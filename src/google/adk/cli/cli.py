@@ -666,13 +666,25 @@ async def run_once_cli(
 
     if interrupt_event and interrupt_event.long_running_tool_ids:
       interrupt_ids = list(interrupt_event.long_running_tool_ids)
-      
+
       if len(interrupt_ids) > 1:
         if not jsonl:
-          click.secho('Error: Multiple pending interrupts found. Resuming sessions with multiple active interrupts is currently not supported.', err=True, fg='red')
+          click.secho(
+              'Error: Multiple pending interrupts found. Resuming sessions with'
+              ' multiple active interrupts is currently not supported.',
+              err=True,
+              fg='red',
+          )
           click.secho('Pending interrupts:', err=True, fg='yellow')
           for cid in interrupt_ids:
-            c_fc = next((c for c in interrupt_event.get_function_calls() if c.id == cid), None)
+            c_fc = next(
+                (
+                    c
+                    for c in interrupt_event.get_function_calls()
+                    if c.id == cid
+                ),
+                None,
+            )
             c_name = c_fc.name if c_fc else 'unknown'
             click.secho(f'  - {cid} ({c_name})', err=True, fg='yellow')
         exit_code = 1
