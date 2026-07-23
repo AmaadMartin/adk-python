@@ -20,9 +20,14 @@ import json
 import logging
 import sqlite3
 import threading
+from typing import Any
+from typing import Mapping
 from typing import Iterable
 from typing import Optional
 from typing import Sequence
+from typing import cast
+
+from opentelemetry.util.types import AttributeValue
 
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace.export import SpanExporter
@@ -103,7 +108,7 @@ class SqliteSpanExporter(SpanExporter):
       conn.execute(_CREATE_TRACE_INDEX)
       conn.commit()
 
-  def _serialize_attributes(self, attributes: dict[str, object]) -> str:
+  def _serialize_attributes(self, attributes: Mapping[str, Any]) -> str:
     try:
       return json.dumps(
           attributes,
@@ -116,15 +121,15 @@ class SqliteSpanExporter(SpanExporter):
 
   def _deserialize_attributes(
       self, attributes_json: object
-  ) -> dict[str, object]:
-    if not attributes_json:
+  ) -> Mapping[str, AttributeValue]:
+    if not attributes_json or not isinstance(attributes_json, (str, bytes, bytearray)):
       return {}
     try:
       attributes = json.loads(attributes_json)
     except (json.JSONDecodeError, TypeError) as e:
       logger.debug("Failed to deserialize span attributes: %r", e)
       return {}
-    return attributes if isinstance(attributes, dict) else {}
+    return cast(Mapping[str, AttributeValue], attributes) if isinstance(attributes, dict) else {}
 
   def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
     try:

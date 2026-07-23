@@ -48,7 +48,7 @@ try:
 except ImportError:
   # cloud.resource_id only lives in the private _incubating package; fall back
   # to the literal key the Agent Engine dashboard filters on if that path moves.
-  CLOUD_RESOURCE_ID = "cloud.resource_id"
+  CLOUD_RESOURCE_ID = "cloud.resource_id"  # type: ignore[misc]
 
 _GCP_LOG_NAME_ENV_VARIABLE_NAME = "GOOGLE_CLOUD_DEFAULT_LOG_NAME"
 _DEFAULT_LOG_NAME = "adk-otel"
@@ -118,17 +118,17 @@ def get_gcp_exporters(
 
   metric_readers: list[MetricReader] = []
   if enable_cloud_metrics:
-    exporter = _get_gcp_metrics_exporter(project_id)
-    if exporter:
-      metric_readers.append(exporter)
+    metric_exporter = _get_gcp_metrics_exporter(project_id)
+    if metric_exporter:
+      metric_readers.append(metric_exporter)
 
   log_record_processors: list[LogRecordProcessor] = []
   if enable_cloud_logging:
-    exporter = _get_gcp_logs_exporter(
+    log_exporter = _get_gcp_logs_exporter(
         project_id=project_id,
     )
-    if exporter:
-      log_record_processors.append(exporter)
+    if log_exporter:
+      log_record_processors.append(log_exporter)
 
   return OTelHooks(
       span_processors=span_processors,
@@ -193,7 +193,7 @@ def _get_gcp_metrics_exporter(project_id: str) -> MetricReader:
 
 def _get_gcp_logs_exporter(
     project_id: str,
-) -> LogRecordProcessor:
+) -> Optional[LogRecordProcessor]:
   if os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID"):
     return _get_agent_engine_logs_exporter(
         project_id=project_id,
@@ -211,7 +211,7 @@ def _get_gcp_logs_exporter(
   )
 
 
-def _detect_cloud_resource_id(project_id: str) -> Optional[str]:
+def _detect_cloud_resource_id(project_id: Optional[str]) -> Optional[str]:
   """Detects the cloud resource ID."""
   location = os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_LOCATION") or os.getenv(
       "GOOGLE_CLOUD_LOCATION"
@@ -237,9 +237,8 @@ def get_gcp_resource(project_id: Optional[str] = None) -> Resource:
   """
   agent_engine_id = os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID", "")
   cloud_resource_id = _detect_cloud_resource_id(project_id=project_id)
-  resource_attributes = {
-      "gcp.project_id": project_id,
-      "cloud.account.id": project_id,
+  from typing import Any
+  resource_attributes: dict[str, Any] = {
       "cloud.provider": "gcp",
       "cloud.platform": "gcp.agent_engine",
       "service.name": agent_engine_id,
@@ -252,6 +251,9 @@ def get_gcp_resource(project_id: Optional[str] = None) -> Resource:
           or os.getenv("GOOGLE_CLOUD_LOCATION", "")
       ),
   }
+  if project_id:
+    resource_attributes["gcp.project_id"] = project_id
+    resource_attributes["cloud.account.id"] = project_id
   if cloud_resource_id is not None:
     resource_attributes[CLOUD_RESOURCE_ID] = cloud_resource_id
 
@@ -343,7 +345,7 @@ def _use_client_cert_effective() -> bool:
 def _get_agent_engine_logs_exporter(
     *,
     project_id: str,
-):
+) -> Optional[LogRecordProcessor]:
   """Configures logging for Agent Engine.
 
   Args:
@@ -361,7 +363,7 @@ def _get_agent_engine_logs_exporter(
         "proceeding with logging disabled because not all packages for"
         " logging have been installed"
     )
-    return
+    return None
 
   class _SimpleLogRecordProcessor(SimpleLogRecordProcessor):
 
