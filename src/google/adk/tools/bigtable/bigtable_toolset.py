@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any, Optional
 
 import inspect
 from typing import Any
@@ -154,7 +155,7 @@ class BigtableToolset(BaseToolset):
     self.view_parameter_names = view_parameter_names
 
   def _is_tool_selected(
-      self, tool: BaseTool, readonly_context: ReadonlyContext[Any]
+      self, tool: BaseTool, readonly_context: Optional[ReadonlyContext[Any]]
   ) -> bool:
     if self.tool_filter is None:
       return True

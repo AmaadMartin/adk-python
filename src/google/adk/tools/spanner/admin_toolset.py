@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any, Optional
 
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.tools.spanner import admin_tool
@@ -63,7 +64,7 @@ class SpannerAdminToolset(BaseToolset):
     )
 
   def _is_tool_selected(
-      self, tool: BaseTool, readonly_context: ReadonlyContext[Any]
+      self, tool: BaseTool, readonly_context: Optional[ReadonlyContext[Any]]
   ) -> bool:
     if self.tool_filter is None:
       return True

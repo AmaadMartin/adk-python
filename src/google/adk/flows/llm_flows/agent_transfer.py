@@ -60,7 +60,9 @@ class _AgentTransferLlmRequestProcessor(BaseLlmRequestProcessor):
         )
     ])
 
-    tool_context = ToolContext(invocation_context)
+    tool_context: ToolContext[typing.Any, typing.Any, typing.Any] = ToolContext(
+        invocation_context
+    )
     await transfer_to_agent_tool.process_llm_request(
         tool_context=tool_context, llm_request=llm_request
     )

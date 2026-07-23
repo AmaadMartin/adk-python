@@ -90,7 +90,10 @@ class _NlPlanningResponse(BaseLlmResponseProcessor):
       return
 
     # Postprocess the LLM response.
-    callback_context = CallbackContext(invocation_context)
+    from typing import Any
+    callback_context: CallbackContext[Any, Any, Any] = CallbackContext(
+        invocation_context
+    )
     processed_parts = planner.process_planning_response(
         callback_context, llm_response.content.parts
     )

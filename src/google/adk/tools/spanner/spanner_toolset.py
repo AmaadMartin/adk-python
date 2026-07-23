@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any, Optional
 
 from typing import Any
 from typing import List
@@ -72,7 +73,7 @@ class SpannerToolset(BaseToolset):
     )
 
   def _is_tool_selected(
-      self, tool: BaseTool, readonly_context: ReadonlyContext[Any]
+      self, tool: BaseTool, readonly_context: Optional[ReadonlyContext[Any]]
   ) -> bool:
     if self.tool_filter is None:
       return True
