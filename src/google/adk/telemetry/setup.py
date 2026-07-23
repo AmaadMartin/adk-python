@@ -44,9 +44,9 @@ class OTelHooks:
 
 
 def maybe_set_otel_providers(
-    otel_hooks_to_setup: list[OTelHooks] = None,
+    otel_hooks_to_setup: Optional[list[OTelHooks]] = None,
     otel_resource: Optional[Resource] = None,
-):
+) -> None:
   """Sets up OTel providers if hooks for a given telemetry type were
   passed.
 
@@ -90,8 +90,8 @@ def maybe_set_otel_providers(
   # and results in a warning. In such case we rely on user setup.
   if span_processors:
     new_tracer_provider = TracerProvider(resource=otel_resource)
-    for exporter in span_processors:
-      new_tracer_provider.add_span_processor(exporter)
+    for span_exporter in span_processors:
+      new_tracer_provider.add_span_processor(span_exporter)
     trace.set_tracer_provider(new_tracer_provider)
 
   # Try to set up OTel metrics.
@@ -112,8 +112,8 @@ def maybe_set_otel_providers(
     new_logger_provider = LoggerProvider(
         resource=otel_resource,
     )
-    for exporter in log_record_processors:
-      new_logger_provider.add_log_record_processor(exporter)
+    for log_exporter in log_record_processors:
+      new_logger_provider.add_log_record_processor(log_exporter)
     _logs.set_logger_provider(new_logger_provider)
 
 
