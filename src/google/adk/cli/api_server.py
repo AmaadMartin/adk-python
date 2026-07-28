@@ -271,7 +271,9 @@ def _is_request_origin_allowed(
     return False
 
   host = _get_scope_header(scope, b"host")
-  return bool(host) and origin_host == host.lower()
+  if not host:
+    return False
+  return origin_host == host.lower()
 
 
 _SAFE_HTTP_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
