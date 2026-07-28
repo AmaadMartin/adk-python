@@ -1174,12 +1174,6 @@ class ApiServer:
       # The operator declared a cross-origin deployment, so the Origin
       # allowlist alone governs access and Host validation is skipped.
       allowed_hosts = None
-    same_origin_allowlist = (
-        None
-        if allowed_hosts is None
-        else _build_same_origin_allowlist(allowed_hosts)
-    )
-
     app.add_middleware(
         _OriginCheckMiddleware,
         has_configured_allowed_origins=has_configured_allowed_origins,
@@ -1202,8 +1196,6 @@ class ApiServer:
         literal_origins,
         compiled_origin_regex,
         has_configured_allowed_origins,
-        same_origin_allowlist,
-        trust_proxy,
     )
 
     if web_assets_dir:
@@ -1254,8 +1246,6 @@ class ApiServer:
       literal_origins: list[str],
       compiled_origin_regex: Optional[re.Pattern[str]],
       has_configured_allowed_origins: bool,
-      same_origin_allowlist: Optional[frozenset[str]] = None,
-      trust_proxy: bool = False,
   ):
     """Register all core production-safe endpoints."""
 
@@ -1875,19 +1865,8 @@ class ApiServer:
         return
       app_name = resolved_app_name
 
-      ws_origin = websocket.headers.get("origin")
-      if ws_origin is not None and not _is_request_origin_allowed(
-          ws_origin,
-          websocket.scope,
-          literal_origins,
-          compiled_origin_regex,
-          has_configured_allowed_origins,
-          same_origin_allowlist,
-          trust_proxy,
-      ):
-        await websocket.close(code=1008, reason="Origin not allowed")
-        return
-
+      # The Host and Origin of this upgrade were already validated by
+      # _OriginCheckMiddleware, which wraps the whole application.
       await websocket.accept()
       self.current_app_name_ref.value = app_name
       runner_for_context = await self.get_runner_async(app_name)

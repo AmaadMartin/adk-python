@@ -189,6 +189,26 @@ class TestDnsRebindingProtection:
     )
     assert result, "Explicitly allowed origin should still pass"
 
+  def test_request_without_server_or_host_is_rejected(self):
+    """No bind address and no Host header leaves nothing to compare against."""
+    assert not _is_request_origin_allowed(
+        origin="http://evil.com",
+        scope={"type": "http", "headers": [], "scheme": "http"},
+        allowed_literal_origins=[],
+        allowed_origin_regex=None,
+        has_configured_allowed_origins=False,
+    )
+
+  def test_unparseable_origin_rejected(self):
+    """A malformed Origin makes urlparse raise; the request must be denied."""
+    assert not _is_request_origin_allowed(
+        origin="http://[::1",
+        scope=_make_scope(server_host="127.0.0.1"),
+        allowed_literal_origins=[],
+        allowed_origin_regex=None,
+        has_configured_allowed_origins=False,
+    )
+
   # --- Non-loopback server (protection does not apply) ---
 
   def test_no_declared_bind_address_falls_back_to_recomputed_origin(self):
@@ -320,6 +340,17 @@ class TestGetRequestOrigin:
   def test_no_host_header_yields_no_origin(self, trust_proxy: bool):
     scope = {"type": "http", "headers": [], "scheme": "http"}
     assert _get_request_origin(scope, trust_proxy) is None
+
+  def test_forwarded_elements_without_proto_or_host_are_skipped(self):
+    scope = _make_scope(
+        host_header="localhost:8000",
+        extra_headers=[
+            (b"forwarded", b"bare;for=1.2.3.4;proto=https;host=proxy.example")
+        ],
+    )
+    assert (
+        _get_request_origin(scope, trust_proxy=True) == "https://proxy.example"
+    )
 
   def test_forwarded_without_proto_falls_back_to_host_header(self):
     scope = _make_scope(
