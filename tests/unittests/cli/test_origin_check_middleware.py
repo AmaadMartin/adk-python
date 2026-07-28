@@ -76,13 +76,14 @@ def _make_scope(
   }
 
 
-# A deployment fronted by a reverse proxy: the app is bound to a wildcard
-# address (so no Host allowlist can be derived) and the public origin is only
-# visible in the X-Forwarded-* headers.
+# A deployment fronted by a reverse proxy on the same machine: the app is
+# bound to a wildcard address (so no Host allowlist can be derived), the proxy
+# connects over loopback, and the public origin is only visible in the
+# X-Forwarded-* headers.
 _PROXIED_SCOPE_KWARGS = dict(
-    host="10.0.0.5:8000",
+    host="127.0.0.1:8000",
     origin="https://public.example",
-    server_host="10.0.0.5",
+    server_host="127.0.0.1",
     extra_headers=[
         (b"x-forwarded-host", b"public.example"),
         (b"x-forwarded-proto", b"https"),
@@ -452,7 +453,7 @@ class TestServedRequests:
   def test_proxied_origin_requires_trust_proxy(self, tmp_path, trust_proxy):
     client = TestClient(
         _build_app(tmp_path, host="0.0.0.0", trust_proxy=trust_proxy),
-        base_url="http://10.0.0.5:8000",
+        base_url=_BASE_URL,
     )
 
     response = client.post("/run", headers=_PROXIED_HEADERS, json={})

@@ -57,7 +57,10 @@ from opentelemetry.sdk.trace import SpanProcessor
 from opentelemetry.sdk.trace import TracerProvider
 from pydantic import Field
 from pydantic import ValidationError
+from starlette.types import ASGIApp
 from starlette.types import Lifespan
+from starlette.types import Receive
+from starlette.types import Send
 from typing_extensions import deprecated
 from typing_extensions import override
 from watchdog.observers import Observer
@@ -310,10 +313,11 @@ def _is_request_origin_allowed(
   application-construction time from the bind address, so a client that
   controls the request headers cannot influence it.
 
-  same_origin_allowlist is None on the library-embedding path, where no bind
-  address was declared. That path keeps the legacy behaviour: a loopback-bound
-  server additionally requires the Origin host to be loopback, then compares
-  the Origin against an origin recomputed from the request headers.
+  same_origin_allowlist is None on the library-embedding path and on wildcard
+  binds, where no bind address could be derived. That path keeps the legacy
+  behaviour: a loopback-bound server additionally requires the Origin host to
+  be loopback, then compares the Origin against an origin recomputed from the
+  request headers.
   """
   if has_configured_allowed_origins and _is_origin_allowed(
       origin, allowed_literal_origins, allowed_origin_regex
@@ -326,9 +330,12 @@ def _is_request_origin_allowed(
   # DNS-rebinding guard: if the server is on loopback and no explicit
   # allow-origins list is configured, only permit origins whose host is also
   # loopback.  This mirrors the protection used by the MCP go-sdk SSEHandler.
+  # It is skipped under trust_proxy because a fronting proxy usually connects
+  # over loopback, and its forwarded origin is legitimately non-loopback.
   server_host = _get_server_host(scope)
   if (
       not has_configured_allowed_origins
+      and not trust_proxy
       and server_host is not None
       and _is_loopback_address(server_host)
   ):
@@ -353,7 +360,7 @@ class _OriginCheckMiddleware:
 
   def __init__(
       self,
-      app: Any,
+      app: ASGIApp,
       has_configured_allowed_origins: bool,
       allowed_origins: list[str],
       allowed_origin_regex: Optional[re.Pattern[str]],
@@ -379,8 +386,8 @@ class _OriginCheckMiddleware:
   async def __call__(
       self,
       scope: dict[str, Any],
-      receive: Any,
-      send: Any,
+      receive: Receive,
+      send: Send,
   ) -> None:
     if scope["type"] not in ("http", "websocket"):
       await self._app(scope, receive, send)
@@ -427,8 +434,8 @@ class _OriginCheckMiddleware:
   async def _reject(
       self,
       scope: dict[str, Any],
-      receive: Any,
-      send: Any,
+      receive: Receive,
+      send: Send,
       response_body: bytes,
   ) -> None:
     """Deny the request without invoking the wrapped application."""
