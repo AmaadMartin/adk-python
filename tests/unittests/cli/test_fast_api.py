@@ -543,7 +543,7 @@ def _create_test_client(
       ),
   ):
     app = get_fast_api_app(**defaults)
-    return TestClient(app)
+    return TestClient(app, base_url="http://127.0.0.1:8000")
 
 
 def test_agent_with_bigquery_analytics_plugin(
@@ -813,7 +813,7 @@ def builder_test_client(
         host="127.0.0.1",
         port=8000,
     )
-    return TestClient(app)
+    return TestClient(app, base_url="http://127.0.0.1:8000")
 
 
 @pytest.fixture
@@ -978,7 +978,7 @@ def test_app_with_a2a(
         port=8000,
     )
 
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://127.0.0.1:8000")
     yield client
 
 
@@ -2398,7 +2398,7 @@ def test_a2a_task_store_engine_disposed_on_shutdown(
 
     # Exercise the lifespan to trigger shutdown cleanup.
     # TestClient enters/exits the lifespan context on __enter__/__exit__.
-    with TestClient(app):
+    with TestClient(app, base_url="http://127.0.0.1:8000"):
       pass
 
     mock_engine.dispose.assert_awaited_once()
@@ -2481,7 +2481,7 @@ def test_a2a_in_memory_task_store_no_engine_dispose(
     )
 
     # Lifespan should complete without errors even with no engine.
-    with TestClient(app):
+    with TestClient(app, base_url="http://127.0.0.1:8000"):
       pass
 
 
@@ -2564,7 +2564,7 @@ def test_builder_save_rejects_cross_origin_post(builder_test_client, tmp_path):
 def test_builder_save_allows_same_origin_post(builder_test_client, tmp_path):
   response = builder_test_client.post(
       "/dev/apps/app/builder/save?tmp=true",
-      headers={"origin": "http://testserver"},
+      headers={"origin": "http://127.0.0.1:8000"},
       files=[(
           "files",
           ("app/root_agent.yaml", b"name: app\n", "application/x-yaml"),
@@ -3296,7 +3296,7 @@ def test_single_agent_mode_detection(
         host="127.0.0.1",
         port=8000,
     )
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://127.0.0.1:8000")
 
     response = client.get("/list-apps")
     assert response.status_code == 200
@@ -3375,7 +3375,7 @@ def test_single_agent_mode_sets_default_app(
         host="127.0.0.1",
         port=8000,
     )
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://127.0.0.1:8000")
 
     # Accessing /users/{user_id}/sessions/{session_id} should work because of rewrite
     response = client.get("/users/test_user/sessions/test_session")
