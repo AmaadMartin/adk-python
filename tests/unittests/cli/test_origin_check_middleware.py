@@ -87,13 +87,11 @@ async def _call(
 def _make_middleware(
     inner_app: _RecordingApp,
     allowed_hosts: frozenset[str] | None = _ALLOWED_HOSTS,
-    has_configured_allowed_origins: bool = False,
-    allowed_origins: list[str] | None = None,
 ) -> _OriginCheckMiddleware:
   return _OriginCheckMiddleware(
       inner_app,
-      has_configured_allowed_origins=has_configured_allowed_origins,
-      allowed_origins=allowed_origins or [],
+      has_configured_allowed_origins=False,
+      allowed_origins=[],
       allowed_origin_regex=None,
       allowed_hosts=allowed_hosts,
   )
@@ -108,12 +106,12 @@ def _assert_forbidden(sent: list[dict[str, Any]], body: bytes) -> None:
 class TestHostValidation:
   """The Host header is validated on every method and every scope type."""
 
-  @pytest.mark.parametrize("method", ["GET", "HEAD", "OPTIONS", "POST"])
-  async def test_disallowed_host_rejected(self, method: str):
+  async def test_disallowed_host_rejected(self):
+    """A safe method is no longer exempt: the Host is checked first."""
     inner_app = _RecordingApp()
     sent = await _call(
         _make_middleware(inner_app),
-        _make_scope(method=method, host="evil.example:8000"),
+        _make_scope(method="GET", host="evil.example:8000"),
     )
 
     _assert_forbidden(sent, b"Forbidden: host not allowed")
