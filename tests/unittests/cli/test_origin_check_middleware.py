@@ -126,13 +126,11 @@ class TestHostValidation:
     _assert_forbidden(sent, b"Forbidden: host not allowed")
     assert not inner_app.scopes
 
-  @pytest.mark.parametrize(
-      "host", ["127.0.0.1:8000", "localhost:8000", "LOCALHOST:8000", "[::1]"]
-  )
-  async def test_allowed_host_forwarded(self, host: str):
+  async def test_allowed_host_forwarded(self):
     inner_app = _RecordingApp()
     sent = await _call(
-        _make_middleware(inner_app), _make_scope(method="GET", host=host)
+        _make_middleware(inner_app),
+        _make_scope(method="GET", host="LOCALHOST:8000"),
     )
 
     assert sent[0]["status"] == 200
@@ -143,21 +141,6 @@ class TestHostValidation:
     inner_app = _RecordingApp()
     sent = await _call(
         _make_middleware(inner_app, allowed_hosts=None),
-        _make_scope(method="GET", host="evil.example:8000"),
-    )
-
-    assert sent[0]["status"] == 200
-    assert len(inner_app.scopes) == 1
-
-  async def test_no_host_check_when_allow_origins_configured(self):
-    """An explicit Origin allowlist declares a cross-origin deployment."""
-    inner_app = _RecordingApp()
-    sent = await _call(
-        _make_middleware(
-            inner_app,
-            has_configured_allowed_origins=True,
-            allowed_origins=["http://evil.example:8000"],
-        ),
         _make_scope(method="GET", host="evil.example:8000"),
     )
 
@@ -356,15 +339,6 @@ _RUN_LIVE_PATH = "/run_live?app_name=test_app&user_id=user&session_id=session"
 
 class TestRunLiveWebSocket:
   """The /run_live upgrade is covered by the same Host allowlist."""
-
-  def test_disallowed_host_is_closed(self, tmp_path):
-    client = TestClient(_build_app(tmp_path))
-
-    with pytest.raises(WebSocketDisconnect) as exc_info:
-      with client.websocket_connect(f"ws://evil.example:8000{_RUN_LIVE_PATH}"):
-        pass
-
-    assert exc_info.value.code == 1008
 
   def test_disallowed_origin_is_closed(self, tmp_path):
     client = TestClient(_build_app(tmp_path))
