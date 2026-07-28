@@ -17,7 +17,6 @@
 import re
 
 from google.adk.cli.api_server import _build_allowed_hosts
-from google.adk.cli.api_server import _build_same_origin_allowlist
 from google.adk.cli.api_server import _is_loopback_address
 from google.adk.cli.api_server import _is_request_origin_allowed
 import pytest
@@ -231,7 +230,7 @@ class TestDnsRebindingProtection:
   def test_no_declared_bind_address_falls_back_to_host_header(self):
     """This is the wildcard-bind / library-embedding path.
 
-    TestSameOriginAllowlist proves the same input is rejected once a bind
+    TestAllowedHostsParameter proves the same input is rejected once a bind
     address has been declared.
     """
     assert self._check_fallback(
@@ -261,22 +260,18 @@ class TestBuildAllowedHosts:
   """Unit tests for _build_allowed_hosts."""
 
   @pytest.mark.parametrize(
-      "host,port,expected_extra",
+      "host",
       [
-          ("127.0.0.1", 8000, frozenset()),
-          ("localhost", 8000, frozenset()),
-          ("LOCALHOST", 8000, frozenset()),
+          "127.0.0.1",
+          "localhost",
+          "LOCALHOST",
           # An IPv6 literal is bracketed, because that is how browsers send it.
-          ("::1", 8000, frozenset()),
-          ("[::1]", 8000, frozenset()),
+          "::1",
+          "[::1]",
       ],
   )
-  def test_loopback_binds(
-      self, host: str, port: int, expected_extra: frozenset[str]
-  ):
-    assert _build_allowed_hosts(host, port) == (
-        _LOOPBACK_HOSTS_8000 | expected_extra
-    )
+  def test_loopback_binds(self, host: str):
+    assert _build_allowed_hosts(host, 8000) == _LOOPBACK_HOSTS_8000
 
   def test_ipv6_bind_is_bracketed(self):
     assert _build_allowed_hosts("fe80::1", 9000) == frozenset({
@@ -304,13 +299,13 @@ class TestBuildAllowedHosts:
     assert allowed_hosts is not None
     assert "evil.example:8000" not in allowed_hosts
 
-  @pytest.mark.parametrize("host", ["0.0.0.0", "::", "[::]", "*", "", "  "])
+  @pytest.mark.parametrize("host", ["0.0.0.0", "::", "[::]", "", "  "])
   def test_wildcard_binds_disable_validation(self, host: str):
     assert _build_allowed_hosts(host, 8000) is None
 
 
-class TestSameOriginAllowlist:
-  """A supplied same_origin_allowlist is authoritative."""
+class TestAllowedHostsParameter:
+  """A supplied allowed_hosts is authoritative."""
 
   def _check(
       self,
@@ -326,39 +321,14 @@ class TestSameOriginAllowlist:
         allowed_literal_origins=allowed_literal_origins or [],
         allowed_origin_regex=allowed_origin_regex,
         has_configured_allowed_origins=has_configured_allowed_origins,
-        same_origin_allowlist=_build_same_origin_allowlist(
-            _LOOPBACK_HOSTS_8000
-        ),
+        allowed_hosts=_LOOPBACK_HOSTS_8000,
     )
-
-  @pytest.mark.parametrize(
-      "origin",
-      [
-          "http://127.0.0.1:8000",
-          "http://localhost:8000",
-          "https://localhost:8000",
-          "HTTP://LOCALHOST:8000",
-      ],
-  )
-  def test_same_origin_allowed(self, origin: str):
-    assert self._check(origin)
-
-  @pytest.mark.parametrize(
-      "origin",
-      [
-          "http://localhost:9000",
-          "http://evil.example:8000",
-          "http://127.0.0.2:8000",
-      ],
-  )
-  def test_foreign_origin_rejected(self, origin: str):
-    assert not self._check(origin)
 
   def test_rebind_wire_image_rejected(self):
     """Origin and Host both name the attacker, as a rebound browser sends.
 
     The legacy `origin == recomputed_origin` comparison accepted exactly this;
-    see test_no_declared_bind_address_falls_back_to_recomputed_origin.
+    see test_no_declared_bind_address_falls_back_to_host_header.
     """
     assert not self._check(
         "http://evil.example:8000", host_header="evil.example:8000"

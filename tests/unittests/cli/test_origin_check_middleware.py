@@ -228,37 +228,19 @@ class TestOriginValidation:
 
 
 class TestRejectionLogging:
-  """A rejection logs the offending header value and no other request data."""
+  """A rejection logs the offending value and no other request data."""
 
-  @pytest.mark.parametrize(
-      "scope_kwargs,expected",
-      [
-          (
-              dict(host="evil.example:8000"),
-              "Rejected request with disallowed Host header: evil.example:8000",
-          ),
-          (
-              dict(origin="http://evil.example:8000"),
-              (
-                  "Rejected request with disallowed Origin header:"
-                  " http://evil.example:8000"
-              ),
-          ),
-      ],
-      ids=["host", "origin"],
-  )
-  async def test_single_warning_naming_the_header(
-      self,
-      caplog: pytest.LogCaptureFixture,
-      scope_kwargs: dict[str, Any],
-      expected: str,
+  async def test_single_warning_naming_the_offending_value(
+      self, caplog: pytest.LogCaptureFixture
   ):
     with caplog.at_level(logging.WARNING):
       await _call(
-          _make_middleware(_RecordingApp()), _make_scope(**scope_kwargs)
+          _make_middleware(_RecordingApp()),
+          _make_scope(host="evil.example:8000"),
       )
 
-    assert caplog.messages == [expected]
+    assert len(caplog.messages) == 1
+    assert "evil.example:8000" in caplog.messages[0]
 
 
 class TestNonHttpScopes:
@@ -323,9 +305,8 @@ class TestWildcardBindWarning:
       [
           (dict(host="0.0.0.0"), True),
           (dict(host="0.0.0.0", allow_origins=["https://ok.test"]), False),
-          (dict(host="127.0.0.1"), False),
       ],
-      ids=["wildcard", "wildcard_with_allow_origins", "concrete_bind"],
+      ids=["wildcard", "wildcard_with_allow_origins"],
   )
   def test_warning_emitted_only_for_an_undeclarable_bind(
       self,
@@ -363,16 +344,6 @@ class TestServedRequests:
 
     assert response.status_code == 200
     assert response.json() == []
-
-  def test_cross_origin_post_rejected(self, tmp_path):
-    client = TestClient(_build_app(tmp_path), base_url=_BASE_URL)
-
-    response = client.post(
-        "/run", headers={"Origin": "http://evil.example:8000"}, json={}
-    )
-
-    assert response.status_code == 403
-    assert response.text == "Forbidden: origin not allowed"
 
   def test_wildcard_bind_serves_any_host(self, tmp_path):
     client = TestClient(

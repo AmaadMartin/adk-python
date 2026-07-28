@@ -196,7 +196,7 @@ def _get_server_host(scope: dict[str, Any]) -> Optional[str]:
 
 # Bind addresses from which no public hostname can be inferred; Host-header
 # validation is disabled for these.
-_WILDCARD_BIND_HOSTS = frozenset({"", "*", "0.0.0.0", "::", "[::]"})
+_WILDCARD_BIND_HOSTS = frozenset({"", "0.0.0.0", "::", "[::]"})
 
 _LOOPBACK_HOST_ALIASES = frozenset({"localhost", "127.0.0.1", "[::1]"})
 
@@ -227,20 +227,18 @@ def _build_allowed_hosts(host: str, port: int) -> Optional[frozenset[str]]:
   )
 
 
-def _build_same_origin_allowlist(
-    allowed_hosts: frozenset[str],
-) -> frozenset[str]:
-  """Origins that count as same-origin for the given Host allowlist.
+def _origin_host(origin: str) -> str:
+  """The "host[:port]" of an Origin header, in Host-header form.
 
-  Both schemes are emitted because a fronting proxy commonly terminates TLS,
-  leaving the server unable to tell the two apart; it is the (host, port) pair
-  that identifies the server.
+  The scheme is deliberately discarded: a fronting proxy commonly terminates
+  TLS, leaving the server unable to tell http from https, and it is the
+  (host, port) pair that identifies the server. Returns "" for a malformed
+  Origin, which never matches an allowlist entry.
   """
-  return frozenset(
-      f"{scheme}://{allowed_host}"
-      for scheme in ("http", "https")
-      for allowed_host in allowed_hosts
-  )
+  try:
+    return urlparse(origin).netloc.lower()
+  except ValueError:
+    return ""
 
 
 def _is_request_origin_allowed(
@@ -249,11 +247,11 @@ def _is_request_origin_allowed(
     allowed_literal_origins: list[str],
     allowed_origin_regex: Optional[re.Pattern[str]],
     has_configured_allowed_origins: bool,
-    same_origin_allowlist: Optional[frozenset[str]] = None,
+    allowed_hosts: Optional[frozenset[str]] = None,
 ) -> bool:
   """Validate an Origin header against explicit config or same-origin.
 
-  When same_origin_allowlist is supplied it is authoritative: it was derived at
+  When allowed_hosts is supplied it is authoritative: it was derived at
   application-construction time from the bind address, so a client that
   controls the request headers cannot influence it.
 
@@ -267,7 +265,8 @@ def _is_request_origin_allowed(
   ):
     return True
 
-  if same_origin_allowlist is None:
+  origin_host = _origin_host(origin)
+  if allowed_hosts is None:
     # DNS-rebinding guard: if the server is on loopback and no explicit
     # allow-origins list is configured, only permit origins whose host is also
     # loopback.  This mirrors the protection used by the MCP go-sdk SSEHandler.
@@ -276,22 +275,16 @@ def _is_request_origin_allowed(
         not has_configured_allowed_origins
         and server_host is not None
         and _is_loopback_address(server_host)
+        and not _is_loopback_address(origin_host)
     ):
-      try:
-        origin_host = urlparse(origin).hostname or ""
-      except ValueError:
-        return False
-      if not _is_loopback_address(origin_host):
-        return False
+      return False
 
     host = _get_scope_header(scope, b"host")
-    if host is None:
+    if not host:
       return False
-    same_origin_allowlist = _build_same_origin_allowlist(
-        frozenset({host.lower()})
-    )
+    allowed_hosts = frozenset({host.lower()})
 
-  return origin.rstrip("/").lower() in same_origin_allowlist
+  return origin_host in allowed_hosts
 
 
 _SAFE_HTTP_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -317,11 +310,6 @@ class _OriginCheckMiddleware:
     self._allowed_hosts = (
         None if has_configured_allowed_origins else allowed_hosts
     )
-    self._same_origin_allowlist = (
-        None
-        if self._allowed_hosts is None
-        else _build_same_origin_allowlist(self._allowed_hosts)
-    )
 
   async def __call__(
       self,
@@ -345,10 +333,8 @@ class _OriginCheckMiddleware:
 
     # Cross-origin (CSRF) defence.
     origin = _get_scope_header(scope, b"origin")
-    if origin is None or (
-        scope["type"] == "http"
-        and scope.get("method", "GET") in _SAFE_HTTP_METHODS
-    ):
+    # A WebSocket scope carries no method, so it is never treated as safe.
+    if origin is None or scope.get("method") in _SAFE_HTTP_METHODS:
       await self._app(scope, receive, send)
       return
 
@@ -358,7 +344,7 @@ class _OriginCheckMiddleware:
         self._allowed_origins,
         self._allowed_origin_regex,
         self._has_configured_allowed_origins,
-        self._same_origin_allowlist,
+        self._allowed_hosts,
     ):
       await self._app(scope, receive, send)
       return
@@ -1043,8 +1029,8 @@ class ApiServer:
       otel_to_cloud: Whether to enable Cloud Trace and Cloud Logging
         integrations.
       allowed_hosts: The lower-cased Host header values this server accepts,
-        as returned by `_build_allowed_hosts()`. None disables Host validation
-        and is the default for embedders that do not declare a bind address.
+        derived from the address it binds to. None disables Host validation and
+        is the default for embedders that do not declare a bind address.
 
     Returns:
       A FastAPI app instance.
