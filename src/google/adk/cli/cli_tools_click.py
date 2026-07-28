@@ -1629,6 +1629,19 @@ def fast_api_common_options():
         multiple=True,
     )
     @click.option(
+        "--trust_proxy",
+        is_flag=True,
+        show_default=True,
+        default=False,
+        help=(
+            "Optional. Trust the 'Forwarded' and 'X-Forwarded-*' headers when"
+            " determining the request origin. These headers are"
+            " client-supplied, so only enable this behind a reverse proxy that"
+            " overwrites them; otherwise a client can name any origin it"
+            " likes."
+        ),
+    )
+    @click.option(
         "--trace_to_cloud",
         is_flag=True,
         show_default=True,
@@ -1781,6 +1794,7 @@ def cli_web(
     logo_text: str | None = None,
     logo_image_url: str | None = None,
     trigger_sources: list[str] | None = None,
+    trust_proxy: bool = False,
 ):
   """Starts a FastAPI server with Web UI for agents.
 
@@ -1841,6 +1855,7 @@ def cli_web(
       logo_image_url=logo_image_url,
       trigger_sources=trigger_sources,
       default_llm_model=default_llm_model,
+      trust_proxy=trust_proxy,
   )
   config = uvicorn.Config(
       app,
@@ -1922,6 +1937,7 @@ def cli_api_server(
     with_ui: bool = False,
     gemini_enterprise_app_name: str | None = None,
     express_mode: bool = False,
+    trust_proxy: bool = False,
 ):
   """Starts a FastAPI server for agents.
 
@@ -1966,6 +1982,7 @@ def cli_api_server(
           trigger_sources=trigger_sources,
           gemini_enterprise_app_name=gemini_enterprise_app_name,
           express_mode=express_mode,
+          trust_proxy=trust_proxy,
       ),
       host=host,
       port=port,
