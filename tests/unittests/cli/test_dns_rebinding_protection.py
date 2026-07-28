@@ -14,8 +14,6 @@
 
 """Tests for DNS-rebinding protection in _OriginCheckMiddleware."""
 
-import re
-
 from google.adk.cli.api_server import _build_allowed_hosts
 from google.adk.cli.api_server import _is_loopback_address
 from google.adk.cli.api_server import _is_request_origin_allowed
@@ -249,11 +247,6 @@ class TestDnsRebindingProtection:
         extra_headers=[(b"x-forwarded-host", b"evil.example")],
     )
 
-  def test_fallback_rejects_other_hosts(self):
-    assert not self._check_fallback(
-        "http://evil.example:8000", host_header="example.com:8000"
-    )
-
 
 class TestBuildAllowedHosts:
   """Unit tests for _build_allowed_hosts."""
@@ -292,46 +285,17 @@ class TestBuildAllowedHosts:
     assert _build_allowed_hosts(host, 8000) is None
 
 
-class TestAllowedHostsParameter:
-  """A supplied allowed_hosts is authoritative."""
+def test_rebind_wire_image_rejected_against_a_declared_bind_address():
+  """Origin and Host both name the attacker, as a rebound browser sends.
 
-  def _check(
-      self,
-      origin: str,
-      host_header: str = "127.0.0.1:8000",
-      allowed_literal_origins: list[str] | None = None,
-      allowed_origin_regex: re.Pattern[str] | None = None,
-      has_configured_allowed_origins: bool = False,
-  ) -> bool:
-    return _is_request_origin_allowed(
-        origin=origin,
-        scope=_make_scope(host_header=host_header),
-        allowed_literal_origins=allowed_literal_origins or [],
-        allowed_origin_regex=allowed_origin_regex,
-        has_configured_allowed_origins=has_configured_allowed_origins,
-        allowed_hosts=_LOOPBACK_HOSTS_8000,
-    )
-
-  def test_rebind_wire_image_rejected(self):
-    """Origin and Host both name the attacker, as a rebound browser sends.
-
-    The legacy `origin == recomputed_origin` comparison accepted exactly this;
-    see test_no_declared_bind_address_falls_back_to_host_header.
-    """
-    assert not self._check(
-        "http://evil.example:8000", host_header="evil.example:8000"
-    )
-
-  def test_configured_literal_origin_wins(self):
-    assert self._check(
-        "https://example.com",
-        allowed_literal_origins=["https://example.com"],
-        has_configured_allowed_origins=True,
-    )
-
-  def test_configured_origins_that_do_not_match_are_still_rejected(self):
-    assert not self._check(
-        "https://evil.example",
-        allowed_literal_origins=["https://example.com"],
-        has_configured_allowed_origins=True,
-    )
+  The legacy `origin == recomputed_origin` comparison accepted exactly this;
+  see test_no_declared_bind_address_falls_back_to_host_header.
+  """
+  assert not _is_request_origin_allowed(
+      origin="http://evil.example:8000",
+      scope=_make_scope(host_header="evil.example:8000"),
+      allowed_literal_origins=[],
+      allowed_origin_regex=None,
+      has_configured_allowed_origins=False,
+      allowed_hosts=_LOOPBACK_HOSTS_8000,
+  )

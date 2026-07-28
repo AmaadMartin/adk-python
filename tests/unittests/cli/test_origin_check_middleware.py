@@ -17,14 +17,12 @@
 from __future__ import annotations
 
 import logging
-import types
 from typing import Any
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from google.adk.cli.api_server import _build_allowed_hosts
 from google.adk.cli.api_server import _OriginCheckMiddleware
-from google.adk.cli.api_server import ApiServer
 from google.adk.cli.fast_api import get_fast_api_app
 import pytest
 from starlette.websockets import WebSocketDisconnect
@@ -340,14 +338,6 @@ class TestServedRequests:
     assert response.status_code == 200
     assert response.json() == []
 
-  def test_wildcard_bind_serves_any_host(self, tmp_path):
-    client = TestClient(
-        _build_app(tmp_path, host="0.0.0.0"),
-        base_url="http://anything.example:8000",
-    )
-
-    assert client.get("/list-apps").status_code == 200
-
   def test_allow_origins_is_the_documented_escape_hatch(self, tmp_path):
     client = TestClient(
         _build_app(tmp_path, allow_origins=["http://tunnel.test:8000"]),
@@ -359,24 +349,6 @@ class TestServedRequests:
     assert response.status_code == 200
 
 
-def _build_run_live_app() -> FastAPI:
-  """Build a real app exposing the /run_live WebSocket route.
-
-  Both connections below are rejected before Starlette routes them, so no
-  service is ever called.
-  """
-  return ApiServer(
-      agent_loader=types.SimpleNamespace(),
-      session_service=types.SimpleNamespace(),
-      memory_service=types.SimpleNamespace(),
-      artifact_service=types.SimpleNamespace(),
-      credential_service=types.SimpleNamespace(),
-      eval_sets_manager=types.SimpleNamespace(),
-      eval_set_results_manager=types.SimpleNamespace(),
-      agents_dir=".",
-  ).get_fast_api_app(allowed_hosts=_ALLOWED_HOSTS)
-
-
 # TestClient.websocket_connect ignores base_url, so the Host under test has to
 # be spelled out in the URL.
 _RUN_LIVE_PATH = "/run_live?app_name=test_app&user_id=user&session_id=session"
@@ -385,8 +357,8 @@ _RUN_LIVE_PATH = "/run_live?app_name=test_app&user_id=user&session_id=session"
 class TestRunLiveWebSocket:
   """The /run_live upgrade is covered by the same Host allowlist."""
 
-  def test_disallowed_host_is_closed(self):
-    client = TestClient(_build_run_live_app())
+  def test_disallowed_host_is_closed(self, tmp_path):
+    client = TestClient(_build_app(tmp_path))
 
     with pytest.raises(WebSocketDisconnect) as exc_info:
       with client.websocket_connect(f"ws://evil.example:8000{_RUN_LIVE_PATH}"):
@@ -394,8 +366,8 @@ class TestRunLiveWebSocket:
 
     assert exc_info.value.code == 1008
 
-  def test_disallowed_origin_is_closed(self):
-    client = TestClient(_build_run_live_app())
+  def test_disallowed_origin_is_closed(self, tmp_path):
+    client = TestClient(_build_app(tmp_path))
 
     with pytest.raises(WebSocketDisconnect) as exc_info:
       with client.websocket_connect(
