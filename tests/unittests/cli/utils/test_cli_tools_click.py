@@ -1218,35 +1218,6 @@ def test_cli_web_passes_service_uris(
   assert called_kwargs.get("memory_service_uri") == "rag://mycorpus"
 
 
-@pytest.mark.parametrize("command", ["web", "api_server"])
-@pytest.mark.parametrize(
-    "extra_args,expected",
-    [([], False), (["--trust_proxy"], True)],
-    ids=["absent", "present"],
-)
-def test_cli_forwards_trust_proxy(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    _patch_uvicorn: _Recorder,
-    command: str,
-    extra_args: list[str],
-    expected: bool,
-) -> None:
-  """`--trust_proxy` reaches get_fast_api_app on both server commands."""
-  agents_dir = tmp_path / "agents"
-  agents_dir.mkdir()
-
-  mock_get_app = _Recorder()
-  monkeypatch.setattr("google.adk.cli.fast_api.get_fast_api_app", mock_get_app)
-
-  result = CliRunner().invoke(
-      cli_tools_click.main, [command, str(agents_dir), *extra_args]
-  )
-
-  assert result.exit_code == 0
-  assert mock_get_app.calls[0][1]["trust_proxy"] is expected
-
-
 @pytest.mark.parametrize(
     "flag",
     ["--allow-unsafe-unpickling", "--allow_unsafe_unpickling"],

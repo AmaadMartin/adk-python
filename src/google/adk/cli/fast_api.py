@@ -430,7 +430,6 @@ def get_fast_api_app(
     default_llm_model: str | None = None,
     gemini_enterprise_app_name: str | None = None,
     express_mode: bool = False,
-    trust_proxy: bool = False,
 ) -> FastAPI:
   """Constructs and returns a FastAPI application for serving ADK agents.
 
@@ -469,8 +468,8 @@ def get_fast_api_app(
       server accepts; requests naming any other host are rejected with 403.
       Wildcard binds ('0.0.0.0', '::') disable that check because no public
       hostname can be inferred from them. Use `allow_origins` to reach the
-      server through a tunnel, port-forward or reverse proxy under a different
-      hostname.
+      server through a tunnel, port-forward or reverse proxy that presents a
+      different hostname.
     port: Port number for the server (defaults to 8000).
     url_prefix: Optional prefix for all URL routes.
     trace_to_cloud: Whether to export traces to Google Cloud Trace.
@@ -489,9 +488,6 @@ def get_fast_api_app(
     gemini_enterprise_app_name: The Gemini Enterprise app name to use for the
       agent.
     express_mode: Whether to enable express mode.
-    trust_proxy: Whether to derive the request origin from the 'Forwarded' and
-      'X-Forwarded-*' headers. Those headers are client-supplied, so only
-      enable this behind a proxy that overwrites them.
 
   Returns:
     The configured FastAPI application instance.
@@ -690,19 +686,11 @@ def get_fast_api_app(
         " --allow_origins to declare the origins allowed to reach it.",
         host,
     )
-  if trust_proxy:
-    logger.warning(
-        "trust_proxy is enabled: the 'Forwarded' and 'X-Forwarded-*' request"
-        " headers are trusted. The fronting proxy must overwrite any"
-        " client-supplied value of those headers."
-    )
-
   app = adk_web_server.get_fast_api_app(
       lifespan=lifespan,
       allow_origins=allow_origins,
       otel_to_cloud=otel_to_cloud,
       allowed_hosts=allowed_hosts,
-      trust_proxy=trust_proxy,
       **extra_fast_api_args,
   )
 

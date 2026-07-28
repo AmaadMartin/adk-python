@@ -144,22 +144,6 @@ def _is_origin_allowed(
   return False
 
 
-def _normalize_origin_scheme(scheme: str) -> str:
-  """Normalize request schemes to the browser Origin scheme space."""
-  if scheme == "ws":
-    return "http"
-  if scheme == "wss":
-    return "https"
-  return scheme
-
-
-def _strip_optional_quotes(value: str) -> str:
-  """Strip a single pair of wrapping quotes from a header value."""
-  if len(value) >= 2 and value[0] == '"' and value[-1] == '"':
-    return value[1:-1]
-  return value
-
-
 def _get_scope_header(
     scope: dict[str, Any], header_name: bytes
 ) -> Optional[str]:
@@ -210,11 +194,6 @@ def _get_server_host(scope: dict[str, Any]) -> Optional[str]:
   return None
 
 
-def _normalize_origin(origin: str) -> str:
-  """Lower-case an Origin header value and drop any trailing slash."""
-  return origin.strip().rstrip("/").lower()
-
-
 # Bind addresses from which no public hostname can be inferred; Host-header
 # validation is disabled for these.
 _WILDCARD_BIND_HOSTS = frozenset({"", "*", "0.0.0.0", "::", "[::]"})
@@ -236,6 +215,9 @@ def _build_allowed_hosts(host: str, port: int) -> Optional[frozenset[str]]:
   normalized_host = host.strip().lower()
   if normalized_host in _WILDCARD_BIND_HOSTS:
     return None
+  if ":" in normalized_host and not normalized_host.startswith("["):
+    # Browsers bracket IPv6 literals in the Host header; --host does not.
+    normalized_host = f"[{normalized_host}]"
   # Browsers omit the port from Host when it is the default for the scheme, so
   # both the bare and the "host:port" form have to be accepted.
   return frozenset(
@@ -250,52 +232,15 @@ def _build_same_origin_allowlist(
 ) -> frozenset[str]:
   """Origins that count as same-origin for the given Host allowlist.
 
-  Both schemes are emitted because a fronting proxy can flip the request scheme
-  to https; it is the (host, port) pair that identifies the server.
+  Both schemes are emitted because a fronting proxy commonly terminates TLS,
+  leaving the server unable to tell the two apart; it is the (host, port) pair
+  that identifies the server.
   """
   return frozenset(
       f"{scheme}://{allowed_host}"
       for scheme in ("http", "https")
       for allowed_host in allowed_hosts
   )
-
-
-def _get_request_origin(
-    scope: dict[str, Any], trust_proxy: bool = False
-) -> Optional[str]:
-  """Compute the effective origin for the current HTTP/WebSocket request.
-
-  "Forwarded" and "X-Forwarded-*" are client-supplied unless a trusted proxy
-  overwrites them, so they are only consulted when trust_proxy is set.
-  """
-  if trust_proxy:
-    forwarded = _get_scope_header(scope, b"forwarded")
-    if forwarded is not None:
-      proto = None
-      host = None
-      for element in forwarded.split(",", 1)[0].split(";"):
-        if "=" not in element:
-          continue
-        name, value = element.split("=", 1)
-        if name.strip().lower() == "proto":
-          proto = _strip_optional_quotes(value.strip())
-        elif name.strip().lower() == "host":
-          host = _strip_optional_quotes(value.strip())
-      if proto is not None and host is not None:
-        return f"{_normalize_origin_scheme(proto)}://{host}"
-
-  host = _get_scope_header(scope, b"x-forwarded-host") if trust_proxy else None
-  if host is None:
-    host = _get_scope_header(scope, b"host")
-  if host is None:
-    return None
-
-  proto = (
-      _get_scope_header(scope, b"x-forwarded-proto") if trust_proxy else None
-  )
-  if proto is None:
-    proto = scope.get("scheme", "http")
-  return f"{_normalize_origin_scheme(proto)}://{host}"
 
 
 def _is_request_origin_allowed(
@@ -305,7 +250,6 @@ def _is_request_origin_allowed(
     allowed_origin_regex: Optional[re.Pattern[str]],
     has_configured_allowed_origins: bool,
     same_origin_allowlist: Optional[frozenset[str]] = None,
-    trust_proxy: bool = False,
 ) -> bool:
   """Validate an Origin header against explicit config or same-origin.
 
@@ -313,43 +257,41 @@ def _is_request_origin_allowed(
   application-construction time from the bind address, so a client that
   controls the request headers cannot influence it.
 
-  same_origin_allowlist is None on the library-embedding path and on wildcard
-  binds, where no bind address could be derived. That path keeps the legacy
-  behaviour: a loopback-bound server additionally requires the Origin host to
-  be loopback, then compares the Origin against an origin recomputed from the
-  request headers.
+  It is None on the library-embedding path and on wildcard binds, where no bind
+  address was available. There the Host header is the only notion of "this
+  server" the request carries, so it is compared against instead -- guarded, as
+  before, by requiring a loopback Origin when the server is bound to loopback.
   """
   if has_configured_allowed_origins and _is_origin_allowed(
       origin, allowed_literal_origins, allowed_origin_regex
   ):
     return True
 
-  if same_origin_allowlist is not None:
-    return _normalize_origin(origin) in same_origin_allowlist
+  if same_origin_allowlist is None:
+    # DNS-rebinding guard: if the server is on loopback and no explicit
+    # allow-origins list is configured, only permit origins whose host is also
+    # loopback.  This mirrors the protection used by the MCP go-sdk SSEHandler.
+    server_host = _get_server_host(scope)
+    if (
+        not has_configured_allowed_origins
+        and server_host is not None
+        and _is_loopback_address(server_host)
+    ):
+      try:
+        origin_host = urlparse(origin).hostname or ""
+      except ValueError:
+        return False
+      if not _is_loopback_address(origin_host):
+        return False
 
-  # DNS-rebinding guard: if the server is on loopback and no explicit
-  # allow-origins list is configured, only permit origins whose host is also
-  # loopback.  This mirrors the protection used by the MCP go-sdk SSEHandler.
-  # It is skipped under trust_proxy because a fronting proxy usually connects
-  # over loopback, and its forwarded origin is legitimately non-loopback.
-  server_host = _get_server_host(scope)
-  if (
-      not has_configured_allowed_origins
-      and not trust_proxy
-      and server_host is not None
-      and _is_loopback_address(server_host)
-  ):
-    try:
-      origin_host = urlparse(origin).hostname or ""
-    except ValueError:
+    host = _get_scope_header(scope, b"host")
+    if host is None:
       return False
-    if not _is_loopback_address(origin_host):
-      return False
+    same_origin_allowlist = _build_same_origin_allowlist(
+        frozenset({host.lower()})
+    )
 
-  request_origin = _get_request_origin(scope, trust_proxy)
-  if request_origin is None:
-    return False
-  return origin == request_origin
+  return origin.rstrip("/").lower() in same_origin_allowlist
 
 
 _SAFE_HTTP_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -365,7 +307,6 @@ class _OriginCheckMiddleware:
       allowed_origins: list[str],
       allowed_origin_regex: Optional[re.Pattern[str]],
       allowed_hosts: Optional[frozenset[str]] = None,
-      trust_proxy: bool = False,
   ) -> None:
     self._app = app
     self._has_configured_allowed_origins = has_configured_allowed_origins
@@ -381,7 +322,6 @@ class _OriginCheckMiddleware:
         if self._allowed_hosts is None
         else _build_same_origin_allowlist(self._allowed_hosts)
     )
-    self._trust_proxy = trust_proxy
 
   async def __call__(
       self,
@@ -405,11 +345,7 @@ class _OriginCheckMiddleware:
 
     # Cross-origin (CSRF) defence.
     origin = _get_scope_header(scope, b"origin")
-    if origin is None:
-      await self._app(scope, receive, send)
-      return
-
-    if (
+    if origin is None or (
         scope["type"] == "http"
         and scope.get("method", "GET") in _SAFE_HTTP_METHODS
     ):
@@ -423,7 +359,6 @@ class _OriginCheckMiddleware:
         self._allowed_origin_regex,
         self._has_configured_allowed_origins,
         self._same_origin_allowlist,
-        self._trust_proxy,
     ):
       await self._app(scope, receive, send)
       return
@@ -1086,7 +1021,6 @@ class ApiServer:
       otel_to_cloud: bool = False,
       with_ui: bool = False,
       allowed_hosts: Optional[frozenset[str]] = None,
-      trust_proxy: bool = False,
   ):
     """Creates a FastAPI app for the ADK web server.
 
@@ -1111,9 +1045,6 @@ class ApiServer:
       allowed_hosts: The lower-cased Host header values this server accepts,
         as returned by `_build_allowed_hosts()`. None disables Host validation
         and is the default for embedders that do not declare a bind address.
-      trust_proxy: Whether to derive the request origin from the 'Forwarded' /
-        'X-Forwarded-*' headers. Only enable this behind a proxy that strips
-        client-supplied values of those headers.
 
     Returns:
       A FastAPI app instance.
@@ -1177,17 +1108,12 @@ class ApiServer:
       literal_origins = []
       compiled_origin_regex = None
 
-    if has_configured_allowed_origins:
-      # The operator declared a cross-origin deployment, so the Origin
-      # allowlist alone governs access and Host validation is skipped.
-      allowed_hosts = None
     app.add_middleware(
         _OriginCheckMiddleware,
         has_configured_allowed_origins=has_configured_allowed_origins,
         allowed_origins=literal_origins,
         allowed_origin_regex=compiled_origin_regex,
         allowed_hosts=allowed_hosts,
-        trust_proxy=trust_proxy,
     )
 
     app.add_middleware(

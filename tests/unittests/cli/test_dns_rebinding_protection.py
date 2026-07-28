@@ -18,10 +18,8 @@ import re
 
 from google.adk.cli.api_server import _build_allowed_hosts
 from google.adk.cli.api_server import _build_same_origin_allowlist
-from google.adk.cli.api_server import _get_request_origin
 from google.adk.cli.api_server import _is_loopback_address
 from google.adk.cli.api_server import _is_request_origin_allowed
-from google.adk.cli.api_server import _normalize_origin
 import pytest
 
 _LOOPBACK_HOSTS_8000 = frozenset({
@@ -209,25 +207,54 @@ class TestDnsRebindingProtection:
         has_configured_allowed_origins=False,
     )
 
-  # --- Non-loopback server (protection does not apply) ---
+  # --- Non-loopback server: the Host header is the only reference point ---
 
-  def test_no_declared_bind_address_falls_back_to_recomputed_origin(self):
-    """Without a declared bind address the legacy header comparison applies.
-
-    This is the library-embedding path: same_origin_allowlist is None and the
-    server is not on loopback, so the Origin is compared against an origin
-    recomputed from the request headers. TestSameOriginAllowlist proves the
-    same input is rejected once a bind address has been declared.
-    """
-    scope = _make_scope(server_host="0.0.0.0", host_header="example.com:8000")
-    result = _is_request_origin_allowed(
-        origin="http://example.com:8000",
-        scope=scope,
+  def _check_fallback(
+      self,
+      origin: str,
+      host_header: str,
+      extra_headers: list[tuple[bytes, bytes]] | None = None,
+  ) -> bool:
+    """Run the no-declared-bind-address path (same_origin_allowlist is None)."""
+    return _is_request_origin_allowed(
+        origin=origin,
+        scope=_make_scope(
+            server_host="0.0.0.0",
+            host_header=host_header,
+            extra_headers=extra_headers,
+        ),
         allowed_literal_origins=[],
         allowed_origin_regex=None,
         has_configured_allowed_origins=False,
     )
-    assert result, "Same-origin on public server should be allowed"
+
+  def test_no_declared_bind_address_falls_back_to_host_header(self):
+    """This is the wildcard-bind / library-embedding path.
+
+    TestSameOriginAllowlist proves the same input is rejected once a bind
+    address has been declared.
+    """
+    assert self._check_fallback(
+        "http://example.com:8000", host_header="example.com:8000"
+    )
+
+  def test_fallback_accepts_https_origin_behind_a_tls_terminating_proxy(self):
+    """The proxy speaks plaintext to the server, so only the Host matches."""
+    assert self._check_fallback(
+        "https://example.com", host_header="example.com"
+    )
+
+  def test_fallback_ignores_forwarded_host(self):
+    assert not self._check_fallback(
+        "http://evil.example",
+        host_header="example.com:8000",
+        extra_headers=[(b"x-forwarded-host", b"evil.example")],
+    )
+
+  def test_fallback_rejects_other_hosts(self):
+    assert not self._check_fallback(
+        "http://evil.example:8000", host_header="example.com:8000"
+    )
 
 
 class TestBuildAllowedHosts:
@@ -239,7 +266,9 @@ class TestBuildAllowedHosts:
           ("127.0.0.1", 8000, frozenset()),
           ("localhost", 8000, frozenset()),
           ("LOCALHOST", 8000, frozenset()),
-          ("::1", 8000, frozenset({"::1", "::1:8000"})),
+          # An IPv6 literal is bracketed, because that is how browsers send it.
+          ("::1", 8000, frozenset()),
+          ("[::1]", 8000, frozenset()),
       ],
   )
   def test_loopback_binds(
@@ -248,6 +277,18 @@ class TestBuildAllowedHosts:
     assert _build_allowed_hosts(host, port) == (
         _LOOPBACK_HOSTS_8000 | expected_extra
     )
+
+  def test_ipv6_bind_is_bracketed(self):
+    assert _build_allowed_hosts("fe80::1", 9000) == frozenset({
+        "[fe80::1]",
+        "[fe80::1]:9000",
+        "localhost",
+        "localhost:9000",
+        "127.0.0.1",
+        "127.0.0.1:9000",
+        "[::1]",
+        "[::1]:9000",
+    })
 
   def test_concrete_non_loopback_bind(self):
     allowed_hosts = _build_allowed_hosts("192.168.1.5", 9000)
@@ -266,105 +307,6 @@ class TestBuildAllowedHosts:
   @pytest.mark.parametrize("host", ["0.0.0.0", "::", "[::]", "*", "", "  "])
   def test_wildcard_binds_disable_validation(self, host: str):
     assert _build_allowed_hosts(host, 8000) is None
-
-
-class TestBuildSameOriginAllowlist:
-  """Unit tests for _build_same_origin_allowlist."""
-
-  def test_both_schemes_emitted_for_every_host(self):
-    allowlist = _build_same_origin_allowlist(
-        frozenset({"localhost:8000", "127.0.0.1:8000"})
-    )
-    assert isinstance(allowlist, frozenset)
-    assert allowlist == {
-        "http://localhost:8000",
-        "https://localhost:8000",
-        "http://127.0.0.1:8000",
-        "https://127.0.0.1:8000",
-    }
-
-
-class TestNormalizeOrigin:
-  """Unit tests for _normalize_origin."""
-
-  @pytest.mark.parametrize(
-      "origin,expected",
-      [
-          ("http://localhost:8000", "http://localhost:8000"),
-          ("http://localhost:8000/", "http://localhost:8000"),
-          ("HTTP://LocalHost:8000", "http://localhost:8000"),
-          (" http://localhost:8000 ", "http://localhost:8000"),
-      ],
-  )
-  def test_normalization(self, origin: str, expected: str):
-    assert _normalize_origin(origin) == expected
-
-
-class TestGetRequestOrigin:
-  """_get_request_origin only honours proxy headers when trust_proxy is set."""
-
-  @pytest.mark.parametrize(
-      "extra_headers,untrusted,trusted",
-      [
-          (
-              [(b"forwarded", b"proto=http;host=evil.example")],
-              "http://localhost:8000",
-              "http://evil.example",
-          ),
-          (
-              [(b"x-forwarded-host", b"evil.example")],
-              "http://localhost:8000",
-              "http://evil.example",
-          ),
-          (
-              [(b"x-forwarded-proto", b"https")],
-              "http://localhost:8000",
-              "https://localhost:8000",
-          ),
-      ],
-      ids=["forwarded", "x_forwarded_host", "x_forwarded_proto"],
-  )
-  def test_proxy_headers_require_trust_proxy(
-      self,
-      extra_headers: list[tuple[bytes, bytes]],
-      untrusted: str,
-      trusted: str,
-  ):
-    scope = _make_scope(
-        host_header="localhost:8000", extra_headers=extra_headers
-    )
-    assert _get_request_origin(scope) == untrusted
-    assert _get_request_origin(scope, trust_proxy=True) == trusted
-
-  @pytest.mark.parametrize("trust_proxy", [False, True])
-  def test_no_host_header_yields_no_origin(self, trust_proxy: bool):
-    scope = {"type": "http", "headers": [], "scheme": "http"}
-    assert _get_request_origin(scope, trust_proxy) is None
-
-  def test_forwarded_elements_without_proto_or_host_are_skipped(self):
-    scope = _make_scope(
-        host_header="localhost:8000",
-        extra_headers=[
-            (b"forwarded", b"bare;for=1.2.3.4;proto=https;host=proxy.example")
-        ],
-    )
-    assert (
-        _get_request_origin(scope, trust_proxy=True) == "https://proxy.example"
-    )
-
-  def test_forwarded_without_proto_falls_back_to_host_header(self):
-    scope = _make_scope(
-        host_header="localhost:8000",
-        extra_headers=[(b"forwarded", b"host=evil.example")],
-    )
-    assert (
-        _get_request_origin(scope, trust_proxy=True) == "http://localhost:8000"
-    )
-
-  def test_websocket_scheme_is_normalized(self):
-    scope = _make_scope(host_header="localhost:8000")
-    scope["scheme"] = "wss"
-    assert _get_request_origin(scope) == "https://localhost:8000"
 
 
 class TestSameOriginAllowlist:

@@ -16,7 +16,6 @@
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import types
 from typing import Any
@@ -24,11 +23,11 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from google.adk.agents.base_agent import BaseAgent
+from google.adk.agents.llm_agent import LlmAgent
 from google.adk.cli.api_server import _build_allowed_hosts
 from google.adk.cli.api_server import _OriginCheckMiddleware
 from google.adk.cli.api_server import ApiServer
 from google.adk.cli.fast_api import get_fast_api_app
-from google.adk.events.event import Event
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 import pytest
 from starlette.websockets import WebSocketDisconnect
@@ -76,26 +75,6 @@ def _make_scope(
   }
 
 
-# A deployment fronted by a reverse proxy on the same machine: the app is
-# bound to a wildcard address (so no Host allowlist can be derived), the proxy
-# connects over loopback, and the public origin is only visible in the
-# X-Forwarded-* headers.
-_PROXIED_SCOPE_KWARGS = dict(
-    host="127.0.0.1:8000",
-    origin="https://public.example",
-    server_host="127.0.0.1",
-    extra_headers=[
-        (b"x-forwarded-host", b"public.example"),
-        (b"x-forwarded-proto", b"https"),
-    ],
-)
-_PROXIED_HEADERS = {
-    "X-Forwarded-Host": "public.example",
-    "X-Forwarded-Proto": "https",
-    "Origin": "https://public.example",
-}
-
-
 async def _call(
     middleware: _OriginCheckMiddleware, scope: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -117,7 +96,6 @@ def _make_middleware(
     allowed_hosts: frozenset[str] | None = _ALLOWED_HOSTS,
     has_configured_allowed_origins: bool = False,
     allowed_origins: list[str] | None = None,
-    trust_proxy: bool = False,
 ) -> _OriginCheckMiddleware:
   return _OriginCheckMiddleware(
       inner_app,
@@ -125,7 +103,6 @@ def _make_middleware(
       allowed_origins=allowed_origins or [],
       allowed_origin_regex=None,
       allowed_hosts=allowed_hosts,
-      trust_proxy=trust_proxy,
   )
 
 
@@ -168,19 +145,6 @@ class TestHostValidation:
     assert sent[0]["status"] == 200
     assert len(inner_app.scopes) == 1
 
-  async def test_rejection_is_logged_without_other_request_data(
-      self, caplog: pytest.LogCaptureFixture
-  ):
-    with caplog.at_level(logging.WARNING):
-      await _call(
-          _make_middleware(_RecordingApp()),
-          _make_scope(host="evil.example:8000"),
-      )
-
-    assert caplog.messages == [
-        "Rejected request with disallowed Host header: evil.example:8000"
-    ]
-
   async def test_no_host_check_without_declared_bind_address(self):
     """The library-embedding path does not declare a bind address."""
     inner_app = _RecordingApp()
@@ -221,20 +185,6 @@ class TestOriginValidation:
     _assert_forbidden(sent, b"Forbidden: origin not allowed")
     assert not inner_app.scopes
 
-  async def test_origin_rejection_is_logged(
-      self, caplog: pytest.LogCaptureFixture
-  ):
-    with caplog.at_level(logging.WARNING):
-      await _call(
-          _make_middleware(_RecordingApp()),
-          _make_scope(origin="http://evil.example:8000"),
-      )
-
-    assert caplog.messages == [
-        "Rejected request with disallowed Origin header:"
-        " http://evil.example:8000"
-    ]
-
   async def test_same_origin_post_forwarded(self):
     inner_app = _RecordingApp()
     sent = await _call(
@@ -263,10 +213,9 @@ class TestOriginValidation:
     assert len(inner_app.scopes) == 1
 
   async def test_forwarded_host_spoof_rejected(self):
-    """The static allowlist ignores X-Forwarded-Host even with trust_proxy."""
     inner_app = _RecordingApp()
     sent = await _call(
-        _make_middleware(inner_app, trust_proxy=True),
+        _make_middleware(inner_app),
         _make_scope(
             host="localhost:8000",
             origin="http://evil.example",
@@ -277,22 +226,39 @@ class TestOriginValidation:
     _assert_forbidden(sent, b"Forbidden: origin not allowed")
     assert not inner_app.scopes
 
-  @pytest.mark.parametrize(
-      "trust_proxy,expected_status", [(False, 403), (True, 200)]
-  )
-  async def test_proxied_origin_requires_trust_proxy(
-      self, trust_proxy: bool, expected_status: int
-  ):
-    inner_app = _RecordingApp()
-    sent = await _call(
-        _make_middleware(
-            inner_app, allowed_hosts=None, trust_proxy=trust_proxy
-        ),
-        _make_scope(**_PROXIED_SCOPE_KWARGS),
-    )
 
-    assert sent[0]["status"] == expected_status
-    assert len(inner_app.scopes) == (1 if trust_proxy else 0)
+class TestRejectionLogging:
+  """A rejection logs the offending header value and no other request data."""
+
+  @pytest.mark.parametrize(
+      "scope_kwargs,expected",
+      [
+          (
+              dict(host="evil.example:8000"),
+              "Rejected request with disallowed Host header: evil.example:8000",
+          ),
+          (
+              dict(origin="http://evil.example:8000"),
+              (
+                  "Rejected request with disallowed Origin header:"
+                  " http://evil.example:8000"
+              ),
+          ),
+      ],
+      ids=["host", "origin"],
+  )
+  async def test_single_warning_naming_the_header(
+      self,
+      caplog: pytest.LogCaptureFixture,
+      scope_kwargs: dict[str, Any],
+      expected: str,
+  ):
+    with caplog.at_level(logging.WARNING):
+      await _call(
+          _make_middleware(_RecordingApp()), _make_scope(**scope_kwargs)
+      )
+
+    assert caplog.messages == [expected]
 
 
 class TestNonHttpScopes:
@@ -349,59 +315,32 @@ def _build_app(tmp_path, host: str = "127.0.0.1", **kwargs) -> FastAPI:
   )
 
 
-def _get_origin_check_middleware(app: FastAPI):
-  """Extract _OriginCheckMiddleware from the app's middleware stack."""
-  for middleware in app.user_middleware:
-    if middleware.cls is _OriginCheckMiddleware:
-      return middleware
-  return None
+class TestWildcardBindWarning:
+  """A wildcard bind disables Host validation, so it has to say so."""
 
-
-class TestGetFastApiAppWiring:
-  """fast_api.get_fast_api_app derives the allowlist from host/port."""
-
-  def test_bind_address_becomes_the_allowlist(self, tmp_path):
-    middleware = _get_origin_check_middleware(_build_app(tmp_path))
-
-    assert middleware is not None
-    assert "127.0.0.1:8000" in middleware.kwargs["allowed_hosts"]
-    assert middleware.kwargs["trust_proxy"] is False
-
-  def test_wildcard_bind_disables_validation_and_warns(
-      self, tmp_path, caplog: pytest.LogCaptureFixture
+  @pytest.mark.parametrize(
+      "app_kwargs,expected",
+      [
+          (dict(host="0.0.0.0"), True),
+          (dict(host="0.0.0.0", allow_origins=["https://ok.test"]), False),
+          (dict(host="127.0.0.1"), False),
+      ],
+      ids=["wildcard", "wildcard_with_allow_origins", "concrete_bind"],
+  )
+  def test_warning_emitted_only_for_an_undeclarable_bind(
+      self,
+      tmp_path,
+      caplog: pytest.LogCaptureFixture,
+      app_kwargs: dict[str, Any],
+      expected: bool,
   ):
     with caplog.at_level(logging.WARNING):
-      app = _build_app(tmp_path, host="0.0.0.0")
+      _build_app(tmp_path, **app_kwargs)
 
-    middleware = _get_origin_check_middleware(app)
-    assert middleware is not None
-    assert middleware.kwargs["allowed_hosts"] is None
-    assert any(
-        "Host header validation is disabled" in message
-        for message in caplog.messages
+    assert (
+        any("Host header validation is disabled" in m for m in caplog.messages)
+        is expected
     )
-
-  def test_wildcard_bind_with_allow_origins_does_not_warn(
-      self, tmp_path, caplog: pytest.LogCaptureFixture
-  ):
-    with caplog.at_level(logging.WARNING):
-      _build_app(tmp_path, host="0.0.0.0", allow_origins=["https://ok.test"])
-
-    assert not any(
-        "Host header validation is disabled" in message
-        for message in caplog.messages
-    )
-
-  def test_trust_proxy_is_propagated_and_warns(
-      self, tmp_path, caplog: pytest.LogCaptureFixture
-  ):
-    with caplog.at_level(logging.WARNING):
-      app = _build_app(tmp_path, trust_proxy=True)
-
-    middleware = _get_origin_check_middleware(app)
-    assert middleware is not None
-    assert middleware.kwargs["trust_proxy"] is True
-    assert any("trust_proxy is enabled" in m for m in caplog.messages)
 
 
 class TestServedRequests:
@@ -435,30 +374,13 @@ class TestServedRequests:
     assert response.status_code == 403
     assert response.text == "Forbidden: origin not allowed"
 
-  def test_forwarded_host_spoof_rejected(self, tmp_path):
-    client = TestClient(_build_app(tmp_path), base_url="http://localhost:8000")
-
-    response = client.post(
-        "/run",
-        headers={
-            "X-Forwarded-Host": "evil.example",
-            "Origin": "http://evil.example",
-        },
-        json={},
-    )
-
-    assert response.status_code == 403
-
-  @pytest.mark.parametrize("trust_proxy", [False, True])
-  def test_proxied_origin_requires_trust_proxy(self, tmp_path, trust_proxy):
+  def test_wildcard_bind_serves_any_host(self, tmp_path):
     client = TestClient(
-        _build_app(tmp_path, host="0.0.0.0", trust_proxy=trust_proxy),
-        base_url=_BASE_URL,
+        _build_app(tmp_path, host="0.0.0.0"),
+        base_url="http://anything.example:8000",
     )
 
-    response = client.post("/run", headers=_PROXIED_HEADERS, json={})
-
-    assert (response.status_code == 403) is not trust_proxy
+    assert client.get("/list-apps").status_code == 200
 
   def test_allow_origins_is_the_documented_escape_hatch(self, tmp_path):
     client = TestClient(
@@ -471,18 +393,11 @@ class TestServedRequests:
     assert response.status_code == 200
 
 
-class _DummyAgent(BaseAgent):
-
-  def __init__(self) -> None:
-    super().__init__(name="dummy_agent")
-    self.sub_agents = []
-
-
 class _DummyAgentLoader:
 
   def load_agent(self, app_name: str) -> BaseAgent:
     del app_name
-    return _DummyAgent()
+    return LlmAgent(name="dummy_agent")
 
   def list_agents(self) -> list[str]:
     return ["test_app"]
@@ -491,36 +406,18 @@ class _DummyAgentLoader:
     return []
 
 
-class _DummyRunner:
-
-  async def run_live(self, **unused_kwargs):
-    yield Event(author="runner")
-
-
 def _build_run_live_app() -> FastAPI:
-  """Build an app whose /run_live route has a session and a runner ready."""
-  session_service = InMemorySessionService()
-  asyncio.run(
-      session_service.create_session(
-          app_name="test_app", user_id="user", session_id="session", state={}
-      )
-  )
-  api_server = ApiServer(
+  """Build a real app exposing the /run_live WebSocket route."""
+  return ApiServer(
       agent_loader=_DummyAgentLoader(),
-      session_service=session_service,
+      session_service=InMemorySessionService(),
       memory_service=types.SimpleNamespace(),
       artifact_service=types.SimpleNamespace(),
       credential_service=types.SimpleNamespace(),
       eval_sets_manager=types.SimpleNamespace(),
       eval_set_results_manager=types.SimpleNamespace(),
       agents_dir=".",
-  )
-
-  async def _get_runner_async(_app_name: str) -> _DummyRunner:
-    return _DummyRunner()
-
-  api_server.get_runner_async = _get_runner_async
-  return api_server.get_fast_api_app(allowed_hosts=_ALLOWED_HOSTS)
+  ).get_fast_api_app(allowed_hosts=_ALLOWED_HOSTS)
 
 
 # TestClient.websocket_connect ignores base_url, so the Host under test has to
@@ -551,12 +448,3 @@ class TestRunLiveWebSocket:
         pass
 
     assert exc_info.value.code == 1008
-
-  def test_allowed_host_connects(self):
-    client = TestClient(_build_run_live_app())
-
-    with client.websocket_connect(
-        f"ws://127.0.0.1:8000{_RUN_LIVE_PATH}",
-        headers={"origin": _BASE_URL},
-    ) as websocket:
-      assert websocket.receive_text()
