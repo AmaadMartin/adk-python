@@ -22,13 +22,10 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from google.adk.agents.base_agent import BaseAgent
-from google.adk.agents.llm_agent import LlmAgent
 from google.adk.cli.api_server import _build_allowed_hosts
 from google.adk.cli.api_server import _OriginCheckMiddleware
 from google.adk.cli.api_server import ApiServer
 from google.adk.cli.fast_api import get_fast_api_app
-from google.adk.sessions.in_memory_session_service import InMemorySessionService
 import pytest
 from starlette.websockets import WebSocketDisconnect
 
@@ -56,7 +53,6 @@ def _make_scope(
     method: str = "POST",
     host: str | None = "127.0.0.1:8000",
     origin: str | None = None,
-    server_host: str = "127.0.0.1",
     extra_headers: list[tuple[bytes, bytes]] | None = None,
 ) -> dict[str, Any]:
   """Build a minimal ASGI scope."""
@@ -69,9 +65,8 @@ def _make_scope(
   return {
       "type": scope_type,
       "method": method,
-      "server": (server_host, 8000),
+      "server": ("127.0.0.1", 8000),
       "headers": headers,
-      "scheme": "http",
   }
 
 
@@ -364,24 +359,15 @@ class TestServedRequests:
     assert response.status_code == 200
 
 
-class _DummyAgentLoader:
-
-  def load_agent(self, app_name: str) -> BaseAgent:
-    del app_name
-    return LlmAgent(name="dummy_agent")
-
-  def list_agents(self) -> list[str]:
-    return ["test_app"]
-
-  def list_agents_detailed(self) -> list[dict[str, Any]]:
-    return []
-
-
 def _build_run_live_app() -> FastAPI:
-  """Build a real app exposing the /run_live WebSocket route."""
+  """Build a real app exposing the /run_live WebSocket route.
+
+  Both connections below are rejected before Starlette routes them, so no
+  service is ever called.
+  """
   return ApiServer(
-      agent_loader=_DummyAgentLoader(),
-      session_service=InMemorySessionService(),
+      agent_loader=types.SimpleNamespace(),
+      session_service=types.SimpleNamespace(),
       memory_service=types.SimpleNamespace(),
       artifact_service=types.SimpleNamespace(),
       credential_service=types.SimpleNamespace(),

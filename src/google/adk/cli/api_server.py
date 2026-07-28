@@ -204,10 +204,6 @@ _LOOPBACK_HOST_ALIASES = frozenset({"localhost", "127.0.0.1", "[::1]"})
 def _build_allowed_hosts(host: str, port: int) -> Optional[frozenset[str]]:
   """Static Host-header allowlist derived from the bind address.
 
-  Args:
-    host: The address the server binds to.
-    port: The port the server binds to.
-
   Returns:
     The lower-cased Host header values the server accepts, or None when the
     bind address is a wildcard and no public hostname can be inferred from it.
@@ -225,20 +221,6 @@ def _build_allowed_hosts(host: str, port: int) -> Optional[frozenset[str]]:
       for candidate in {normalized_host} | _LOOPBACK_HOST_ALIASES
       for form in (candidate, f"{candidate}:{port}")
   )
-
-
-def _origin_host(origin: str) -> str:
-  """The "host[:port]" of an Origin header, in Host-header form.
-
-  The scheme is deliberately discarded: a fronting proxy commonly terminates
-  TLS, leaving the server unable to tell http from https, and it is the
-  (host, port) pair that identifies the server. Returns "" for a malformed
-  Origin, which never matches an allowlist entry.
-  """
-  try:
-    return urlparse(origin).netloc.lower()
-  except ValueError:
-    return ""
 
 
 def _is_request_origin_allowed(
@@ -265,26 +247,31 @@ def _is_request_origin_allowed(
   ):
     return True
 
-  origin_host = _origin_host(origin)
-  if allowed_hosts is None:
-    # DNS-rebinding guard: if the server is on loopback and no explicit
-    # allow-origins list is configured, only permit origins whose host is also
-    # loopback.  This mirrors the protection used by the MCP go-sdk SSEHandler.
-    server_host = _get_server_host(scope)
-    if (
-        not has_configured_allowed_origins
-        and server_host is not None
-        and _is_loopback_address(server_host)
-        and not _is_loopback_address(origin_host)
-    ):
-      return False
+  # The scheme is deliberately dropped: a fronting proxy commonly terminates
+  # TLS, leaving the server unable to tell http from https, and it is the
+  # (host, port) pair that identifies the server.
+  try:
+    origin_host = urlparse(origin).netloc.lower()
+  except ValueError:
+    return False
 
-    host = _get_scope_header(scope, b"host")
-    if not host:
-      return False
-    allowed_hosts = frozenset({host.lower()})
+  if allowed_hosts is not None:
+    return origin_host in allowed_hosts
 
-  return origin_host in allowed_hosts
+  # DNS-rebinding guard: if the server is on loopback and no explicit
+  # allow-origins list is configured, only permit origins whose host is also
+  # loopback.  This mirrors the protection used by the MCP go-sdk SSEHandler.
+  server_host = _get_server_host(scope)
+  if (
+      not has_configured_allowed_origins
+      and server_host is not None
+      and _is_loopback_address(server_host)
+      and not _is_loopback_address(origin_host)
+  ):
+    return False
+
+  host = _get_scope_header(scope, b"host")
+  return bool(host) and origin_host == host.lower()
 
 
 _SAFE_HTTP_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
@@ -326,7 +313,7 @@ class _OriginCheckMiddleware:
     # browser is concerned, so it could otherwise read GET responses too.
     if self._allowed_hosts is not None:
       host = _get_scope_header(scope, b"host")
-      if host is None or host.strip().lower() not in self._allowed_hosts:
+      if host is None or host.lower() not in self._allowed_hosts:
         logger.warning("Rejected request with disallowed Host header: %s", host)
         await self._reject(scope, receive, send, b"Forbidden: host not allowed")
         return

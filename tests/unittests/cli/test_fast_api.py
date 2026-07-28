@@ -543,7 +543,7 @@ def _create_test_client(
       ),
   ):
     app = get_fast_api_app(**defaults)
-    return TestClient(app, base_url="http://127.0.0.1:8000")
+    return TestClient(app)
 
 
 def test_agent_with_bigquery_analytics_plugin(
@@ -813,6 +813,8 @@ def builder_test_client(
         host="127.0.0.1",
         port=8000,
     )
+    # The app derives its Host allowlist from host/port, so the client has to
+    # address it the way the server was configured.
     return TestClient(app, base_url="http://127.0.0.1:8000")
 
 
@@ -978,7 +980,7 @@ def test_app_with_a2a(
         port=8000,
     )
 
-    client = TestClient(app, base_url="http://127.0.0.1:8000")
+    client = TestClient(app)
     yield client
 
 
@@ -2398,7 +2400,7 @@ def test_a2a_task_store_engine_disposed_on_shutdown(
 
     # Exercise the lifespan to trigger shutdown cleanup.
     # TestClient enters/exits the lifespan context on __enter__/__exit__.
-    with TestClient(app, base_url="http://127.0.0.1:8000"):
+    with TestClient(app):
       pass
 
     mock_engine.dispose.assert_awaited_once()
@@ -2481,7 +2483,7 @@ def test_a2a_in_memory_task_store_no_engine_dispose(
     )
 
     # Lifespan should complete without errors even with no engine.
-    with TestClient(app, base_url="http://127.0.0.1:8000"):
+    with TestClient(app):
       pass
 
 
