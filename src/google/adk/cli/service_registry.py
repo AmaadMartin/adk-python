@@ -439,7 +439,17 @@ def _parse_agent_engine_kwargs(
         "agent_engine_id": uri_part,
     }
 
-  # If uri_part is a full resource name, parse it
+  # If uri_part is a full resource name, parse it.
+  #
+  # This deliberately splits instead of reusing the
+  # `projects/(...)/locations/(...)/reasoningEngines/(\d+)` regex that
+  # VertexAiSessionService and AgentEngineSandboxCodeExecutor apply to the same
+  # resource-name format. That regex only matches numeric engine ids, so
+  # sharing it here would reject ids this CLI accepts today, and it would
+  # contradict the short-form branch above, which passes any id straight
+  # through unvalidated. The return shapes differ too: this parser owes its
+  # callers all three components as constructor kwargs, whereas those parsers
+  # yield only the engine id or only (project, location).
   parts = uri_part.split("/")
   if not (
       len(parts) == 6
