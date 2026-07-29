@@ -109,6 +109,21 @@ def _check_config_for_blocked_keys(node: Any, filename: str) -> None:
       _check_config_for_blocked_keys(item, filename)
 
 
+def _check_yaml_bytes_for_blocked_keys(content: bytes, filename: str) -> None:
+  """Checks every document in a YAML byte string for blocked keys.
+
+  Raises:
+    ValueError: If the bytes are not valid YAML, or contain a blocked key.
+  """
+  try:
+    docs = list(yaml.safe_load_all(content))
+  except yaml.YAMLError as exc:
+    raise ValueError(f"Invalid YAML in {filename!r}: {exc}") from exc
+
+  for doc in docs:
+    _check_config_for_blocked_keys(doc, filename)
+
+
 _ALLOWED_MODULE_PREFIX = "google.adk."
 
 # Top-level packages that own a config loaded in this process, populated by

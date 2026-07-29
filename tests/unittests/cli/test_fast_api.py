@@ -2682,6 +2682,33 @@ def test_builder_save_rejects_non_yaml_extensions(
     assert response.status_code == 400, f"Expected 400 for {ext}"
 
 
+_BLOCKED_KEY_UPLOAD = (
+    "files",
+    (
+        "app/root_agent.yaml",
+        b"name: app\ntools:\n  - name: app.tools.t\n    args:\n      cmd: id\n",
+        "application/x-yaml",
+    ),
+)
+
+
+@pytest.mark.parametrize(
+    "route",
+    ["/dev/apps/app/builder/save?tmp=true", "/builder/save?tmp=true"],
+)
+def test_builder_save_rejects_blocked_yaml_keys(
+    builder_test_client, tmp_path, route
+):
+  """Both upload endpoints reject a config carrying the blocked 'args' key."""
+  response = builder_test_client.post(route, files=[_BLOCKED_KEY_UPLOAD])
+
+  assert response.status_code == 400
+  detail = response.json()["detail"]
+  assert "Blocked key 'args' found" in detail
+  assert "not allowed in agent configurations" in detail
+  assert not (tmp_path / "app" / "tmp" / "app" / "root_agent.yaml").exists()
+
+
 def test_builder_save_allows_yaml_files(builder_test_client, tmp_path):
   """Uploading .yaml and .yml files is allowed."""
   response = builder_test_client.post(

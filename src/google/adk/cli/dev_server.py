@@ -44,9 +44,9 @@ import graphviz
 from pydantic import Field
 from pydantic import ValidationError
 from typing_extensions import deprecated
-import yaml
 
 from . import agent_graph
+from ..agents import config_agent_utils
 from ..errors.not_found_error import NotFoundError
 from ..evaluation.base_eval_service import InferenceConfig
 from ..evaluation.base_eval_service import InferenceRequest
@@ -232,33 +232,6 @@ class DevServer(ApiServer):
 
     _ALLOWED_EXTENSIONS = frozenset({".yaml", ".yml"})
 
-    # --- YAML content security ---
-    _BLOCKED_YAML_KEYS = frozenset({"args"})
-
-    def _check_yaml_for_blocked_keys(content: bytes, filename: str) -> None:
-      """Raise if the YAML document contains any blocked keys."""
-      try:
-        docs = list(yaml.safe_load_all(content))
-      except yaml.YAMLError as exc:
-        raise ValueError(f"Invalid YAML in {filename!r}: {exc}") from exc
-
-      def _walk(node: Any) -> None:
-        if isinstance(node, dict):
-          for key, value in node.items():
-            if key in _BLOCKED_YAML_KEYS:
-              raise ValueError(
-                  f"Blocked key {key!r} found in {filename!r}. "
-                  f"The '{key}' field is not allowed in builder uploads "
-                  "because it can execute arbitrary code."
-              )
-            _walk(value)
-        elif isinstance(node, list):
-          for item in node:
-            _walk(item)
-
-      for doc in docs:
-        _walk(doc)
-
     def _parse_upload_filename(app_name: str, filename: Optional[str]) -> str:
       if not filename:
         raise ValueError("Upload filename is missing.")
@@ -407,7 +380,9 @@ class DevServer(ApiServer):
           uploads.append((rel_path, content))
 
         for rel_path, content in uploads:
-          _check_yaml_for_blocked_keys(content, f"{app_name}/{rel_path}")
+          config_agent_utils._check_yaml_bytes_for_blocked_keys(
+              content, f"{app_name}/{rel_path}"
+          )
 
         if tmp:
           app_root = _get_app_root(app_name)
