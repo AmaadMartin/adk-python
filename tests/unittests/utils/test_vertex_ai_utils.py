@@ -113,3 +113,45 @@ def test_get_express_mode_api_key_vertexai_fallback_warning(monkeypatch):
     assert len(w) == 1
     assert issubclass(w[-1].category, DeprecationWarning)
     assert 'GOOGLE_GENAI_USE_VERTEXAI is deprecated' in str(w[-1].message)
+
+
+def test_parse_agent_engine_resource_name_valid():
+  assert vertex_ai_utils.parse_agent_engine_resource_name(
+      'projects/123/locations/us-central1/reasoningEngines/456'
+  ) == ('123', 'us-central1', '456')
+
+
+def test_parse_agent_engine_resource_name_allows_hyphen_and_underscore():
+  assert vertex_ai_utils.parse_agent_engine_resource_name(
+      'projects/my-project_1/locations/us-central1/reasoningEngines/456'
+  ) == ('my-project_1', 'us-central1', '456')
+
+
+@pytest.mark.parametrize(
+    'resource_name',
+    [
+        '',
+        '456',
+        'projects/123/locations/us-central1/reason/456',
+        'projects/123/locations/us-central1/reasoningEngines/abc',
+        'projects//locations/us-central1/reasoningEngines/456',
+        (
+            'projects/123/locations/us-central1/reasoningEngines/456'
+            '/sandboxEnvironments/789'
+        ),
+        'x/projects/123/locations/us-central1/reasoningEngines/456',
+        'projects/123/locations/us-central1/reasoningEngines/456 ',
+    ],
+)
+def test_parse_agent_engine_resource_name_invalid(resource_name):
+  assert vertex_ai_utils.parse_agent_engine_resource_name(resource_name) is None
+
+
+def test_parse_agent_engine_resource_name_rejects_trailing_newline():
+  # Guards the use of fullmatch: `$` alone would match before a final newline.
+  assert (
+      vertex_ai_utils.parse_agent_engine_resource_name(
+          'projects/123/locations/us-central1/reasoningEngines/456\n'
+      )
+      is None
+  )

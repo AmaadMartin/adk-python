@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Utilities for Vertex AI. Includes helper functions for Express Mode.
+"""Utilities for Vertex AI, including Express Mode and resource names.
 
 This module is for ADK internal use only.
 Please do not rely on the implementation details.
@@ -21,9 +21,35 @@ Please do not rely on the implementation details.
 from __future__ import annotations
 
 import os
+import re
 from typing import Optional
 
 from .env_utils import is_enterprise_mode_enabled
+
+_AGENT_ENGINE_RESOURCE_NAME_PATTERN = re.compile(
+    r'^projects/([a-zA-Z0-9-_]+)/locations/([a-zA-Z0-9-_]+)'
+    r'/reasoningEngines/(\d+)$'
+)
+
+
+def parse_agent_engine_resource_name(
+    resource_name: str,
+) -> Optional[tuple[str, str, str]]:
+  """Parses an Agent Engine resource name into its components.
+
+  Args:
+    resource_name: A resource name of the form
+      ``projects/{project}/locations/{location}/reasoningEngines/{id}``.
+
+  Returns:
+    A ``(project, location, reasoning_engine_id)`` tuple, or ``None`` if
+    ``resource_name`` does not match the expected format. Callers are
+    responsible for raising their own error on ``None``.
+  """
+  match = _AGENT_ENGINE_RESOURCE_NAME_PATTERN.fullmatch(resource_name)
+  if match is None:
+    return None
+  return match.group(1), match.group(2), match.group(3)
 
 
 def get_express_mode_api_key(
