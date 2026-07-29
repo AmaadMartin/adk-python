@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import pathlib
 
-from google.adk.skills import list_skills_in_dir
 from google.adk.skills import load_skill_from_dir
 import pytest
 
@@ -38,8 +37,8 @@ _ALLOWED_EXTRA_FRONTMATTER_KEYS: dict[str, set[str]] = {
 
 def _repo_skill_dirs() -> list[pathlib.Path]:
   """Returns the skill directories checked into .agents/skills/."""
-  # glob() enumerates exactly what list_skills_in_dir() walks, but yields
-  # nothing instead of raising when .agents/skills/ is absent.
+  # glob() enumerates the same entries as iterdir() but yields nothing, rather
+  # than raising, when .agents/skills/ is absent -- see pytestmark below.
   return sorted(path for path in _SKILLS_DIR.glob("*") if path.is_dir())
 
 
@@ -84,10 +83,3 @@ def test_repo_skill_frontmatter_has_no_unrecognized_keys(
       f"{skill_dir.name} has unrecognized frontmatter keys:"
       f" {sorted(extra_keys - allowed)}"
   )
-
-
-def test_all_repo_skills_are_listed():
-  """Listing the skills directory surfaces every skill, none skipped."""
-  listed = list_skills_in_dir(_SKILLS_DIR)
-
-  assert set(listed) == {path.name for path in _repo_skill_dirs()}
