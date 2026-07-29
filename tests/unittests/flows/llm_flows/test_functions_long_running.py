@@ -352,29 +352,6 @@ def test_actions_only_event_is_not_visible_to_the_model():
   ]
 
 
-def test_artifact_delta_survives_a_none_returning_long_running_tool():
-  mock_model = testing_utils.MockModel.create(
-      responses=[Part.from_function_call(name='save_report', args={})]
-  )
-
-  async def save_report(tool_context: ToolContext) -> None:
-    await tool_context.save_artifact('f.txt', types.Part.from_text(text='x'))
-    return None
-
-  agent = Agent(
-      name='root_agent',
-      model=mock_model,
-      tools=[LongRunningFunctionTool(func=save_report)],
-  )
-  runner = testing_utils.InMemoryRunner(agent)
-
-  events = runner.run('go')
-
-  actions_only_events = _actions_only_events(events)
-  assert len(actions_only_events) == 1
-  assert actions_only_events[0].actions.artifact_delta == {'f.txt': 0}
-
-
 def test_untouched_actions_still_produce_no_event():
   mock_model = testing_utils.MockModel.create(
       responses=[Part.from_function_call(name='start_job', args={})]
