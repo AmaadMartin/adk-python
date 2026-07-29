@@ -84,6 +84,12 @@ jobs:
           source .venv/bin/activate
           uv sync --all-extras
 
+          # Both mypy runs in this job share one workspace, and a warm cache
+          # makes mypy render some diagnostics differently (e.g. the members of
+          # a narrowed Literal[...] union), so identical errors compare as
+          # different strings and surface as spurious "new" errors below.
+          rm -rf .mypy_cache
+
           # Run mypy, filter for errors only, remove line numbers, and sort
           # We ignore exit code (|| true) because we expect errors on baseline
           uv run mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > baseline_errors.txt || true
@@ -97,6 +103,9 @@ jobs:
           # Re-sync dependencies in case the PR changed them
           source .venv/bin/activate
           uv sync --all-extras
+
+          # Cold run, to match the baseline (see "Generate Baseline" above).
+          rm -rf .mypy_cache
 
           # Run mypy on PR code, apply same processing
           uv run mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > pr_errors.txt || true
