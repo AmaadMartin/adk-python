@@ -657,7 +657,7 @@ async def _execute_single_function_call_async(
       if tool.is_long_running and tool_context.actions != EventActions():
         return Event(
             invocation_id=invocation_context.invocation_id,
-            author=invocation_context.agent.name,
+            author=agent.name,
             branch=invocation_context.branch,
             actions=tool_context.actions,
         )
