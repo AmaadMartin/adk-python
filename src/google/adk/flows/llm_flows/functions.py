@@ -354,8 +354,7 @@ def generate_auth_event(
       invocation_context,
       function_response_event.actions.requested_auth_configs,
       # A long-running tool can request credentials while returning no
-      # response, in which case its event carries actions but no content.
-      # 'user' is the role every tool response content is built with.
+      # response; its event then carries actions but no content.
       role=(
           function_response_event.content.role
           if function_response_event.content
@@ -656,7 +655,12 @@ async def _execute_single_function_call_async(
       # an actions-only event would make `is_final_response()` true and
       # suppress the model turn that the deferred path still needs.
       if tool.is_long_running and tool_context.actions != EventActions():
-        return _build_actions_only_event(tool_context, invocation_context)
+        return Event(
+            invocation_id=invocation_context.invocation_id,
+            author=invocation_context.agent.name,
+            branch=invocation_context.branch,
+            actions=tool_context.actions,
+        )
       return None
 
     detected_error_type = _detect_error_type_for_telemetry(
@@ -1253,32 +1257,6 @@ async def __call_tool_async(
 ) -> Any:
   """Calls the tool."""
   return await tool.run_async(args=args, tool_context=tool_context)
-
-
-def _build_actions_only_event(
-    tool_context: ToolContext,
-    invocation_context: InvocationContext,
-) -> Event:
-  """Builds a content-less event that carries only the tool's actions.
-
-  A long-running tool can mutate `tool_context.actions` (e.g. write session
-  state or set `skip_summarization`) while returning no response. Actions are
-  only ever persisted by attaching them to an event, so this builds an event
-  with no content whose sole payload is those actions.
-
-  Args:
-    tool_context: The tool context holding the actions to carry.
-    invocation_context: The invocation context.
-
-  Returns:
-    An event with no content and the tool's actions.
-  """
-  return Event(
-      invocation_id=invocation_context.invocation_id,
-      author=invocation_context.agent.name,
-      branch=invocation_context.branch,
-      actions=tool_context.actions,
-  )
 
 
 def __build_response_event(

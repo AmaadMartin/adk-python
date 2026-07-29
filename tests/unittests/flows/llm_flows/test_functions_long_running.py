@@ -12,22 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from typing import Any
-from typing import Optional
-
-from fastapi.openapi.models import OAuth2
-from fastapi.openapi.models import OAuthFlowAuthorizationCode
-from fastapi.openapi.models import OAuthFlows
+from fastapi.openapi.models import APIKey
+from fastapi.openapi.models import APIKeyIn
 from google.adk.agents.llm_agent import Agent
 from google.adk.apps.app import App
 from google.adk.apps.app import ResumabilityConfig
-from google.adk.auth.auth_credential import AuthCredential
-from google.adk.auth.auth_credential import AuthCredentialTypes
-from google.adk.auth.auth_credential import OAuth2Auth
 from google.adk.auth.auth_tool import AuthConfig
 from google.adk.events.event import Event
 from google.adk.flows.llm_flows import functions
-from google.adk.tools.base_tool import BaseTool
+from google.adk.tools.function_tool import FunctionTool
 from google.adk.tools.get_user_choice_tool import get_user_choice_tool
 from google.adk.tools.long_running_tool import LongRunningFunctionTool
 from google.adk.tools.tool_context import ToolContext
@@ -262,32 +255,6 @@ def test_async_function_with_none_response():
   assert function_called == 1
 
 
-def _oauth_auth_config(client_id: str) -> AuthConfig:
-  """Builds a minimal OAuth2 authorization-code AuthConfig."""
-  return AuthConfig(
-      auth_scheme=OAuth2(
-          flows=OAuthFlows(
-              authorizationCode=OAuthFlowAuthorizationCode(
-                  authorizationUrl='https://accounts.google.com/o/oauth2/auth',
-                  tokenUrl='https://oauth2.googleapis.com/token',
-                  scopes={
-                      'https://www.googleapis.com/auth/calendar': (
-                          'See and edit your calendars'
-                      )
-                  },
-              )
-          )
-      ),
-      raw_auth_credential=AuthCredential(
-          auth_type=AuthCredentialTypes.OAUTH2,
-          oauth2=OAuth2Auth(
-              client_id=client_id,
-              client_secret='oauth_client_secret',
-          ),
-      ),
-  )
-
-
 def _actions_only_events(events: list[Event]) -> list[Event]:
   """Returns the content-less events, i.e. the actions-only ones."""
   return [event for event in events if event.content is None]
@@ -505,7 +472,9 @@ def test_all_long_running_parallel_batch_merges_into_content_less_event():
 
 
 def test_credential_request_from_a_none_returning_long_running_tool():
-  auth_config = _oauth_auth_config(client_id='oauth_client_id')
+  auth_config = AuthConfig(
+      auth_scheme=APIKey(**{'in': APIKeyIn.header, 'name': 'X-Key'})
+  )
   mock_model = testing_utils.MockModel.create(
       responses=[Part.from_function_call(name='call_external_api', args={})]
   )
@@ -560,6 +529,7 @@ def test_resumable_invocation_still_pauses_on_a_mutating_long_running_tool():
 
   events = runner.run('go')
 
+  # Drop the agent_state checkpoint tuples, keeping only the behavioral ones.
   behavioral_events = [
       event
       for event in testing_utils.simplify_resumable_app_events(events)
@@ -574,23 +544,14 @@ def test_resumable_invocation_still_pauses_on_a_mutating_long_running_tool():
   assert runner.session.state['job_status'] == 'pending'
 
 
-class _DeferredResponseTool(BaseTool):
-  """A tool that defers its response while mutating its actions."""
-
-  def __init__(self):
-    super().__init__(name='deferred_tool', description='Defers its response.')
-    self._defers_response = True
-
-  async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
-  ) -> Optional[dict[str, Any]]:
+@pytest.mark.asyncio
+async def test_defers_response_tool_still_produces_no_event():
+  def deferred_tool(tool_context: ToolContext) -> None:
     tool_context.state['deferred'] = 'pending'
     return None
 
-
-@pytest.mark.asyncio
-async def test_defers_response_tool_still_produces_no_event():
-  tool = _DeferredResponseTool()
+  tool = FunctionTool(func=deferred_tool)
+  tool._defers_response = True
   agent = Agent(
       name='root_agent',
       model=testing_utils.MockModel.create(responses=[]),
