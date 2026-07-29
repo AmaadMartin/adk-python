@@ -37,15 +37,7 @@ _ENV_VAR = "TEMPORARILY_DISABLE_PROTOBUF_VERSION_CHECK"
 def _run_in_subprocess(
     code: str, *, env_var_value: str | None
 ) -> subprocess.CompletedProcess[str]:
-  """Runs ``code`` in a child interpreter with ``_ENV_VAR`` preset.
-
-  Args:
-    code: Python source executed via ``python -c``.
-    env_var_value: Value to export for ``_ENV_VAR``, or ``None`` to unset it.
-
-  Returns:
-    The completed child process.
-  """
+  """Runs ``code`` in a child interpreter with ``_ENV_VAR`` preset."""
   env = os.environ.copy()
   if env_var_value is None:
     env.pop(_ENV_VAR, None)
@@ -64,8 +56,6 @@ def test_import_does_not_leak_protobuf_version_check_env():
   """An import that found the var unset leaves it unset."""
   code = textwrap.dedent(f"""
       import os
-
-      assert {_ENV_VAR!r} not in os.environ
 
       import google.adk.labs.antigravity  # noqa: F401
 
