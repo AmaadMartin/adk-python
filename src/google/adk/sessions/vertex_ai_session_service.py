@@ -37,6 +37,7 @@ from ..events.event import Event
 from ..events.event_actions import EventActions
 from ..events.event_actions import EventCompaction
 from ..utils.vertex_ai_utils import get_express_mode_api_key
+from ..utils.vertex_ai_utils import parse_agent_engine_resource_name
 from .base_session_service import BaseSessionService
 from .base_session_service import GetSessionConfig
 from .base_session_service import ListSessionsResponse
@@ -488,23 +489,21 @@ class VertexAiSessionService(BaseSessionService):
         await _do_append(config)
     return event
 
-  def _get_reasoning_engine_id(self, app_name: str):
+  def _get_reasoning_engine_id(self, app_name: str) -> str:
     if self._agent_engine_id:
       return self._agent_engine_id
 
     if app_name.isdigit():
       return app_name
 
-    pattern = r'^projects/([a-zA-Z0-9-_]+)/locations/([a-zA-Z0-9-_]+)/reasoningEngines/(\d+)$'
-    match = re.fullmatch(pattern, app_name)
-
-    if not match:
+    parsed = parse_agent_engine_resource_name(app_name)
+    if parsed is None:
       raise ValueError(
           f'App name {app_name} is not valid. It should either be the full'
           ' ReasoningEngine resource name, or the reasoning engine id.'
       )
 
-    return match.groups()[-1]
+    return parsed[-1]
 
   def _api_client_http_options_override(
       self,

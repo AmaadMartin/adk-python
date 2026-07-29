@@ -25,6 +25,7 @@ from typing import Optional
 from typing_extensions import override
 
 from ..agents.invocation_context import InvocationContext
+from ..utils.vertex_ai_utils import parse_agent_engine_resource_name
 from .base_code_executor import BaseCodeExecutor
 from .code_execution_utils import CodeExecutionInput
 from .code_execution_utils import CodeExecutionResult
@@ -74,7 +75,6 @@ class AgentEngineSandboxCodeExecutor(BaseCodeExecutor):
     super().__init__(**data)
     self._agent_engine_creation_lock = threading.Lock()
     sandbox_resource_name_pattern = r'^projects/([a-zA-Z0-9-_]+)/locations/([a-zA-Z0-9-_]+)/reasoningEngines/(\d+)/sandboxEnvironments/(\d+)$'
-    agent_engine_resource_name_pattern = r'^projects/([a-zA-Z0-9-_]+)/locations/([a-zA-Z0-9-_]+)/reasoningEngines/(\d+)$'
 
     # Case 1: sandbox_resource_name is provided.
     if sandbox_resource_name is not None:
@@ -94,12 +94,12 @@ class AgentEngineSandboxCodeExecutor(BaseCodeExecutor):
 
     # Case 3: Use the provided agent_engine_resource_name.
     else:
-      self._project_id, self._location = (
-          self._get_project_id_and_location_from_resource_name(
-              agent_engine_resource_name,
-              agent_engine_resource_name_pattern,
-          )
-      )
+      parsed = parse_agent_engine_resource_name(agent_engine_resource_name)
+      if parsed is None:
+        raise ValueError(
+            f'resource name {agent_engine_resource_name} is not valid.'
+        )
+      self._project_id, self._location = parsed[0], parsed[1]
       self.agent_engine_resource_name = agent_engine_resource_name
 
   @override

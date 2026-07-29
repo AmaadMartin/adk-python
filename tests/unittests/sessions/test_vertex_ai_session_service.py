@@ -683,6 +683,44 @@ async def test_get_session_returns_none_when_invalid_argument(
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures('mock_get_api_client')
+async def test_get_session_rejects_invalid_app_name():
+  """app_name must be a full resource name or a bare reasoning engine id."""
+  session_service = mock_vertex_ai_session_service()
+
+  with pytest.raises(ValueError, match='is not valid') as excinfo:
+    await session_service.get_session(
+        app_name='invalid-app-name', user_id='user', session_id='1'
+    )
+  assert (
+      'App name invalid-app-name is not valid. It should either be the full'
+      ' ReasoningEngine resource name, or the reasoning engine id.'
+      in str(excinfo.value)
+  )
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_get_session_accepts_full_resource_name_app_name(
+    mock_api_client_instance,
+):
+  """A full resource name app_name resolves to its reasoning engine id."""
+  session_service = mock_vertex_ai_session_service()
+
+  session = await session_service.get_session(
+      app_name='projects/123/locations/us-east4/reasoningEngines/123',
+      user_id='user',
+      session_id='1',
+  )
+
+  assert session is not None
+  assert session.id == '1'
+  mock_api_client_instance.agent_engines.sessions.get.assert_awaited_once_with(
+      name='reasoningEngines/123/sessions/1'
+  )
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
 @pytest.mark.parametrize('agent_engine_id', [None, '123'])
 async def test_get_empty_session(agent_engine_id):
   session_service = mock_vertex_ai_session_service(agent_engine_id)
