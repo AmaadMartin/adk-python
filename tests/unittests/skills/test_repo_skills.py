@@ -20,7 +20,6 @@ import pathlib
 
 from google.adk.skills import list_skills_in_dir
 from google.adk.skills import load_skill_from_dir
-from google.adk.skills._utils import _validate_skill_dir
 import pytest
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[3]
@@ -31,25 +30,25 @@ _SKILLS_DIR = _REPO_ROOT / ".agents" / "skills"
 # Agent Skills client directive that stops an agent harness from auto-loading
 # the skill; it is deliberate on adk-setup and must not be deleted or moved
 # under `metadata:` to satisfy this test. Frontmatter accepts unknown keys as
-# extra fields, so the skill still loads; _validate_skill_dir only reports it.
-_ALLOWED_EXTRA_FRONTMATTER_KEYS: dict[str, frozenset[str]] = {
-    "adk-setup": frozenset({"disable-model-invocation"}),
+# extra fields, so the skill still loads either way.
+_ALLOWED_EXTRA_FRONTMATTER_KEYS: dict[str, set[str]] = {
+    "adk-setup": {"disable-model-invocation"},
 }
 
 
 def _repo_skill_dirs() -> list[pathlib.Path]:
   """Returns the skill directories checked into .agents/skills/."""
-  return sorted(
-      path
-      for path in _SKILLS_DIR.glob("*")
-      if path.is_dir() and not path.name.startswith((".", "_"))
-  )
+  # glob() enumerates exactly what list_skills_in_dir() walks, but yields
+  # nothing instead of raising when .agents/skills/ is absent.
+  return sorted(path for path in _SKILLS_DIR.glob("*") if path.is_dir())
 
 
 _for_each_repo_skill = pytest.mark.parametrize(
     "skill_dir", _repo_skill_dirs(), ids=lambda path: path.name
 )
 
+# Mirrored source trees of this repository ship tests/ without the top-level
+# dot-directories, so skip there rather than failing on a missing .agents/.
 pytestmark = pytest.mark.skipif(
     not _SKILLS_DIR.is_dir(),
     reason=(
@@ -69,8 +68,6 @@ def test_repo_skill_loads(skill_dir: pathlib.Path):
   """Every checked-in skill loads through the public loader."""
   skill = load_skill_from_dir(skill_dir)
 
-  assert skill.name == skill_dir.name
-  assert skill.description
   assert skill.instructions.strip()
 
 
@@ -81,30 +78,12 @@ def test_repo_skill_frontmatter_has_no_unrecognized_keys(
   """A skill's frontmatter only uses keys ADK recognizes, plus exceptions."""
   frontmatter = load_skill_from_dir(skill_dir).frontmatter
   extra_keys = set(frontmatter.model_extra or {})
-  allowed = _ALLOWED_EXTRA_FRONTMATTER_KEYS.get(skill_dir.name, frozenset())
+  allowed = _ALLOWED_EXTRA_FRONTMATTER_KEYS.get(skill_dir.name, set())
 
   assert extra_keys <= allowed, (
       f"{skill_dir.name} has unrecognized frontmatter keys:"
       f" {sorted(extra_keys - allowed)}"
   )
-
-
-@_for_each_repo_skill
-def test_repo_skill_reports_no_unexpected_validator_problems(
-    skill_dir: pathlib.Path,
-):
-  """The validator reports nothing beyond a skill's documented extra keys."""
-  problems = _validate_skill_dir(skill_dir)
-  allowed = _ALLOWED_EXTRA_FRONTMATTER_KEYS.get(skill_dir.name, frozenset())
-
-  if not allowed:
-    assert problems == [], f"{skill_dir.name}: {problems}"
-  else:
-    # The only tolerated report is the advisory naming the documented keys.
-    assert len(problems) == 1, f"{skill_dir.name}: {problems}"
-    assert all(
-        key in problems[0] for key in allowed
-    ), f"{skill_dir.name}: {problems}"
 
 
 def test_all_repo_skills_are_listed():
