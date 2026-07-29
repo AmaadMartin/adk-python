@@ -353,7 +353,14 @@ def generate_auth_event(
   return build_auth_request_event(
       invocation_context,
       function_response_event.actions.requested_auth_configs,
-      role=function_response_event.content.role,
+      # A long-running tool can request credentials while returning no
+      # response, in which case its event carries actions but no content.
+      # 'user' is the role every tool response content is built with.
+      role=(
+          function_response_event.content.role
+          if function_response_event.content
+          else 'user'
+      ),
   )
 
 
@@ -640,6 +647,16 @@ async def _execute_single_function_call_async(
       # wrapper for task delegation synthesizes the FR after the
       # sub-agent completes).  Either way, skip the auto-FR build when
       # the tool returned nothing.
+      #
+      # A long-running tool may still have mutated `tool_context.actions` on
+      # its way out (e.g. `get_user_choice` sets `skip_summarization`). Those
+      # mutations only survive by riding on an event, so emit a content-less
+      # actions-only event rather than dropping them. `_defers_response` tools
+      # are excluded: their function call event is not marked long-running, so
+      # an actions-only event would make `is_final_response()` true and
+      # suppress the model turn that the deferred path still needs.
+      if tool.is_long_running and tool_context.actions != EventActions():
+        return _build_actions_only_event(tool_context, invocation_context)
       return None
 
     detected_error_type = _detect_error_type_for_telemetry(
@@ -1238,6 +1255,32 @@ async def __call_tool_async(
   return await tool.run_async(args=args, tool_context=tool_context)
 
 
+def _build_actions_only_event(
+    tool_context: ToolContext,
+    invocation_context: InvocationContext,
+) -> Event:
+  """Builds a content-less event that carries only the tool's actions.
+
+  A long-running tool can mutate `tool_context.actions` (e.g. write session
+  state or set `skip_summarization`) while returning no response. Actions are
+  only ever persisted by attaching them to an event, so this builds an event
+  with no content whose sole payload is those actions.
+
+  Args:
+    tool_context: The tool context holding the actions to carry.
+    invocation_context: The invocation context.
+
+  Returns:
+    An event with no content and the tool's actions.
+  """
+  return Event(
+      invocation_id=invocation_context.invocation_id,
+      author=invocation_context.agent.name,
+      branch=invocation_context.branch,
+      actions=tool_context.actions,
+  )
+
+
 def __build_response_event(
     tool: BaseTool,
     function_result: dict[str, object],
@@ -1374,7 +1417,15 @@ def merge_parallel_function_response_events(
       invocation_id=base_event.invocation_id,
       author=base_event.author,
       branch=base_event.branch,
-      content=types.Content(role='user', parts=merged_parts),
+      # All merged events may be actions-only (content-less), in which case
+      # the merged event must stay content-less too: an empty-but-present
+      # content shadows the real function response for consumers that scan
+      # for the last event with content.
+      content=(
+          types.Content(role='user', parts=merged_parts)
+          if merged_parts
+          else None
+      ),
       actions=merged_actions,  # Aggregated from all parallel events
       live_session_id=base_event.live_session_id,
   )
