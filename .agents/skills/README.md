@@ -20,7 +20,7 @@ the file format is shared.
 | [adk-git](adk-git/SKILL.md) | Any git operation (commit, push, rebase, branch, PR, cherry-pick). Provides the commit message format and conventions. |
 | [adk-review](adk-review/SKILL.md) | Reviewing local changes for errors, style compliance, unintended outcomes, and the doc/test/sample updates they imply. |
 | [adk-sample-creator](adk-sample-creator/SKILL.md) | Authoring a new sample for this repository, including examples under `contributing/`. |
-| [adk-setup](adk-setup/SKILL.md) | Setting up a local development environment: dependencies, pre-commit hooks, and the commands to verify them. |
+| [adk-setup](adk-setup/SKILL.md) | Setting up a local development environment, installing dependencies, or getting ready to contribute. |
 | [adk-style](adk-style/SKILL.md) | Writing or reviewing Python here — imports, typing, Pydantic patterns, formatting, logging, async, file organization, testing rules. |
 | [adk-unit-design](adk-unit-design/SKILL.md) | Creating or updating a code unit design document. |
 | [adk-unit-guide](adk-unit-guide/SKILL.md) | Creating a detailed code unit guide. |
@@ -36,10 +36,9 @@ the file format is shared.
   assets/         # optional: templates, schemas, static material
 ```
 
-Those three are the only subdirectories the loader recognizes. Each is read
-recursively and keyed by path relative to it, so `references/interfaces/event.md`
-is loaded under the key `interfaces/event.md`. `__pycache__` entries and
-non-UTF-8 files never make it in.
+`references/`, `scripts/`, and `assets/` are the only subdirectories the loader
+reads. Each is read recursively and keyed by path relative to it, so
+`references/interfaces/event.md` is loaded under the key `interfaces/event.md`.
 
 ## Adding a new skill
 
@@ -73,7 +72,5 @@ non-UTF-8 files never make it in.
 ## Known exceptions
 
 [`adk-setup/SKILL.md`](adk-setup/SKILL.md) sets `disable-model-invocation: true`,
-which strict validation reports as an unknown field. It loads fine — `Frontmatter`
-accepts extra keys and ADK ignores this one — and it stays because agent runtimes
-outside ADK honor it to keep the setup skill from being auto-invoked. It is the
-only such key in this directory; do not add a second.
+which is outside the allowlist. ADK ignores it and loads the skill anyway; it
+stays for the non-ADK runtimes that honor it. Do not copy it into new skills.

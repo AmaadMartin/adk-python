@@ -5,10 +5,6 @@ description: Port a feature, fix, or test from the TypeScript SDK (adk-js) into 
 
 # Porting adk-js to adk-python
 
-## Scope
-
-The `adk-js` → `adk-python` direction only.
-
 ## Before you start
 
 1. Locate the source file in `adk-js` and read its `*_test.ts` first — the
@@ -26,12 +22,9 @@ The `adk-js` → `adk-python` direction only.
 | `core/src/<area>/<name>.ts` | `src/google/adk/<area>/<name>.py` |
 | `core/test/<area>/<name>_test.ts` | `tests/unittests/<area>/test_<name>.py` |
 
-Both repositories already use `snake_case` file names, so usually only the
-extension and the position of the test marker change. Worked pair to diff for
-yourself: `core/src/tools/function_tool.ts` and
-`core/test/tools/function_tool_test.ts` against
-`src/google/adk/tools/function_tool.py` and
-`tests/unittests/tools/test_function_tool.py`.
+Both repositories already use `snake_case` file names. Worked pair to diff for
+yourself: `core/src/tools/function_tool.ts` →
+`src/google/adk/tools/function_tool.py`, with tests alongside in each.
 
 Areas that do not map one-to-one:
 
@@ -50,7 +43,6 @@ need one, stop and ask before inventing a layout.
 
 | TypeScript (adk-js) | Python (adk-python) |
 | --- | --- |
-| `camelCase` members (`runAsync`, `toolContext`), `Promise<T>`, `undefined`/`null` | `snake_case` (`run_async`, `tool_context`), `async def ... -> T`, `None` |
 | `interface` or `zod` schema | Pydantic v2 model — see [adk-style pydantic](../adk-style/references/pydantic.md) |
 | destructured options object (`{toolContext, llmRequest}`) | keyword-only arguments (`*, tool_context, llm_request`) — see [adk-style typing](../adk-style/references/typing.md) |
 | `override` keyword | `@override` from `typing_extensions` |
@@ -74,13 +66,9 @@ rather than a bare `Exception`. The rest of the rules are in
 
 ## Verify
 
-Environment setup is in [adk-setup](../adk-setup/SKILL.md).
-
-```bash
-pytest tests/unittests/<area> -q   # while iterating, only the area you touched
-pre-commit run --all-files
-pytest tests/unittests -n auto     # full suite, before sending the PR
-```
+`pytest tests/unittests/<area> -q` while iterating — only the area you touched.
+Environment setup and the pre-PR commands are in
+[adk-setup](../adk-setup/SKILL.md).
 
 ## Do not
 
