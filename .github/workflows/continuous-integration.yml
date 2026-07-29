@@ -144,14 +144,15 @@ jobs:
       - name: Compare and Fail on New Errors
         run: |
           # The last fail-open signature, and the one no exit-status check can
-          # catch because mypy exits 0 legitimately: zero errors on the PR
-          # branch against a large baseline means the PR run measured the wrong
-          # thing (e.g. the .mypy_cache the baseline run left in the workspace)
-          # far more plausibly than that it fixed every pre-existing error.
-          # Trade-off: misfires on a PR that genuinely clears the whole
-          # baseline. Once the baseline reaches zero the guard is vacuous.
+          # catch: mypy exits 0 with "Success" when the PR narrows what gets
+          # checked. Generate Baseline cherry-picks pyproject.toml alone, so a
+          # config that outranks it in mypy's precedence order -- a PR-added
+          # mypy.ini or setup.cfg -- silences the PR run only and leaves the
+          # baseline full. That is likelier than a PR fixing every error.
+          # Trade-off: misfires on a PR that genuinely clears the baseline;
+          # once the baseline reaches zero the guard is vacuous.
           if [ -s baseline_errors.txt ] && [ ! -s pr_errors.txt ]; then
-            echo "::error::mypy reported 0 errors on the PR branch but $(wc -l < baseline_errors.txt) on the base branch. The PR run almost certainly did not type-check anything."
+            echo "::error::mypy reported 0 errors on the PR branch but $(wc -l < baseline_errors.txt) on the base branch. The PR run did not check the same tree -- look for a mypy.ini/setup.cfg or a source move that narrows what mypy sees."
             exit 1
           fi
 
