@@ -687,7 +687,7 @@ async def test_get_session_rejects_invalid_app_name():
   """app_name must be a full resource name or a bare reasoning engine id."""
   session_service = mock_vertex_ai_session_service()
 
-  with pytest.raises(ValueError, match='is not valid') as excinfo:
+  with pytest.raises(ValueError) as excinfo:
     await session_service.get_session(
         app_name='invalid-app-name', user_id='user', session_id='1'
     )

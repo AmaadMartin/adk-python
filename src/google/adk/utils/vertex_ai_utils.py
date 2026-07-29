@@ -35,16 +35,12 @@ _AGENT_ENGINE_RESOURCE_NAME_PATTERN = re.compile(
 def parse_agent_engine_resource_name(
     resource_name: str,
 ) -> Optional[tuple[str, str, str]]:
-  """Parses an Agent Engine resource name into its components.
-
-  Args:
-    resource_name: A resource name of the form
-      ``projects/{project}/locations/{location}/reasoningEngines/{id}``.
+  """Parses `projects/{project}/locations/{location}/reasoningEngines/{id}`.
 
   Returns:
     A ``(project, location, reasoning_engine_id)`` tuple, or ``None`` if
-    ``resource_name`` does not match the expected format. Callers are
-    responsible for raising their own error on ``None``.
+    ``resource_name`` does not match. This never raises, so that each caller
+    keeps ownership of its own error message.
   """
   match = _AGENT_ENGINE_RESOURCE_NAME_PATTERN.fullmatch(resource_name)
   if match is None:
