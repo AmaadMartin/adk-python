@@ -22,9 +22,7 @@ description: Port a feature, fix, or test from the TypeScript SDK (adk-js) into 
 | `core/src/<area>/<name>.ts` | `src/google/adk/<area>/<name>.py` |
 | `core/test/<area>/<name>_test.ts` | `tests/unittests/<area>/test_<name>.py` |
 
-Both repositories already use `snake_case` file names. Worked pair to diff for
-yourself: `core/src/tools/function_tool.ts` →
-`src/google/adk/tools/function_tool.py`, with tests alongside in each.
+Worked pair to diff: `core/src/tools/function_tool.ts` → `src/google/adk/tools/function_tool.py`.
 
 Areas that do not map one-to-one:
 
@@ -52,9 +50,8 @@ need one, stop and ask before inventing a layout.
 | `/** @license */` JSDoc header | the header block in [adk-style file organization](../adk-style/references/file-organization.md) |
 | camelCase JSON on the wire | keep it: inherit `SerializedBaseModel` from `google.adk.utils._serialized_base_model` |
 
-Match the *behavior and the tests*, not the code shape: write the Python a Python
-reader expects, not a transliteration. And do not add a third-party dependency
-just because the TypeScript side has one.
+Write the Python a Python reader expects, not a transliteration — and do not add
+a third-party dependency just because the TypeScript side has one.
 
 ## Tests
 

@@ -53,9 +53,12 @@ reads. Each is read recursively and keyed by path relative to it, so
    [adk-architecture](adk-architecture/SKILL.md) and
    [adk-style](adk-style/SKILL.md) do, works well.
 4. Allowed frontmatter keys are `name`, `description`, `license`,
-   `compatibility`, `allowed-tools` (or `allowed_tools`), and `metadata`.
-   Anything else is outside the allowlist in
-   [`src/google/adk/skills/_utils.py`](../../src/google/adk/skills/_utils.py).
+   `compatibility`, `allowed-tools` (or `allowed_tools`), and `metadata`. Other
+   keys still load — `Frontmatter` sets `extra="allow"`, which is what
+   `adk-setup`'s `disable-model-invocation` relies on — but they are outside the
+   allowlist in
+   [`src/google/adk/skills/_utils.py`](../../src/google/adk/skills/_utils.py), so
+   do not add new ones.
 5. Keep `SKILL.md` short: its body is injected into the agent's prompt every
    time the skill triggers. Put long material in `references/*.md` and link to
    it from the body — [adk-style](adk-style/SKILL.md) and
@@ -68,9 +71,3 @@ reads. Each is read recursively and keyed by path relative to it, so
    ```bash
    python -c "from google.adk.skills import list_skills_in_dir; print(sorted(list_skills_in_dir('.agents/skills')))"
    ```
-
-## Known exceptions
-
-[`adk-setup/SKILL.md`](adk-setup/SKILL.md) sets `disable-model-invocation: true`,
-which is outside the allowlist. ADK ignores it and loads the skill anyway; it
-stays for the non-ADK runtimes that honor it. Do not copy it into new skills.
