@@ -36,11 +36,10 @@ the file format is shared.
   assets/         # optional: templates, schemas, static material
 ```
 
-`references/`, `scripts/`, and `assets/` are the only subdirectories the loader
-recognizes. Each is read recursively and keyed by path relative to that
-subdirectory — `references/interfaces/event.md` is loaded under the key
-`interfaces/event.md` — and `__pycache__` entries and non-UTF-8 files are
-skipped.
+Those three are the only subdirectories the loader recognizes. Each is read
+recursively and keyed by path relative to it, so `references/interfaces/event.md`
+is loaded under the key `interfaces/event.md`. `__pycache__` entries and
+non-UTF-8 files never make it in.
 
 ## Adding a new skill
 
@@ -74,8 +73,7 @@ skipped.
 ## Known exceptions
 
 [`adk-setup/SKILL.md`](adk-setup/SKILL.md) sets `disable-model-invocation: true`,
-which is not in the frontmatter allowlist above, so strict validation of that
-directory reports it as an unknown field. It is harmless at load time —
-`Frontmatter` accepts extra keys and ADK ignores this one — and it is kept
-because agent runtimes outside ADK that honor the key use it to stop the
-environment-setup skill from being auto-invoked. Do not copy it into new skills.
+which strict validation reports as an unknown field. It loads fine — `Frontmatter`
+accepts extra keys and ADK ignores this one — and it stays because agent runtimes
+outside ADK honor it to keep the setup skill from being auto-invoked. It is the
+only such key in this directory; do not add a second.

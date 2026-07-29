@@ -7,8 +7,7 @@ description: Port a feature, fix, or test from the TypeScript SDK (adk-js) into 
 
 ## Scope
 
-The `adk-js` → `adk-python` direction only. Porting Python to TypeScript is a
-separate job in the other repository.
+The `adk-js` → `adk-python` direction only.
 
 ## Before you start
 
@@ -28,9 +27,10 @@ separate job in the other repository.
 | `core/test/<area>/<name>_test.ts` | `tests/unittests/<area>/test_<name>.py` |
 
 Both repositories already use `snake_case` file names, so usually only the
-extension and the test-file prefix change — for example
-`core/src/tools/function_tool.ts` → `src/google/adk/tools/function_tool.py` and
-`core/test/tools/function_tool_test.ts` →
+extension and the position of the test marker change. Worked pair to diff for
+yourself: `core/src/tools/function_tool.ts` and
+`core/test/tools/function_tool_test.ts` against
+`src/google/adk/tools/function_tool.py` and
 `tests/unittests/tools/test_function_tool.py`.
 
 Areas that do not map one-to-one:
@@ -50,28 +50,19 @@ need one, stop and ask before inventing a layout.
 
 | TypeScript (adk-js) | Python (adk-python) |
 | --- | --- |
-| `camelCase` members and parameters (`runAsync`, `toolContext`) | `snake_case` (`run_async`, `tool_context`) |
+| `camelCase` members (`runAsync`, `toolContext`), `Promise<T>`, `undefined`/`null` | `snake_case` (`run_async`, `tool_context`), `async def ... -> T`, `None` |
 | `interface` or `zod` schema | Pydantic v2 model — see [adk-style pydantic](../adk-style/references/pydantic.md) |
 | destructured options object (`{toolContext, llmRequest}`) | keyword-only arguments (`*, tool_context, llm_request`) — see [adk-style typing](../adk-style/references/typing.md) |
 | `override` keyword | `@override` from `typing_extensions` |
-| `Promise<T>` | `async def ... -> T` |
 | `AsyncGenerator<Event>` and `for await` | `AsyncGenerator[Event, None]` and `async for`; close the generator with `Aclosing` from `..utils.context_utils` |
-| `throw new Error(...)` | a typed error from `src/google/adk/errors/`: `ToolExecutionError` (with a `ToolErrorType`), `NotFoundError`, `InputValidationError`, `AlreadyExistsError`, `SessionNotFoundError`. Use `raise ... from err` when re-raising |
+| `throw new Error(...)` | an existing typed error from `src/google/adk/errors/` — `ToolExecutionError` (with a `ToolErrorType`), `NotFoundError`, `InputValidationError`, `AlreadyExistsError`, `SessionNotFoundError` — never a new hierarchy. Use `raise ... from err` when re-raising |
 | `import {X} from './y.js'` | `from .y import X`, one symbol per line, isort-ordered |
-| `/** @license */` JSDoc header | Apache header (added by `addlicense`) plus `from __future__ import annotations` |
-| `undefined` / `null` | `None`, typed `Optional[X]` |
+| `/** @license */` JSDoc header | the header block in [adk-style file organization](../adk-style/references/file-organization.md) |
 | camelCase JSON on the wire | keep it: inherit `SerializedBaseModel` from `google.adk.utils._serialized_base_model` |
 
-Worked example to diff for yourself: `core/src/tools/function_tool.ts` against
-`src/google/adk/tools/function_tool.py`. One pair of files shows the
-options-object → keyword-only, `override` → `@override`, `throw new Error` →
-typed error, and import-style conversions at once, and both sides have tests.
-
-Two standing rules:
-
-- Match the *behavior and the tests*, not the code shape. Write the Python a
-  Python reader expects, not a transliteration of the TypeScript.
-- Do not add a third-party dependency just because the TypeScript side has one.
+Match the *behavior and the tests*, not the code shape: write the Python a Python
+reader expects, not a transliteration. And do not add a third-party dependency
+just because the TypeScript side has one.
 
 ## Tests
 
@@ -86,8 +77,7 @@ rather than a bare `Exception`. The rest of the rules are in
 Environment setup is in [adk-setup](../adk-setup/SKILL.md).
 
 ```bash
-source .venv/bin/activate
-pytest tests/unittests/<area> -q   # only the area you touched
+pytest tests/unittests/<area> -q   # while iterating, only the area you touched
 pre-commit run --all-files
 pytest tests/unittests -n auto     # full suite, before sending the PR
 ```
@@ -96,7 +86,5 @@ pytest tests/unittests -n auto     # full suite, before sending the PR
 
 - Change `adk-js` in the same pull request. Queue the reverse direction as its
   own task.
-- Transliterate TypeScript into Python.
-- Invent a parallel error hierarchy instead of using `src/google/adk/errors/`.
 - Port private, underscore-prefixed internals unless the public behavior you are
   matching requires them.
