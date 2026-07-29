@@ -682,7 +682,6 @@ async def test_get_session_returns_none_when_invalid_argument(
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures('mock_get_api_client')
 async def test_get_session_rejects_invalid_app_name():
   """app_name must be a full resource name or a bare reasoning engine id."""
   session_service = mock_vertex_ai_session_service()
@@ -706,8 +705,10 @@ async def test_get_session_accepts_full_resource_name_app_name(
   """A full resource name app_name resolves to its reasoning engine id."""
   session_service = mock_vertex_ai_session_service()
 
+  # The project and the engine id differ so that the assertion below fails if
+  # the wrong capture group is returned.
   session = await session_service.get_session(
-      app_name='projects/123/locations/us-east4/reasoningEngines/123',
+      app_name='projects/proj-1/locations/us-east4/reasoningEngines/456',
       user_id='user',
       session_id='1',
   )
@@ -715,7 +716,7 @@ async def test_get_session_accepts_full_resource_name_app_name(
   assert session is not None
   assert session.id == '1'
   mock_api_client_instance.agent_engines.sessions.get.assert_awaited_once_with(
-      name='reasoningEngines/123/sessions/1'
+      name='reasoningEngines/456/sessions/1'
   )
 
 
