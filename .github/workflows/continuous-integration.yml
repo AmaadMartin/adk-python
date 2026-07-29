@@ -84,9 +84,36 @@ jobs:
           source .venv/bin/activate
           uv sync --all-extras
 
-          # Run mypy, filter for errors only, remove line numbers, and sort
-          # We ignore exit code (|| true) because we expect errors on baseline
-          uv run mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > baseline_errors.txt || true
+          # Run mypy and capture its raw output and real exit status. Piping
+          # mypy straight into grep discards the status: a pipeline reports
+          # its LAST command's status (sort, always 0), so a mypy that died
+          # would be indistinguishable from a clean run. mypy exits 0 when
+          # clean, 1 when it reports type errors (expected here) and >= 2 on a
+          # fatal, usage or internal error; a signal such as an OOM kill
+          # surfaces as 128+signum and lands in the same bucket.
+          MYPY_STATUS=0
+          uv run mypy . > mypy_baseline_raw.txt || MYPY_STATUS=$?
+          if [ "$MYPY_STATUS" -ne 0 ] && [ "$MYPY_STATUS" -ne 1 ]; then
+            echo "::error::mypy failed to run on $TARGET_BRANCH (exit $MYPY_STATUS); the baseline is not trustworthy."
+            tail -n 50 mypy_baseline_raw.txt
+            exit 1
+          fi
+
+          # Filter for errors only, remove line numbers, and sort. No '|| true'
+          # is needed: the pipeline reports sort's status, which is 0 even when
+          # grep matches nothing. Do NOT add 'set -o pipefail' to this step --
+          # it would make a clean tree (grep exit 1) fail the job.
+          grep "error:" mypy_baseline_raw.txt | sed 's/:\([0-9]\+\):/::/g' | sort > baseline_errors.txt
+
+          # mypy only exits 1 when it emitted at least one non-note message, so
+          # an empty error list here means the output was not mypy's (e.g. uv
+          # itself failed with status 1 before mypy started).
+          if [ "$MYPY_STATUS" -eq 1 ] && [ ! -s baseline_errors.txt ]; then
+            echo "::error::mypy exited 1 (errors reported) on $TARGET_BRANCH but no 'error:' lines were captured."
+            tail -n 50 mypy_baseline_raw.txt
+            exit 1
+          fi
+
           echo "Found $(wc -l < baseline_errors.txt) errors on $TARGET_BRANCH."
 
       - name: Check PR Branch
@@ -98,12 +125,40 @@ jobs:
           source .venv/bin/activate
           uv sync --all-extras
 
-          # Run mypy on PR code, apply same processing
-          uv run mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > pr_errors.txt || true
+          # Run mypy on PR code, apply the same capture-then-filter treatment.
+          # See the Generate Baseline step for why the status must be read from
+          # an un-piped invocation.
+          MYPY_STATUS=0
+          uv run mypy . > mypy_pr_raw.txt || MYPY_STATUS=$?
+          if [ "$MYPY_STATUS" -ne 0 ] && [ "$MYPY_STATUS" -ne 1 ]; then
+            echo "::error::mypy failed to run on the PR branch (exit $MYPY_STATUS); type checking did not complete."
+            tail -n 50 mypy_pr_raw.txt
+            exit 1
+          fi
+
+          grep "error:" mypy_pr_raw.txt | sed 's/:\([0-9]\+\):/::/g' | sort > pr_errors.txt
+
+          if [ "$MYPY_STATUS" -eq 1 ] && [ ! -s pr_errors.txt ]; then
+            echo "::error::mypy exited 1 (errors reported) on the PR branch but no 'error:' lines were captured."
+            tail -n 50 mypy_pr_raw.txt
+            exit 1
+          fi
+
           echo "Found $(wc -l < pr_errors.txt) errors on PR branch."
 
       - name: Compare and Fail on New Errors
         run: |
+          # Zero errors on the PR branch against a non-empty baseline means the
+          # PR run checked nothing (wrong tree, wrong config, mypy exited 0
+          # having discovered no files) far more plausibly than it means the PR
+          # fixed every pre-existing error. Fail instead of reporting success.
+          # Trade-off: this would misfire on a PR that genuinely clears the
+          # entire baseline. Once the baseline reaches zero the guard is vacuous.
+          if [ -s baseline_errors.txt ] && [ ! -s pr_errors.txt ]; then
+            echo "::error::mypy reported 0 errors on the PR branch but $(wc -l < baseline_errors.txt) on the base branch. The PR run almost certainly did not type-check anything."
+            exit 1
+          fi
+
           # 'comm -13' suppresses unique lines in file1 (baseline) and common lines,
           # leaving only lines unique to file2 (PR) -> The new errors.
           comm -13 baseline_errors.txt pr_errors.txt > new_errors.txt
