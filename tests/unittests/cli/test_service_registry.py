@@ -118,6 +118,107 @@ def test_create_session_service_agentengine_full(registry, mock_services):
   )
 
 
+def test_create_session_service_agentengine_full_non_numeric_id(
+    registry, mock_services
+):
+  """Non-numeric engine ids are accepted, unlike the numeric-only regex."""
+  uri = "agentengine://projects/p/locations/l/reasoningEngines/my-engine"
+  registry.create_session_service(uri, agents_dir="/path/to/agents")
+  mock_services["vertex_session"].assert_called_once_with(
+      project="p", location="l", agent_engine_id="my-engine"
+  )
+
+
+def test_create_session_service_agentengine_full_punctuated_project(
+    registry, mock_services
+):
+  uri = (
+      "agentengine://projects/my_proj-1/locations/us-central1/reasoningEngines/"
+      "abc"
+  )
+  registry.create_session_service(uri, agents_dir="/path/to/agents")
+  mock_services["vertex_session"].assert_called_once_with(
+      project="my_proj-1", location="us-central1", agent_engine_id="abc"
+  )
+
+
+@patch("google.adk.cli.utils.envs.load_dotenv_for_agent")
+def test_create_session_service_agentengine_short_non_numeric_id(
+    mock_load_dotenv, registry, mock_services, monkeypatch
+):
+  """Short-form ids are passed through without any character validation."""
+  monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+  monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "us-central1")
+  registry.create_session_service(
+      "agentengine://my-engine", agents_dir="/path/to/agents"
+  )
+  mock_services["vertex_session"].assert_called_once_with(
+      project="test-project",
+      location="us-central1",
+      agent_engine_id="my-engine",
+  )
+  mock_load_dotenv.assert_called_once_with("", "/path/to/agents")
+
+
+@pytest.mark.parametrize(
+    "uri",
+    [
+        "agentengine://projects/p/locations/l/reasoningEngines/123/extra",
+        "agentengine://projects/p/locations/l",
+        "agentengine://projects/p/regions/l/reasoningEngines/123",
+        "agentengine://foo/p/locations/l/reasoningEngines/123",
+    ],
+)
+def test_create_session_service_agentengine_malformed(
+    uri, registry, mock_services
+):
+  with pytest.raises(ValueError, match="mal-formatted"):
+    registry.create_session_service(uri, agents_dir="/path/to/agents")
+  mock_services["vertex_session"].assert_not_called()
+
+
+def test_create_session_service_agentengine_empty(registry, mock_services):
+  with pytest.raises(ValueError, match="cannot be empty"):
+    registry.create_session_service(
+        "agentengine://", agents_dir="/path/to/agents"
+    )
+  mock_services["vertex_session"].assert_not_called()
+
+
+def test_create_session_service_agentengine_short_requires_agents_dir(
+    registry, mock_services
+):
+  with pytest.raises(ValueError, match="agents_dir must be provided"):
+    registry.create_session_service("agentengine://123")
+  mock_services["vertex_session"].assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "gcp_env",
+    [
+        {},
+        {"GOOGLE_CLOUD_PROJECT": "test-project"},
+        {"GOOGLE_CLOUD_LOCATION": "us-central1"},
+    ],
+)
+@patch("google.adk.cli.utils.envs.load_dotenv_for_agent")
+def test_create_session_service_agentengine_short_requires_gcp_env(
+    mock_load_dotenv, gcp_env, registry, mock_services, monkeypatch
+):
+  for name in ("GOOGLE_CLOUD_PROJECT", "GOOGLE_CLOUD_LOCATION"):
+    monkeypatch.delenv(name, raising=False)
+  for name, value in gcp_env.items():
+    monkeypatch.setenv(name, value)
+
+  with pytest.raises(
+      ValueError, match="GOOGLE_CLOUD_PROJECT or GOOGLE_CLOUD_LOCATION not set"
+  ):
+    registry.create_session_service(
+        "agentengine://123", agents_dir="/path/to/agents"
+    )
+  mock_services["vertex_session"].assert_not_called()
+
+
 # Artifact Service Tests
 def test_create_artifact_service_gcs(registry, mock_services):
   registry.create_artifact_service(
@@ -193,6 +294,17 @@ def test_create_memory_service_agentengine_full(registry, mock_services):
   registry.create_memory_service(uri, agents_dir="/path/to/agents")
   mock_services["agentengine_memory"].assert_called_once_with(
       project="p", location="l", agent_engine_id="456"
+  )
+
+
+def test_create_memory_service_agentengine_full_non_numeric_id(
+    registry, mock_services
+):
+  """Non-numeric engine ids are accepted, unlike the numeric-only regex."""
+  uri = "agentengine://projects/p/locations/l/reasoningEngines/my-engine"
+  registry.create_memory_service(uri, agents_dir="/path/to/agents")
+  mock_services["agentengine_memory"].assert_called_once_with(
+      project="p", location="l", agent_engine_id="my-engine"
   )
 
 
