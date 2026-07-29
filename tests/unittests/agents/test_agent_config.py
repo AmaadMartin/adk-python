@@ -499,3 +499,28 @@ def test_load_config_from_path_blocks_args_when_enforced(tmp_path: Path):
     assert "Blocked key 'args' found" in str(exc_info.value)
   finally:
     config_agent_utils._set_enforce_yaml_key_denylist(False)
+
+
+def test_check_yaml_bytes_rejects_blocked_key_in_second_document():
+  """The walker descends into later documents and into list entries."""
+  content = (
+      b"name: first\n"
+      b"---\n"
+      b"name: second\n"
+      b"tools:\n"
+      b"  - name: demo.tools.my_tool\n"
+      b"    args:\n"
+      b"      key: value\n"
+  )
+
+  with pytest.raises(ValueError, match="Blocked key 'args' found"):
+    config_agent_utils._check_yaml_bytes_for_blocked_keys(
+        content, "demo/root_agent.yaml"
+    )
+
+
+def test_check_yaml_bytes_rejects_invalid_yaml():
+  with pytest.raises(ValueError, match="Invalid YAML in"):
+    config_agent_utils._check_yaml_bytes_for_blocked_keys(
+        b"name: [unclosed\n", "demo/root_agent.yaml"
+    )

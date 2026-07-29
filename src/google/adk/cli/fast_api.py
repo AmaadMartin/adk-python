@@ -49,6 +49,7 @@ from starlette.concurrency import run_in_threadpool
 from starlette.types import Lifespan
 from watchdog.observers import Observer
 
+from ..agents import config_agent_utils
 from ..auth.credential_service.in_memory_credential_service import InMemoryCredentialService
 from ..runners import Runner
 from ..telemetry._agent_engine import get_propagated_context
@@ -112,8 +113,6 @@ def _register_builder_endpoints(app: FastAPI, web: bool, agents_dir: str):
 
   import shutil
 
-  import yaml
-
   agents_base_path = (Path.cwd() / agents_dir).resolve()
 
   def _get_app_root(app_name: str) -> Path:
@@ -133,31 +132,6 @@ def _register_builder_endpoints(app: FastAPI, web: bool, agents_dir: str):
     return any(part == ".." for part in path.split("/"))
 
   _ALLOWED_EXTENSIONS = frozenset({".yaml", ".yml"})
-
-  _BLOCKED_YAML_KEYS = frozenset({"args"})
-
-  def _check_yaml_for_blocked_keys(content: bytes, filename: str) -> None:
-    try:
-      docs = list(yaml.safe_load_all(content))
-    except yaml.YAMLError as exc:
-      raise ValueError(f"Invalid YAML in {filename!r}: {exc}") from exc
-
-    def _walk(node: Any) -> None:
-      if isinstance(node, dict):
-        for key, value in node.items():
-          if key in _BLOCKED_YAML_KEYS:
-            raise ValueError(
-                f"Blocked key {key!r} found in {filename!r}. "
-                f"The '{key}' field is not allowed in builder uploads "
-                "because it can execute arbitrary code."
-            )
-          _walk(value)
-      elif isinstance(node, list):
-        for item in node:
-          _walk(item)
-
-    for doc in docs:
-      _walk(doc)
 
   def _parse_upload_filename(filename: Optional[str]) -> tuple[str, str]:
     if not filename:
@@ -314,7 +288,9 @@ def _register_builder_endpoints(app: FastAPI, web: bool, agents_dir: str):
       app_name = next(iter(app_names))
 
       for rel_path, content in uploads:
-        _check_yaml_for_blocked_keys(content, f"{app_name}/{rel_path}")
+        config_agent_utils._check_yaml_bytes_for_blocked_keys(
+            content, f"{app_name}/{rel_path}"
+        )
 
       if tmp:
         app_root = _get_app_root(app_name)
@@ -488,8 +464,6 @@ def get_fast_api_app(
 
   # Enable the YAML key denylist for config loads if the web UI is enabled.
   if web:
-    from ..agents import config_agent_utils
-
     config_agent_utils._set_enforce_yaml_key_denylist(True)
 
   # Detect single agent mode
