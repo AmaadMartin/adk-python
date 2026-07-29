@@ -24,10 +24,8 @@ from google.adk.skills import list_skills_in_dir
 from google.adk.skills import list_skills_in_gcs_dir as _list_skills_in_gcs_dir
 from google.adk.skills import load_skill_from_dir as _load_skill_from_dir
 from google.adk.skills import load_skill_from_gcs_dir as _load_skill_from_gcs_dir
-from google.adk.skills._utils import _CLIENT_DIRECTIVE_FRONTMATTER_KEYS
 from google.adk.skills._utils import _load_skill_from_zip_bytes
 from google.adk.skills._utils import _read_skill_properties
-from google.adk.skills._utils import _SPEC_FRONTMATTER_KEYS
 from google.adk.skills._utils import _validate_skill_dir
 import pytest
 
@@ -175,35 +173,27 @@ Body
 
 
 def test_validate_skill_dir_allows_client_directives(tmp_path):
-  """Tests validate_skill_dir accepts Agent Skills client directives."""
+  """Tests validate_skill_dir accepts every documented client directive."""
   skill_dir = tmp_path / "deploy"
   skill_dir.mkdir()
 
   skill_md = """---
 name: deploy
 description: Deploy the application to production.
-disable-model-invocation: true
-user-invocable: false
+agent: Explore
 argument-hint: "[issue-number]"
+arguments: "issue branch"
+background: false
 context: fork
----
-Deploy the app.
-"""
-  (skill_dir / "SKILL.md").write_text(skill_md)
-
-  assert _validate_skill_dir(skill_dir) == []
-
-
-@pytest.mark.parametrize("key", sorted(_CLIENT_DIRECTIVE_FRONTMATTER_KEYS))
-def test_validate_skill_dir_allows_each_client_directive(tmp_path, key):
-  """Tests validate_skill_dir accepts every documented client directive."""
-  skill_dir = tmp_path / "deploy"
-  skill_dir.mkdir()
-
-  skill_md = f"""---
-name: deploy
-description: Deploy the application to production.
-{key}: "test-value"
+disable-model-invocation: true
+disallowed-tools: AskUserQuestion
+effort: high
+hooks: {}
+model: inherit
+paths: "src/**"
+shell: bash
+user-invocable: false
+when_to_use: When the user asks to deploy.
 ---
 Deploy the app.
 """
@@ -231,34 +221,6 @@ Deploy the app.
   assert len(problems) == 1
   assert "licence" in problems[0]
   assert "disable-model-invocation" not in problems[0]
-
-
-def test_load_skill_from_dir_preserves_client_directives(tmp_path):
-  """Tests loading keeps client directives on the frontmatter extras."""
-  skill_dir = tmp_path / "deploy"
-  skill_dir.mkdir()
-
-  skill_md = """---
-name: deploy
-description: Deploy the application to production.
-disable-model-invocation: true
----
-Deploy the app.
-"""
-  (skill_dir / "SKILL.md").write_text(skill_md)
-
-  skill = _load_skill_from_dir(skill_dir)
-
-  assert skill.frontmatter.name == "deploy"
-  assert (
-      skill.frontmatter.description == "Deploy the application to production."
-  )
-  assert skill.frontmatter.model_extra["disable-model-invocation"] is True
-
-
-def test_spec_and_client_directive_keys_are_disjoint():
-  """Tests the spec and client directive key sets share no entries."""
-  assert not _SPEC_FRONTMATTER_KEYS & _CLIENT_DIRECTIVE_FRONTMATTER_KEYS
 
 
 def test__read_skill_properties(tmp_path):

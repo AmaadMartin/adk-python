@@ -29,26 +29,22 @@ import yaml
 
 from . import models
 
-# Frontmatter fields defined by the Agent Skills specification.
-# https://agentskills.io/specification
-# ``allowed_tools`` is ADK's snake_case spelling of the spec's
-# ``allowed-tools``; ``Frontmatter`` accepts both.
-_SPEC_FRONTMATTER_KEYS = frozenset({
-    "allowed-tools",
-    "allowed_tools",
-    "compatibility",
+_ALLOWED_FRONTMATTER_KEYS = frozenset({
+    # Fields defined by the Agent Skills specification.
+    # https://agentskills.io/specification
+    # ``allowed_tools`` is ADK's snake_case spelling of ``allowed-tools``;
+    # ``Frontmatter`` accepts both.
+    "name",
     "description",
     "license",
+    "allowed-tools",
+    "allowed_tools",
     "metadata",
-    "name",
-})
-
-# Client-side directives that Agent Skills harnesses read from the same
-# frontmatter block. They are not part of the Agent Skills specification and
-# ADK takes no action on them, but a skill that carries them is well-formed
-# and must not be reported as a problem. Snapshot of the fields documented at
-# https://code.claude.com/docs/en/skills
-_CLIENT_DIRECTIVE_FRONTMATTER_KEYS = frozenset({
+    "compatibility",
+    # Client-side directives harnesses read from the same frontmatter block.
+    # ADK takes no action on them, but a skill carrying them is well-formed
+    # and must not be reported as a problem. Snapshot of the fields
+    # documented at https://code.claude.com/docs/en/skills
     "agent",
     "argument-hint",
     "arguments",
@@ -64,10 +60,6 @@ _CLIENT_DIRECTIVE_FRONTMATTER_KEYS = frozenset({
     "user-invocable",
     "when_to_use",
 })
-
-_ALLOWED_FRONTMATTER_KEYS = (
-    _SPEC_FRONTMATTER_KEYS | _CLIENT_DIRECTIVE_FRONTMATTER_KEYS
-)
 
 
 def _load_dir(directory: pathlib.Path) -> dict[str, str]:
