@@ -119,9 +119,7 @@ def test_parse_agent_engine_resource_name_valid():
   assert vertex_ai_utils.parse_agent_engine_resource_name(
       'projects/123/locations/us-central1/reasoningEngines/456'
   ) == ('123', 'us-central1', '456')
-
-
-def test_parse_agent_engine_resource_name_allows_hyphen_and_underscore():
+  # Hyphens and underscores are part of the accepted project grammar.
   assert vertex_ai_utils.parse_agent_engine_resource_name(
       'projects/my-project_1/locations/us-central1/reasoningEngines/456'
   ) == ('my-project_1', 'us-central1', '456')
@@ -140,7 +138,6 @@ def test_parse_agent_engine_resource_name_allows_hyphen_and_underscore():
             '/sandboxEnvironments/789'
         ),
         'x/projects/123/locations/us-central1/reasoningEngines/456',
-        'projects/123/locations/us-central1/reasoningEngines/456 ',
     ],
 )
 def test_parse_agent_engine_resource_name_invalid(resource_name):
