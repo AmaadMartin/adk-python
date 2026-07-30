@@ -243,14 +243,21 @@ def _warn_if_with_ui(with_ui: bool) -> None:
     click.secho(f"WARNING: {_ADK_WEB_WARNING}", fg="yellow", err=True)
 
 
-@click.group(context_settings={"max_content_width": 240})
+@click.group(
+    context_settings={"max_content_width": 240}, invoke_without_command=True
+)
 @click.version_option(version.__version__)
 @click.pass_context
 def main(ctx: Optional[click.Context] = None) -> None:
   """Agent Development Kit CLI tools."""
+  # Click >= 8.2 turns a bare group into a usage error (exit 2, help on
+  # stderr); keep it a help request: exit 0 with help on stdout.
+  if ctx is not None and ctx.invoked_subcommand is None:
+    click.echo(ctx.get_help())
+    return
+
   if (
       ctx is not None
-      and ctx.invoked_subcommand is not None
       and ctx.invoked_subcommand != "telemetry"
       and not any(arg in sys.argv for arg in ("--help", "-h"))
       and sys.stdin.isatty()
@@ -328,16 +335,20 @@ def telemetry_status() -> None:
     click.echo("Telemetry collection is not configured (defaults to OFF).")
 
 
-@main.group()
-def deploy():
+@main.group(invoke_without_command=True)
+@click.pass_context
+def deploy(ctx: click.Context) -> None:
   """Deploys agent to hosted environments."""
-  pass
+  if ctx.invoked_subcommand is None:
+    click.echo(ctx.get_help())
 
 
-@main.group()
-def conformance():
+@main.group(invoke_without_command=True)
+@click.pass_context
+def conformance(ctx: click.Context) -> None:
   """Conformance testing tools for ADK."""
-  pass
+  if ctx.invoked_subcommand is None:
+    click.echo(ctx.get_help())
 
 
 @conformance.command("record", cls=HelpfulCommand)
@@ -1389,10 +1400,12 @@ def cli_optimize(
   click.echo("=" * 80)
 
 
-@main.group("eval_set")
-def eval_set():
+@main.group("eval_set", invoke_without_command=True)
+@click.pass_context
+def eval_set(ctx: click.Context) -> None:
   """Manage Eval Sets."""
-  pass
+  if ctx.invoked_subcommand is None:
+    click.echo(ctx.get_help())
 
 
 @eval_set.command("create", cls=HelpfulCommand)
@@ -2284,10 +2297,12 @@ def cli_deploy_cloud_run(
     click.secho(f"Deploy failed: {e}", fg="red", err=True)
 
 
-@main.group()
-def migrate():
+@main.group(invoke_without_command=True)
+@click.pass_context
+def migrate(ctx: click.Context) -> None:
   """ADK migration commands."""
-  pass
+  if ctx.invoked_subcommand is None:
+    click.echo(ctx.get_help())
 
 
 @migrate.command("session", cls=HelpfulCommand)
