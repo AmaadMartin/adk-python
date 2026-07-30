@@ -177,6 +177,27 @@ def test_create_session_service_agentengine_malformed(
   mock_services["vertex_session"].assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "resource_name",
+    [
+        "projects/p/locations/l/reasoningEngines/",  # empty resource id
+        "projects//locations/l/reasoningEngines/123",  # empty project
+        "projects/p/locations//reasoningEngines/123",  # empty location
+        "projects//locations//reasoningEngines/123",  # empty project+location
+        "projects//locations//reasoningEngines/",  # all three empty
+    ],
+)
+def test_create_session_service_agentengine_rejects_empty_segments(
+    resource_name, registry, mock_services
+):
+  """An empty segment must fail at the CLI, not reach the service."""
+  with pytest.raises(ValueError, match="mal-formatted"):
+    registry.create_session_service(
+        f"agentengine://{resource_name}", agents_dir="/path/to/agents"
+    )
+  mock_services["vertex_session"].assert_not_called()
+
+
 def test_create_session_service_agentengine_empty(registry, mock_services):
   with pytest.raises(ValueError, match="cannot be empty"):
     registry.create_session_service(
@@ -306,6 +327,27 @@ def test_create_memory_service_agentengine_full_non_numeric_id(
   mock_services["agentengine_memory"].assert_called_once_with(
       project="p", location="l", agent_engine_id="my-engine"
   )
+
+
+@pytest.mark.parametrize(
+    "resource_name",
+    [
+        "projects/p/locations/l/reasoningEngines/",  # empty resource id
+        "projects//locations/l/reasoningEngines/456",  # empty project
+        "projects/p/locations//reasoningEngines/456",  # empty location
+        "projects//locations//reasoningEngines/456",  # empty project+location
+        "projects//locations//reasoningEngines/",  # all three empty
+    ],
+)
+def test_create_memory_service_agentengine_rejects_empty_segments(
+    resource_name, registry, mock_services
+):
+  """The CLI error wins over VertexAiMemoryBankService's own id check."""
+  with pytest.raises(ValueError, match="mal-formatted"):
+    registry.create_memory_service(
+        f"agentengine://{resource_name}", agents_dir="/path/to/agents"
+    )
+  mock_services["agentengine_memory"].assert_not_called()
 
 
 def test_create_memory_service_memory(registry):

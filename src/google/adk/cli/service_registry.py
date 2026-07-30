@@ -422,7 +422,7 @@ def _load_gcp_config(
 def _parse_agent_engine_kwargs(
     uri_part: str, agents_dir: str | None
 ) -> dict[str, Any]:
-  """Helper to parse agent engine resource name."""
+  """Helper to parse agent engine resource name; segments must be non-empty."""
   if not uri_part:
     raise ValueError(
         "Agent engine resource name or resource id cannot be empty."
@@ -454,8 +454,11 @@ def _parse_agent_engine_kwargs(
   if not (
       len(parts) == 6
       and parts[0] == "projects"
+      and parts[1]
       and parts[2] == "locations"
+      and parts[3]
       and parts[4] == "reasoningEngines"
+      and parts[5]
   ):
     raise ValueError(
         "Agent engine resource name is mal-formatted. It should be of"
