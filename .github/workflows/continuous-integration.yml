@@ -193,11 +193,9 @@ jobs:
             tests/unittests/agents/test_remote_a2a_agent.py \
             tests/unittests/integrations/agent_registry/test_agent_registry.py
 
-  # 3c. Dependency-floor coverage: this job pins click to the bottom of the
-  # declared range (click>=8.1.8,<9 in pyproject.toml) and runs only the CLI
-  # tests, so the CLI stays verified against the oldest click we advertise.
-  # Without it, CI has no lock file and always resolves the newest click, so
-  # only the top of the range is ever exercised.
+  # 3c. Dependency-floor coverage: no lock file means CI always resolves the
+  # newest click, so this job pins click to the bottom of the declared range
+  # (click>=8.1.8,<9 in pyproject.toml) and runs only the CLI tests.
   unit-test-cli-click-floor:
     name: CLI Tests (click floor, Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -230,5 +228,8 @@ jobs:
         run: |
           source .venv/bin/activate
           uv pip install --reinstall-package click 'click>=8.1.8,<8.2'
+          # A successful install only proves the command ran; assert the
+          # downgrade in the interpreter pytest uses, so a pin that lands in
+          # the wrong environment fails loudly instead of testing 8.4 again.
           python -c "import importlib.metadata as md; v = md.version('click'); assert v.startswith('8.1.'), f'expected click 8.1.x, got {v}'"
-          pytest tests/unittests/cli -q
+          pytest tests/unittests/cli
