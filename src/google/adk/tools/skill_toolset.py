@@ -33,6 +33,8 @@ from typing_extensions import override
 from ..agents.readonly_context import ReadonlyContext
 from ..code_executors.base_code_executor import BaseCodeExecutor
 from ..code_executors.code_execution_utils import CodeExecutionInput
+from ..features import FeatureName
+from ..features import is_feature_enabled
 from ..skills import models
 from ..skills import prompt
 from ..skills import SkillRegistry
@@ -105,6 +107,19 @@ def _build_skill_system_instruction(prefix: str | None = None) -> str:
   )
 
 
+def _is_hidden_from_model(frontmatter: models.Frontmatter) -> bool:
+  """Returns whether a skill opts out of model-initiated discovery.
+
+  ``disable-model-invocation`` hides a skill from discovery but keeps it
+  loadable when its name is supplied. See
+  https://code.claude.com/docs/en/skills.
+  """
+  return (
+      is_feature_enabled(FeatureName.SKILL_DISABLE_MODEL_INVOCATION)
+      and frontmatter.disable_model_invocation
+  )
+
+
 class ListSkillsTool(BaseTool):
   """Tool to list all available skills."""
 
@@ -130,7 +145,7 @@ class ListSkillsTool(BaseTool):
   async def run_async(
       self, *, args: dict[str, Any], tool_context: ToolContext
   ) -> Any:
-    skills = self._toolset._list_skills()
+    skills = self._toolset._list_model_visible_skills()
     return prompt.format_skills_as_xml(skills)
 
 
@@ -186,6 +201,8 @@ class SearchSkillsTool(BaseTool):
               " Registry skill is filtered.",
               r.name,
           )
+          continue
+        if _is_hidden_from_model(r):
           continue
         formatted_results.append(r.model_dump())
       return formatted_results
@@ -1166,6 +1183,14 @@ class SkillToolset(BaseToolset):
     """Lists all available skills."""
     return list(self._skills.values())
 
+  def _list_model_visible_skills(self) -> list[models.Skill]:
+    """Lists the skills the model is allowed to discover."""
+    return [
+        skill
+        for skill in self._skills.values()
+        if not _is_hidden_from_model(skill.frontmatter)
+    ]
+
   @property
   def skills(self) -> list[models.Skill]:
     """Returns the list of available skills."""
@@ -1197,7 +1222,7 @@ class SkillToolset(BaseToolset):
     has_list_skills = any(isinstance(t, ListSkillsTool) for t in self._tools)
 
     if not has_list_skills:
-      skills = self._list_skills()
+      skills = self._list_model_visible_skills()
       skills_xml = prompt.format_skills_as_xml(skills)
       instructions.append(skills_xml)
 

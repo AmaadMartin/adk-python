@@ -18,13 +18,17 @@ import collections
 import json
 import logging
 import sys
+from typing import Any
 from unittest import mock
 
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.code_executors.base_code_executor import BaseCodeExecutor
 from google.adk.code_executors.code_execution_utils import CodeExecutionResult
 from google.adk.code_executors.unsafe_local_code_executor import UnsafeLocalCodeExecutor
+from google.adk.features import FeatureName
+from google.adk.features._feature_registry import temporary_feature_override
 from google.adk.models import llm_request as llm_request_model
+from google.adk.skills import load_skill_from_dir
 from google.adk.skills import models
 from google.adk.tools import skill_toolset
 from google.adk.tools import tool_context
@@ -2473,3 +2477,272 @@ async def test_skill_toolset_with_dynamic_tools_filter(
   assert "list_skills" in tool_names
   assert "my_custom_tool" in tool_names
   assert "load_skill" not in tool_names
+
+
+# ── disable-model-invocation ──
+
+
+def _make_skill(
+    name: str,
+    *,
+    hidden: bool = False,
+    metadata: dict[str, Any] | None = None,
+    references: dict[str, str] | None = None,
+) -> models.Skill:
+  """Builds a real Skill; autospec mocks lack the new frontmatter field."""
+  return models.Skill(
+      frontmatter=models.Frontmatter.model_validate({
+          "name": name,
+          "description": f"{name} description",
+          "disable-model-invocation": hidden,
+          "metadata": metadata or {},
+      }),
+      instructions=f"instructions for {name}",
+      resources=models.Resources(references=references or {}),
+  )
+
+
+@pytest.fixture(name="honor_disable_model_invocation")
+def _honor_disable_model_invocation():
+  """Enables the SKILL_DISABLE_MODEL_INVOCATION feature for one test."""
+  with temporary_feature_override(
+      FeatureName.SKILL_DISABLE_MODEL_INVOCATION, True
+  ):
+    yield
+
+
+def test_is_hidden_from_model_returns_false_when_feature_disabled():
+  skill = _make_skill("deploy", hidden=True)
+  assert skill_toolset._is_hidden_from_model(skill.frontmatter) is False
+
+
+def test_is_hidden_from_model_returns_false_for_regular_skill(
+    honor_disable_model_invocation,
+):
+  skill = _make_skill("search")
+  assert skill_toolset._is_hidden_from_model(skill.frontmatter) is False
+
+
+def test_is_hidden_from_model_returns_true_when_feature_enabled(
+    honor_disable_model_invocation,
+):
+  skill = _make_skill("deploy", hidden=True)
+  assert skill_toolset._is_hidden_from_model(skill.frontmatter) is True
+
+
+@pytest.mark.asyncio
+async def test_list_skills_tool_omits_hidden_skill(
+    tool_context_instance, honor_disable_model_invocation
+):
+  toolset = skill_toolset.SkillToolset(
+      [_make_skill("search"), _make_skill("deploy", hidden=True)]
+  )
+  tool = skill_toolset.ListSkillsTool(toolset)
+
+  result = await tool.run_async(args={}, tool_context=tool_context_instance)
+
+  assert "search" in result
+  assert "deploy" not in result
+
+
+@pytest.mark.asyncio
+async def test_list_skills_tool_includes_hidden_skill_when_feature_disabled(
+    tool_context_instance,
+):
+  toolset = skill_toolset.SkillToolset(
+      [_make_skill("search"), _make_skill("deploy", hidden=True)]
+  )
+  tool = skill_toolset.ListSkillsTool(toolset)
+
+  result = await tool.run_async(args={}, tool_context=tool_context_instance)
+
+  assert "search" in result
+  assert "deploy" in result
+
+
+def _toolset_without_list_skills_tool(
+    skills: list[models.Skill],
+) -> skill_toolset.SkillToolset:
+  """Builds a toolset whose ListSkillsTool has been filtered out."""
+  toolset = skill_toolset.SkillToolset(skills)
+  toolset._tools = [
+      t
+      for t in toolset._tools
+      if not isinstance(t, skill_toolset.ListSkillsTool)
+  ]
+  return toolset
+
+
+@pytest.mark.asyncio
+async def test_process_llm_request_omits_hidden_skill_from_instructions(
+    tool_context_instance, honor_disable_model_invocation
+):
+  toolset = _toolset_without_list_skills_tool(
+      [_make_skill("search"), _make_skill("deploy", hidden=True)]
+  )
+  llm_req = mock.create_autospec(llm_request_model.LlmRequest, instance=True)
+
+  await toolset.process_llm_request(
+      tool_context=tool_context_instance, llm_request=llm_req
+  )
+
+  (instructions,), _ = llm_req.append_instructions.call_args
+  assert "<available_skills>" in instructions[1]
+  assert "search" in instructions[1]
+  assert "deploy" not in instructions[1]
+
+
+@pytest.mark.asyncio
+async def test_process_llm_request_includes_hidden_skill_when_feature_disabled(
+    tool_context_instance,
+):
+  toolset = _toolset_without_list_skills_tool(
+      [_make_skill("search"), _make_skill("deploy", hidden=True)]
+  )
+  llm_req = mock.create_autospec(llm_request_model.LlmRequest, instance=True)
+
+  await toolset.process_llm_request(
+      tool_context=tool_context_instance, llm_request=llm_req
+  )
+
+  (instructions,), _ = llm_req.append_instructions.call_args
+  assert "search" in instructions[1]
+  assert "deploy" in instructions[1]
+
+
+@pytest.mark.asyncio
+async def test_search_skills_tool_omits_hidden_registry_skill(
+    mock_registry, tool_context_instance, honor_disable_model_invocation
+):
+  local_skill = _make_skill("skill1")
+  mock_registry.search_skills.return_value = [
+      local_skill.frontmatter,
+      _make_skill("deploy", hidden=True).frontmatter,
+      _make_skill("search").frontmatter,
+  ]
+  toolset = skill_toolset.SkillToolset([local_skill], registry=mock_registry)
+  tool = skill_toolset.SearchSkillsTool(toolset)
+
+  result = await tool.run_async(
+      args={"query": "test"}, tool_context=tool_context_instance
+  )
+
+  # skill1 is filtered by the local-name collision, deploy by the directive.
+  assert [r["name"] for r in result] == ["search"]
+
+
+@pytest.mark.asyncio
+async def test_load_skill_tool_loads_hidden_skill_by_name(
+    honor_disable_model_invocation,
+):
+  toolset = skill_toolset.SkillToolset([_make_skill("deploy", hidden=True)])
+  tool = skill_toolset.LoadSkillTool(toolset)
+  ctx = _make_tool_context_with_agent()
+
+  result = await tool.run_async(args={"skill_name": "deploy"}, tool_context=ctx)
+
+  assert result["instructions"] == "instructions for deploy"
+  assert ctx.state["_adk_activated_skill_test_agent"] == ["deploy"]
+
+
+@pytest.mark.asyncio
+async def test_load_skill_resource_works_for_hidden_skill(
+    honor_disable_model_invocation,
+):
+  toolset = skill_toolset.SkillToolset([
+      _make_skill(
+          "deploy", hidden=True, references={"runbook.md": "runbook content"}
+      )
+  ])
+  tool = skill_toolset.LoadSkillResourceTool(toolset)
+  ctx = _make_tool_context_with_agent()
+
+  result = await tool.run_async(
+      args={"skill_name": "deploy", "file_path": "references/runbook.md"},
+      tool_context=ctx,
+  )
+
+  assert result["content"] == "runbook content"
+
+
+def test_list_skills_returns_hidden_skills(honor_disable_model_invocation):
+  hidden = _make_skill("deploy", hidden=True)
+  toolset = skill_toolset.SkillToolset([_make_skill("search"), hidden])
+
+  assert hidden in toolset._list_skills()
+  assert hidden in toolset.skills
+  assert hidden not in toolset._list_model_visible_skills()
+
+
+def test_clone_with_updated_skills_preserves_hidden_skill(
+    honor_disable_model_invocation,
+):
+  hidden = _make_skill("deploy", hidden=True)
+  toolset = skill_toolset.SkillToolset([_make_skill("search")])
+
+  clone = toolset.clone_with_updated_skills(toolset.skills + [hidden])
+
+  assert [s.name for s in clone.skills] == ["search", "deploy"]
+
+
+@pytest.mark.asyncio
+async def test_resolve_additional_tools_from_state_for_hidden_skill(
+    honor_disable_model_invocation,
+):
+  custom_tool = mock.create_autospec(skill_toolset.BaseTool, instance=True)
+  custom_tool.name = "deploy_tool"
+  toolset = skill_toolset.SkillToolset(
+      [
+          _make_skill(
+              "deploy",
+              hidden=True,
+              metadata={"adk_additional_tools": ["deploy_tool"]},
+          )
+      ],
+      additional_tools=[custom_tool],
+  )
+  ctx = _make_tool_context_with_agent()
+  await skill_toolset.LoadSkillTool(toolset).run_async(
+      args={"skill_name": "deploy"}, tool_context=ctx
+  )
+
+  resolved = await toolset._resolve_additional_tools_from_state(ctx)
+
+  assert [t.name for t in resolved] == ["deploy_tool"]
+
+
+def _write_skill_dir(root, name: str, *, hidden: bool) -> None:
+  """Writes a minimal, real SKILL.md directory under root."""
+  skill_dir = root / name
+  skill_dir.mkdir()
+  directive = "disable-model-invocation: true\n" if hidden else ""
+  (skill_dir / "SKILL.md").write_text(
+      f"---\nname: {name}\ndescription: {name} description\n{directive}---\n"
+      f"instructions for {name}\n"
+  )
+
+
+@pytest.mark.asyncio
+async def test_hidden_skill_from_real_skill_dirs_end_to_end(
+    tmp_path, tool_context_instance, honor_disable_model_invocation
+):
+  """Loads real skill directories and exercises every surface, no mocks."""
+  _write_skill_dir(tmp_path, "visible-skill", hidden=False)
+  _write_skill_dir(tmp_path, "hidden-skill", hidden=True)
+  toolset = skill_toolset.SkillToolset([
+      load_skill_from_dir(tmp_path / "visible-skill"),
+      load_skill_from_dir(tmp_path / "hidden-skill"),
+  ])
+
+  listing = await skill_toolset.ListSkillsTool(toolset).run_async(
+      args={}, tool_context=tool_context_instance
+  )
+  loaded = await skill_toolset.LoadSkillTool(toolset).run_async(
+      args={"skill_name": "hidden-skill"},
+      tool_context=_make_tool_context_with_agent(),
+  )
+
+  assert "visible-skill" in listing
+  assert "hidden-skill" not in listing
+  assert loaded["instructions"] == "instructions for hidden-skill"
+  assert {s.name for s in toolset.skills} == {"visible-skill", "hidden-skill"}
