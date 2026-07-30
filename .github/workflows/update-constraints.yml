@@ -42,23 +42,14 @@ jobs:
         with:
           persist-credentials: false
 
-      # The script passes --python-version explicitly, so the resolution
-      # targets do not depend on the interpreter that runs uv.
-      - name: Set up Python
-        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
-        with:
-          python-version: '3.12'
-
       - name: Install uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
           enable-cache: true
 
-      # Exit 1 means the script rewrote the files, which is the normal outcome
-      # of a scheduled run because --exclude-newer moves every time. Only a
-      # failed resolution (exit 2) may stop the job: it leaves the committed
-      # files untouched, so an unguarded run would open a pull request that
-      # silently mixes freshly resolved pins with stale ones.
+      # Exit 1 (files rewritten) is the normal scheduled outcome, since
+      # --exclude-newer moves every run; exit 2 is a failed resolution and must
+      # stop the job before it opens a pull request -- see the script header.
       - name: Regenerate constraints files
         run: ./scripts/update_constraints.sh || [ $? -eq 1 ]
 
