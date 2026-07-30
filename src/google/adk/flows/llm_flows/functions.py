@@ -646,9 +646,7 @@ async def _execute_single_function_call_async(
       # wrapper for task delegation synthesizes the FR after the
       # sub-agent completes).  Either way, skip the auto-FR build when
       # the tool returned nothing.
-      return _build_actions_only_event(
-          tool, tool_context, invocation_context, agent
-      )
+      return _build_actions_only_event(tool, tool_context)
 
     detected_error_type = _detect_error_type_for_telemetry(
         tool, tool_context, function_response
@@ -905,9 +903,7 @@ async def _execute_single_function_call_live(
       # The tool either runs long (FR will arrive later via session
       # injection) or defers its response by design.  Skip the auto-FR
       # build when the tool returned nothing.
-      return _build_actions_only_event(
-          tool, tool_context, invocation_context, agent
-      )
+      return _build_actions_only_event(tool, tool_context)
 
     detected_error_type = _detect_error_type_for_telemetry(
         tool, tool_context, function_response
@@ -1249,10 +1245,7 @@ async def __call_tool_async(
 
 
 def _build_actions_only_event(
-    tool: BaseTool,
-    tool_context: ToolContext,
-    invocation_context: InvocationContext,
-    agent: LlmAgent,
+    tool: BaseTool, tool_context: ToolContext
 ) -> Optional[Event]:
   """Preserves the actions of a tool that returned no function response.
 
@@ -1263,16 +1256,12 @@ def _build_actions_only_event(
   function call event is not marked long-running, so an actions-only event
   would make `is_final_response()` true and suppress the model turn that the
   deferred path still needs.
-
-  Returns:
-    A content-less event carrying `tool_context.actions`, or None when the tool
-    is not long-running or recorded no actions.
   """
   if tool.is_long_running and tool_context.actions != EventActions():
     return Event(
-        invocation_id=invocation_context.invocation_id,
-        author=agent.name,
-        branch=invocation_context.branch,
+        invocation_id=tool_context.invocation_id,
+        author=tool_context.agent_name,
+        branch=tool_context.branch,
         actions=tool_context.actions,
     )
   return None
