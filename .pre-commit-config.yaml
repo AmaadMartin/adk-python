@@ -64,12 +64,19 @@ repos:
         # This script documents and matches the very patterns it forbids, so
         # it must not scan itself or other dev-only tooling.
         exclude: ^scripts/
+      # Auto-fixer, not a check: this rewrites the constraints files in place
+      # and exits non-zero whenever it changed them. It also needs `uv` plus
+      # network access to PyPI, and re-derives `--exclude-newer` from the
+      # current date on every run, so it is not idempotent from one day to the
+      # next. Keep it off the automatic stages; run it deliberately with:
+      #   pre-commit run --hook-stage manual update-constraints --all-files
       - id: update-constraints
         name: update-constraints
         entry: ./scripts/update_constraints.sh
         language: system
         files: ^(pyproject\.toml|constraints-.*\.txt)$
         pass_filenames: false
+        stages: [manual]
   - repo: https://github.com/executablebooks/mdformat
     rev: 0.7.22
     hooks:
