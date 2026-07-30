@@ -18,6 +18,7 @@ from typing import Callable
 from unittest import mock
 
 from fastapi.openapi.models import HTTPBearer
+from google.adk.agents.invocation_context import InvocationContext
 from google.adk.agents.live_request_queue import LiveRequestQueue
 from google.adk.agents.llm_agent import Agent
 from google.adk.auth.auth_tool import AuthConfig
@@ -31,6 +32,7 @@ from google.adk.flows.llm_flows.functions import merge_parallel_function_respons
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.computer_use.computer_use_tool import ComputerUseTool
 from google.adk.tools.function_tool import FunctionTool
+from google.adk.tools.long_running_tool import LongRunningFunctionTool
 from google.adk.tools.tool_confirmation import ToolConfirmation
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
@@ -1864,3 +1866,222 @@ async def test_parallel_non_blocking_tools():
 
   await asyncio.sleep(0)
   assert len(invocation_context.active_non_blocking_tool_tasks) == 0
+
+
+def _live_function_call_event(
+    invocation_context: InvocationContext,
+    *function_calls: types.FunctionCall,
+) -> Event:
+  """Builds the model event carrying ``function_calls`` for the live path."""
+  return Event(
+      invocation_id=invocation_context.invocation_id,
+      author=invocation_context.agent.name,
+      content=types.Content(
+          parts=[types.Part(function_call=call) for call in function_calls]
+      ),
+  )
+
+
+async def test_live_long_running_tool_no_response_emits_actions_only_event():
+  """A long-running tool's actions survive even though it returns no response."""
+
+  def start_job(tool_context: ToolContext) -> None:
+    tool_context.state['job_id'] = 'abc'
+
+  tool = LongRunningFunctionTool(func=start_job)
+  agent = Agent(
+      name='test_agent',
+      model=testing_utils.MockModel.create(responses=[]),
+      tools=[tool],
+  )
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content=''
+  )
+  invocation_context.branch = 'root.test_agent'
+  event = _live_function_call_event(
+      invocation_context,
+      types.FunctionCall(name=tool.name, args={}, id='fc_lr'),
+  )
+
+  result = await handle_function_calls_live(
+      invocation_context, event, {tool.name: tool}
+  )
+
+  assert result is not None
+  assert result.content is None
+  assert result.actions.state_delta == {'job_id': 'abc'}
+  assert result.invocation_id == invocation_context.invocation_id
+  assert result.author == agent.name
+  assert result.branch == 'root.test_agent'
+
+
+async def test_live_long_running_tool_no_response_no_actions_returns_none():
+  """No recorded actions means no event, so the live stream stays clean."""
+
+  def start_job() -> None:
+    return None
+
+  tool = LongRunningFunctionTool(func=start_job)
+  agent = Agent(
+      name='test_agent',
+      model=testing_utils.MockModel.create(responses=[]),
+      tools=[tool],
+  )
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content=''
+  )
+  event = _live_function_call_event(
+      invocation_context,
+      types.FunctionCall(name=tool.name, args={}, id='fc_lr_quiet'),
+  )
+
+  result = await handle_function_calls_live(
+      invocation_context, event, {tool.name: tool}
+  )
+
+  assert result is None
+
+
+async def test_live_deferring_tool_no_response_returns_none():
+  """Deferring tools stay excluded, matching the async path."""
+
+  def delegate(tool_context: ToolContext) -> None:
+    tool_context.actions.escalate = True
+    tool_context.actions.skip_summarization = True
+
+  tool = FunctionTool(delegate)
+  tool._defers_response = True
+  agent = Agent(
+      name='test_agent',
+      model=testing_utils.MockModel.create(responses=[]),
+      tools=[tool],
+  )
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content=''
+  )
+  event = _live_function_call_event(
+      invocation_context,
+      types.FunctionCall(name=tool.name, args={}, id='fc_deferred'),
+  )
+
+  result = await handle_function_calls_live(
+      invocation_context, event, {tool.name: tool}
+  )
+
+  assert result is None
+
+
+async def test_live_long_running_tool_with_response_builds_function_response():
+  """A long-running tool that does answer still gets its normal response event."""
+
+  def start_job(tool_context: ToolContext) -> dict[str, str]:
+    tool_context.state['job_id'] = 'abc'
+    return {'status': 'pending'}
+
+  tool = LongRunningFunctionTool(func=start_job)
+  agent = Agent(
+      name='test_agent',
+      model=testing_utils.MockModel.create(responses=[]),
+      tools=[tool],
+  )
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content=''
+  )
+  event = _live_function_call_event(
+      invocation_context,
+      types.FunctionCall(name=tool.name, args={}, id='fc_lr_answered'),
+  )
+
+  result = await handle_function_calls_live(
+      invocation_context, event, {tool.name: tool}
+  )
+
+  assert result is not None
+  assert result.content is not None
+  assert result.get_function_responses()[0].response == {'status': 'pending'}
+  assert result.actions.state_delta == {'job_id': 'abc'}
+
+
+async def test_live_parallel_long_running_tools_merge_actions_only_events():
+  """Parallel actions-only events merge into one content-less event."""
+
+  def start_job_a(tool_context: ToolContext) -> None:
+    tool_context.state['a'] = 1
+
+  def start_job_b(tool_context: ToolContext) -> None:
+    # A non-state_delta field also counts as "recorded an action".
+    tool_context.actions.escalate = True
+
+  tool_a = LongRunningFunctionTool(func=start_job_a)
+  tool_b = LongRunningFunctionTool(func=start_job_b)
+  agent = Agent(
+      name='test_agent',
+      model=testing_utils.MockModel.create(responses=[]),
+      tools=[tool_a, tool_b],
+  )
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content=''
+  )
+  event = _live_function_call_event(
+      invocation_context,
+      types.FunctionCall(name=tool_a.name, args={}, id='fc_lr_a'),
+      types.FunctionCall(name=tool_b.name, args={}, id='fc_lr_b'),
+  )
+
+  result = await handle_function_calls_live(
+      invocation_context,
+      event,
+      {tool_a.name: tool_a, tool_b.name: tool_b},
+  )
+
+  assert result is not None
+  assert result.content is None
+  assert result.actions.state_delta == {'a': 1}
+  assert result.actions.escalate is True
+
+
+async def test_live_non_blocking_long_running_tool_appends_actions_only_event():
+  """The non-blocking dispatch persists the actions without a model turn."""
+
+  def start_job(tool_context: ToolContext) -> None:
+    tool_context.state['job_id'] = 'abc'
+
+  tool = LongRunningFunctionTool(func=start_job)
+  tool.response_scheduling = types.FunctionResponseScheduling.WHEN_IDLE
+  agent = Agent(
+      name='test_agent',
+      model=testing_utils.MockModel.create(responses=[]),
+      tools=[tool],
+  )
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content=''
+  )
+  invocation_context.live_request_queue = LiveRequestQueue()
+  event = _live_function_call_event(
+      invocation_context,
+      types.FunctionCall(name=tool.name, args={}, id='fc_lr_non_blocking'),
+  )
+
+  result = await handle_function_calls_live(
+      invocation_context, event, {tool.name: tool}
+  )
+
+  assert result is None
+  task_key = f'{tool.name}_fc_lr_non_blocking'
+
+  async def _drain_background_task() -> None:
+    # The key is dropped only after the background task appended its event.
+    while task_key in invocation_context.active_non_blocking_tool_tasks:
+      await asyncio.sleep(0)
+
+  await asyncio.wait_for(_drain_background_task(), timeout=5)
+
+  appended = [
+      appended_event
+      for appended_event in invocation_context.session.events
+      if appended_event.content is None
+  ]
+  assert len(appended) == 1
+  assert appended[0].actions.state_delta == {'job_id': 'abc'}
+  # A content-less event must never be echoed back to the live model.
+  assert invocation_context.live_request_queue._queue.empty()

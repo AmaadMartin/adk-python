@@ -646,22 +646,7 @@ async def _execute_single_function_call_async(
       # wrapper for task delegation synthesizes the FR after the
       # sub-agent completes).  Either way, skip the auto-FR build when
       # the tool returned nothing.
-      #
-      # A long-running tool may still have mutated `tool_context.actions` on
-      # its way out (e.g. `get_user_choice` sets `skip_summarization`). Those
-      # mutations only survive by riding on an event, so emit a content-less
-      # actions-only event rather than dropping them. `_defers_response` tools
-      # are excluded: their function call event is not marked long-running, so
-      # an actions-only event would make `is_final_response()` true and
-      # suppress the model turn that the deferred path still needs.
-      if tool.is_long_running and tool_context.actions != EventActions():
-        return Event(
-            invocation_id=invocation_context.invocation_id,
-            author=agent.name,
-            branch=invocation_context.branch,
-            actions=tool_context.actions,
-        )
-      return None
+      return _build_actions_only_event(tool, tool_context)
 
     detected_error_type = _detect_error_type_for_telemetry(
         tool, tool_context, function_response
@@ -918,7 +903,7 @@ async def _execute_single_function_call_live(
       # The tool either runs long (FR will arrive later via session
       # injection) or defers its response by design.  Skip the auto-FR
       # build when the tool returned nothing.
-      return None
+      return _build_actions_only_event(tool, tool_context)
 
     detected_error_type = _detect_error_type_for_telemetry(
         tool, tool_context, function_response
@@ -1257,6 +1242,29 @@ async def __call_tool_async(
 ) -> Any:
   """Calls the tool."""
   return await tool.run_async(args=args, tool_context=tool_context)
+
+
+def _build_actions_only_event(
+    tool: BaseTool, tool_context: ToolContext
+) -> Optional[Event]:
+  """Preserves the actions of a tool that returned no function response.
+
+  A long-running tool may still have mutated `tool_context.actions` on its way
+  out (e.g. `get_user_choice` sets `skip_summarization`). Those mutations only
+  survive by riding on an event, so emit a content-less actions-only event
+  rather than dropping them. `_defers_response` tools are excluded: their
+  function call event is not marked long-running, so an actions-only event
+  would make `is_final_response()` true and suppress the model turn that the
+  deferred path still needs.
+  """
+  if tool.is_long_running and tool_context.actions != EventActions():
+    return Event(
+        invocation_id=tool_context.invocation_id,
+        author=tool_context.agent_name,
+        branch=tool_context.branch,
+        actions=tool_context.actions,
+    )
+  return None
 
 
 def __build_response_event(
