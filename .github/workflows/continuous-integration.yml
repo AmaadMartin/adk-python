@@ -14,23 +14,25 @@
 
 name: Continuous Integration
 
+# Keep both `paths` lists in sync. '.github/workflows/**' gates every workflow
+# file, not just this one, so a change to CI is validated by CI.
 on:
   push:
     branches: [main, v1]
     paths:
       - '**.py'
+      - '.github/workflows/**'
       - '.pre-commit-config.yaml'
       - 'pyproject.toml'
       - 'tests/**'
-      - '.github/workflows/continuous-integration.yml'
   pull_request:
     branches: [main, v1]
     paths:
       - '**.py'
+      - '.github/workflows/**'
       - '.pre-commit-config.yaml'
       - 'pyproject.toml'
       - 'tests/**'
-      - '.github/workflows/continuous-integration.yml'
 
 permissions:
   contents: read
