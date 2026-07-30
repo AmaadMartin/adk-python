@@ -250,16 +250,14 @@ def _warn_if_with_ui(with_ui: bool) -> None:
 @click.pass_context
 def main(ctx: Optional[click.Context] = None) -> None:
   """Agent Development Kit CLI tools."""
-  # `invoke_without_command` keeps a bare command group a successful help
-  # request (exit code 0, help on stdout) instead of the usage error that
-  # Click >= 8.2 raises for a group invoked with no subcommand.
+  # Click >= 8.2 turns a bare group into a usage error (exit 2, help on
+  # stderr); keep it a help request: exit 0 with help on stdout.
   if ctx is not None and ctx.invoked_subcommand is None:
     click.echo(ctx.get_help())
     return
 
   if (
       ctx is not None
-      and ctx.invoked_subcommand is not None
       and ctx.invoked_subcommand != "telemetry"
       and not any(arg in sys.argv for arg in ("--help", "-h"))
       and sys.stdin.isatty()
