@@ -563,6 +563,7 @@ class Context(ReadonlyContext):
           )
           curr_run_id = str(curr_parent_ctx._child_run_counters[curr_node.name])
 
+        assert curr_parent_ctx._workflow_scheduler is not None
         child_ctx = await curr_parent_ctx._workflow_scheduler(
             curr_parent_ctx,
             curr_node,
@@ -635,8 +636,10 @@ class Context(ReadonlyContext):
           raise ValueError(f'Cannot find root_agent on node {curr_node.name}')
 
         # Local import to avoid runtime circular dependencies with Context
+        from ..agents.base_agent import BaseAgent
         from ..workflow.utils._transfer_utils import resolve_and_derive_transfer_context
 
+        assert isinstance(curr_node, BaseAgent)
         target_agent, next_parent_ctx = resolve_and_derive_transfer_context(
             target_name=target_name,
             current_agent=curr_node,

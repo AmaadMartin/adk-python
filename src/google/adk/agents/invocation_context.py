@@ -252,7 +252,7 @@ class InvocationContext(BaseModel):
   canonical_tools_cache: Optional[list[BaseTool]] = None
   """The cache of canonical tools for this invocation."""
 
-  _event_queue: Optional[asyncio.Queue] = PrivateAttr(default=None)
+  _event_queue: Optional[asyncio.Queue[Any]] = PrivateAttr(default=None)
   """Shared event queue for all nodes in this invocation.
 
   All nodes enqueue events here via ``_enqueue_event()``. The Runner
@@ -352,6 +352,8 @@ class InvocationContext(BaseModel):
     Args:
       agent_name: The name of the agent whose sub-agent states need to be reset.
     """
+    if not isinstance(self.agent, BaseAgent):
+      return
     agent = self.agent.find_agent(agent_name)
     if not agent:
       return
@@ -555,9 +557,11 @@ class InvocationContext(BaseModel):
     else:
       search_space = events
 
-    return find_event_by_function_call_id(
-        search_space, function_responses[0].id
-    )
+    function_id = function_responses[0].id
+    if function_id is None:
+      return None
+
+    return find_event_by_function_call_id(search_space, function_id)
 
   def stamp_event_branch_context(self, event: Event) -> None:
     """Stamps the event with the branch and isolation scope of its matching function call."""
