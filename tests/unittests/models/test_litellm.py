@@ -5211,8 +5211,11 @@ def test_model_response_to_generate_content_response_no_message_no_finish_reason
   assert llm_response.content is not None
   assert llm_response.content.role == "model"
   assert len(llm_response.content.parts) == 0
-  # finish_reason may be None or have a default value - the important thing
-  # is that we don't raise ValueError
+  # LiteLLM defaults an absent finish_reason to "stop", which maps to STOP and
+  # therefore leaves the error fields unset.
+  assert llm_response.finish_reason == types.FinishReason.STOP
+  assert llm_response.error_code is None
+  assert llm_response.error_message is None
   assert llm_response.model_version == "test_model"
 
 
@@ -5260,6 +5263,227 @@ def test_model_response_to_generate_content_response_safety_finish_reason():
   assert llm_response.error_message == "Finished with SAFETY"
 
 
+def _finish_reason_only_response(finish_reason: str) -> ModelResponse:
+  """Returns a message-less ModelResponse carrying only `finish_reason`."""
+  response = ModelResponse(
+      model="test_model",
+      choices=[{"finish_reason": finish_reason}],
+  )
+  # Force message to be None to guarantee hitting the message-less branch.
+  response.choices[0].message = None
+  return response
+
+
+def test_error_code_is_plain_str_non_streaming():
+  """Tests the non-streaming path emits error_code as a plain str."""
+  llm_response = _model_response_to_generate_content_response(
+      _finish_reason_only_response("content_filter")
+  )
+
+  assert type(llm_response.error_code) is str
+  assert llm_response.error_code == "SAFETY"
+  assert llm_response.error_message == "Finished with SAFETY"
+  # The enum is preserved on `finish_reason`, which is declared as the enum.
+  assert llm_response.finish_reason is types.FinishReason.SAFETY
+
+
+def test_error_code_model_dump_emits_plain_str():
+  """Tests that model_dump() carries the str value, not the enum object."""
+  llm_response = _model_response_to_generate_content_response(
+      _finish_reason_only_response("length")
+  )
+
+  dumped_error_code = llm_response.model_dump()["error_code"]
+  assert type(dumped_error_code) is str
+  assert dumped_error_code == "MAX_TOKENS"
+
+
+@pytest.mark.parametrize(
+    "finish_reason", ["stop", "tool_calls", "function_call"]
+)
+def test_non_streaming_stop_finish_reason_sets_no_error(finish_reason):
+  """Tests that STOP-mapped finish reasons leave the error fields unset."""
+  llm_response = _model_response_to_generate_content_response(
+      _finish_reason_only_response(finish_reason)
+  )
+
+  assert llm_response.finish_reason == types.FinishReason.STOP
+  assert llm_response.error_code is None
+  assert llm_response.error_message is None
+
+
+@pytest.mark.asyncio
+async def test_error_code_is_plain_str_streaming_text(
+    mock_completion, lite_llm_instance
+):
+  """Tests the streaming text finalize path emits error_code as a plain str."""
+  mock_completion.return_value = iter([
+      ModelResponseStream(
+          choices=[
+              StreamingChoices(
+                  finish_reason=None,
+                  delta=Delta(role="assistant", content="Hello, I am"),
+              )
+          ]
+      ),
+      ModelResponseStream(
+          choices=[StreamingChoices(finish_reason="length", delta=Delta())]
+      ),
+  ])
+
+  llm_request = LlmRequest(
+      contents=[
+          types.Content(
+              role="user", parts=[types.Part.from_text(text="Say hello")]
+          )
+      ],
+  )
+
+  responses = [
+      response
+      async for response in lite_llm_instance.generate_content_async(
+          llm_request, stream=True
+      )
+  ]
+
+  aggregated = [r for r in responses if not r.partial][0]
+  assert type(aggregated.error_code) is str
+  assert aggregated.error_code == "MAX_TOKENS"
+  assert aggregated.error_message == "Maximum tokens reached"
+  assert aggregated.finish_reason is types.FinishReason.MAX_TOKENS
+
+
+@pytest.mark.asyncio
+async def test_error_code_is_plain_str_streaming_tool_call(
+    mock_completion, lite_llm_instance
+):
+  """Tests the streaming tool-call finalize path emits a plain str."""
+  mock_completion.return_value = iter([
+      ModelResponseStream(
+          choices=[
+              StreamingChoices(
+                  finish_reason=None,
+                  delta=Delta(
+                      role="assistant",
+                      tool_calls=[
+                          ChatCompletionDeltaToolCall(
+                              type="function",
+                              id="call_456",
+                              function=Function(
+                                  name="test_function",
+                                  arguments='{"test_arg": "value"}',
+                              ),
+                              index=0,
+                          )
+                      ],
+                  ),
+              )
+          ]
+      ),
+      ModelResponseStream(
+          choices=[StreamingChoices(finish_reason="length", delta=Delta())]
+      ),
+  ])
+
+  responses = [
+      response
+      async for response in lite_llm_instance.generate_content_async(
+          LLM_REQUEST_WITH_FUNCTION_DECLARATION, stream=True
+      )
+  ]
+
+  assert len(responses) == 1
+  assert type(responses[0].error_code) is str
+  assert responses[0].error_code == "MAX_TOKENS"
+  assert responses[0].error_message == "Maximum tokens reached"
+  assert responses[0].finish_reason is types.FinishReason.MAX_TOKENS
+
+
+@pytest.mark.asyncio
+async def test_error_code_is_plain_str_streaming_truncated_tool_call(
+    mock_completion, lite_llm_instance
+):
+  """Tests the truncated tool-call early return emits a plain str."""
+  mock_completion.return_value = iter([
+      ModelResponseStream(
+          choices=[
+              StreamingChoices(
+                  finish_reason=None,
+                  delta=Delta(
+                      role="assistant",
+                      tool_calls=[
+                          ChatCompletionDeltaToolCall(
+                              type="function",
+                              id="call_123",
+                              function=Function(
+                                  name="test_function",
+                                  arguments='{"test_arg":',
+                              ),
+                              index=0,
+                          )
+                      ],
+                  ),
+              )
+          ]
+      ),
+      ModelResponseStream(
+          choices=[StreamingChoices(finish_reason="length", delta=Delta())]
+      ),
+  ])
+
+  responses = [
+      response
+      async for response in lite_llm_instance.generate_content_async(
+          LLM_REQUEST_WITH_FUNCTION_DECLARATION, stream=True
+      )
+  ]
+
+  assert len(responses) == 1
+  assert type(responses[0].error_code) is str
+  assert responses[0].error_code == "MAX_TOKENS"
+  assert responses[0].finish_reason is types.FinishReason.MAX_TOKENS
+
+
+@pytest.mark.asyncio
+async def test_streaming_text_stop_finish_reason_sets_no_error(
+    mock_completion, lite_llm_instance
+):
+  """Tests that a text stream ending in `stop` leaves the error fields unset."""
+  mock_completion.return_value = iter([
+      ModelResponseStream(
+          choices=[
+              StreamingChoices(
+                  finish_reason=None,
+                  delta=Delta(role="assistant", content="Hello"),
+              )
+          ]
+      ),
+      ModelResponseStream(
+          choices=[StreamingChoices(finish_reason="stop", delta=Delta())]
+      ),
+  ])
+
+  llm_request = LlmRequest(
+      contents=[
+          types.Content(
+              role="user", parts=[types.Part.from_text(text="Say hello")]
+          )
+      ],
+  )
+
+  responses = [
+      response
+      async for response in lite_llm_instance.generate_content_async(
+          llm_request, stream=True
+      )
+  ]
+
+  aggregated = [r for r in responses if not r.partial][0]
+  assert aggregated.finish_reason == types.FinishReason.STOP
+  assert aggregated.error_code is None
+  assert aggregated.error_message is None
+
+
 @pytest.mark.asyncio
 async def test_finish_reason_unknown_maps_to_other(
     mock_acompletion, lite_llm_instance
@@ -5299,6 +5523,9 @@ async def test_finish_reason_unknown_maps_to_other(
     # Unknown finish_reason should map to OTHER
     assert isinstance(response.finish_reason, types.FinishReason)
     assert response.finish_reason == types.FinishReason.OTHER
+    assert type(response.error_code) is str
+    assert response.error_code == "OTHER"
+    assert response.error_message == "Finished with OTHER"
 
   mock_acompletion.assert_called_once()
 
