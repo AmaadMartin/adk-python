@@ -56,7 +56,7 @@ Choose the constraints file matching your Python version:
 
 ```bash
 # For example, for Python 3.10
-curl -o constraints-3.10.txt https://github.com/google/adk-python/blob/main/constraints-3.10.txt
+curl -o constraints-3.10.txt https://raw.githubusercontent.com/google/adk-python/main/constraints-3.10.txt
 pip install google-adk -c constraints-3.10.txt
 rm constraints-3.10.txt
 ```
