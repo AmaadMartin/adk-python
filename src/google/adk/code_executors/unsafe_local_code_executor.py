@@ -80,19 +80,40 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
       invocation_context: InvocationContext,
       code_execution_input: CodeExecutionInput,
   ) -> CodeExecutionResult:
+    """Executes the code in a spawned worker process.
+
+    Args:
+      invocation_context: The invocation context of the code execution.
+      code_execution_input: The code execution input.
+
+    Returns:
+      The code execution result. Errors raised by the executed code, and
+      execution timeouts, are reported in `stderr`.
+
+    Raises:
+      RuntimeError: The worker process could not be created, e.g. because the
+        environment does not permit multiprocessing.
+    """
     logger.debug('Executing code:\n```\n%s\n```', code_execution_input.code)
     # Execute the code.
     globals_ = {}
     _prepare_globals(code_execution_input.code, globals_)
 
-    ctx = multiprocessing.get_context('spawn')
-    result_queue = ctx.Queue()
-    process = ctx.Process(
-        target=_execute_in_process,
-        args=(code_execution_input.code, globals_, result_queue),
-        daemon=True,
-    )
-    process.start()
+    try:
+      ctx = multiprocessing.get_context('spawn')
+      result_queue = ctx.Queue()
+      process = ctx.Process(
+          target=_execute_in_process,
+          args=(code_execution_input.code, globals_, result_queue),
+          daemon=True,
+      )
+      process.start()
+    except OSError as err:
+      raise RuntimeError(
+          'UnsafeLocalCodeExecutor could not start a worker process; this'
+          ' environment may not permit multiprocessing.'
+          f' Original error: {type(err).__name__}: {err}'
+      ) from err
 
     output = ''
     error = ''
