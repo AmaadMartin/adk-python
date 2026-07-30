@@ -31,14 +31,8 @@ loadable when something names it explicitly, so `load_skill`,
 control, not an authorization boundary: an application (or an agent instruction
 naming the skill) can still load it on purpose.
 
-The behavior is opt-in while it soaks. Enable it by setting
-`ADK_ENABLE_SKILL_DISABLE_MODEL_INVOCATION=1`, or programmatically:
-
-```python
-from google.adk.features import FeatureName, override_feature_enabled
-
-override_feature_enabled(FeatureName.SKILL_DISABLE_MODEL_INVOCATION, True)
-```
-
-With the feature disabled (the default), ADK parses the directive but does not
-act on it.
+The behavior is opt-in while it soaks: set
+`ADK_ENABLE_SKILL_DISABLE_MODEL_INVOCATION=1`, or call
+`override_feature_enabled(FeatureName.SKILL_DISABLE_MODEL_INVOCATION, True)`
+from `google.adk.features`. With the feature disabled (the default), ADK parses
+the directive but does not act on it.

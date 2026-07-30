@@ -110,20 +110,14 @@ def _build_skill_system_instruction(prefix: str | None = None) -> str:
 def _is_hidden_from_model(frontmatter: models.Frontmatter) -> bool:
   """Returns whether a skill opts out of model-initiated discovery.
 
-  Agent Skills clients use the ``disable-model-invocation`` frontmatter
-  directive to mark a skill as explicitly-invoked only: the model must not be
-  able to discover it, but it stays loadable when its name is supplied. See
+  ``disable-model-invocation`` hides a skill from discovery but keeps it
+  loadable when its name is supplied. See
   https://code.claude.com/docs/en/skills.
-
-  Args:
-    frontmatter: The frontmatter of the skill to check.
-
-  Returns:
-    True if the skill must be withheld from model-facing discovery.
   """
-  if not is_feature_enabled(FeatureName.SKILL_DISABLE_MODEL_INVOCATION):
-    return False
-  return frontmatter.disable_model_invocation
+  return (
+      is_feature_enabled(FeatureName.SKILL_DISABLE_MODEL_INVOCATION)
+      and frontmatter.disable_model_invocation
+  )
 
 
 class ListSkillsTool(BaseTool):
