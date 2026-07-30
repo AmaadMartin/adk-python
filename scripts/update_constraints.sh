@@ -18,6 +18,13 @@
 # Usage:
 #   ./scripts/update_constraints.sh          # Updates constraints.txt in-place if out of date
 #   ./scripts/update_constraints.sh --check  # Check only, exits with 1 if out of date (for CI)
+#
+# Exit codes:
+#   0  Every constraints file is already up to date.
+#   1  Files are out of date: rewritten in update mode, reported in --check.
+#   2  A resolution failed, so the constraints files cannot be trusted. The
+#      target files are left untouched, which is why this needs its own code:
+#      callers cannot detect a failed resolution by inspecting the files.
 
 set -e
 
@@ -42,6 +49,7 @@ trap cleanup EXIT
 
 PYTHON_VERSIONS=("3.10" "3.11" "3.12" "3.13" "3.14")
 EXIT_CODE=0
+RESOLUTION_FAILED=false
 
 # Calculate 4 days ago date
 if [ "$CHECK_ONLY" = false ]; then
@@ -105,7 +113,7 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
     echo "❌ Resolution failed for $TARGET_FILE."
     echo "   A dependency requirement in pyproject.toml cannot be satisfied for Python $ver."
     rm -f "$NEW_FILE"
-    EXIT_CODE=1
+    RESOLUTION_FAILED=true
     continue
   fi
 
@@ -138,5 +146,9 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
     fi
   fi
 done
+
+if [ "$RESOLUTION_FAILED" = true ]; then
+  exit 2
+fi
 
 exit $EXIT_CODE

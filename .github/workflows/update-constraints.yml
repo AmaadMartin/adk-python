@@ -54,22 +54,13 @@ jobs:
         with:
           enable-cache: true
 
+      # Exit 1 means the script rewrote the files, which is the normal outcome
+      # of a scheduled run because --exclude-newer moves every time. Only a
+      # failed resolution (exit 2) may stop the job: it leaves the committed
+      # files untouched, so an unguarded run would open a pull request that
+      # silently mixes freshly resolved pins with stale ones.
       - name: Regenerate constraints files
-        run: |
-          set +e
-          ./scripts/update_constraints.sh
-          status=$?
-          set -e
-          # The script exits 1 both when it rewrites a file (the normal path
-          # here, since --exclude-newer moves every run) and when resolution
-          # fails, so the exit code alone cannot be trusted. Verify every
-          # expected file was produced instead.
-          for ver in 3.10 3.11 3.12 3.13 3.14; do
-            if [ ! -s "constraints-${ver}.txt" ]; then
-              echo "::error::constraints-${ver}.txt was not generated (script exit ${status})"
-              exit 1
-            fi
-          done
+        run: ./scripts/update_constraints.sh || [ $? -eq 1 ]
 
       - name: Extract Bot Identity
         id: bot-identity
