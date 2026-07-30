@@ -48,6 +48,15 @@ class Frontmatter(BaseModel):
         run (optional, experimental). Accepts both ``allowed_tools`` and the
         YAML-friendly ``allowed-tools`` key. For more details, see
         https://agentskills.io/specification#allowed-tools-field.
+      disable_model_invocation: Whether the skill opts out of model-initiated
+        discovery (optional, defaults to ``False``). Accepts both
+        ``disable_model_invocation`` and the YAML-friendly
+        ``disable-model-invocation`` key. When ``True``, and when the
+        ``SKILL_DISABLE_MODEL_INVOCATION`` feature is enabled, the skill is
+        omitted from ``list_skills`` results, from the auto-injected
+        ``<available_skills>`` system instruction, and from ``search_skills``
+        results, but stays loadable when its name is supplied explicitly. For
+        more details, see https://code.claude.com/docs/en/skills.
       metadata: Key-value pairs for client-specific properties (defaults to
         empty dict). For example, to include additional tools, use the
         ``adk_additional_tools`` key with a list of tools. Set
@@ -72,6 +81,12 @@ class Frontmatter(BaseModel):
       default=None,
       alias="allowed-tools",
       serialization_alias="allowed-tools",
+  )
+  # simplicity: `alias` alone covers serialization too -- pydantic falls back
+  # to it for `model_dump(by_alias=True)`. No `serialization_alias` needed.
+  disable_model_invocation: bool = Field(
+      default=False,
+      alias="disable-model-invocation",
   )
   metadata: dict[str, Any] = {}
 

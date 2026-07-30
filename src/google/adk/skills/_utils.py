@@ -42,7 +42,8 @@ _ALLOWED_FRONTMATTER_KEYS = frozenset({
     "metadata",
     "compatibility",
     # Client-side directives harnesses read from the same frontmatter block.
-    # ADK takes no action on them, but a skill carrying them is well-formed
+    # ADK honors ``disable-model-invocation`` (see ``Frontmatter``) and takes
+    # no action on the rest, but a skill carrying any of them is well-formed
     # and must not be reported as a problem. Snapshot of the fields
     # documented at https://code.claude.com/docs/en/skills
     "agent",

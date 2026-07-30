@@ -203,6 +203,54 @@ def test_allowed_tools_serialization_alias():
   assert dumped["allowed-tools"] == "tool-pattern"
 
 
+# --- disable-model-invocation ---
+
+
+def test_disable_model_invocation_defaults_to_false():
+  fm = models.Frontmatter.model_validate({
+      "name": "my-skill",
+      "description": "desc",
+  })
+  assert fm.disable_model_invocation is False
+
+
+def test_disable_model_invocation_alias_via_model_validate():
+  fm = models.Frontmatter.model_validate({
+      "name": "my-skill",
+      "description": "desc",
+      "disable-model-invocation": True,
+  })
+  assert fm.disable_model_invocation is True
+
+
+def test_disable_model_invocation_populate_by_name():
+  fm = models.Frontmatter.model_validate({
+      "name": "my-skill",
+      "description": "desc",
+      "disable_model_invocation": True,
+  })
+  assert fm.disable_model_invocation is True
+
+
+def test_disable_model_invocation_serialization_alias():
+  fm = models.Frontmatter.model_validate({
+      "name": "my-skill",
+      "description": "desc",
+      "disable_model_invocation": True,
+  })
+  dumped = fm.model_dump(by_alias=True)
+  assert dumped["disable-model-invocation"] is True
+
+
+def test_disable_model_invocation_rejects_non_bool():
+  with pytest.raises(ValidationError):
+    models.Frontmatter.model_validate({
+        "name": "my-skill",
+        "description": "desc",
+        "disable-model-invocation": "maybe",
+    })
+
+
 def test_metadata_adk_additional_tools_list():
   fm = models.Frontmatter.model_validate({
       "name": "my-skill",
