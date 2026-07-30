@@ -290,10 +290,15 @@ def main(ctx: Optional[click.Context] = None) -> None:
         )
 
 
-@main.group("telemetry")
-def telemetry() -> None:
+@main.group("telemetry", invoke_without_command=True)
+@click.pass_context
+def telemetry(ctx: click.Context) -> None:
   """Manage telemetry settings."""
-  pass
+  # `invoke_without_command` keeps `adk telemetry` a successful help request
+  # (exit code 0) instead of the usage error (exit code 2) that Click >= 8.2
+  # raises for a group invoked with no subcommand.
+  if ctx.invoked_subcommand is None:
+    click.echo(ctx.get_help())
 
 
 @telemetry.command("enable")
