@@ -14,23 +14,26 @@
 
 name: Continuous Integration
 
+# The two `paths` filters below MUST stay in sync and MUST include
+# '.github/workflows/**', so that a change to the CI gate is validated by the
+# gate itself. Enforced by tests/unittests/test_ci_workflow_paths.py.
 on:
   push:
     branches: [main, v1]
     paths:
       - '**.py'
+      - '.github/workflows/**'
       - '.pre-commit-config.yaml'
       - 'pyproject.toml'
       - 'tests/**'
-      - '.github/workflows/continuous-integration.yml'
   pull_request:
     branches: [main, v1]
     paths:
       - '**.py'
+      - '.github/workflows/**'
       - '.pre-commit-config.yaml'
       - 'pyproject.toml'
       - 'tests/**'
-      - '.github/workflows/continuous-integration.yml'
 
 permissions:
   contents: read
