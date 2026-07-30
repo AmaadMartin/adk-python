@@ -22,9 +22,6 @@ on:
   # Allows a maintainer to produce a set on demand from the Actions console.
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 jobs:
   update-constraints:
     name: Regenerate Constraints Files
