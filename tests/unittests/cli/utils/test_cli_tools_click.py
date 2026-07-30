@@ -1657,10 +1657,16 @@ def test_telemetry_cli_commands(monkeypatch: pytest.MonkeyPatch) -> None:
 
   runner = CliRunner()
 
-  # Test running without subcommand shows help
+  # Running the group without a subcommand prints its help. Click's exit code
+  # for that path is version dependent (0 before click 8.2, 2 from click 8.2
+  # onwards, which raises NoArgsIsHelpError) and pyproject allows both, so
+  # assert on the help output instead of the exit code.
   result = runner.invoke(cli_tools_click.main, ["telemetry"])
-  assert result.exit_code == 0
   assert "Usage:" in result.output
+  assert "enable" in result.output
+  assert "disable" in result.output
+  assert "status" in result.output
+  assert consent_store["val"] is None
 
   # Test status subcommand
   result = runner.invoke(cli_tools_click.main, ["telemetry", "status"])
