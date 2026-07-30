@@ -49,9 +49,6 @@ jobs:
 
   # 2. Static type analysis (Mypy Check with Matrix)
   # Compares new changes against the target base branch dynamically to support v1.
-  # --python-version makes mypy analyse the code AS the matrix version, overriding
-  # the python_version pin in [tool.mypy]. Without it every entry analyses the same
-  # version, so the matrix checks nothing extra. Both runs must pass the same flag.
   type-check:
     name: Mypy Check (Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -93,6 +90,7 @@ jobs:
           # We ignore exit code (|| true) because we expect errors on baseline
           # --no-incremental: cache replay can re-render an unchanged error
           # differently, making it look new to the comm below. Both passes use it.
+          # --python-version: analyse as the matrix version, not the [tool.mypy] pin.
           uv run mypy --no-incremental --python-version ${{ matrix.python-version }} . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > baseline_errors.txt || true
           echo "Found $(wc -l < baseline_errors.txt) errors on $TARGET_BRANCH."
 
