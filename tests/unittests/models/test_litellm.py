@@ -4695,6 +4695,7 @@ async def test_streaming_tool_call_complete_with_length_finish_reason(
   assert function_call.args == {"test_arg": "value"}
   assert final_response.finish_reason == types.FinishReason.MAX_TOKENS
   assert final_response.error_code == types.FinishReason.MAX_TOKENS
+  assert final_response.error_message == "Maximum tokens reached"
 
 
 @pytest.mark.asyncio
@@ -4743,7 +4744,149 @@ async def test_streaming_text_truncated_by_max_tokens(
   aggregated = aggregated_responses[0]
   assert aggregated.finish_reason == types.FinishReason.MAX_TOKENS
   assert aggregated.error_code == types.FinishReason.MAX_TOKENS
-  assert "Maximum tokens reached" in aggregated.error_message
+  assert aggregated.error_message == "Maximum tokens reached"
+
+
+def _streaming_tool_call_chunks(call_id: str) -> list[ModelResponseStream]:
+  """Returns a two-chunk stream of one complete tool call, then `tool_calls`."""
+  return [
+      ModelResponseStream(
+          choices=[
+              StreamingChoices(
+                  finish_reason=None,
+                  delta=Delta(
+                      role="assistant",
+                      tool_calls=[
+                          ChatCompletionDeltaToolCall(
+                              type="function",
+                              id=call_id,
+                              function=Function(
+                                  name="test_function",
+                                  arguments='{"test_arg": "value"}',
+                              ),
+                              index=0,
+                          )
+                      ],
+                  ),
+              )
+          ]
+      ),
+      ModelResponseStream(
+          choices=[StreamingChoices(finish_reason="tool_calls", delta=Delta())]
+      ),
+  ]
+
+
+@pytest.mark.asyncio
+async def test_streaming_tool_calls_finish_reason_sets_no_error(
+    mock_completion, lite_llm_instance
+):
+  """Tests that finish_reason='tool_calls' is normal completion, not an error."""
+  mock_completion.return_value = iter(_streaming_tool_call_chunks("call_789"))
+
+  responses = [
+      response
+      async for response in lite_llm_instance.generate_content_async(
+          LLM_REQUEST_WITH_FUNCTION_DECLARATION, stream=True
+      )
+  ]
+
+  assert len(responses) == 1
+  final_response = responses[0]
+  # `_FINISH_REASON_MAPPING` maps `tool_calls` to STOP, so no error fields.
+  assert final_response.finish_reason == types.FinishReason.STOP
+  assert final_response.error_code is None
+  assert final_response.error_message is None
+
+  function_call = final_response.content.parts[0].function_call
+  assert function_call.name == "test_function"
+  assert function_call.id == "call_789"
+  assert function_call.args == {"test_arg": "value"}
+
+
+@pytest.mark.asyncio
+async def test_streaming_tool_call_finalize_handles_unmapped_finish_reason(
+    mock_completion, lite_llm_instance
+):
+  """Tests that a tool-call stream survives a finish reason that maps to None."""
+  mock_completion.return_value = iter(_streaming_tool_call_chunks("call_abc"))
+
+  with patch(
+      "google.adk.models.lite_llm._map_finish_reason", return_value=None
+  ):
+    responses = [
+        response
+        async for response in lite_llm_instance.generate_content_async(
+            LLM_REQUEST_WITH_FUNCTION_DECLARATION, stream=True
+        )
+    ]
+
+  assert len(responses) == 1
+  final_response = responses[0]
+  assert final_response.finish_reason is None
+  assert final_response.error_code is None
+  assert final_response.error_message is None
+
+  function_call = final_response.content.parts[0].function_call
+  assert function_call.name == "test_function"
+  assert function_call.id == "call_abc"
+  assert function_call.args == {"test_arg": "value"}
+
+
+@pytest.mark.asyncio
+async def test_streaming_text_finalize_handles_unmapped_finish_reason(
+    mock_completion, lite_llm_instance
+):
+  """Tests that a text stream survives a finish reason that maps to None."""
+  mock_completion.return_value = iter([
+      ModelResponseStream(
+          model="test_model",
+          choices=[
+              StreamingChoices(
+                  finish_reason=None,
+                  delta=Delta(role="assistant", content="Hello "),
+              )
+          ],
+      ),
+      ModelResponseStream(
+          model="test_model",
+          choices=[
+              StreamingChoices(
+                  finish_reason=None,
+                  delta=Delta(role="assistant", content="world"),
+              )
+          ],
+      ),
+      ModelResponseStream(
+          model="test_model",
+          choices=[StreamingChoices(finish_reason="stop", delta=Delta())],
+      ),
+  ])
+
+  llm_request = LlmRequest(
+      contents=[
+          types.Content(
+              role="user", parts=[types.Part.from_text(text="Test prompt")]
+          )
+      ],
+  )
+
+  with patch(
+      "google.adk.models.lite_llm._map_finish_reason", return_value=None
+  ):
+    responses = [
+        response
+        async for response in lite_llm_instance.generate_content_async(
+            llm_request, stream=True
+        )
+    ]
+
+  aggregated = responses[-1]
+  assert aggregated.partial is False
+  assert aggregated.finish_reason is None
+  assert aggregated.error_code is None
+  assert aggregated.error_message is None
+  assert aggregated.content.parts[0].text == "Hello world"
 
 
 @pytest.mark.asyncio
