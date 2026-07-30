@@ -1971,3 +1971,106 @@ def test_telemetry_commands_write_error(
   result = runner.invoke(cli_tools_click.main, ["telemetry", "disable"])
   assert result.exit_code == 1
   assert "Error: Failed to disable telemetry" in result.output
+
+
+# Command groups invoked without a subcommand. `telemetry` is deliberately
+# absent: it is fixed separately and this file must not depend on that change.
+_BARE_GROUP_ARGVS = [
+    pytest.param([], id="main"),
+    pytest.param(["deploy"], id="deploy"),
+    pytest.param(["conformance"], id="conformance"),
+    pytest.param(["eval_set"], id="eval_set"),
+    pytest.param(["migrate"], id="migrate"),
+]
+
+# One subcommand per group, used to check the group callbacks stay silent when
+# a subcommand is selected. `--help` is appended so no subcommand body runs.
+_GROUP_SUBCOMMAND_ARGVS = [
+    pytest.param(["deploy", "cloud_run"], id="deploy"),
+    pytest.param(["conformance", "record"], id="conformance"),
+    pytest.param(["eval_set", "create"], id="eval_set"),
+    pytest.param(["migrate", "session"], id="migrate"),
+]
+
+
+@pytest.fixture
+def _telemetry_consent_disabled(monkeypatch: pytest.MonkeyPatch) -> None:
+  """Keep the CLI away from the real user telemetry consent file."""
+  monkeypatch.setattr(
+      "google.adk.cli.cli_tools_click.read_telemetry_consent", lambda: False
+  )
+
+
+@pytest.mark.unmute_click
+@pytest.mark.parametrize("argv", _BARE_GROUP_ARGVS)
+def test_bare_group_prints_help_and_exits_zero(
+    argv: List[str], _telemetry_consent_disabled: None
+) -> None:
+  """A group invoked with no subcommand prints help to stdout and exits 0."""
+  result = CliRunner().invoke(cli_tools_click.main, argv)
+
+  assert result.exit_code == 0, (result.output, repr(result.exception))
+  assert "Usage:" in result.stdout
+
+
+@pytest.mark.unmute_click
+@pytest.mark.parametrize("argv", _BARE_GROUP_ARGVS)
+def test_group_help_option_prints_help_and_exits_zero(
+    argv: List[str], _telemetry_consent_disabled: None
+) -> None:
+  """`--help` keeps printing help on stdout and exiting 0 for every group."""
+  result = CliRunner().invoke(cli_tools_click.main, argv + ["--help"])
+
+  assert result.exit_code == 0, (result.output, repr(result.exception))
+  assert "Usage:" in result.stdout
+
+
+@pytest.mark.unmute_click
+@pytest.mark.parametrize("argv", _GROUP_SUBCOMMAND_ARGVS)
+def test_group_with_subcommand_does_not_print_group_help(
+    argv: List[str], _telemetry_consent_disabled: None
+) -> None:
+  """Selecting a subcommand leaves the group callbacks silent."""
+  result = CliRunner().invoke(cli_tools_click.main, argv + ["--help"])
+
+  assert result.exit_code == 0, (result.output, repr(result.exception))
+  # A single usage block: the subcommand's own, with no group help echoed
+  # before it by either the `main` callback or the group callback.
+  assert result.stdout.count("Usage:") == 1
+  assert " ".join(argv) in result.stdout
+
+
+@pytest.mark.unmute_click
+def test_unknown_subcommand_is_still_a_usage_error() -> None:
+  """An unknown subcommand must stay a usage error, not a silent success."""
+  result = CliRunner().invoke(cli_tools_click.main, ["definitely_not_a_cmd"])
+
+  assert result.exit_code == 2
+  assert "No such command" in result.output
+
+
+@pytest.mark.unmute_click
+def test_bare_main_does_not_prompt_for_telemetry_consent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """A bare `adk` prints help without asking for first-run telemetry consent."""
+  monkeypatch.setattr(
+      "google.adk.cli.cli_tools_click.read_telemetry_consent", lambda: None
+  )
+  mock_write = mock.Mock()
+  monkeypatch.setattr(
+      "google.adk.cli.cli_tools_click.write_telemetry_consent", mock_write
+  )
+  monkeypatch.setattr(
+      "click.testing._NamedTextIOWrapper.isatty", lambda self: True
+  )
+  mock_input = mock.Mock(return_value="y")
+  monkeypatch.setattr("builtins.input", mock_input)
+
+  result = CliRunner().invoke(cli_tools_click.main, [])
+
+  assert result.exit_code == 0
+  assert "Usage:" in result.stdout
+  assert "Help improve the ADK" not in result.output
+  mock_input.assert_not_called()
+  mock_write.assert_not_called()
