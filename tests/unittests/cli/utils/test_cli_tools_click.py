@@ -257,6 +257,45 @@ def test_cli_run_interactive_with_state(
   assert called_kwargs.get("state_str") == '{"x": 1}'
 
 
+@pytest.mark.parametrize(
+    "cli_args,expected_save_session",
+    [
+        pytest.param(["--save_session"], True, id="flag_present"),
+        pytest.param([], False, id="flag_absent"),
+    ],
+)
+def test_cli_run_save_session_flag(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cli_args: List[str],
+    expected_save_session: bool,
+) -> None:
+  """`adk run` should forward the --save_session boolean flag to run_cli."""
+  # Arrange
+  agent_dir = tmp_path / "agent_save_session"
+  agent_dir.mkdir()
+  (agent_dir / "__init__.py").touch()
+  (agent_dir / "agent.py").touch()
+
+  mock_run_cli = mock.AsyncMock()
+  monkeypatch.setattr("google.adk.cli.cli_tools_click.run_cli", mock_run_cli)
+
+  runner = CliRunner()
+
+  # Act: no positional query, so `adk run` stays in interactive mode, which is
+  # the only mode that forwards --save_session to run_cli.
+  result = runner.invoke(
+      cli_tools_click.main,
+      ["run", str(agent_dir), *cli_args],
+  )
+
+  # Assert
+  assert result.exit_code == 0, (result.output, repr(result.exception))
+  assert mock_run_cli.called
+  called_kwargs = mock_run_cli.call_args.kwargs
+  assert called_kwargs["save_session"] is expected_save_session
+
+
 def test_cli_run_options_with_query(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -1070,6 +1109,39 @@ def test_cli_deploy_agent_engine_otel_to_cloud_success(
   assert called_kwargs.get("project") == "test-proj"
   assert called_kwargs.get("region") == "us-central1"
   assert called_kwargs.get("otel_to_cloud")
+
+
+def test_cli_deploy_agent_engine_otel_to_cloud_defaults_to_none(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """Omitting --otel_to_cloud must forward None, the "unset" tri-state.
+
+  cli_deploy.to_agent_engine distinguishes None ("not specified") from an
+  explicit value when reconciling it with the deprecated --trace_to_cloud, so
+  the default must not collapse to False.
+  """
+  rec = _Recorder()
+  monkeypatch.setattr("google.adk.cli.cli_deploy.to_agent_engine", rec)
+
+  agent_dir = tmp_path / "agent_ae"
+  agent_dir.mkdir()
+  runner = CliRunner()
+  result = runner.invoke(
+      cli_tools_click.main,
+      [
+          "deploy",
+          "agent_engine",
+          "--project",
+          "test-proj",
+          "--region",
+          "us-central1",
+          str(agent_dir),
+      ],
+  )
+  assert result.exit_code == 0
+  assert rec.calls, "cli_deploy.to_agent_engine must be invoked"
+  called_kwargs = rec.calls[0][1]
+  assert called_kwargs["otel_to_cloud"] is None
 
 
 # cli deploy gke
