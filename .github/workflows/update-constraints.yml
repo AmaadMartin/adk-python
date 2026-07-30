@@ -73,8 +73,6 @@ jobs:
           committer: "${{ steps.bot-identity.outputs.name }} <${{ steps.bot-identity.outputs.email }}>"
           author: "${{ steps.bot-identity.outputs.name }} <${{ steps.bot-identity.outputs.email }}>"
           body: |
-            This PR regenerates `constraints-3.10.txt` … `constraints-3.14.txt` by running `./scripts/update_constraints.sh`.
-
-            These files pin every transitive dependency, so they are a supply-chain artifact: each one is a real `uv pip compile` resolution and the `--exclude-newer` date it was resolved against is recorded in the file's header comment.
+            This PR regenerates `constraints-3.10.txt` through `constraints-3.14.txt` by running `./scripts/update_constraints.sh`. Each file records the `--exclude-newer` date it was resolved against in its header comment.
 
             Please review the diff before merging.
