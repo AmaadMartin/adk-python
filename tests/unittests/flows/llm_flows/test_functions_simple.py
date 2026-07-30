@@ -1897,6 +1897,7 @@ async def test_live_long_running_tool_no_response_emits_actions_only_event():
   invocation_context = await testing_utils.create_invocation_context(
       agent=agent, user_content=''
   )
+  invocation_context.branch = 'root.test_agent'
   event = _live_function_call_event(
       invocation_context,
       types.FunctionCall(name=tool.name, args={}, id='fc_lr'),
@@ -1912,7 +1913,7 @@ async def test_live_long_running_tool_no_response_emits_actions_only_event():
   assert result.get_function_responses() == []
   assert result.invocation_id == invocation_context.invocation_id
   assert result.author == agent.name
-  assert result.branch == invocation_context.branch
+  assert result.branch == 'root.test_agent'
 
 
 async def test_live_long_running_tool_no_response_no_actions_returns_none():
@@ -2009,7 +2010,8 @@ async def test_live_parallel_long_running_tools_merge_actions_only_events():
     tool_context.state['a'] = 1
 
   def start_job_b(tool_context: ToolContext) -> None:
-    tool_context.state['b'] = 2
+    # A non-state_delta field also counts as "recorded an action".
+    tool_context.actions.escalate = True
 
   tool_a = LongRunningFunctionTool(func=start_job_a)
   tool_b = LongRunningFunctionTool(func=start_job_b)
@@ -2035,7 +2037,8 @@ async def test_live_parallel_long_running_tools_merge_actions_only_events():
 
   assert result is not None
   assert result.content is None
-  assert result.actions.state_delta == {'a': 1, 'b': 2}
+  assert result.actions.state_delta == {'a': 1}
+  assert result.actions.escalate is True
 
 
 async def test_live_non_blocking_long_running_tool_appends_actions_only_event():
