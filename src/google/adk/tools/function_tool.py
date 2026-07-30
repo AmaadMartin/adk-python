@@ -264,7 +264,7 @@ class FunctionTool(BaseTool):
 
   @override
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any, Any, Any]
   ) -> Any:
     # Preprocess arguments (includes Pydantic model conversion)
     args_to_call = self._prepare_invocation_args(args, tool_context)
@@ -343,7 +343,7 @@ You could retry calling this tool, but it is IMPORTANT for you to provide all th
       self,
       *,
       args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
       invocation_context,
   ) -> Any:
     args_to_call = args.copy()

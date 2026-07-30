@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+from typing import Any
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -27,9 +28,9 @@ def resolve_and_derive_transfer_context(
     target_name: str,
     current_agent: BaseAgent,
     root_agent: BaseAgent,
-    curr_ctx: Context,
-    curr_parent_ctx: Context | None,
-) -> tuple[BaseAgent, Context | None] | tuple[None, None]:
+    curr_ctx: Context[Any, Any, Any],
+    curr_parent_ctx: Context[Any, Any, Any] | None,
+) -> tuple[BaseAgent, Context[Any, Any, Any] | None] | tuple[None, None]:
   """Resolves the target agent and derives its parent context in a single pass.
 
   Args:

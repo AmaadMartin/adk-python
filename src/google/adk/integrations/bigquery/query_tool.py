@@ -38,7 +38,7 @@ def _execute_sql(
     query: str,
     credentials: Credentials,
     settings: BigQueryToolConfig,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any, Any, Any],
     dry_run: bool = False,
     caller_id: Optional[str] = None,
 ) -> dict[str, Any]:
@@ -201,7 +201,7 @@ def execute_sql(
     query: str,
     credentials: Credentials,
     settings: BigQueryToolConfig,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any, Any, Any],
     dry_run: bool = False,
 ) -> dict[str, Any]:
   """Run a BigQuery or BigQuery ML SQL query in the project and return the result.
@@ -212,7 +212,7 @@ def execute_sql(
       query (str): The BigQuery SQL query to be executed.
       credentials (Credentials): The credentials to use for the request.
       settings (BigQueryToolConfig): The settings for the tool.
-      tool_context (ToolContext): The context for the tool.
+      tool_context (ToolContext[Any, Any, Any]): The context for the tool.
       dry_run (bool, default False): If True, the query will not be executed.
         Instead, the query will be validated and information about the query
         will be returned. Defaults to False.
@@ -302,7 +302,7 @@ def _execute_sql_write_mode(*args: Any, **kwargs: Any) -> dict[str, Any]:
       query (str): The BigQuery SQL query to be executed.
       credentials (Credentials): The credentials to use for the request.
       settings (BigQueryToolConfig): The settings for the tool.
-      tool_context (ToolContext): The context for the tool.
+      tool_context (ToolContext[Any, Any, Any]): The context for the tool.
       dry_run (bool, default False): If True, the query will not be executed.
         Instead, the query will be validated and information about the query
         will be returned. Defaults to False.
@@ -524,7 +524,7 @@ def _execute_sql_protected_write_mode(
       query (str): The BigQuery SQL query to be executed.
       credentials (Credentials): The credentials to use for the request.
       settings (BigQueryToolConfig): The settings for the tool.
-      tool_context (ToolContext): The context for the tool.
+      tool_context (ToolContext[Any, Any, Any]): The context for the tool.
       dry_run (bool, default False): If True, the query will not be executed.
         Instead, the query will be validated and information about the query
         will be returned. Defaults to False.
@@ -779,7 +779,7 @@ def forecast(
     *,
     credentials: Credentials,
     settings: BigQueryToolConfig,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any, Any, Any],
 ) -> dict[str, Any]:
   """Run a BigQuery AI time series forecast using AI.FORECAST.
 
@@ -800,7 +800,7 @@ def forecast(
         elements must be strings. Defaults to None.
       credentials (Credentials): The credentials to use for the request.
       settings (BigQueryToolConfig): The settings for the tool.
-      tool_context (ToolContext): The context for the tool.
+      tool_context (ToolContext[Any, Any, Any]): The context for the tool.
 
   Returns:
       dict: Dictionary representing the result of the forecast. The result
@@ -951,7 +951,7 @@ def analyze_contribution(
     is_test_col: str,
     credentials: Credentials,
     settings: BigQueryToolConfig,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any, Any, Any],
     top_k_insights: int = 30,
     pruning_method: str = "PRUNE_REDUNDANT_INSIGHTS",
 ) -> dict[str, Any]:
@@ -1155,7 +1155,7 @@ def detect_anomalies(
     *,
     credentials: Credentials,
     settings: BigQueryToolConfig,
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any, Any, Any],
 ) -> dict[str, Any]:
   """Run a BigQuery time series ARIMA_PLUS model training and anomaly detection using CREATE MODEL and ML.DETECT_ANOMALIES clauses.
 
@@ -1181,7 +1181,7 @@ def detect_anomalies(
         determine if a data point is an anomaly. Defaults to 0.95.
       credentials (Credentials): The credentials to use for the request.
       settings (BigQueryToolConfig): The settings for the tool.
-      tool_context (ToolContext): The context for the tool.
+      tool_context (ToolContext[Any, Any, Any]): The context for the tool.
 
   Returns:
       dict: Dictionary representing the result of the anomaly detection. The

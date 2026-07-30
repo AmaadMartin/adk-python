@@ -26,7 +26,9 @@ from google.adk.tools.tool_context import ToolContext
 from ..utils.resolve_root_directory import resolve_file_path
 
 
-async def explore_project(tool_context: ToolContext) -> Dict[str, Any]:
+async def explore_project(
+    tool_context: ToolContext[Any, Any, Any],
+) -> Dict[str, Any]:
   """Analyze project structure and suggest optimal file paths for ADK agents.
 
   This tool performs comprehensive project analysis to understand the existing

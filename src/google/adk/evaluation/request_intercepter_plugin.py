@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 from typing import Optional
 import uuid
 
@@ -36,7 +37,7 @@ class _RequestIntercepterPlugin(BasePlugin):
   NOTE: This implementation is intended for eval systems internal usage. Do not
   take direct dependency on it.
 
-  Context behind the creation of this intercepter:
+  Context[Any, Any, Any] behind the creation of this intercepter:
   Some of the newer AutoRater backed metrics need access the pieces of
   information that were presented to the model like instructions and the list
   of available tools.
@@ -57,7 +58,10 @@ class _RequestIntercepterPlugin(BasePlugin):
 
   @override
   async def before_model_callback(
-      self, *, callback_context: CallbackContext, llm_request: LlmRequest
+      self,
+      *,
+      callback_context: CallbackContext[Any, Any, Any],
+      llm_request: LlmRequest,
   ) -> Optional[LlmResponse]:
     # We add the llm_request to the call back context so that we can fetch
     # it later.
@@ -68,7 +72,10 @@ class _RequestIntercepterPlugin(BasePlugin):
 
   @override
   async def after_model_callback(
-      self, *, callback_context: CallbackContext, llm_response: LlmResponse
+      self,
+      *,
+      callback_context: CallbackContext[Any, Any, Any],
+      llm_response: LlmResponse,
   ) -> Optional[LlmResponse]:
     # Fetch the request_id from the callback_context
     if callback_context and _LLM_REQUEST_ID_KEY in callback_context.state:

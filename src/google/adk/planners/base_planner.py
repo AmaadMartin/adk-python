@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import abc
 from abc import ABC
+from typing import Any
 from typing import List
 from typing import Optional
 
@@ -36,7 +37,7 @@ class BasePlanner(ABC):
   @abc.abstractmethod
   def build_planning_instruction(
       self,
-      readonly_context: ReadonlyContext,
+      readonly_context: ReadonlyContext[Any],
       llm_request: LlmRequest,
   ) -> Optional[str]:
     """Builds the system instruction to be appended to the LLM request for planning.
@@ -53,7 +54,7 @@ class BasePlanner(ABC):
   @abc.abstractmethod
   def process_planning_response(
       self,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any, Any, Any],
       response_parts: List[types.Part],
   ) -> Optional[List[types.Part]]:
     """Processes the LLM response for planning.

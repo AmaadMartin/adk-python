@@ -29,7 +29,7 @@ from ..utils.resolve_root_directory import resolve_file_paths
 
 async def delete_files(
     file_paths: List[str],
-    tool_context: ToolContext,
+    tool_context: ToolContext[Any, Any, Any],
     create_backup: bool = False,
     confirm_deletion: bool = True,
 ) -> Dict[str, Any]:

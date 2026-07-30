@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+from typing import Any
 from typing import Optional
 from typing import TYPE_CHECKING
 
@@ -49,7 +50,7 @@ class VertexAiSearchTool(BaseTool):
     ```python
     class DynamicFilterSearchTool(VertexAiSearchTool):
       def _build_vertex_ai_search_config(
-          self, ctx: ReadonlyContext
+          self, ctx: ReadonlyContext[Any]
       ) -> types.VertexAISearch:
         user_id = ctx.state.get('user_id')
         return types.VertexAISearch(
@@ -112,7 +113,7 @@ class VertexAiSearchTool(BaseTool):
     self.bypass_multi_tools_limit = bypass_multi_tools_limit
 
   def _build_vertex_ai_search_config(
-      self, readonly_context: ReadonlyContext
+      self, readonly_context: ReadonlyContext[Any]
   ) -> types.VertexAISearch:
     """Builds the VertexAISearch configuration.
 
@@ -139,7 +140,7 @@ class VertexAiSearchTool(BaseTool):
   async def process_llm_request(
       self,
       *,
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any, Any, Any],
       llm_request: LlmRequest,
   ) -> None:
     model_check_disabled = is_gemini_model_id_check_disabled()

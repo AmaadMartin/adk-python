@@ -18,6 +18,8 @@ from __future__ import annotations
 
 import re
 
+from typing import Any
+
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.auth.auth_credential import AuthCredential
 from google.adk.auth.auth_tool import AuthConfig
@@ -45,7 +47,7 @@ class GcpAuthProvider(BaseAuthProvider):
   async def get_auth_credential(
       self,
       auth_config: AuthConfig,
-      context: CallbackContext | None = None,
+      context: CallbackContext[Any, Any, Any] | None = None,
   ) -> AuthCredential:
     """Retrieves credentials using the Credentials service.
 

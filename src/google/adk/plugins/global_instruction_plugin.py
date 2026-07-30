@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import inspect
+from typing import Any
 from typing import Optional
 from typing import TYPE_CHECKING
 from typing import Union
@@ -51,7 +52,7 @@ class GlobalInstructionPlugin(BasePlugin):
 
     Args:
       global_instruction: The instruction to apply globally. Can be a string or
-        an InstructionProvider function that takes ReadonlyContext and returns a
+        an InstructionProvider function that takes ReadonlyContext[Any] and returns a
         string (sync or async).
       name: The name of the plugin (defaults to "global_instruction").
     """
@@ -59,7 +60,10 @@ class GlobalInstructionPlugin(BasePlugin):
     self.global_instruction = global_instruction
 
   async def before_model_callback(
-      self, *, callback_context: CallbackContext, llm_request: LlmRequest
+      self,
+      *,
+      callback_context: CallbackContext[Any, Any, Any],
+      llm_request: LlmRequest,
   ) -> Optional[LlmResponse]:
     """Apply global instructions to the LLM request.
 
@@ -105,7 +109,7 @@ class GlobalInstructionPlugin(BasePlugin):
     return None
 
   async def _resolve_global_instruction(
-      self, readonly_context: ReadonlyContext
+      self, readonly_context: ReadonlyContext[Any]
   ) -> str:
     """Resolve the global instruction, handling both string and InstructionProvider.
 

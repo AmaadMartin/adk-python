@@ -1,3 +1,9 @@
+from __future__ import annotations
+
+from typing import Any
+
+from .tool_context import ToolContext
+
 # Copyright 2026 Google LLC
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -12,12 +18,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from __future__ import annotations
 
-from .tool_context import ToolContext
-
-
-def exit_loop(tool_context: ToolContext) -> None:
+def exit_loop(tool_context: ToolContext[Any, Any, Any]) -> None:
   """Exits the loop.
 
   Call this function only when you are instructed to do so.
