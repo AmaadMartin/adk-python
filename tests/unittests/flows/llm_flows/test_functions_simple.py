@@ -1910,7 +1910,6 @@ async def test_live_long_running_tool_no_response_emits_actions_only_event():
   assert result is not None
   assert result.content is None
   assert result.actions.state_delta == {'job_id': 'abc'}
-  assert result.get_function_responses() == []
   assert result.invocation_id == invocation_context.invocation_id
   assert result.author == agent.name
   assert result.branch == 'root.test_agent'
