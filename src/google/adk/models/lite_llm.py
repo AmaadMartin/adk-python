@@ -2118,14 +2118,7 @@ def _model_response_to_generate_content_response(
         model_version=response.model,
     )
 
-  mapped_finish_reason = _map_finish_reason(finish_reason)
-  if mapped_finish_reason:
-    llm_response.finish_reason = mapped_finish_reason
-    if mapped_finish_reason != types.FinishReason.STOP:
-      llm_response.error_code = mapped_finish_reason
-      llm_response.error_message = _finish_reason_to_error_message(
-          mapped_finish_reason
-      )
+  _apply_finish_reason(llm_response, finish_reason)
   if response.get("usage", None):
     usage_dict = response["usage"]
     reasoning_tokens = _extract_reasoning_tokens(usage_dict)
@@ -2201,6 +2194,24 @@ def _finish_reason_to_error_message(
   if finish_reason == types.FinishReason.MAX_TOKENS:
     return "Maximum tokens reached"
   return f"Finished with {finish_reason.name}"
+
+
+def _apply_finish_reason(llm_response: LlmResponse, finish_reason: Any) -> None:
+  """Sets finish_reason and, for non-STOP reasons, the error fields, in place.
+
+  `error_code` receives `.value`: the field is `Optional[str]` and `LlmResponse`
+  does not set `validate_assignment`, so assigning the enum would leak it
+  unvalidated where a constructor argument would have been coerced to `str`.
+  """
+  mapped_finish_reason = _map_finish_reason(finish_reason)
+  if not mapped_finish_reason:
+    return
+  llm_response.finish_reason = mapped_finish_reason
+  if mapped_finish_reason != types.FinishReason.STOP:
+    llm_response.error_code = mapped_finish_reason.value
+    llm_response.error_message = _finish_reason_to_error_message(
+        mapped_finish_reason
+    )
 
 
 def _enforce_strict_openai_schema(schema: dict[str, Any]) -> None:
@@ -2881,14 +2892,7 @@ class LiteLlm(BaseLlm):
             model_version=model_version,
             thought_parts=list(reasoning_parts) if reasoning_parts else None,
         )
-        mapped_finish_reason = _map_finish_reason(finish_reason)
-        if mapped_finish_reason:
-          llm_response.finish_reason = mapped_finish_reason
-          if mapped_finish_reason != types.FinishReason.STOP:
-            llm_response.error_code = mapped_finish_reason
-            llm_response.error_message = _finish_reason_to_error_message(
-                mapped_finish_reason
-            )
+        _apply_finish_reason(llm_response, finish_reason)
         return llm_response
 
       def _finalize_text_response(
@@ -2903,14 +2907,7 @@ class LiteLlm(BaseLlm):
             model_version=model_version,
             thought_parts=list(reasoning_parts) if reasoning_parts else None,
         )
-        mapped_finish_reason = _map_finish_reason(finish_reason)
-        if mapped_finish_reason:
-          llm_response.finish_reason = mapped_finish_reason
-          if mapped_finish_reason != types.FinishReason.STOP:
-            llm_response.error_code = mapped_finish_reason
-            llm_response.error_message = _finish_reason_to_error_message(
-                mapped_finish_reason
-            )
+        _apply_finish_reason(llm_response, finish_reason)
         return llm_response
 
       def _reset_stream_buffers() -> None:
