@@ -108,12 +108,12 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
           daemon=True,
       )
       process.start()
-    except OSError as err:
+    except OSError as exc:
       raise RuntimeError(
           'UnsafeLocalCodeExecutor could not start a worker process; this'
           ' environment may not permit multiprocessing.'
-          f' Original error: {type(err).__name__}: {err}'
-      ) from err
+          f' Original error: {type(exc).__name__}: {exc}'
+      ) from exc
 
     output = ''
     error = ''
