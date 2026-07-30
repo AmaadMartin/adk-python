@@ -37,11 +37,6 @@ _WORKFLOW_PATH = (
     / 'continuous-integration.yml'
 )
 
-pytestmark = pytest.mark.skipif(
-    not _WORKFLOW_PATH.is_file(),
-    reason=f'{_WORKFLOW_PATH} is not available outside a source checkout.',
-)
-
 
 @pytest.fixture(scope='module')
 def triggers() -> dict[str, Any]:

@@ -14,9 +14,8 @@
 
 name: Continuous Integration
 
-# The two `paths` filters below MUST stay in sync and MUST include
-# '.github/workflows/**', so that a change to the CI gate is validated by the
-# gate itself. Enforced by tests/unittests/test_ci_workflow_paths.py.
+# Keep both `paths` lists in sync. '.github/workflows/**' gates every workflow
+# file, not just this one, so a change to CI is validated by CI.
 on:
   push:
     branches: [main, v1]
