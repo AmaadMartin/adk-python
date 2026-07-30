@@ -332,6 +332,9 @@ overrides = [ { module = [
 
 [tool.pytest]
 ini_options.testpaths = [ "tests" ]
+ini_options.markers = [
+  "unmute_click: do not mute click output for this test (CLI tests only)",
+]
 ini_options.asyncio_default_fixture_loop_scope = "function"
 ini_options.asyncio_mode = "auto"
 
