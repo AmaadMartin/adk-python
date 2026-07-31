@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import multiprocessing
+import sys
 import textwrap
 from unittest.mock import MagicMock
 
@@ -21,6 +22,7 @@ from google.adk.agents.invocation_context import InvocationContext
 from google.adk.code_executors.code_execution_utils import CodeExecutionInput
 from google.adk.code_executors.code_execution_utils import CodeExecutionResult
 from google.adk.code_executors.unsafe_local_code_executor import UnsafeLocalCodeExecutor
+from google.adk.errors.code_executor_not_available_error import CodeExecutorNotAvailableError
 from google.adk.sessions.base_session_service import BaseSessionService
 from google.adk.sessions.session import Session
 import pytest
@@ -209,3 +211,59 @@ class TestUnsafeLocalCodeExecutor:
 
     with pytest.raises(ValueError, match="cannot find context"):
       executor.execute_code(mock_invocation_context, code_input)
+
+  def test_execute_code_closes_queue_when_worker_cannot_start(
+      self,
+      mock_invocation_context: InvocationContext,
+      monkeypatch: pytest.MonkeyPatch,
+  ):
+    """A worker that cannot start reports the typed error without leaking."""
+    result_queue = MagicMock()
+    no_memory = OSError("Cannot allocate memory")
+
+    class _NoStartContext:
+
+      def Queue(self):
+        return result_queue
+
+      def Process(self, **kwargs):
+        process = MagicMock()
+        process.start.side_effect = no_memory
+        return process
+
+    monkeypatch.setattr(
+        multiprocessing, "get_context", lambda method: _NoStartContext()
+    )
+    executor = UnsafeLocalCodeExecutor()
+    code_input = CodeExecutionInput(code='print("hi")')
+
+    with pytest.raises(
+        CodeExecutorNotAvailableError, match="may not permit multiprocessing"
+    ) as exc_info:
+      executor.execute_code(mock_invocation_context, code_input)
+
+    # RuntimeError stays the base class so existing handlers keep working.
+    assert isinstance(exc_info.value, RuntimeError)
+    assert exc_info.value.__cause__ is no_memory
+    result_queue.close.assert_called_once_with()
+
+  def test_execute_code_reports_unavailable_without_interpreter_path(
+      self, mock_invocation_context: InvocationContext
+  ):
+    """An interpreter that cannot be re-invoked is reported, not left to fail.
+
+    Drives the real multiprocessing machinery rather than a fake context, so
+    the up-front check is what has to produce the error.
+    """
+    executor = UnsafeLocalCodeExecutor()
+    code_input = CodeExecutionInput(code='print("hi")')
+    original_executable = sys.executable
+    multiprocessing.set_executable("")
+
+    try:
+      with pytest.raises(
+          CodeExecutorNotAvailableError, match="no interpreter path to"
+      ):
+        executor.execute_code(mock_invocation_context, code_input)
+    finally:
+      multiprocessing.set_executable(original_executable)
