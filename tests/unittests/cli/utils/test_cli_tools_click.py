@@ -80,14 +80,19 @@ class _Recorder(BaseModel):
 
 # Fixtures
 @pytest.fixture(autouse=True)
-def _mute_click(request, monkeypatch: pytest.MonkeyPatch) -> None:
-  """Suppress click output during tests."""
-  # Allow tests to opt-out of muting by using the 'unmute_click' marker
+def _mute_click(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """Overrides the shared conftest fixture: mutes echo but keeps secho.
+
+  Several tests in this module assert on error text written with
+  ``click.secho`` (for example ``test_cli_deploy_cloud_run_failure``), so
+  ``secho`` must stay live here. The ``unmute_click`` marker opt-out behaves
+  exactly as it does in ``conftest.py``.
+  """
   if "unmute_click" in request.keywords:
     return
   monkeypatch.setattr(click, "echo", lambda *a, **k: None)
-  # Keep secho for error messages
-  # monkeypatch.setattr(click, "secho", lambda *a, **k: None)
 
 
 # streaming mode choices
