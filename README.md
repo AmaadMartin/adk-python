@@ -4,7 +4,7 @@
 [![PyPI version](https://img.shields.io/pypi/v/google-adk.svg)](https://pypi.org/project/google-adk/)
 [![Python versions](https://img.shields.io/pypi/pyversions/google-adk.svg)](https://pypi.org/project/google-adk/)
 [![PyPI downloads](https://static.pepy.tech/badge/google-adk/month)](https://pepy.tech/project/google-adk)
-[![Unit Tests](https://github.com/google/adk-python/actions/workflows/python-unit-tests.yml/badge.svg)](https://github.com/google/adk-python/actions/workflows/python-unit-tests.yml)
+[![Continuous Integration](https://github.com/google/adk-python/actions/workflows/continuous-integration.yml/badge.svg)](https://github.com/google/adk-python/actions/workflows/continuous-integration.yml)
 [![Docs](https://img.shields.io/badge/docs-latest-blue.svg)](https://google.github.io/adk-docs/)
 
 <h2 align="center">
