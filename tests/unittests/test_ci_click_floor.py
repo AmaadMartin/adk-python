@@ -12,18 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Guard test for the click floor the Continuous Integration workflow pins.
+"""Guard test: the click floor CI pins must be the one pyproject.toml declares.
 
-``pyproject.toml`` declares ``click>=8.1.8,<9`` and the repository checks in no
-lock file, so every job that just runs ``uv sync`` gets whatever the newest
-click 8.x happens to be that day. The ``unit-test-cli-click-floor`` job is the
-only thing that exercises the other end, and it does so by installing a version
-hard-coded in the workflow.
-
-That pin has to track the declaration. If the declared floor is raised and the
-workflow is not updated, the job keeps installing a version the project no
-longer supports and still reports a green "CLI Tests (click floor, ...)" check,
-which is the exact kind of silent CI drift the job was added to stop.
+``pyproject.toml`` declares a floored click range and the repository checks in
+no lock file, so every job that just runs ``uv sync`` gets whatever the newest
+click happens to be that day. The ``unit-test-cli-click-floor`` job is the only
+thing that exercises the other end, and it does so from a version hard-coded in
+the workflow. Raising the declared floor without updating that pin leaves the
+job installing a version the project no longer supports while still reporting a
+green check.
 """
 
 from __future__ import annotations
