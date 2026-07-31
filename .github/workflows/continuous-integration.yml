@@ -204,6 +204,12 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     timeout-minutes: 10
+    # The floor of the click range pyproject.toml declares, in one place so the
+    # install and the assertion below cannot disagree. Read back by
+    # tests/unittests/test_ci_click_floor.py, which fails if it drifts from
+    # pyproject.toml.
+    env:
+      CLICK_FLOOR: '8.1.8'
     steps:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -227,9 +233,9 @@ jobs:
       - name: Run CLI tests against the click floor
         run: |
           source .venv/bin/activate
-          uv pip install --reinstall-package click 'click>=8.1.8,<8.2'
+          uv pip install --reinstall-package click "click==$CLICK_FLOOR"
           # A successful install only proves the command ran; assert the
           # downgrade in the interpreter pytest uses, so a pin that lands in
           # the wrong environment fails loudly instead of testing 8.4 again.
-          python -c "import importlib.metadata as md; v = md.version('click'); assert v.startswith('8.1.'), f'expected click 8.1.x, got {v}'"
+          python -c "import importlib.metadata as md, os; want = os.environ['CLICK_FLOOR']; got = md.version('click'); assert got == want, f'expected click {want}, got {got}'"
           pytest tests/unittests/cli
