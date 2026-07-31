@@ -79,7 +79,10 @@ async def _merge_agent_run(
       except Exception as e:
         logger.warning('Failed to put sentinel on queue: %s', e)
 
-  async with asyncio.TaskGroup() as tg:
+  # asyncio.TaskGroup is 3.11+. This coroutine is only ever selected when
+  # sys.version_info >= (3, 11) (see ParallelAgent._run_async_impl); mypy
+  # analysing at target 3.10 cannot see that, hence the ignore.
+  async with asyncio.TaskGroup() as tg:  # type: ignore[attr-defined]
     for events_for_one_agent in agent_runs:
       tg.create_task(process_an_agent(events_for_one_agent))
 
