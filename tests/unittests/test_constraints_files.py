@@ -151,7 +151,8 @@ def test_constraints_files_do_not_pin_google_adk(version: str) -> None:
   )
 
 
-def test_constraints_files_still_pin_google_adk_community() -> None:
+@pytest.mark.parametrize('version', _PYTHON_VERSIONS)
+def test_constraints_files_still_pin_google_adk_community(version: str) -> None:
   """``--no-emit-package`` must drop only the package under installation.
 
   ``google-adk-community`` is a genuine transitive dependency reached through
@@ -159,12 +160,13 @@ def test_constraints_files_still_pin_google_adk_community() -> None:
   exist to pin. Dropping it too would be a silent loss of coverage that
   ``test_constraints_files_do_not_pin_google_adk`` alone would not notice.
   """
-  for version in _PYTHON_VERSIONS:
-    text = _constraints_path(version).read_text()
-    assert re.search(r'^google-adk-community==', text, re.MULTILINE), (
-        f'constraints-{version}.txt no longer pins google-adk-community.'
-        ' --no-emit-package must exclude google-adk only.'
-    )
+  path = _constraints_path(version)
+  assert re.search(
+      r'^google-adk-community==', path.read_text(), re.MULTILINE
+  ), (
+      f'{path.name} no longer pins google-adk-community.'
+      ' --no-emit-package must exclude google-adk only.'
+  )
 
 
 def test_script_versions_match_python_classifiers() -> None:
