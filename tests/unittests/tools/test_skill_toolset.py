@@ -3073,6 +3073,25 @@ async def test_inline_script_agent_code_executor_none(mock_skill1):
 
 
 @pytest.mark.asyncio
+async def test_inline_script_ignores_environment(mock_skill1):
+  """Inline scripts have no environment path, unlike `RunSkillScriptTool`."""
+  mock_env = mock.create_autospec(BaseEnvironment, instance=True)
+  agent = mock.MagicMock(spec=[])
+  tool = _make_inline_tool([mock_skill1], environment=mock_env)
+  ctx = _make_inline_tool_context(agent=agent, confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "skill1",
+          "script_content": "print(1)",
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  assert result["error_code"] == "NO_CODE_EXECUTOR"
+  mock_env.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_inline_script_falls_back_to_agent_code_executor(mock_skill1):
   """Without a toolset executor, the agent's executor runs the script."""
   agent_executor = _make_mock_executor(stdout="from agent\n")

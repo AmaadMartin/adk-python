@@ -1059,12 +1059,7 @@ class RunSkillScriptTool(BaseTool):
             "error_code": "EXECUTION_ERROR",
         }
 
-    # Resolve code executor: toolset-level first, then agent fallback
-    code_executor = self._toolset._code_executor
-    if code_executor is None:
-      agent = tool_context._invocation_context.agent
-      if hasattr(agent, "code_executor"):
-        code_executor = agent.code_executor
+    code_executor = self._toolset._resolve_code_executor(tool_context)
     if code_executor is None:
       return {
           "error": (
@@ -1168,7 +1163,12 @@ class RunSkillScriptTool(BaseTool):
 
 
 class RunSkillInlineScriptTool(BaseTool):
-  """Tool to execute an inline script in a skill's materialized resources."""
+  """Tool to execute an inline script in a skill's materialized resources.
+
+  Unlike `RunSkillScriptTool`, this tool has no `BaseEnvironment` path: it
+  always runs through a `BaseCodeExecutor`, so a toolset configured with an
+  environment instead of an executor reports `NO_CODE_EXECUTOR`.
+  """
 
   def __init__(self, toolset: "SkillToolset"):
     super().__init__(
@@ -1276,12 +1276,7 @@ class RunSkillInlineScriptTool(BaseTool):
           "error_code": "SKILL_NOT_FOUND",
       }
 
-    # Resolve code executor: toolset-level first, then agent fallback.
-    code_executor = self._toolset._code_executor
-    if code_executor is None:
-      code_executor = getattr(
-          tool_context._invocation_context.agent, "code_executor", None
-      )
+    code_executor = self._toolset._resolve_code_executor(tool_context)
     if code_executor is None:
       return {
           "error": (
@@ -1520,6 +1515,24 @@ class SkillToolset(BaseToolset):
   def _get_skill(self, skill_name: str) -> models.Skill | None:
     """Retrieves a skill by name."""
     return self._skills.get(skill_name)
+
+  def _resolve_code_executor(
+      self, tool_context: ToolContext
+  ) -> BaseCodeExecutor | None:
+    """Returns the code executor to run a script with, if one is configured.
+
+    Args:
+      tool_context: The context of the tool call, used to reach the agent.
+
+    Returns:
+      The toolset-level code executor, else the calling agent's, else None.
+    """
+    if self._code_executor is not None:
+      return self._code_executor
+    agent_executor: BaseCodeExecutor | None = getattr(
+        tool_context._invocation_context.agent, "code_executor", None
+    )
+    return agent_executor
 
   async def _get_or_fetch_skill(
       self, skill_name: str, invocation_id: str | None = None
