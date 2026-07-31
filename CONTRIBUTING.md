@@ -215,19 +215,14 @@ part before or alongside your code PR.
 
 1. **Static type checking (mypy):**
 
-   CI type-checks pull requests that touch Python code or project
-   configuration: it runs `mypy` on the base branch for a baseline, then on
-   your branch, and fails only on errors your change introduces. The repository
-   still carries a backlog of pre-existing errors, so a clean local run is not
-   expected — look for errors in the files you touched:
+   CI type-checks pull requests that touch Python code with `mypy`, comparing
+   against a baseline built from the base branch so that only errors your
+   change introduces fail the build. The repository carries a backlog of
+   pre-existing errors, so ignore those and check the files you touched:
 
    ```shell
    uv run mypy .
    ```
-
-   One run covers every job in the CI matrix: `python_version` in the
-   `[tool.mypy]` table of `pyproject.toml` pins the version mypy analyzes
-   against, regardless of the interpreter you launch it with.
 
 1. **Auto-format the code:**
 
