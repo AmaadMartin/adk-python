@@ -104,6 +104,27 @@ Body
     _load_skill_from_dir(skill_dir)
 
 
+def test__load_skill_from_dir_missing_dir(tmp_path):
+  """Tests loading a skill from a path that does not exist."""
+  with pytest.raises(FileNotFoundError, match="Skill directory .* not found"):
+    _load_skill_from_dir(tmp_path / "nonexistent")
+
+
+def test__load_skill_from_dir_not_a_directory(tmp_path):
+  """Tests loading a skill from a path that is a regular file."""
+  file_path = tmp_path / "file.txt"
+  file_path.write_text("hello")
+
+  with pytest.raises(FileNotFoundError, match="Skill directory .* not found"):
+    _load_skill_from_dir(file_path)
+
+
+def test__read_skill_properties_missing_dir(tmp_path):
+  """Tests read_skill_properties with a path that does not exist."""
+  with pytest.raises(FileNotFoundError, match="Skill directory .* not found"):
+    _read_skill_properties(tmp_path / "nonexistent")
+
+
 def test_validate_skill_dir_valid(tmp_path):
   """Tests validate_skill_dir with a valid skill."""
   skill_dir = tmp_path / "my-skill"
@@ -126,6 +147,16 @@ def test_validate_skill_dir_missing_dir(tmp_path):
   problems = _validate_skill_dir(tmp_path / "nonexistent")
   assert len(problems) == 1
   assert "does not exist" in problems[0]
+
+
+def test_validate_skill_dir_not_a_directory(tmp_path):
+  """Tests validate_skill_dir with a path that is a regular file."""
+  file_path = tmp_path / "file.txt"
+  file_path.write_text("hello")
+
+  problems = _validate_skill_dir(file_path)
+  assert len(problems) == 1
+  assert "is not a directory" in problems[0]
 
 
 def test_validate_skill_dir_missing_skill_md(tmp_path):
