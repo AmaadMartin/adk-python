@@ -22,6 +22,7 @@ from pathlib import PurePosixPath
 import sys
 from unittest import mock
 
+from google.adk.agents.llm_agent import LlmAgent
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.code_executors.base_code_executor import BaseCodeExecutor
 from google.adk.code_executors.code_execution_utils import CodeExecutionResult
@@ -34,6 +35,8 @@ from google.adk.tools import tool_context
 from google.adk.tools.tool_confirmation import ToolConfirmation
 from google.genai import types
 import pytest
+
+from .. import testing_utils
 
 
 @pytest.fixture(name="mock_skill1_frontmatter")
@@ -3518,3 +3521,72 @@ async def test_integration_inline_shell_receives_dict_args():
   assert "status" in result, f"Result missing status: {result}"
   assert result["status"] == "success"
   assert result["stdout"] == "--flag value\n"
+
+
+@pytest.mark.asyncio
+async def test_integration_inline_script_confirmation_flow_end_to_end():
+  """End to end, with no mocks: real skill, context, confirmation and executor.
+
+  Drives the whole opt-in + confirm + execute flow over real objects: a real
+  `Skill`, a real `LlmAgent` invocation context, the real confirmation
+  plumbing on `ToolContext`, and a real `UnsafeLocalCodeExecutor`.
+  """
+  skill = models.Skill(
+      frontmatter=models.Frontmatter(
+          name="report-skill", description="Summarizes a bundled report."
+      ),
+      instructions="Use the bundled report.",
+      resources=models.Resources(
+          references={"report.txt": "42 widgets"},
+          scripts={"helper.py": models.Script(src="PREFIX = 'total:'")},
+      ),
+  )
+  toolset = skill_toolset.SkillToolset(
+      [skill],
+      code_executor=UnsafeLocalCodeExecutor(timeout_seconds=60),
+      allow_inline_scripts=True,
+  )
+  tools = {t.name: t for t in await toolset.get_tools()}
+  assert "run_skill_inline_script" in tools
+  tool = tools["run_skill_inline_script"]
+
+  agent = LlmAgent(name="skill_agent", model="gemini-2.5-flash")
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content="summarize the report"
+  )
+  script_content = (
+      "from helper import PREFIX\n"
+      "with open('references/report.txt', encoding='utf-8') as f:\n"
+      "  print(PREFIX, f.read())"
+  )
+  args = {
+      "skill_name": "report-skill",
+      "script_content": script_content,
+      "language": "python",
+  }
+
+  unconfirmed_context = tool_context.ToolContext(
+      invocation_context, function_call_id="fc_1"
+  )
+  pending = await tool.run_async(args=args, tool_context=unconfirmed_context)
+
+  assert pending["error_code"] == "CONFIRMATION_REQUIRED"
+  assert unconfirmed_context.actions.skip_summarization is True
+  requested = unconfirmed_context.actions.requested_tool_confirmations["fc_1"]
+  assert script_content in requested.hint
+  assert requested.payload == {
+      "language": "python",
+      "script_content": script_content,
+  }
+
+  confirmed_context = tool_context.ToolContext(
+      invocation_context,
+      function_call_id="fc_1",
+      tool_confirmation=ToolConfirmation(confirmed=True),
+  )
+  result = await tool.run_async(args=args, tool_context=confirmed_context)
+
+  assert "status" in result, f"Result missing status: {result}"
+  assert result["status"] == "success"
+  assert result["stdout"] == "total: 42 widgets\n"
+  assert result["stderr"] == ""
