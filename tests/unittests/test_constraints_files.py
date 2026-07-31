@@ -23,10 +23,10 @@ three properties whose absence kept the lint gate permanently red:
 * Their two-line header is the one the script reconstructs. ``--check`` parses
   ``--exclude-newer`` back out of line 2, so a hand-typed ``uv`` invocation
   would silently make the check date-unstable.
-* No ``# -c ...tmp`` annotation leaked in. Passing the committed file to uv via
-  ``--constraint`` used to record it as a resolution *source* in every ``# via``
-  block, which made the regenerated file permanently differ from the committed
-  one.
+* No ``-c`` constraint-source annotation leaked in. Passing the committed file
+  to uv via ``--constraint`` used to record it as a resolution *source* in every
+  ``# via`` block, which made the regenerated file permanently differ from the
+  committed one.
 * ``google-adk`` does not pin itself. ``--all-extras`` pulls in the
   ``community`` extra, whose ``google-adk-community`` depends back on
   ``google-adk``, so uv emits a ``google-adk==`` line unless told not to. The
@@ -87,8 +87,12 @@ _HEADER_LINE_2 = (
     r' --exclude-newer \d{{4}}-\d{{2}}-\d{{2}}'
     r' --index-url https://pypi\.org/simple -o constraints-{ver}\.txt$'
 )
-# The corruption that --constraint used to inject into every "# via" block.
-_LEAKED_ANNOTATION = re.compile(r'^#\s+-c .*\.tmp$', re.MULTILINE)
+# The corruption that --constraint injects into every "# via" block. uv writes
+# the source *indented inside* that block ('    #   -c constraints-3.11.txt'),
+# so '#' must not be anchored to column 0, and the path must not be assumed to
+# end in .tmp -- passing the committed file to --constraint directly leaks its
+# real name. Either anchor alone scores 0 against a genuinely corrupted file.
+_LEAKED_ANNOTATION = re.compile(r'^\s*#\s+-c .*$', re.MULTILINE)
 # A pin of the package the constraints file is meant to constrain the install
 # of. Matches the emitted pin, not the "# via google-adk (pyproject.toml)"
 # provenance comments or the google-adk-community dependency.
@@ -131,9 +135,12 @@ def test_constraints_files_have_no_annotation_leakage(version: str) -> None:
   path = _constraints_path(version)
   leaks = _LEAKED_ANNOTATION.findall(path.read_text())
   assert not leaks, (
-      f'{path.name} references a temporary constraint file: {leaks}. The'
-      ' generator must seed uv with the committed output file, never pass it'
-      ' via --constraint.'
+      f'{path.name} carries {len(leaks)} uv constraint-source annotations,'
+      f' e.g. {leaks[0]!r}. The generator must seed uv with the committed'
+      ' output file, never pass it via --constraint: uv records a --constraint'
+      ' input as a resolution source in every "# via" block, so the'
+      ' regenerated file can never match the committed one and --check reports'
+      ' a permanent diff.'
   )
 
 
