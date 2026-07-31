@@ -51,52 +51,51 @@ def _create_branch_ctx_for_sub_agent(
   return invocation_context
 
 
-async def _merge_agent_run(
-    agent_runs: list[AsyncGenerator[Event, None]],
-) -> AsyncGenerator[Event, None]:
-  """Merges agent runs using asyncio.TaskGroup on Python 3.11+."""
-  sentinel = object()
-  queue = asyncio.Queue()
+if sys.version_info >= (3, 11):
 
-  # Agents are processed in parallel.
-  # Events for each agent are put on queue sequentially.
-  async def process_an_agent(
-      events_for_one_agent: AsyncGenerator[Event, None],
-  ) -> None:
-    try:
-      async for event in events_for_one_agent:
-        resume_signal = asyncio.Event()
-        await queue.put((event, resume_signal))
-        # Wait for upstream to consume event before generating new events.
-        await resume_signal.wait()
-    except asyncio.CancelledError:
-      logger.info('Agent run cancelled.')
-      raise
-    finally:
-      # Mark agent as finished.
+  async def _merge_agent_run(
+      agent_runs: list[AsyncGenerator[Event, None]],
+  ) -> AsyncGenerator[Event, None]:
+    """Merges agent runs using asyncio.TaskGroup on Python 3.11+."""
+    sentinel = object()
+    queue = asyncio.Queue()
+
+    # Agents are processed in parallel.
+    # Events for each agent are put on queue sequentially.
+    async def process_an_agent(
+        events_for_one_agent: AsyncGenerator[Event, None],
+    ) -> None:
       try:
-        await queue.put((sentinel, None))
-      except Exception as e:
-        logger.warning('Failed to put sentinel on queue: %s', e)
+        async for event in events_for_one_agent:
+          resume_signal = asyncio.Event()
+          await queue.put((event, resume_signal))
+          # Wait for upstream to consume event before generating new events.
+          await resume_signal.wait()
+      except asyncio.CancelledError:
+        logger.info('Agent run cancelled.')
+        raise
+      finally:
+        # Mark agent as finished.
+        try:
+          await queue.put((sentinel, None))
+        except Exception as e:
+          logger.warning('Failed to put sentinel on queue: %s', e)
 
-  # asyncio.TaskGroup is 3.11+. This coroutine is only ever selected when
-  # sys.version_info >= (3, 11) (see ParallelAgent._run_async_impl); mypy
-  # analysing at target 3.10 cannot see that, hence the ignore.
-  async with asyncio.TaskGroup() as tg:  # type: ignore[attr-defined]
-    for events_for_one_agent in agent_runs:
-      tg.create_task(process_an_agent(events_for_one_agent))
+    async with asyncio.TaskGroup() as tg:
+      for events_for_one_agent in agent_runs:
+        tg.create_task(process_an_agent(events_for_one_agent))
 
-    sentinel_count = 0
-    # Run until all agents finished processing.
-    while sentinel_count < len(agent_runs):
-      event, resume_signal = await queue.get()
-      # Agent finished processing.
-      if event is sentinel:
-        sentinel_count += 1
-      else:
-        yield event
-        # Signal to agent that it should generate next event.
-        resume_signal.set()
+      sentinel_count = 0
+      # Run until all agents finished processing.
+      while sentinel_count < len(agent_runs):
+        event, resume_signal = await queue.get()
+        # Agent finished processing.
+        if event is sentinel:
+          sentinel_count += 1
+        else:
+          yield event
+          # Signal to agent that it should generate next event.
+          resume_signal.set()
 
 
 # TODO - remove once Python <3.11 is no longer supported.
@@ -215,11 +214,10 @@ class ParallelAgent(BaseAgent):
 
     pause_invocation = False
     try:
-      merge_func = (
-          _merge_agent_run
-          if sys.version_info >= (3, 11)
-          else _merge_agent_run_pre_3_11
-      )
+      if sys.version_info >= (3, 11):
+        merge_func = _merge_agent_run
+      else:
+        merge_func = _merge_agent_run_pre_3_11
       async with Aclosing(merge_func(agent_runs)) as agen:
         async for event in agen:
           yield event
