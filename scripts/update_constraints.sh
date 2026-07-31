@@ -98,22 +98,21 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
   # file as version *preferences*, which keeps resolutions stable across runs.
   # Do not pass the committed file via --constraint: uv then records it as a
   # source in every "# via" annotation, so the regenerated file can never
-  # match the committed one and the check reports a permanent diff.
+  # match the committed one and the check reports a permanent diff. The rm
+  # covers the skipped-cp case, where a candidate left behind by a killed run
+  # would otherwise seed uv; cleanup() handles every other temp file.
   rm -f "$NEW_FILE"
   if [ -s "$TARGET_FILE" ]; then
     cp "$TARGET_FILE" "$NEW_FILE"
   fi
 
-  # Modify the GENERATION_CMD to output to NEW_FILE.
+  # Redirect output; GENERATION_CMD always ends in "-o $TARGET_FILE".
   RUN_CMD=$(echo "$GENERATION_CMD" | sed -E "s/-o [^ ]+/-o $NEW_FILE/")
-  RUN_CMD=$(echo "$RUN_CMD" | sed -E "s/--output-file [^ ]+/--output-file $NEW_FILE/")
-  RUN_CMD=$(echo "$RUN_CMD" | sed -E "s/--output-file=[^ ]+/--output-file=$NEW_FILE/")
 
   echo "Running: $RUN_CMD"
   if ! eval "$RUN_CMD"; then
     echo "❌ Resolution failed for $TARGET_FILE."
     echo "   A dependency requirement in pyproject.toml cannot be satisfied for Python $ver."
-    rm -f "$NEW_FILE"
     EXIT_CODE=1
     continue
   fi
@@ -130,19 +129,16 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
   # Compare
   if diff -u "$TARGET_FILE" "$NEW_FILE"; then
     echo "✅ $TARGET_FILE is up-to-date."
-    rm -f "$NEW_FILE"
   else
     if [ "$CHECK_ONLY" = true ]; then
       echo "❌ $TARGET_FILE is OUT OF DATE!"
       echo "   Please run the update script locally to update it and commit the changes:"
       echo "   $ ./scripts/update_constraints.sh"
-      rm -f "$NEW_FILE"
       EXIT_CODE=1
     else
       echo "🔄 $TARGET_FILE was OUT OF DATE. Updating it automatically..."
       cp "$NEW_FILE" "$TARGET_FILE"
       echo "✅ $TARGET_FILE has been updated locally."
-      rm -f "$NEW_FILE"
       EXIT_CODE=1
     fi
   fi

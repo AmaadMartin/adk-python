@@ -233,16 +233,15 @@ part before or alongside your code PR.
    ./scripts/update_constraints.sh
    ```
 
-   The script needs `uv` and network access to PyPI. It **exits 1 whenever it
+   The script needs network access to PyPI and the **same `uv` version CI
+   pins** in `.github/workflows/constraints-check.yml` (currently `0.11.8`) —
+   the check is a byte-for-byte diff of uv's output, so a different resolver
+   can report drift you cannot reproduce locally. It **exits 1 whenever it
    rewrites a file** — that is how it reports "these were out of date"; run it
    again to confirm it now exits 0. Never hand-edit the generated files.
 
    CI runs `./scripts/update_constraints.sh --check`, which only reports drift
-   and never rewrites anything. To reproduce that check locally:
-
-   ```shell
-   ./scripts/update_constraints.sh --check
-   ```
+   and never rewrites anything; run the same command locally to reproduce it.
 
 1. **Build the wheel file:**
 
