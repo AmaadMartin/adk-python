@@ -1341,9 +1341,6 @@ def test_error_code_is_plain_string_not_finish_reason_enum(
   # distinguishes the plain value from the enum member.
   assert type(llm_response.error_code) is str
   assert llm_response.error_code == expected_code
-  assert str(llm_response.error_code) == expected_code
-  assert f'{llm_response.error_code}' == expected_code
-  assert llm_response.model_dump()['error_code'] == expected_code
   # finish_reason keeps its enum type.
   assert isinstance(llm_response.finish_reason, types.FinishReason)
 

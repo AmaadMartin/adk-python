@@ -728,9 +728,7 @@ def _response_to_llm_response(
     error = _get_value(response, 'error') or _get_value(
         response, 'incomplete_details'
     )
-    # LlmResponse.error_code is Optional[str] and LlmResponse does not enable
-    # validate_assignment, so store the enum's plain string value; assigning the
-    # member itself would leave a FinishReason in a str-typed field.
+    # No validate_assignment on LlmResponse, so coerce the enum to str here.
     llm_response.error_code = finish_reason.value
     llm_response.error_message = json.dumps(_to_dict(error)) if error else None
   return llm_response
