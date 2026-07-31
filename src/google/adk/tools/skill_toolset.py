@@ -1264,7 +1264,7 @@ class RunSkillInlineScriptTool(BaseTool):
       skill = await self._toolset._get_or_fetch_skill(
           skill_name, tool_context.invocation_id
       )
-    except Exception as e:  # pylint: disable=broad-exception-caught
+    except Exception as e:
       return {
           "error": f"Failed to fetch skill '{skill_name}' from registry: {e}",
           "error_code": "REGISTRY_ERROR",
