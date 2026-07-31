@@ -1113,3 +1113,49 @@ def test_to_agent_engine_extra_packages_requirements_txt_is_not_clobbered(
   assert (tmp_dir / "requirements.txt").read_text() == (
       "some-unrelated-package\n"
   )
+
+
+@pytest.mark.parametrize(
+    ("env_file_contents", "expect_warning"),
+    [
+        ('GOOGLE_API_KEY=env-file-key\nTEST_VAR="test_value"\n', True),
+        ('TEST_VAR="test_value"\n', False),
+    ],
+    ids=["env_file_with_api_key", "env_file_without_api_key"],
+)
+def test_to_agent_engine_api_key_takes_precedence_over_env_file(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: Callable[[bool, bool], Path],
+    env_file_contents: str,
+    expect_warning: bool,
+) -> None:
+  """`api_key` is deployed whether or not .env defines GOOGLE_API_KEY."""
+  monkeypatch.setattr(shutil, "rmtree", _Recorder())
+  captured: List[Dict[str, Any]] = []
+  monkeypatch.setitem(
+      sys.modules, "vertexai", _make_recording_vertexai(captured)
+  )
+  src_dir = agent_dir(False, False)
+  (src_dir / ".env").write_text(env_file_contents)
+
+  with mock.patch("click.secho") as mocked_secho:
+    cli_deploy.to_agent_engine(
+        agent_folder=str(src_dir),
+        temp_folder="tmp",
+        project="my-gcp-project",
+        region="us-central1",
+        adk_version="1.2.0",
+        api_key="cli-api-key",
+    )
+
+  assert len(captured) == 1
+  env_vars = captured[0]["env_vars"]
+  assert env_vars["GOOGLE_API_KEY"] == "cli-api-key"
+  assert env_vars["GOOGLE_GENAI_USE_ENTERPRISE"] == "1"
+  assert env_vars["TEST_VAR"] == "test_value"
+  warned = any(
+      "Ignoring GOOGLE_API_KEY in .env" in call.args[0]
+      for call in mocked_secho.call_args_list
+      if call.args
+  )
+  assert warned is expect_warning
