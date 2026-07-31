@@ -13,7 +13,7 @@
 # limitations under the License.
 
 import multiprocessing
-import sys
+import multiprocessing.spawn
 import textwrap
 from unittest.mock import MagicMock
 
@@ -257,7 +257,7 @@ class TestUnsafeLocalCodeExecutor:
     """
     executor = UnsafeLocalCodeExecutor()
     code_input = CodeExecutionInput(code='print("hi")')
-    original_executable = sys.executable
+    original_executable = multiprocessing.spawn.get_executable()
     multiprocessing.set_executable("")
 
     try:

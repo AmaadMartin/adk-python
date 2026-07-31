@@ -59,10 +59,9 @@ def _prepare_globals(code: str, globals_: dict[str, Any]) -> None:
 class UnsafeLocalCodeExecutor(BaseCodeExecutor):
   """A code executor that unsafely execute code in the current local context.
 
-  Code runs in a `spawn` worker process, so this executor requires an
-  environment that permits starting worker processes by re-invoking the
-  interpreter. Where it does not, `execute_code` raises
-  `CodeExecutorNotAvailableError` and a remote executor has to be used instead.
+  Code runs in a `spawn` worker process, so an environment that cannot
+  re-invoke the interpreter to start one has to use a remote executor instead:
+  `execute_code` raises `CodeExecutorNotAvailableError` there.
   """
 
   # Overrides the BaseCodeExecutor attribute: this executor cannot be stateful.
@@ -128,9 +127,8 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
       )
       process.start()
     except OSError as exc:
-      # `Queue()` registers a semaphore with the multiprocessing resource
-      # tracker -- itself a spawned helper -- which is what fails first in an
-      # unusable environment. Release the queue if it did get that far.
+      # `Queue()` registers a semaphore with the resource tracker, so it holds
+      # OS resources as soon as it exists.
       if result_queue is not None:
         result_queue.close()
       raise CodeExecutorNotAvailableError(
