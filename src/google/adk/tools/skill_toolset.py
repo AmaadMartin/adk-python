@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+from collections.abc import Mapping
 import json
 import logging
 import mimetypes
@@ -56,6 +57,16 @@ logger = logging.getLogger("google_adk." + __name__)
 
 _DEFAULT_SCRIPT_TIMEOUT = 300
 _MAX_SKILL_PAYLOAD_BYTES = 16 * 1024 * 1024  # 16 MB
+
+# Basename used for the synthetic script file that carries model-provided
+# inline script content into the materialized skill tree. The `_adk_` prefix
+# keeps it from colliding with a script the skill actually ships.
+_INLINE_SCRIPT_BASENAME = "_adk_inline_script"
+
+# Inline-script languages that map onto an execution path supported by
+# `_SkillScriptCodeExecutor`. Names match the adk-js `CodeExecutionLanguage`
+# values so the two SDKs accept the same strings.
+_INLINE_LANGUAGE_EXTENSIONS = {"python": "py", "shell": "sh"}
 
 # Message used for the "Content Injection" pattern.
 _BINARY_FILE_DETECTED_MSG = (
@@ -531,6 +542,8 @@ class _SkillScriptCodeExecutor:
       script_args: dict[str, Any] | list[str] | None,
       short_options: dict[str, Any] | None = None,
       positional_args: list[str] | None = None,
+      *,
+      extra_files: Mapping[str, str | bytes] | None = None,
   ) -> dict[str, Any]:
     """Prepares and executes the script using the base executor.
 
@@ -543,12 +556,20 @@ class _SkillScriptCodeExecutor:
         long options or a list of strings.
       short_options: Optional short options (single hyphen) as key-value pairs.
       positional_args: Optional positional arguments.
+      extra_files: Optional extra files to materialize alongside the skill's
+        resources, keyed by path relative to the materialization root. An entry
+        replaces the skill resource with the same path.
 
     Returns:
       A dictionary containing execution results (stdout, stderr, status).
     """
     code = self._build_wrapper_code(
-        skill, file_path, script_args, short_options, positional_args
+        skill,
+        file_path,
+        script_args,
+        short_options,
+        positional_args,
+        extra_files=extra_files,
     )
     if code is None:
       if "." in file_path:
@@ -654,6 +675,8 @@ class _SkillScriptCodeExecutor:
       script_args: dict[str, Any] | list[str] | None,
       short_options: dict[str, Any] | None = None,
       positional_args: list[str] | None = None,
+      *,
+      extra_files: Mapping[str, str | bytes] | None = None,
   ) -> str | None:
     """Builds a self-extracting Python script."""
     ext = ""
@@ -663,7 +686,7 @@ class _SkillScriptCodeExecutor:
     if not file_path.startswith("scripts/"):
       file_path = f"scripts/{file_path}"
 
-    files_dict = {}
+    files_dict: dict[str, str | bytes] = {}
     for ref_name in skill.resources.list_references():
       content = skill.resources.get_reference(ref_name)
       if content is not None:
@@ -678,6 +701,9 @@ class _SkillScriptCodeExecutor:
       scr = skill.resources.get_script(scr_name)
       if scr is not None and scr.src is not None:
         files_dict[f"scripts/{scr_name}"] = scr.src
+
+    if extra_files:
+      files_dict.update(extra_files)
 
     total_size = sum(
         len(v) if isinstance(v, (str, bytes)) else 0
@@ -1141,6 +1167,175 @@ class RunSkillScriptTool(BaseTool):
     return None
 
 
+class RunSkillInlineScriptTool(BaseTool):
+  """Tool to execute an inline script in a skill's materialized resources."""
+
+  def __init__(self, toolset: "SkillToolset"):
+    super().__init__(
+        name="run_skill_inline_script",
+        description=(
+            "Executes an inline script provided directly in the request, in"
+            " the context of a skill's materialized resources. Requires user"
+            " confirmation."
+        ),
+    )
+    self._toolset = toolset
+
+  def _get_declaration(self) -> types.FunctionDeclaration | None:
+    return types.FunctionDeclaration(
+        name=self.name,
+        description=self.description,
+        parameters_json_schema={
+            "type": "object",
+            "properties": {
+                "skill_name": {
+                    "type": "string",
+                    "description": (
+                        "The name of the skill whose resources (references/,"
+                        " assets/, scripts/) the script runs against. The"
+                        " script executes with those resources in the working"
+                        " directory."
+                    ),
+                },
+                "script_content": {
+                    "type": "string",
+                    "description": "The content of the script to execute.",
+                },
+                "language": {
+                    "type": "string",
+                    "enum": list(_INLINE_LANGUAGE_EXTENSIONS),
+                    "description": "The language of the script.",
+                },
+                "args": {
+                    "anyOf": [
+                        {"type": "object"},
+                        {"type": "array", "items": {"type": "string"}},
+                    ],
+                    "description": (
+                        "Optional arguments to pass to the script as key-value"
+                        " pairs (long options) or as a list of strings."
+                    ),
+                },
+            },
+            "required": ["skill_name", "script_content", "language"],
+        },
+    )
+
+  async def run_async(
+      self, *, args: dict[str, Any], tool_context: ToolContext
+  ) -> Any:
+    skill_name: str | None = args.get("skill_name")
+    script_content: str | None = args.get("script_content")
+    language: str | None = args.get("language")
+    script_args: Any = args.get("args")
+
+    if not skill_name or not script_content or not language:
+      errors = []
+      if not skill_name:
+        errors.append("Argument 'skill_name' is required.")
+      if not script_content:
+        errors.append("Argument 'script_content' is required.")
+      if not language:
+        errors.append("Argument 'language' is required.")
+      return {
+          "error": "\n".join(errors),
+          "error_code": "INVALID_ARGUMENTS",
+      }
+
+    if script_args is not None and not isinstance(script_args, (dict, list)):
+      return {
+          "error": (
+              "'args' must be a JSON object (dict) or a list of strings,"
+              f" got {type(script_args).__name__}."
+          ),
+          "error_code": "INVALID_ARGUMENTS",
+      }
+
+    if language not in _INLINE_LANGUAGE_EXTENSIONS:
+      return {
+          "error": (
+              f"Unsupported language '{language}'. Supported languages:"
+              f" {', '.join(_INLINE_LANGUAGE_EXTENSIONS)}."
+          ),
+          "error_code": "UNSUPPORTED_LANGUAGE",
+      }
+
+    try:
+      skill = await self._toolset._get_or_fetch_skill(
+          skill_name, tool_context.invocation_id
+      )
+    except Exception as e:  # pylint: disable=broad-exception-caught
+      return {
+          "error": f"Failed to fetch skill '{skill_name}' from registry: {e}",
+          "error_code": "REGISTRY_ERROR",
+      }
+
+    if not skill:
+      return {
+          "error": f"Skill '{skill_name}' not found.",
+          "error_code": "SKILL_NOT_FOUND",
+      }
+
+    # Resolve code executor: toolset-level first, then agent fallback.
+    code_executor = self._toolset._code_executor
+    if code_executor is None:
+      code_executor = getattr(
+          tool_context._invocation_context.agent, "code_executor", None
+      )
+    if code_executor is None:
+      return {
+          "error": (
+              "No CodeExecutor is configured. A code executor is required to"
+              " run inline scripts."
+          ),
+          "error_code": "NO_CODE_EXECUTOR",
+      }
+
+    # Inline scripts are model-authored code, so a human must approve the exact
+    # body before it reaches the executor.
+    if not tool_context.tool_confirmation:
+      tool_context.request_confirmation(
+          hint=(
+              f"Please approve or reject this inline {language} script for"
+              f" skill '{skill_name}':\n{script_content}"
+          ),
+          payload={"language": language, "script_content": script_content},
+      )
+      tool_context.actions.skip_summarization = True
+      return {
+          "error": (
+              "This tool call requires confirmation, please approve or reject."
+          ),
+          "error_code": "CONFIRMATION_REQUIRED",
+      }
+    elif not tool_context.tool_confirmation.confirmed:
+      return {
+          "error": "This tool call is rejected.",
+          "error_code": "CONFIRMATION_REJECTED",
+      }
+
+    file_name = (
+        f"{_INLINE_SCRIPT_BASENAME}.{_INLINE_LANGUAGE_EXTENSIONS[language]}"
+    )
+    script_executor = _SkillScriptCodeExecutor(
+        code_executor, self._toolset._script_timeout
+    )
+    return await script_executor.execute_script_async(
+        tool_context._invocation_context,
+        skill,
+        file_name,
+        script_args,
+        extra_files={f"scripts/{file_name}": script_content},
+    )
+
+  def _detect_error_in_response(self, response: Any) -> Optional[str]:
+    """Telemetry hook: returns an error type if the response indicates an error."""
+    if isinstance(response, dict) and response.get("error"):
+      error_code = response.get("error_code")
+      return error_code if error_code else "TOOL_ERROR"
+    return None
+
+
 class SkillToolset(BaseToolset):
   """A toolset for managing and interacting with agent skills."""
 
@@ -1153,6 +1348,7 @@ class SkillToolset(BaseToolset):
       environment: BaseEnvironment | None = None,
       skills_folder: Path | str | None = None,
       script_timeout: int = _DEFAULT_SCRIPT_TIMEOUT,
+      allow_inline_scripts: bool = False,
       additional_tools: list[ToolUnion] | None = None,
       tool_name_prefix: str | None = None,
       tool_filter: ToolPredicate | list[str] | None = None,
@@ -1170,6 +1366,11 @@ class SkillToolset(BaseToolset):
       script_timeout: Timeout in seconds for shell script execution via
         subprocess.run. Defaults to 300 seconds. Does not apply to Python
         scripts executed via exec().
+      allow_inline_scripts: Whether to expose the `run_skill_inline_script`
+        tool, which executes model-provided script content in the configured
+        code executor. Disabled by default because arbitrary inline script
+        execution is a sensitive capability; execution additionally remains
+        gated behind a human-in-the-loop confirmation.
       additional_tools: Optional list of `BaseTool` or `BaseToolset` instances
         to be made available to the agent when certain skills are activated.
       tool_name_prefix: Optional prefix to prepend to tool names.
@@ -1206,6 +1407,7 @@ class SkillToolset(BaseToolset):
         )
       self._skills_folder = Path(skills_folder)
     self._script_timeout = script_timeout
+    self._allow_inline_scripts = allow_inline_scripts
     # Needed for mid-turn reloading of skill tools.
     self._use_invocation_cache = False
     # Cache fetched remote skill definitions per turn to reduce requests to registry
@@ -1233,6 +1435,10 @@ class SkillToolset(BaseToolset):
         LoadSkillResourceTool(self),
         RunSkillScriptTool(self),
     ]
+    # Inline-script execution is opt-in: only expose the tool when explicitly
+    # enabled, so agents are secure-by-default.
+    if allow_inline_scripts:
+      self._tools.append(RunSkillInlineScriptTool(self))
     if self._registry:
       self._tools.append(SearchSkillsTool(self))
 
@@ -1380,6 +1586,7 @@ class SkillToolset(BaseToolset):
         environment=self._env,
         skills_folder=self._skills_folder,
         script_timeout=self._script_timeout,
+        allow_inline_scripts=self._allow_inline_scripts,
         additional_tools=additional_tools,
     )
 
