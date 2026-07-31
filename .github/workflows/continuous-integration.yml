@@ -194,8 +194,8 @@ jobs:
             tests/unittests/integrations/agent_registry/test_agent_registry.py
 
   # 3c. Dependency-floor coverage: no lock file means CI always resolves the
-  # newest click, so this job pins click to the bottom of the declared range
-  # (click>=8.1.8,<9 in pyproject.toml) and runs only the CLI tests.
+  # newest click, so this job pins click to the bottom of the range declared in
+  # pyproject.toml and runs only the CLI tests.
   unit-test-cli-click-floor:
     name: CLI Tests (click floor, Python ${{ matrix.python-version }})
     runs-on: ubuntu-latest
@@ -204,6 +204,10 @@ jobs:
       matrix:
         python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
     timeout-minutes: 10
+    env:
+      # Must equal the click floor pyproject.toml declares; enforced by
+      # tests/unittests/test_ci_click_floor.py.
+      CLICK_FLOOR: '8.1.8'
     steps:
       - name: Checkout code
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -227,9 +231,9 @@ jobs:
       - name: Run CLI tests against the click floor
         run: |
           source .venv/bin/activate
-          uv pip install --reinstall-package click 'click>=8.1.8,<8.2'
+          uv pip install --reinstall-package click "click==$CLICK_FLOOR"
           # A successful install only proves the command ran; assert the
           # downgrade in the interpreter pytest uses, so a pin that lands in
           # the wrong environment fails loudly instead of testing 8.4 again.
-          python -c "import importlib.metadata as md; v = md.version('click'); assert v.startswith('8.1.'), f'expected click 8.1.x, got {v}'"
+          python -c "import importlib.metadata as md, os; want = os.environ['CLICK_FLOOR']; got = md.version('click'); assert got == want, f'expected click {want}, got {got}'"
           pytest tests/unittests/cli
