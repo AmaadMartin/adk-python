@@ -616,6 +616,7 @@ def test_response_parsing_maps_text_reasoning_tool_calls_and_usage():
   assert llm_response.interaction_id == 'resp_123'
   assert llm_response.model_version == 'gpt-5'
   assert llm_response.finish_reason == types.FinishReason.STOP
+  assert llm_response.error_code is None
   assert llm_response.usage_metadata.prompt_token_count == 11
   assert llm_response.usage_metadata.candidates_token_count == 7
   assert llm_response.usage_metadata.total_token_count == 18
@@ -1118,6 +1119,7 @@ async def test_streaming_generation_failed_event_is_terminal():
   assert responses[0].partial is True
   assert responses[1].finish_reason == types.FinishReason.OTHER
   assert responses[1].error_code == types.FinishReason.OTHER
+  assert type(responses[1].error_code) is str
 
 
 def test_azure_client_uses_openai_v1_base_url():
@@ -1304,6 +1306,48 @@ def test_response_parsing_failed_status_sets_error():
   assert 'boom' in llm_response.error_message
 
 
+@pytest.mark.parametrize(
+    'response, expected_code',
+    [
+        (
+            {
+                'id': 'resp_1',
+                'model': 'gpt-5',
+                'status': 'incomplete',
+                'incomplete_details': {'reason': 'max_output_tokens'},
+                'output': [],
+            },
+            'MAX_TOKENS',
+        ),
+        (
+            {
+                'id': 'resp_1',
+                'model': 'gpt-5',
+                'status': 'failed',
+                'error': {'message': 'boom'},
+                'output': [],
+            },
+            'OTHER',
+        ),
+    ],
+)
+def test_error_code_is_plain_string_not_finish_reason_enum(
+    response, expected_code
+):
+  """error_code is a plain str even though it is assigned post-construction."""
+  llm_response = _response_to_llm_response(response)
+
+  # FinishReason subclasses str, so `type(...) is str` is the only check that
+  # distinguishes the plain value from the enum member.
+  assert type(llm_response.error_code) is str
+  assert llm_response.error_code == expected_code
+  assert str(llm_response.error_code) == expected_code
+  assert f'{llm_response.error_code}' == expected_code
+  assert llm_response.model_dump()['error_code'] == expected_code
+  # finish_reason keeps its enum type.
+  assert isinstance(llm_response.finish_reason, types.FinishReason)
+
+
 def test_response_parsing_maps_refusal_to_prefixed_text():
   """Refusal content becomes prefixed text rather than being dropped."""
   response = {
@@ -1373,6 +1417,8 @@ async def test_streaming_incomplete_event_sets_max_tokens():
   ]
 
   assert responses[-1].finish_reason == types.FinishReason.MAX_TOKENS
+  assert responses[-1].error_code == 'MAX_TOKENS'
+  assert type(responses[-1].error_code) is str
 
 
 @pytest.mark.asyncio
