@@ -106,9 +106,10 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
     globals_ = {}
     _prepare_globals(code_execution_input.code, globals_)
 
-    # The worker is started by re-invoking this interpreter. Without a path to
-    # re-invoke, multiprocessing raises a bare TypeError rather than an
-    # OSError, so that case is reported here instead.
+    # The worker is started by re-invoking this interpreter. A `None` path --
+    # what an interpreter that cannot locate itself leaves here -- makes
+    # multiprocessing raise a bare TypeError rather than an OSError, so a
+    # missing path is reported here rather than by the handler below.
     if not multiprocessing.spawn.get_executable():
       raise CodeExecutorNotAvailableError(
           'UnsafeLocalCodeExecutor could not start a worker process; this'
