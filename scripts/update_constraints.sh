@@ -74,8 +74,17 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
     fi
   fi
 
-  # Construct the command from scratch
-  GENERATION_CMD="uv pip compile pyproject.toml --all-extras --python-version $ver"
+  # Construct the command from scratch.
+  #
+  # --no-emit-package google-adk: --all-extras pulls in the `community` extra,
+  # whose google-adk-community depends back on google-adk, so uv would pin
+  # google-adk itself. README.md tells users to run
+  # `pip install google-adk -c constraints-<ver>.txt`, and these files are
+  # regenerated only when pyproject.toml dependencies change, so that pin goes
+  # stale on the next release and silently downgrades the very package being
+  # installed. google-adk-community stays pinned: it is a real transitive
+  # dependency, not the package under installation.
+  GENERATION_CMD="uv pip compile pyproject.toml --all-extras --no-emit-package google-adk --python-version $ver"
   if [ -n "$date_to_use" ]; then
     GENERATION_CMD="$GENERATION_CMD --exclude-newer $date_to_use"
   fi
