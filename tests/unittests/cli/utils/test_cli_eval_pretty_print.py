@@ -27,8 +27,7 @@ from google.adk.evaluation.evaluator import EvalStatus
 from google.genai import types as genai_types
 import pytest
 
-# Every test here asserts on click.echo output captured by capsys, so this
-# module opts out of the shared click-muting fixture in conftest.py.
+# Every test here asserts on click.echo output captured by capsys.
 pytestmark = pytest.mark.unmute_click
 
 

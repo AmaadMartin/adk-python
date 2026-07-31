@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Shared fixtures for the ADK CLI unit tests."""
+"""Shared fixtures for the CLI unit tests in this directory."""
 
 from __future__ import annotations
 
@@ -24,15 +24,7 @@ import pytest
 def _mute_click(
     request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-  """Suppresses click output so test runs stay readable.
-
-  Applies to every test in this directory. A test that needs to assert on
-  click output can opt out with the ``unmute_click`` marker::
-
-      @pytest.mark.unmute_click
-      def test_prints_summary() -> None:
-        ...
-  """
+  """Mutes click output; opt out with the ``unmute_click`` marker."""
   if "unmute_click" in request.keywords:
     return
   monkeypatch.setattr(click, "echo", lambda *a, **k: None)
