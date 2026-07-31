@@ -324,12 +324,10 @@ exclude = [ "contributing/samples/", "tests/" ]
 namespace_packages = true
 explicit_package_bases = true
 follow_imports = "normal"
-# No python_version pin on purpose. Without it mypy analyses the code as the
-# interpreter it runs on, so each CI type-check matrix entry covers a different
-# version and a local run matches the venv the contributor actually has. A pin
-# below the interpreter is also unsafe: a dependency whose stubs use syntax newer
-# than the target (numpy >= 2.5 uses PEP 695 `type` statements) makes mypy abort
-# with a blocking syntax error before it checks any first-party file.
+# No python_version pin on purpose: mypy then analyses as the interpreter it
+# runs on, so each CI matrix entry checks a different version and a local run
+# matches the contributor's venv. A pin below the interpreter is also unsafe --
+# stubs using newer syntax (numpy >= 2.5 uses PEP 695) abort the run outright.
 disable_error_code = [ "import-not-found", "import-untyped", "unused-ignore" ]
 strict = true
 plugins = [ "pydantic.mypy" ]
