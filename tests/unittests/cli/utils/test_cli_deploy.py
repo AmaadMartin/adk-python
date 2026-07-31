@@ -63,13 +63,6 @@ class _Recorder:
 
 # Fixtures
 @pytest.fixture(autouse=True)
-def _mute_click(monkeypatch: pytest.MonkeyPatch) -> None:
-  """Suppress click.echo to keep test output clean."""
-  monkeypatch.setattr(click, "echo", lambda *a, **k: None)
-  monkeypatch.setattr(click, "secho", lambda *a, **k: None)
-
-
-@pytest.fixture(autouse=True)
 def reload_cli_deploy():
   """Reload cli_deploy before each test."""
   importlib.reload(cli_deploy)

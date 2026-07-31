@@ -22,17 +22,9 @@ import shutil
 import subprocess
 from unittest import mock
 
-import click
 import pytest
 
 import src.google.adk.cli.cli_deploy as cli_deploy
-
-
-@pytest.fixture(autouse=True)
-def _mute_click(monkeypatch: pytest.MonkeyPatch) -> None:
-  """Suppress click.echo to keep test output clean."""
-  monkeypatch.setattr(click, "echo", lambda *_a, **_k: None)
-  monkeypatch.setattr(click, "secho", lambda *_a, **_k: None)
 
 
 def test_to_cloud_run_respects_ignore_files(

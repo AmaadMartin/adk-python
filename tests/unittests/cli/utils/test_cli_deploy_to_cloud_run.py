@@ -27,7 +27,6 @@ from typing import Protocol
 from typing import Tuple
 from unittest import mock
 
-import click
 import pytest
 
 import src.google.adk.cli.cli_deploy as cli_deploy
@@ -64,13 +63,6 @@ class _Recorder:
 
 
 # Fixtures
-@pytest.fixture(autouse=True)
-def _mute_click(monkeypatch: pytest.MonkeyPatch) -> None:
-  """Suppress click.echo to keep test output clean."""
-  monkeypatch.setattr(click, "echo", lambda *_a, **_k: None)
-  monkeypatch.setattr(click, "secho", lambda *_a, **_k: None)
-
-
 @pytest.fixture()
 def agent_dir(tmp_path: Path) -> AgentDirFixture:
   """

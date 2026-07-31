@@ -43,13 +43,6 @@ class _Recorder:
 
 
 # Fixtures
-@pytest.fixture(autouse=True)
-def _mute_click(monkeypatch: pytest.MonkeyPatch) -> None:
-  """Silence click output in every test."""
-  monkeypatch.setattr(click, "echo", lambda *a, **k: None)
-  monkeypatch.setattr(click, "secho", lambda *a, **k: None)
-
-
 @pytest.fixture()
 def agent_folder(tmp_path: Path) -> Path:
   """Return a temporary path that will hold generated agent sources."""

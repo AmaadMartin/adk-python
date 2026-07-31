@@ -52,13 +52,6 @@ class _Recorder:
 
 # Fixtures
 @pytest.fixture(autouse=True)
-def _mute_click(monkeypatch: pytest.MonkeyPatch) -> None:
-  """Silence click output in every test."""
-  monkeypatch.setattr(click, "echo", lambda *a, **k: None)
-  monkeypatch.setattr(click, "secho", lambda *a, **k: None)
-
-
-@pytest.fixture(autouse=True)
 def _patch_types_and_runner(monkeypatch: pytest.MonkeyPatch) -> None:
   """Replace google.genai.types and Runner with lightweight fakes."""
 
