@@ -18,6 +18,7 @@ from contextlib import redirect_stdout
 import io
 import logging
 import multiprocessing
+import multiprocessing.spawn
 import queue
 import re
 import traceback
@@ -27,6 +28,7 @@ from pydantic import Field
 from typing_extensions import override
 
 from ..agents.invocation_context import InvocationContext
+from ..errors.code_executor_not_available_error import CodeExecutorNotAvailableError
 from .base_code_executor import BaseCodeExecutor
 from .code_execution_utils import CodeExecutionInput
 from .code_execution_utils import CodeExecutionResult
@@ -55,7 +57,12 @@ def _prepare_globals(code: str, globals_: dict[str, Any]) -> None:
 
 
 class UnsafeLocalCodeExecutor(BaseCodeExecutor):
-  """A code executor that unsafely execute code in the current local context."""
+  """A code executor that unsafely execute code in the current local context.
+
+  Code runs in a `spawn` worker process, so an environment that cannot
+  re-invoke the interpreter to start one has to use a remote executor instead:
+  `execute_code` raises `CodeExecutorNotAvailableError` there.
+  """
 
   # Overrides the BaseCodeExecutor attribute: this executor cannot be stateful.
   stateful: bool = Field(default=False, frozen=True, exclude=True)
@@ -91,14 +98,26 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
       execution timeouts, are reported in `stderr`.
 
     Raises:
-      RuntimeError: The worker process could not be created, e.g. because the
-        environment does not permit multiprocessing.
+      CodeExecutorNotAvailableError: The worker process could not be created,
+        e.g. because the environment does not permit multiprocessing.
     """
     logger.debug('Executing code:\n```\n%s\n```', code_execution_input.code)
     # Execute the code.
     globals_ = {}
     _prepare_globals(code_execution_input.code, globals_)
 
+    # The worker is started by re-invoking this interpreter. A `None` path --
+    # what an interpreter that cannot locate itself leaves here -- makes
+    # multiprocessing raise a bare TypeError rather than an OSError, so a
+    # missing path is reported here rather than by the handler below.
+    if not multiprocessing.spawn.get_executable():
+      raise CodeExecutorNotAvailableError(
+          'UnsafeLocalCodeExecutor could not start a worker process; this'
+          ' environment has no interpreter path to re-invoke (see'
+          ' `multiprocessing.set_executable`).'
+      )
+
+    result_queue = None
     try:
       ctx = multiprocessing.get_context('spawn')
       result_queue = ctx.Queue()
@@ -109,7 +128,11 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
       )
       process.start()
     except OSError as exc:
-      raise RuntimeError(
+      # `Queue()` registers a semaphore with the resource tracker, so it holds
+      # OS resources as soon as it exists.
+      if result_queue is not None:
+        result_queue.close()
+      raise CodeExecutorNotAvailableError(
           'UnsafeLocalCodeExecutor could not start a worker process; this'
           ' environment may not permit multiprocessing.'
           f' Original error: {type(exc).__name__}: {exc}'
