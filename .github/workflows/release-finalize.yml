@@ -38,10 +38,10 @@ jobs:
           LABELS: ${{ toJson(github.event.pull_request.labels.*.name) }}
         run: |
           if echo "$LABELS" | grep -q "autorelease: pending"; then
-            echo "is_release_pr=true" >> $GITHUB_OUTPUT
+            echo "is_release_pr=true" >> "$GITHUB_OUTPUT"
           else
             echo "Not a release-please PR, skipping"
-            echo "is_release_pr=false" >> $GITHUB_OUTPUT
+            echo "is_release_pr=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Determine Branch Configurations
@@ -50,13 +50,17 @@ jobs:
         run: |
           CANDIDATE_BRANCH="${{ github.event.pull_request.base.ref }}"
           if [ "$CANDIDATE_BRANCH" = "release/v1-candidate" ]; then
-            echo "base_branch=v1" >> $GITHUB_OUTPUT
-            echo "config_file=.github/release-please-config-v1.json" >> $GITHUB_OUTPUT
-            echo "manifest_file=.github/.release-please-manifest-v1.json" >> $GITHUB_OUTPUT
+            {
+              echo "base_branch=v1"
+              echo "config_file=.github/release-please-config-v1.json"
+              echo "manifest_file=.github/.release-please-manifest-v1.json"
+            } >> "$GITHUB_OUTPUT"
           else
-            echo "base_branch=main" >> $GITHUB_OUTPUT
-            echo "config_file=.github/release-please-config.json" >> $GITHUB_OUTPUT
-            echo "manifest_file=.github/.release-please-manifest.json" >> $GITHUB_OUTPUT
+            {
+              echo "base_branch=main"
+              echo "config_file=.github/release-please-config.json"
+              echo "manifest_file=.github/.release-please-manifest.json"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
@@ -71,7 +75,7 @@ jobs:
         id: version
         run: |
           VERSION=$(jq -r '.["."]' "${{ steps.config.outputs.manifest_file }}")
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
           echo "Extracted version: $VERSION"
 
       - name: Configure git identity from RELEASE_PAT

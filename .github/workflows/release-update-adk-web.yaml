@@ -46,7 +46,7 @@ jobs:
         REPO="${{ github.event.inputs.adk_web_repo }}"
         TAG="${{ github.event.inputs.adk_web_tag }}"
         # Clean target directory
-        rm -rf "$TARGET_DIR"/*
+        rm -rf "${TARGET_DIR:?}"/*
         mkdir -p "$TARGET_DIR"
         if [ -z "$TAG" ]; then
           echo "Fetching latest release metadata for $REPO..."
@@ -74,8 +74,8 @@ jobs:
         GH_TOKEN: ${{ secrets.RELEASE_PAT }}
       run: |
         USER_JSON=$(gh api user)
-        echo "name=$(echo "$USER_JSON" | jq -r '.login')" >> $GITHUB_OUTPUT
-        echo "email=$(echo "$USER_JSON" | jq -r '.id')+$(echo "$USER_JSON" | jq -r '.login')@users.noreply.github.com" >> $GITHUB_OUTPUT
+        echo "name=$(echo "$USER_JSON" | jq -r '.login')" >> "$GITHUB_OUTPUT"
+        echo "email=$(echo "$USER_JSON" | jq -r '.id')+$(echo "$USER_JSON" | jq -r '.login')@users.noreply.github.com" >> "$GITHUB_OUTPUT"
 
     - name: Create Pull Request
       uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6

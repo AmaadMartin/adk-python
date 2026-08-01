@@ -75,7 +75,7 @@ jobs:
           TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
         run: |
           # Switch to target base branch to generate baseline
-          git checkout origin/$TARGET_BRANCH
+          git checkout "origin/$TARGET_BRANCH"
 
           git checkout ${{ github.sha }} -- pyproject.toml
 
