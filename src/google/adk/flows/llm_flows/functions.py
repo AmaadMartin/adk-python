@@ -367,7 +367,13 @@ def generate_auth_event(
   return build_auth_request_event(
       invocation_context,
       function_response_event.actions.requested_auth_configs,
-      role=function_response_event.content.role,
+      # A long-running tool can request credentials while returning no
+      # response; its event then carries actions but no content.
+      role=(
+          function_response_event.content.role
+          if function_response_event.content
+          else 'user'
+      ),
   )
 
 
@@ -654,6 +660,21 @@ async def _execute_single_function_call_async(
       # wrapper for task delegation synthesizes the FR after the
       # sub-agent completes).  Either way, skip the auto-FR build when
       # the tool returned nothing.
+      #
+      # A long-running tool may still have mutated `tool_context.actions` on
+      # its way out (e.g. `get_user_choice` sets `skip_summarization`). Those
+      # mutations only survive by riding on an event, so emit a content-less
+      # actions-only event rather than dropping them. `_defers_response` tools
+      # are excluded: their function call event is not marked long-running, so
+      # an actions-only event would make `is_final_response()` true and
+      # suppress the model turn that the deferred path still needs.
+      if tool.is_long_running and tool_context.actions != EventActions():
+        return Event(
+            invocation_id=invocation_context.invocation_id,
+            author=agent.name,
+            branch=invocation_context.branch,
+            actions=tool_context.actions,
+        )
       return None
 
     detected_error_type = _detect_error_type_for_telemetry(
@@ -1388,7 +1409,15 @@ def merge_parallel_function_response_events(
       invocation_id=base_event.invocation_id,
       author=base_event.author,
       branch=base_event.branch,
-      content=types.Content(role='user', parts=merged_parts),
+      # All merged events may be actions-only (content-less), in which case
+      # the merged event must stay content-less too: an empty-but-present
+      # content shadows the real function response for consumers that scan
+      # for the last event with content.
+      content=(
+          types.Content(role='user', parts=merged_parts)
+          if merged_parts
+          else None
+      ),
       actions=merged_actions,  # Aggregated from all parallel events
       live_session_id=base_event.live_session_id,
   )
