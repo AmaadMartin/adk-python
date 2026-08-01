@@ -110,11 +110,13 @@ jobs:
           # Switch back to the PR commit
           git checkout ${{ github.sha }}
 
-          # Re-sync dependencies in case the PR changed them
+          # No reinstall here. The baseline step already installed from this
+          # PR's pyproject.toml and constraints files, and `-e .` tracks the
+          # working tree, so the environment is already the one the PR
+          # resolves to -- reinstalling would be a no-op costing a full uv
+          # resolve per matrix entry. Keeping one environment across both runs
+          # is also what makes the comparison isolate source changes.
           source .venv/bin/activate
-          uv pip install -e . --no-deps
-          uv pip install -r pyproject.toml --all-extras \
-            -c constraints-${{ matrix.python-version }}.txt
 
           # Run mypy on PR code, apply same processing
           mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > pr_errors.txt || true
