@@ -57,6 +57,93 @@ def test_resources():
   assert resources.list_scripts() == ["script1"]
 
 
+def test_resources_accepts_bytes_values():
+  """Tests that references and assets keep binary payloads as bytes."""
+  resources = models.Resources(
+      references={"ref.bin": b"\x00\x01"},
+      assets={"asset.png": b"\x89PNG"},
+  )
+  assert resources.get_reference("ref.bin") == b"\x00\x01"
+  assert isinstance(resources.get_reference("ref.bin"), bytes)
+  assert resources.get_asset("asset.png") == b"\x89PNG"
+  assert isinstance(resources.get_asset("asset.png"), bytes)
+  assert resources.list_references() == ["ref.bin"]
+  assert resources.list_assets() == ["asset.png"]
+
+
+def test_resources_accepts_narrow_str_mapping():
+  """Tests the ``dict[str, str]`` call shape the skill loaders produce."""
+  references = {"a.md": "a"}
+  assets = {"b.txt": "b"}
+
+  resources = models.Resources(references=references, assets=assets)
+
+  assert resources.get_reference("a.md") == "a"
+  assert resources.get_asset("b.txt") == "b"
+
+
+def test_resources_mixed_str_and_bytes_values():
+  """Tests that each value keeps its own type within a single mapping."""
+  resources = models.Resources(
+      references={"text.md": "text content", "binary.bin": b"\x00\xff"}
+  )
+  assert resources.get_reference("text.md") == "text content"
+  assert isinstance(resources.get_reference("text.md"), str)
+  assert resources.get_reference("binary.bin") == b"\x00\xff"
+  assert isinstance(resources.get_reference("binary.bin"), bytes)
+
+
+def test_resources_rejects_invalid_value_type():
+  """Tests that values outside ``str | bytes`` and non-str keys are rejected."""
+  with pytest.raises(ValidationError):
+    models.Resources.model_validate({"references": {"a": 5}})
+  with pytest.raises(ValidationError):
+    models.Resources.model_validate({"assets": {"a": 5}})
+  with pytest.raises(ValidationError):
+    models.Resources.model_validate({"references": {5: "a"}})
+
+
+def test_resources_defaults_are_empty():
+  """Tests that defaults are empty and not shared between instances."""
+  first = models.Resources()
+  second = models.Resources()
+
+  assert first.references == {}
+  assert first.assets == {}
+  assert first.scripts == {}
+
+  # Pydantic materializes the mapping fields as plain dicts and deep-copies the
+  # default, so mutating one instance cannot leak into another.
+  assert isinstance(first.references, dict)
+  first.references["ref"] = "content"
+  assert second.references == {}
+
+
+def test_resources_serialization_round_trip():
+  """Tests that the wire format keeps str and bytes values unchanged."""
+  resources = models.Resources(
+      references={"ref.md": "reference content"},
+      assets={"asset.png": b"\x89PNG"},
+      scripts={"s": models.Script(src="print('hello')")},
+  )
+
+  dumped = resources.model_dump()
+
+  assert dumped == {
+      "references": {"ref.md": "reference content"},
+      "assets": {"asset.png": b"\x89PNG"},
+      "scripts": {"s": {"src": "print('hello')"}},
+  }
+  assert isinstance(dumped["assets"]["asset.png"], bytes)
+
+  restored = models.Resources.model_validate(dumped)
+  assert restored.get_reference("ref.md") == "reference content"
+  assert restored.get_asset("asset.png") == b"\x89PNG"
+  script = restored.get_script("s")
+  assert script is not None
+  assert script.src == "print('hello')"
+
+
 def test_skill_properties():
   """Tests Skill model."""
   frontmatter = models.Frontmatter(
