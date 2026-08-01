@@ -46,6 +46,8 @@ Run these commands from the project root:
 
    Never use `uv pip install -e .`, `uv pip compile` or `pip install -e .`: they resolve for a single interpreter, select `numpy` 2.5.x on Python 3.12+, and make `mypy` abort with `Type statement is only supported in Python 3.12 and greater` without checking any first-party file.
 
+   To verify an existing environment, run `uv sync --all-extras --check`. Always pass the extras it was installed with: bare `uv sync --check` checks against the no-extras set and reports a correct environment as outdated.
+
    After editing `[project.dependencies]` or any `[project.optional-dependencies]` table, run `uv lock` and commit `uv.lock` in the same change — CI syncs with `--locked` and fails on a stale lock.
 
 5. **Install development tools:**
@@ -80,7 +82,7 @@ Run these commands from the project root:
 
 | Task                                 | Command                                           |
 | :----------------------------------- | :------------------------------------------------ |
-| Check the env matches `uv.lock`      | `uv sync --check`                                 |
+| Check the env matches `uv.lock`      | `uv sync --all-extras --check`                    |
 | Run unit tests (Fast)                | `pytest tests/unittests`                          |
 | Run tests across all Python versions | `tox`                                             |
 | Format codebase                      | `pre-commit run --all-files`                      |
