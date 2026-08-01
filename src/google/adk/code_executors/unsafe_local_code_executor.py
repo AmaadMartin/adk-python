@@ -17,6 +17,7 @@ from __future__ import annotations
 from contextlib import redirect_stdout
 import io
 import logging
+import math
 import multiprocessing
 from multiprocessing.process import BaseProcess
 import queue
@@ -81,20 +82,21 @@ def _collect_result(
   Returns:
     The execution's (stdout, stderr).
   """
-  deadline = (
-      None if timeout_seconds is None else time.monotonic() + timeout_seconds
+  # No timeout is an infinite deadline rather than a special case: it still
+  # lets a dead worker end the wait, and `timeout_seconds=0` still deadlines
+  # immediately.
+  deadline = time.monotonic() + (
+      math.inf if timeout_seconds is None else timeout_seconds
   )
   while True:
-    remaining = None if deadline is None else deadline - time.monotonic()
-    if remaining is not None and remaining <= 0:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
       process.terminate()
       process.join()
       return '', f'Code execution timed out after {timeout_seconds} seconds.'
     try:
       stdout, error = result_queue.get(
-          timeout=_WORKER_POLL_SECONDS
-          if remaining is None
-          else min(_WORKER_POLL_SECONDS, remaining)
+          timeout=min(_WORKER_POLL_SECONDS, remaining)
       )
     except queue.Empty:
       if process.is_alive():
