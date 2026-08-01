@@ -74,11 +74,12 @@ class _FailingLaunchContext:
     self._queue_factory = queue_factory
     self.process: Optional[_NeverStartedProcess] = None
 
-  # Mirrors the `multiprocessing` context API, hence the capitalised names.
-  def Queue(self) -> Any:  # pylint: disable=invalid-name
+  # `Queue` and `Process` mirror the `multiprocessing` context API the
+  # executor calls, hence the capitalised names.
+  def Queue(self) -> Any:
     return self._queue_factory()
 
-  def Process(self, **kwargs: Any) -> _NeverStartedProcess:  # pylint: disable=invalid-name
+  def Process(self, **kwargs: Any) -> _NeverStartedProcess:
     del kwargs  # The worker is never started, so its target is irrelevant.
     self.process = _NeverStartedProcess(self._start_error)
     return self.process
