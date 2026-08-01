@@ -17,9 +17,12 @@ from __future__ import annotations
 from contextlib import redirect_stdout
 import io
 import logging
+import math
 import multiprocessing
+from multiprocessing.process import BaseProcess
 import queue
 import re
+import time
 import traceback
 from typing import Any
 
@@ -32,6 +35,15 @@ from .code_execution_utils import CodeExecutionInput
 from .code_execution_utils import CodeExecutionResult
 
 logger = logging.getLogger('google_adk.' + __name__)
+
+# How often the wait re-checks the worker, so that a worker that dies without
+# producing a result ends the wait instead of stalling it.
+_WORKER_POLL_SECONDS = 0.1
+
+# How long a result still gets to arrive after the worker is seen to be gone:
+# the worker can be reaped in the instant between writing to the queue and
+# exiting, and that write is still on its way through the pipe.
+_RESULT_FLUSH_SECONDS = 1
 
 
 def _execute_in_process(
@@ -46,6 +58,60 @@ def _execute_in_process(
   except BaseException:
     error = traceback.format_exc()
   result_queue.put((stdout.getvalue(), error))
+
+
+def _collect_result(
+    process: BaseProcess,
+    result_queue: multiprocessing.Queue[tuple[str, str | None]],
+    timeout_seconds: int | None,
+) -> tuple[str, str]:
+  """Waits for the execution's output, or reports why none arrived.
+
+  The wait polls rather than blocking on the queue alone, so that a worker that
+  dies without putting anything on the queue -- a spawn child that cannot
+  start, an OOM kill, code that calls `os._exit` -- is reported as what it is
+  instead of being mistaken for a timeout or, with no timeout configured,
+  waited on forever.
+
+  Args:
+    process: The started execution process.
+    result_queue: The queue the execution reports its result on.
+    timeout_seconds: How long a running execution is given, or None for as long
+      as it keeps running.
+
+  Returns:
+    The execution's (stdout, stderr).
+  """
+  # No timeout is an infinite deadline rather than a special case: it still
+  # lets a dead worker end the wait, and `timeout_seconds=0` still deadlines
+  # immediately.
+  deadline = time.monotonic() + (
+      math.inf if timeout_seconds is None else timeout_seconds
+  )
+  while True:
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+      process.terminate()
+      process.join()
+      return '', f'Code execution timed out after {timeout_seconds} seconds.'
+    try:
+      stdout, error = result_queue.get(
+          timeout=min(_WORKER_POLL_SECONDS, remaining)
+      )
+    except queue.Empty:
+      if process.is_alive():
+        continue
+      # The worker can be reaped while the bytes it wrote are still in the
+      # queue's pipe, so a dead worker does not yet mean no result is coming.
+      try:
+        stdout, error = result_queue.get(timeout=_RESULT_FLUSH_SECONDS)
+      except queue.Empty:
+        return '', (
+            f'Code execution process exited with code {process.exitcode} '
+            'without returning a result.'
+        )
+    process.join()
+    return stdout, error or ''
 
 
 def _prepare_globals(code: str, globals_: dict[str, Any]) -> None:
@@ -94,17 +160,7 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
     )
     process.start()
 
-    output = ''
-    error = ''
-    try:
-      output, err = result_queue.get(timeout=self.timeout_seconds)
-      process.join()
-      if err:
-        error = err
-    except queue.Empty:
-      process.terminate()
-      process.join()
-      error = f'Code execution timed out after {self.timeout_seconds} seconds.'
+    output, error = _collect_result(process, result_queue, self.timeout_seconds)
 
     # Collect the final result.
     result_queue.close()
