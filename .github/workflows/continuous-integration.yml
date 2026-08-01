@@ -92,11 +92,27 @@ jobs:
           source .venv/bin/activate
           uv sync --all-extras --locked
 
-          # Run mypy, filter for errors only, remove line numbers, and sort
-          # We ignore exit code (|| true) because we expect errors on baseline
+          # Capture mypy's output before filtering it. We ignore the exit code
+          # (|| true) because we expect type errors on the baseline.
           # --frozen: `uv run` otherwise re-locks, which would rewrite uv.lock
           # and break the checkout in the next step.
-          uv run --frozen mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > baseline_errors.txt || true
+          mypy_output=$(uv run --frozen mypy . || true)
+
+          # A mypy that hits a syntax it cannot parse -- e.g. the PEP 695 `type`
+          # statements in numpy >= 2.5 stubs, which need python_version >= 3.12
+          # while [tool.mypy] pins the analysis target to 3.11 -- reports that
+          # one error and checks nothing else. Both steps would then emit the
+          # same single line, `comm -13` would find no new errors, and the job
+          # would announce success having type-checked zero first-party files.
+          if grep -q "errors prevented further checking" <<<"$mypy_output"; then
+            echo "::error::mypy aborted before checking any first-party file:"
+            echo "$mypy_output"
+            exit 1
+          fi
+
+          # Filter for errors only, remove line numbers, and sort. Keep the
+          # `|| true`: a clean run produces no matching lines and grep exits 1.
+          echo "$mypy_output" | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > baseline_errors.txt || true
           echo "Found $(wc -l < baseline_errors.txt) errors on $TARGET_BRANCH."
 
       - name: Check PR Branch
@@ -108,8 +124,17 @@ jobs:
           source .venv/bin/activate
           uv sync --all-extras --locked
 
-          # Run mypy on PR code, apply same processing
-          uv run --frozen mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > pr_errors.txt || true
+          # Run mypy on PR code, apply the same capture, abort guard and
+          # filtering as the Generate Baseline step, which explains each part.
+          mypy_output=$(uv run --frozen mypy . || true)
+
+          if grep -q "errors prevented further checking" <<<"$mypy_output"; then
+            echo "::error::mypy aborted before checking any first-party file:"
+            echo "$mypy_output"
+            exit 1
+          fi
+
+          echo "$mypy_output" | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > pr_errors.txt || true
           echo "Found $(wc -l < pr_errors.txt) errors on PR branch."
 
       - name: Compare and Fail on New Errors
