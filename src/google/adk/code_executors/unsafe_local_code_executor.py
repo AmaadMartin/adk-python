@@ -21,6 +21,7 @@ import multiprocessing
 import multiprocessing.spawn
 import queue
 import re
+import sys
 import traceback
 from typing import Any
 
@@ -28,12 +29,22 @@ from pydantic import Field
 from typing_extensions import override
 
 from ..agents.invocation_context import InvocationContext
-from ..errors.code_executor_not_available_error import CodeExecutorNotAvailableError
 from .base_code_executor import BaseCodeExecutor
 from .code_execution_utils import CodeExecutionInput
 from .code_execution_utils import CodeExecutionResult
 
 logger = logging.getLogger('google_adk.' + __name__)
+
+_WORKER_LAUNCH_FAILURE_MESSAGE = (
+    'Failed to start the worker process that UnsafeLocalCodeExecutor runs'
+    ' code in: this Python interpreter cannot spawn a child process in this'
+    ' environment ({cause}). No code was executed; this is a limitation of'
+    ' the environment, not an error in the code. This usually means'
+    " sys.executable ('{executable}') is not a usable Python interpreter, as"
+    ' in an embedded or hermetic runtime, or that the sandbox forbids'
+    ' creating processes. Use ContainerCodeExecutor or VertexAiCodeExecutor'
+    ' to execute code in an environment like this.'
+)
 
 
 def _execute_in_process(
@@ -56,12 +67,21 @@ def _prepare_globals(code: str, globals_: dict[str, Any]) -> None:
     globals_['__name__'] = '__main__'
 
 
+def _worker_launch_failure_result(cause: str) -> CodeExecutionResult:
+  """Builds the result reported when the worker process cannot be started."""
+  return CodeExecutionResult(
+      stderr=_WORKER_LAUNCH_FAILURE_MESSAGE.format(
+          cause=cause, executable=sys.executable
+      )
+  )
+
+
 class UnsafeLocalCodeExecutor(BaseCodeExecutor):
   """A code executor that unsafely execute code in the current local context.
 
   Code runs in a `spawn` worker process, so an environment that cannot
   re-invoke the interpreter to start one has to use a remote executor instead:
-  `execute_code` raises `CodeExecutorNotAvailableError` there.
+  `execute_code` reports that in `stderr` there rather than running anything.
   """
 
   # Overrides the BaseCodeExecutor attribute: this executor cannot be stateful.
@@ -89,17 +109,8 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
   ) -> CodeExecutionResult:
     """Executes the code in a spawned worker process.
 
-    Args:
-      invocation_context: The invocation context of the code execution.
-      code_execution_input: The code execution input.
-
-    Returns:
-      The code execution result. Errors raised by the executed code, and
-      execution timeouts, are reported in `stderr`.
-
-    Raises:
-      CodeExecutorNotAvailableError: The worker process could not be created,
-        e.g. because the environment does not permit multiprocessing.
+    Errors raised by the executed code, execution timeouts, and a worker
+    process that could not be started at all are all reported in `stderr`.
     """
     logger.debug('Executing code:\n```\n%s\n```', code_execution_input.code)
     # Execute the code.
@@ -111,10 +122,9 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
     # multiprocessing raise a bare TypeError rather than an OSError, so a
     # missing path is reported here rather than by the handler below.
     if not multiprocessing.spawn.get_executable():
-      raise CodeExecutorNotAvailableError(
-          'UnsafeLocalCodeExecutor could not start a worker process; this'
-          ' environment has no interpreter path to re-invoke (see'
-          ' `multiprocessing.set_executable`).'
+      return _worker_launch_failure_result(
+          'multiprocessing has no interpreter path to re-invoke; see'
+          ' multiprocessing.set_executable'
       )
 
     result_queue = None
@@ -128,15 +138,20 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
       )
       process.start()
     except OSError as exc:
+      # Returned rather than raised: `BaseCodeExecutor.execute_code` is
+      # declared to return a result, and callers such as `SkillToolset`
+      # truncate a raised message to 200 characters, which would cut off the
+      # remediation this diagnostic exists to deliver. The traceback is logged
+      # so operators still get the cause.
+      logger.exception(
+          'UnsafeLocalCodeExecutor could not start its worker process.'
+      )
       # `Queue()` registers a semaphore with the resource tracker, so it holds
       # OS resources as soon as it exists.
       if result_queue is not None:
         result_queue.close()
-      raise CodeExecutorNotAvailableError(
-          'UnsafeLocalCodeExecutor could not start a worker process; this'
-          ' environment may not permit multiprocessing.'
-          f' Original error: {type(exc).__name__}: {exc}'
-      ) from exc
+        result_queue.join_thread()
+      return _worker_launch_failure_result(f'{type(exc).__name__}: {exc}')
 
     output = ''
     error = ''
