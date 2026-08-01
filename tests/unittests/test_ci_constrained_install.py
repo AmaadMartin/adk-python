@@ -30,10 +30,15 @@ that morning -- so each is pinned separately:
   install. Both leave a working, wholly unpinned job behind.
 * Every interpreter in those matrices needs a committed constraints file, or
   its install step fails on a path that does not exist.
+* ``constraints-check.yml`` must trigger on itself. It diffs uv's output
+  byte-for-byte against the committed files, so its pinned uv ``version:`` has
+  to move together with a regeneration; a change to that pin alone would
+  otherwise merge unchecked and fail on an unrelated pull request later.
 """
 
 from __future__ import annotations
 
+from pathlib import Path
 import re
 
 import pytest
@@ -42,20 +47,29 @@ import yaml
 from tests.unittests.test_release_dependencies import _find_pyproject
 
 _REPO_ROOT = _find_pyproject().parent
-_WORKFLOW_PATH = (
-    _REPO_ROOT / '.github' / 'workflows' / 'continuous-integration.yml'
-)
+_WORKFLOWS_DIR = _REPO_ROOT / '.github' / 'workflows'
+_WORKFLOW_PATH = _WORKFLOWS_DIR / 'continuous-integration.yml'
+_CHECK_WORKFLOW_PATH = _WORKFLOWS_DIR / 'constraints-check.yml'
 
-if not _WORKFLOW_PATH.is_file():
+if not (_WORKFLOW_PATH.is_file() and _CHECK_WORKFLOW_PATH.is_file()):
   pytest.skip(
-      'Not a full source checkout: the CI workflow is absent.',
+      'Not a full source checkout: the CI workflows are absent.',
       allow_module_level=True,
   )
 
+
+def _triggers(path: Path) -> dict:
+  """Returns a workflow's ``on:`` block.
+
+  PyYAML applies the YAML 1.1 resolver, which reads the bare ``on:`` key as the
+  boolean ``True`` rather than the string ``'on'``.
+  """
+  workflow = yaml.safe_load(path.read_text())
+  return workflow.get('on', workflow.get(True))
+
+
 _WORKFLOW = yaml.safe_load(_WORKFLOW_PATH.read_text())
-# PyYAML applies the YAML 1.1 resolver, which reads the bare `on:` trigger key
-# as the boolean True rather than the string 'on'.
-_TRIGGERS = _WORKFLOW.get('on', _WORKFLOW.get(True))
+_TRIGGERS = _triggers(_WORKFLOW_PATH)
 
 # The jobs whose dependency install this pins. `unit-test-a2a-v0-3` is
 # deliberately excluded: it force-reinstalls a2a-sdk 0.3.x over the pinned
@@ -110,6 +124,18 @@ def test_job_avoids_uv_commands_that_re_resolve(job: str, command: str) -> None:
       ' `uv sync` has no --constraint option, and `uv run` syncs the project'
       ' environment before executing. Either one silently discards the pins'
       ' from constraints-*.txt while leaving the job green.'
+  )
+
+
+@pytest.mark.parametrize('event', ['push', 'pull_request'])
+def test_constraints_check_workflow_triggers_on_itself(event: str) -> None:
+  paths = _triggers(_CHECK_WORKFLOW_PATH)[event]['paths']
+  assert f'.github/workflows/{_CHECK_WORKFLOW_PATH.name}' in paths, (
+      f"{_CHECK_WORKFLOW_PATH.name}'s {event} trigger does not list the"
+      ' workflow itself, so a pull request that only bumps its pinned uv'
+      ' version runs no check. That pin has to be bumped together with a'
+      ' regeneration, and the mismatch would instead surface as someone'
+      " else's unrelated pull request going red."
   )
 
 
