@@ -68,22 +68,11 @@ def _prepare_globals(code: str, globals_: dict[str, Any]) -> None:
 
 
 def _worker_launch_failure_result(cause: str) -> CodeExecutionResult:
-  """Builds the result reported when the worker process cannot be started.
-
-  Args:
-    cause: What stopped the launch, as it should read inside the message; for
-      an exception, its type name and its string.
-
-  Returns:
-    A result whose `stderr` explains that the environment, not the submitted
-    code, is at fault, and which executors work in such an environment.
-  """
+  """Builds the result reported when the worker process cannot be started."""
   return CodeExecutionResult(
-      stdout='',
       stderr=_WORKER_LAUNCH_FAILURE_MESSAGE.format(
           cause=cause, executable=sys.executable
-      ),
-      output_files=[],
+      )
   )
 
 
@@ -120,14 +109,8 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
   ) -> CodeExecutionResult:
     """Executes the code in a spawned worker process.
 
-    Args:
-      invocation_context: The invocation context of the code execution.
-      code_execution_input: The code execution input.
-
-    Returns:
-      The code execution result. Errors raised by the executed code, execution
-      timeouts, and a worker process that could not be started at all, are all
-      reported in `stderr`.
+    Errors raised by the executed code, execution timeouts, and a worker
+    process that could not be started at all are all reported in `stderr`.
     """
     logger.debug('Executing code:\n```\n%s\n```', code_execution_input.code)
     # Execute the code.
