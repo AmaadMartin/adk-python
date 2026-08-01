@@ -61,7 +61,7 @@ def _execute_in_process(
 
 def _collect_result(
     process: BaseProcess,
-    result_queue: multiprocessing.Queue,
+    result_queue: multiprocessing.Queue[tuple[str, str | None]],
     timeout_seconds: int | None,
 ) -> tuple[str, str]:
   """Waits for the execution's output, or reports why none arrived.
