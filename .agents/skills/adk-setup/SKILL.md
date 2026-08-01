@@ -42,13 +42,9 @@ Run these commands from the project root:
    uv sync --all-extras
    ```
 
-   This is the only supported install path. It installs exactly the versions in the committed `uv.lock`, which is what CI uses.
+   The only supported install path: it installs exactly the versions in the committed `uv.lock`, which is what CI uses. Never install a development environment with `uv pip install -e .` or `pip install -e .` — `CONTRIBUTING.md` explains how they silently break `mypy`.
 
-   Never use `uv pip install -e .`, `uv pip compile` or `pip install -e .`: they resolve for a single interpreter, select `numpy` 2.5.x on Python 3.12+, and make `mypy` abort with `Type statement is only supported in Python 3.12 and greater` without checking any first-party file.
-
-   To verify an existing environment, run `uv sync --all-extras --check`. Always pass the extras it was installed with: bare `uv sync --check` checks against the no-extras set and reports a correct environment as outdated.
-
-   After editing `[project.dependencies]` or any `[project.optional-dependencies]` table, run `uv lock` and commit `uv.lock` in the same change — CI syncs with `--locked` and fails on a stale lock.
+   Verify an existing environment with `uv sync --all-extras --check`, always passing the extras it was installed with. After editing any dependency table, run `uv lock` and commit `uv.lock` in the same change; CI syncs with `--locked` and fails on a stale lock.
 
 5. **Install development tools:**
 
