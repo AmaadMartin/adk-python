@@ -193,22 +193,23 @@ jobs:
             tests/unittests/agents/test_remote_a2a_agent.py \
             tests/unittests/integrations/agent_registry/test_agent_registry.py
 
-  # 3c. Dependency floor coverage: every other job installs with
-  # `uv sync`, which always resolves the NEWEST compatible release, so the
-  # lower bounds declared in pyproject.toml are never exercised. This job
-  # installs them wholesale -- `--resolution lowest-direct` takes the lowest
-  # version each direct requirement admits and the newest for transitives --
-  # on the minimum supported Python, then runs the test areas driven by the
-  # runtime dependencies against them.
+  # 3c. Dependency floor coverage: every other job installs with `uv sync`,
+  # which resolves the NEWEST compatible release, so the lower bounds declared
+  # in pyproject.toml are never installed anywhere in CI. This job installs
+  # them on the minimum supported Python and runs job 3a's suite against them.
   #
   # `uv pip install` is deliberate, not a stand-in for `uv sync`: uv's lock is
   # universal and covers EVERY extra, so `uv sync --extra test` would also
   # resolve the floors of the docs and dev extras, several of which declare no
   # lower bound and select unbuildable pre-2015 sdists. `uv pip install`
-  # resolves only what it installs: the runtime deps plus the test extra.
+  # resolves only what it installs: the runtime deps plus the test extra. The
+  # 3.10 pin is load-bearing for that too -- `crewai[tools]` in the test extra
+  # declares no lower bound either, and is kept out only by its own
+  # `python_version>='3.11'` marker.
   #
-  # TODO: Drop continue-on-error once the stale floors this job reports have
-  # been raised. It is advisory today because several are known to be wrong.
+  # TODO: Drop continue-on-error once the floors this job reports as broken
+  # today have been raised: a2a-sdk 0.3.4, daytona 0.191, e2b 2,
+  # google-antigravity 0.1 and google-cloud-bigquery 2.2.
   dependency-floors:
     name: Dependency Floors (lowest-direct, Python 3.10)
     runs-on: ubuntu-latest
@@ -228,32 +229,17 @@ jobs:
         with:
           enable-cache: true
 
-      - name: Install the declared dependency floors
+      - name: Install and report the declared dependency floors
         run: |
           uv venv .venv
           source .venv/bin/activate
           uv pip install --resolution lowest-direct -e ".[test]"
-
-      - name: Report the resolved floors
-        run: |
-          source .venv/bin/activate
           uv pip freeze
 
       - name: Run unit tests against the declared floors
         run: |
           source .venv/bin/activate
-          pytest -n auto \
-            tests/unittests/agents \
-            tests/unittests/auth \
-            tests/unittests/cli \
-            tests/unittests/events \
-            tests/unittests/flows \
-            tests/unittests/memory \
-            tests/unittests/runners \
-            tests/unittests/sessions \
-            tests/unittests/telemetry \
-            tests/unittests/utils \
-            tests/unittests/test_import_loading.py \
-            tests/unittests/test_optional_dependencies.py \
-            tests/unittests/test_release_dependencies.py \
-            --ignore=tests/unittests/cli/test_fast_api.py
+          pytest tests/unittests \
+            -n auto \
+            --ignore=tests/unittests/artifacts/test_artifact_service.py \
+            --ignore=tests/unittests/tools/google_api_tool/test_googleapi_to_openapi_converter.py

@@ -31,7 +31,7 @@ classifiers = [
 ]
 dynamic = [ "version" ]
 dependencies = [
-  "aiohttp>=3.13,!=3.14.2",
+  "aiohttp>=3.13,!=3.14.2",           # 3.13 ships the first cp314 wheels, and this package supports 3.14; 3.14.2 is a broken release.
   "aiosqlite>=0.21",
   "authlib>=1.6.6,<2",
   "click>=8.1.8,<9",
