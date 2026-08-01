@@ -42,6 +42,12 @@ Run these commands from the project root:
    uv sync --all-extras
    ```
 
+   This is the only supported install path. It installs exactly the versions in the committed `uv.lock`, which is what CI uses.
+
+   Never use `uv pip install -e .`, `uv pip compile` or `pip install -e .`: they resolve for a single interpreter, select `numpy` 2.5.x on Python 3.12+, and make `mypy` abort with `Type statement is only supported in Python 3.12 and greater` without checking any first-party file.
+
+   After editing `[project.dependencies]` or any `[project.optional-dependencies]` table, run `uv lock` and commit `uv.lock` in the same change — CI syncs with `--locked` and fails on a stale lock.
+
 5. **Install development tools:**
 
    ```bash
@@ -74,6 +80,7 @@ Run these commands from the project root:
 
 | Task                                 | Command                                           |
 | :----------------------------------- | :------------------------------------------------ |
+| Check the env matches `uv.lock`      | `uv sync --check`                                 |
 | Run unit tests (Fast)                | `pytest tests/unittests`                          |
 | Run tests across all Python versions | `tox`                                             |
 | Format codebase                      | `pre-commit run --all-files`                      |

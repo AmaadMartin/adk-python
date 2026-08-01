@@ -195,6 +195,14 @@ part before or alongside your code PR.
    uv sync --all-extras
    ```
 
+   `uv sync --all-extras` is the only supported way to install a development environment. It installs exactly the versions recorded in the committed `uv.lock`, which is the same resolution every CI job uses, so `mypy` and `pytest` behave the same on your machine as they do on a pull request.
+
+   `uv pip install -e .`, `uv pip compile` and plain `pip install -e .` resolve `pyproject.toml` for a single interpreter instead, and produce a *different* environment from the same commit. For example, they select `numpy` 2.5.x on Python 3.12+, which `uv sync` never does. `numpy` 2.5.x ships stubs written with PEP 695 `type` statements, so `mypy` — which this repository configures to analyse as Python 3.11 — aborts with `Type statement is only supported in Python 3.12 and greater` and checks no first-party file at all. If you see that error, you installed via one of the unsupported paths.
+
+   To check an existing environment against the lock, run `uv sync --check`; `uv sync --all-extras` repairs it.
+
+   If you change anything in `[project.dependencies]` or an `[project.optional-dependencies]` table, re-run `uv lock` and commit the updated `uv.lock` in the same pull request. CI syncs with `--locked`, so a lock that no longer matches `pyproject.toml` fails the build.
+
 1. **Run unit tests locally (Fast):**
 
    If you just want to run tests quickly while developing, run `pytest`:
