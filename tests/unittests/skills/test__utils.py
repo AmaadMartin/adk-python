@@ -16,6 +16,7 @@
 
 import builtins
 import io
+import pathlib
 import sys
 from unittest import mock
 import zipfile
@@ -434,3 +435,132 @@ def test__load_skills_from_dir_errors(tmp_path):
   file_path.write_text("hello")
   with pytest.raises(ValueError, match="not a directory"):
     _load_skills_from_dir(file_path)
+
+
+def _write_skill_md(
+    tmp_path: pathlib.Path, name: str, content: str
+) -> pathlib.Path:
+  """Writes SKILL.md with the given content into a skill dir named `name`."""
+  skill_dir = tmp_path / name
+  skill_dir.mkdir()
+  (skill_dir / "SKILL.md").write_text(content)
+  return skill_dir
+
+
+def test_frontmatter_value_with_quoted_triple_dash(tmp_path):
+  """Tests a quoted frontmatter value containing the delimiter substring."""
+  skill_dir = _write_skill_md(
+      tmp_path,
+      "test-skill",
+      '---\nname: test-skill\ndescription: "a --- b"\n---\nBody\n',
+  )
+
+  skill = _load_skill_from_dir(skill_dir)
+
+  assert skill.description == "a --- b"
+  assert skill.instructions == "Body"
+
+
+def test_frontmatter_value_ending_with_triple_dash(tmp_path):
+  """Tests a frontmatter value whose line ends with the delimiter."""
+  skill_dir = _write_skill_md(
+      tmp_path, "t", "---\nname: t\ndescription: a ---\n---\nBody\n"
+  )
+
+  skill = _load_skill_from_dir(skill_dir)
+
+  assert skill.description == "a ---"
+  assert skill.instructions == "Body"
+
+
+def test_frontmatter_value_with_inline_triple_dash(tmp_path):
+  """Tests an unquoted frontmatter value containing the delimiter."""
+  skill_dir = _write_skill_md(
+      tmp_path, "t", "---\nname: t\ndescription: a --- b\n---\nBody\n"
+  )
+
+  skill = _load_skill_from_dir(skill_dir)
+
+  assert skill.description == "a --- b"
+  assert skill.instructions == "Body"
+
+
+def test_frontmatter_with_crlf_line_endings():
+  """Tests CRLF delimiter lines, which only survive outside text mode."""
+  zip_buffer = io.BytesIO()
+  with zipfile.ZipFile(zip_buffer, "w") as z:
+    z.writestr(
+        "SKILL.md",
+        '---\r\nname: my-skill\r\ndescription: "a --- b"\r\n---\r\nBody',
+    )
+
+  skill = _load_skill_from_zip_bytes(zip_buffer.getvalue())
+
+  assert skill.frontmatter.description == "a --- b"
+  assert skill.instructions == "Body"
+
+
+def test_delimiter_lines_with_trailing_whitespace(tmp_path):
+  """Tests delimiter lines padded with spaces and tabs."""
+  skill_dir = _write_skill_md(
+      tmp_path, "t", "--- \nname: t\ndescription: d\n---\t\nBody\n"
+  )
+
+  skill = _load_skill_from_dir(skill_dir)
+
+  assert skill.description == "d"
+  assert skill.instructions == "Body"
+
+
+def test_closing_delimiter_at_end_of_file(tmp_path):
+  """Tests a closing delimiter with no trailing newline and no body."""
+  skill_dir = _write_skill_md(
+      tmp_path, "t", "---\nname: t\ndescription: d\n---"
+  )
+
+  skill = _load_skill_from_dir(skill_dir)
+
+  assert skill.description == "d"
+  assert skill.instructions == ""
+
+
+def test_body_containing_triple_dash_is_preserved(tmp_path):
+  """Tests that a delimiter line in the body is kept verbatim."""
+  skill_dir = _write_skill_md(
+      tmp_path, "t", "---\nname: t\ndescription: d\n---\nBody\n---\nMore\n"
+  )
+
+  skill = _load_skill_from_dir(skill_dir)
+
+  assert skill.instructions == "Body\n---\nMore"
+
+
+def test_frontmatter_not_closed_raises(tmp_path):
+  """Tests that frontmatter without a closing delimiter line is rejected."""
+  skill_dir = _write_skill_md(
+      tmp_path, "t", "---\nname: t\ndescription: a --- b\nBody\n"
+  )
+
+  with pytest.raises(ValueError, match="not properly closed"):
+    _load_skill_from_dir(skill_dir)
+
+
+def test_missing_frontmatter_raises(tmp_path):
+  """Tests that content without an opening delimiter line is rejected."""
+  no_frontmatter_dir = _write_skill_md(tmp_path, "t", "# Title\nBody\n")
+  glued_delimiter_dir = _write_skill_md(
+      tmp_path, "u", "---foo\nname: u\n---\nBody\n"
+  )
+
+  with pytest.raises(ValueError, match="must start with YAML frontmatter"):
+    _load_skill_from_dir(no_frontmatter_dir)
+  with pytest.raises(ValueError, match="must start with YAML frontmatter"):
+    _load_skill_from_dir(glued_delimiter_dir)
+
+
+def test_empty_frontmatter_raises(tmp_path):
+  """Tests that an empty frontmatter block is rejected."""
+  skill_dir = _write_skill_md(tmp_path, "t", "---\n---\nBody\n")
+
+  with pytest.raises(ValueError, match="must be a YAML mapping"):
+    _load_skill_from_dir(skill_dir)
