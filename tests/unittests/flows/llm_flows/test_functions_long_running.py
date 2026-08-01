@@ -551,3 +551,99 @@ async def test_defers_response_tool_still_produces_no_event():
       )
       is None
   )
+
+
+@pytest.mark.parametrize(
+    'falsy_response',
+    [
+        pytest.param({}, id='empty_dict'),
+        pytest.param([], id='empty_list'),
+        pytest.param('', id='empty_string'),
+        pytest.param(0, id='zero'),
+        pytest.param(False, id='false'),
+    ],
+)
+def test_long_running_falsy_response_skips_function_response(falsy_response):
+  """A long-running tool that returns any falsy value defers its response.
+
+  The guard in functions.py is a truthiness check, so `{}`, `[]`, `''`, `0` and
+  `False` all mean "nothing to report yet": no function-response event is
+  emitted and the model is not called again. The real response arrives later,
+  injected into the session by whoever is driving the long-running operation.
+  """
+  responses = [
+      Part.from_function_call(name='increase_by_one', args={'x': 1}),
+      'response1',
+  ]
+  mock_model = testing_utils.MockModel.create(responses=responses)
+  function_called = 0
+
+  def increase_by_one(x: int, tool_context: ToolContext):
+    nonlocal function_called
+    function_called += 1
+    return falsy_response
+
+  agent = Agent(
+      name='root_agent',
+      model=mock_model,
+      tools=[LongRunningFunctionTool(func=increase_by_one)],
+  )
+  runner = testing_utils.InMemoryRunner(agent)
+  events = runner.run('test1')
+
+  assert function_called == 1
+  # Only the function-call event is emitted; the response is deferred.
+  assert testing_utils.simplify_events(events) == [
+      (
+          'root_agent',
+          Part.from_function_call(name='increase_by_one', args={'x': 1}),
+      ),
+  ]
+  assert events[0].long_running_tool_ids
+  assert not any(event.get_function_responses() for event in events)
+  # No response to summarize, so the model is not called a second time.
+  assert len(mock_model.requests) == 1
+
+
+def test_non_long_running_empty_dict_response_emits_function_response():
+  """Falsiness alone does not defer: only long-running tools skip the response.
+
+  A plain tool returning `{}` still produces a function-response event carrying
+  the empty dict, and the model is called again to summarize it. This is the
+  control that keeps the deferral tests honest -- they must be pinning
+  `is_long_running`, not merely "the tool returned something falsy".
+  """
+  responses = [
+      Part.from_function_call(name='increase_by_one', args={'x': 1}),
+      'response1',
+  ]
+  mock_model = testing_utils.MockModel.create(responses=responses)
+  function_called = 0
+
+  def increase_by_one(x: int, tool_context: ToolContext):
+    nonlocal function_called
+    function_called += 1
+    return {}
+
+  agent = Agent(
+      name='root_agent',
+      model=mock_model,
+      tools=[FunctionTool(func=increase_by_one)],
+  )
+  runner = testing_utils.InMemoryRunner(agent)
+  events = runner.run('test1')
+
+  assert function_called == 1
+  assert testing_utils.simplify_events(events) == [
+      (
+          'root_agent',
+          Part.from_function_call(name='increase_by_one', args={'x': 1}),
+      ),
+      (
+          'root_agent',
+          Part.from_function_response(name='increase_by_one', response={}),
+      ),
+      ('root_agent', 'response1'),
+  ]
+  assert not events[0].long_running_tool_ids
+  assert len(mock_model.requests) == 2
