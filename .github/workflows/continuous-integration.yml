@@ -19,16 +19,20 @@ on:
     branches: [main, v1]
     paths:
       - '**.py'
+      - '.github/workflows/continuous-integration.yml'
       - '.pre-commit-config.yaml'
       - 'pyproject.toml'
       - 'tests/**'
+      - 'uv.lock'
   pull_request:
     branches: [main, v1]
     paths:
       - '**.py'
+      - '.github/workflows/continuous-integration.yml'
       - '.pre-commit-config.yaml'
       - 'pyproject.toml'
       - 'tests/**'
+      - 'uv.lock'
 
 permissions:
   contents: read
@@ -77,16 +81,22 @@ jobs:
           # Switch to target base branch to generate baseline
           git checkout origin/$TARGET_BRANCH
 
-          git checkout ${{ github.sha }} -- pyproject.toml
+          # Both files together: uv.lock is only valid for the pyproject.toml it
+          # was resolved from, and leaving the base branch's lock in the tree
+          # would make the --locked sync below fail. Taking both also keeps the
+          # tree clean for the `git checkout ${{ github.sha }}` in the next step.
+          git checkout ${{ github.sha }} -- pyproject.toml uv.lock
 
           # Install dependencies for target branch
           uv venv .venv
           source .venv/bin/activate
-          uv sync --all-extras
+          uv sync --all-extras --locked
 
           # Run mypy, filter for errors only, remove line numbers, and sort
           # We ignore exit code (|| true) because we expect errors on baseline
-          uv run mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > baseline_errors.txt || true
+          # --frozen: `uv run` otherwise re-locks, which would rewrite uv.lock
+          # and break the checkout in the next step.
+          uv run --frozen mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > baseline_errors.txt || true
           echo "Found $(wc -l < baseline_errors.txt) errors on $TARGET_BRANCH."
 
       - name: Check PR Branch
@@ -96,10 +106,10 @@ jobs:
 
           # Re-sync dependencies in case the PR changed them
           source .venv/bin/activate
-          uv sync --all-extras
+          uv sync --all-extras --locked
 
           # Run mypy on PR code, apply same processing
-          uv run mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > pr_errors.txt || true
+          uv run --frozen mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > pr_errors.txt || true
           echo "Found $(wc -l < pr_errors.txt) errors on PR branch."
 
       - name: Compare and Fail on New Errors
@@ -143,7 +153,7 @@ jobs:
         run: |
           uv venv .venv
           source .venv/bin/activate
-          uv sync --extra test
+          uv sync --extra test --locked
 
       - name: Run unit tests with pytest
         run: |
@@ -183,7 +193,7 @@ jobs:
         run: |
           uv venv .venv
           source .venv/bin/activate
-          uv sync --extra test
+          uv sync --extra test --locked
 
       - name: Run A2A tests against a2a-sdk v0.3
         run: |
