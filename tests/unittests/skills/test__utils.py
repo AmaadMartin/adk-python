@@ -124,6 +124,29 @@ def test__load_skill_from_dir_drops_binary_scripts(tmp_path, caplog):
   assert "bad.bin" in caplog.text
 
 
+def test__load_skill_from_dir_translates_crlf_in_text_resources(tmp_path):
+  """Tests CRLF text resources are still newline-translated, not kept raw.
+
+  ``_load_dir`` must keep reading text through ``read_text``. Collapsing it to
+  ``read_bytes().decode("utf-8")`` to share one read with the binary fallback
+  would skip text mode's universal-newline translation and silently hand
+  callers ``\\r\\n``.
+  """
+  skill_dir = tmp_path / "my-skill"
+  skill_dir.mkdir()
+  (skill_dir / "SKILL.md").write_text(
+      "---\nname: my-skill\ndescription: A skill\n---\nBody"
+  )
+
+  ref_dir = skill_dir / "references"
+  ref_dir.mkdir()
+  (ref_dir / "crlf.md").write_bytes(b"line1\r\nline2\r\n")
+
+  skill = _load_skill_from_dir(skill_dir)
+
+  assert skill.resources.get_reference("crlf.md") == "line1\nline2\n"
+
+
 def test_allowed_tools_yaml_key(tmp_path):
   """Tests that allowed-tools YAML key loads correctly."""
   skill_dir = tmp_path / "my-skill"
@@ -354,8 +377,8 @@ def test__load_skill_from_gcs_dir(mock_client_class):
 
 
 @mock.patch("google.cloud.storage.Client")
-def test__load_skill_from_gcs_dir_keeps_binary_resources(mock_client_class):
-  """Tests non-UTF-8 GCS blobs are kept as bytes."""
+def test__load_skill_from_gcs_dir_binary_contract(mock_client_class, caplog):
+  """Tests GCS keeps binary assets as bytes and drops binary scripts."""
   mock_client = mock.MagicMock()
   mock_client_class.return_value = mock_client
   mock_bucket = mock.MagicMock()
@@ -372,22 +395,30 @@ def test__load_skill_from_gcs_dir_keeps_binary_resources(mock_client_class):
 
   mock_bucket.blob.side_effect = mock_blob_side_effect
 
-  def list_blobs_side_effect(prefix: str):
-    if not prefix.endswith("assets/"):
-      return []
+  def binary_blob(name: str):
     m = mock.MagicMock()
-    m.name = prefix + "logo.png"
+    m.name = name
     m.download_as_text.side_effect = UnicodeDecodeError(
         "utf-8", _INVALID_UTF8, 0, 1, "invalid start byte"
     )
     m.download_as_bytes.return_value = _INVALID_UTF8
-    return [m]
+    return m
+
+  def list_blobs_side_effect(prefix: str):
+    if prefix.endswith("assets/"):
+      return [binary_blob(prefix + "logo.png")]
+    if prefix.endswith("scripts/"):
+      return [binary_blob(prefix + "bad.bin")]
+    return []
 
   mock_bucket.list_blobs.side_effect = list_blobs_side_effect
 
-  skill = _load_skill_from_gcs_dir("my-bucket", "skills/my-skill/")
+  with caplog.at_level(logging.WARNING):
+    skill = _load_skill_from_gcs_dir("my-bucket", "skills/my-skill/")
 
   assert skill.resources.get_asset("logo.png") == _INVALID_UTF8
+  assert skill.resources.list_scripts() == []
+  assert "bad.bin" in caplog.text
 
 
 def test_list_skills_in_dir(tmp_path):

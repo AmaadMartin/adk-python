@@ -58,10 +58,10 @@ def _load_dir(directory: pathlib.Path) -> dict[str, str | bytes]:
       if file_path.is_file():
         relative_path = file_path.relative_to(directory)
         try:
+          # read_text, not read_bytes().decode(): text mode applies
+          # universal-newline translation, which callers already rely on.
           files[str(relative_path)] = file_path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
-          # Non-UTF-8 files (e.g. images) are kept as raw bytes so binary
-          # assets remain available to the model.
           files[str(relative_path)] = file_path.read_bytes()
   return files
 
@@ -306,8 +306,6 @@ def _load_skill_from_zip_bytes(zip_bytes: bytes) -> models.Skill:
           try:
             result[relative_path] = raw.decode("utf-8")
           except UnicodeDecodeError:
-            # Non-UTF-8 files (e.g. images) are kept as raw bytes so binary
-            # assets remain available to the model.
             result[relative_path] = raw
       return result
 
