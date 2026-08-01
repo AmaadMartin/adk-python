@@ -221,6 +221,7 @@ class TestGoogleApiToolset:
         TEST_API_NAME, TEST_API_VERSION, discovery_url=discovery_url
     )
 
+  @pytest.mark.asyncio
   @mock.patch(
       "google.adk.tools.google_api_tool.google_api_toolset.GoogleApiTool"
   )
@@ -285,6 +286,7 @@ class TestGoogleApiToolset:
       )
       assert tools[i] is mock_google_api_tool_instances[i]
 
+  @pytest.mark.asyncio
   @mock.patch(
       "google.adk.tools.google_api_tool.google_api_toolset.OpenAPIToolset"
   )
@@ -320,6 +322,7 @@ class TestGoogleApiToolset:
     assert tools[0].name == "test_tool_0"
     assert tools[1].name == "test_tool_2"
 
+  @pytest.mark.asyncio
   @mock.patch(
       "google.adk.tools.google_api_tool.google_api_toolset.OpenAPIToolset"
   )
@@ -437,6 +440,7 @@ class TestGoogleApiToolset:
     assert tool_set._service_account == service_account
     # Effect verification is covered in test_get_tools.
 
+  @pytest.mark.asyncio
   @mock.patch(
       "google.adk.tools.google_api_tool.google_api_toolset.OpenAPIToolset"
   )
@@ -524,6 +528,7 @@ class TestGoogleApiToolset:
 
     assert tool_set.tool_name_prefix == tool_name_prefix
 
+  @pytest.mark.asyncio
   @mock.patch(
       "google.adk.tools.google_api_tool.google_api_toolset.OpenAPIToolset"
   )
@@ -565,6 +570,7 @@ class TestGoogleApiToolset:
     mock_openapi_toolset_instance.close.assert_called_once()
     mock_mtls_certs_instance.close.assert_called_once()
 
+  @pytest.mark.asyncio
   @mock.patch(
       "google.adk.tools.google_api_tool.google_api_toolset.httpx.AsyncClient"
   )

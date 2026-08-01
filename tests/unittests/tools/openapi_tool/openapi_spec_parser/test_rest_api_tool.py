@@ -1144,6 +1144,7 @@ class TestRestApiTool:
     assert "param_name" in request_params["params"]
     assert "empty_param" not in request_params["params"]
 
+  @pytest.mark.asyncio
   @pytest.mark.parametrize(
       "verify_input, expected_verify_in_call",
       [
@@ -1209,6 +1210,7 @@ class TestRestApiTool:
       else:
         assert call_kwargs["verify"] == expected_verify_in_call
 
+  @pytest.mark.asyncio
   async def test_request_uses_no_default_timeout(
       self,
       mock_tool_context,
@@ -1250,6 +1252,7 @@ class TestRestApiTool:
       _, call_kwargs = mock_async_client.call_args
       assert call_kwargs["timeout"] is None
 
+  @pytest.mark.asyncio
   async def test_call_with_configure_verify(
       self,
       mock_tool_context,
