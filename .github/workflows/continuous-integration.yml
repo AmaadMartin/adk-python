@@ -14,6 +14,9 @@
 
 name: Continuous Integration
 
+# Keep both `paths` lists in sync. `constraints-*.txt` selects the dependency
+# versions every job below installs, so a constraints-only change -- including
+# each scheduled refresh -- must run the full matrix.
 on:
   push:
     branches: [main, v1]
@@ -21,6 +24,7 @@ on:
       - '**.py'
       - '.pre-commit-config.yaml'
       - 'pyproject.toml'
+      - 'constraints-*.txt'
       - 'tests/**'
   pull_request:
     branches: [main, v1]
@@ -28,6 +32,7 @@ on:
       - '**.py'
       - '.pre-commit-config.yaml'
       - 'pyproject.toml'
+      - 'constraints-*.txt'
       - 'tests/**'
 
 permissions:
@@ -77,16 +82,27 @@ jobs:
           # Switch to target base branch to generate baseline
           git checkout origin/$TARGET_BRANCH
 
-          git checkout ${{ github.sha }} -- pyproject.toml
+          # Take the PR's dependency declaration *and* its pins, so the two
+          # mypy runs differ only in source code.
+          git checkout ${{ github.sha }} -- pyproject.toml 'constraints-*.txt'
 
-          # Install dependencies for target branch
+          # Install dependencies for target branch.
+          # Split in two: `--all-extras` is rejected for an editable directory
+          # source ("Use <dir>[extra] syntax or -r <file> instead"). The
+          # editable project goes first so the google-adk that
+          # google-adk-community and toolbox-adk depend on is already
+          # satisfied and uv does not pull a registry wheel over the checkout.
           uv venv .venv
           source .venv/bin/activate
-          uv sync --all-extras
+          uv pip install -e . --no-deps
+          uv pip install -r pyproject.toml --all-extras \
+            -c constraints-${{ matrix.python-version }}.txt
 
           # Run mypy, filter for errors only, remove line numbers, and sort
           # We ignore exit code (|| true) because we expect errors on baseline
-          uv run mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > baseline_errors.txt || true
+          # `mypy`, not `uv run mypy`: `uv run` syncs the project environment
+          # first, which re-resolves from scratch and discards these pins.
+          mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > baseline_errors.txt || true
           echo "Found $(wc -l < baseline_errors.txt) errors on $TARGET_BRANCH."
 
       - name: Check PR Branch
@@ -96,10 +112,12 @@ jobs:
 
           # Re-sync dependencies in case the PR changed them
           source .venv/bin/activate
-          uv sync --all-extras
+          uv pip install -e . --no-deps
+          uv pip install -r pyproject.toml --all-extras \
+            -c constraints-${{ matrix.python-version }}.txt
 
           # Run mypy on PR code, apply same processing
-          uv run mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > pr_errors.txt || true
+          mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > pr_errors.txt || true
           echo "Found $(wc -l < pr_errors.txt) errors on PR branch."
 
       - name: Compare and Fail on New Errors
@@ -139,11 +157,15 @@ jobs:
         with:
           enable-cache: true
 
+      # `uv sync` accepts no --constraint, so it takes the newest compatible
+      # release of every dependency on every run. `uv pip install -c` applies
+      # the committed pins, making a dependency version change a reviewable
+      # diff in constraints-*.txt rather than a silent CI-only event.
       - name: Install dependencies
         run: |
           uv venv .venv
           source .venv/bin/activate
-          uv sync --extra test
+          uv pip install -e '.[test]' -c constraints-${{ matrix.python-version }}.txt
 
       - name: Run unit tests with pytest
         run: |
