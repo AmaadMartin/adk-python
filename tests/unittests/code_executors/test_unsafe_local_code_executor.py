@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import multiprocessing
 import textwrap
 from unittest.mock import MagicMock
 
@@ -131,3 +132,80 @@ class TestUnsafeLocalCodeExecutor:
 
     assert result.stdout == ""
     assert "Code execution timed out after 1 seconds." in result.stderr
+
+  def test_execute_code_raises_when_worker_queue_cannot_be_created(
+      self,
+      mock_invocation_context: InvocationContext,
+      monkeypatch: pytest.MonkeyPatch,
+  ):
+    """A sandbox forbidding the worker's IPC queue yields an actionable error."""
+    broken_pipe = BrokenPipeError(32, "Broken pipe")
+
+    class _NoQueueContext:
+
+      def Queue(self):
+        raise broken_pipe
+
+    monkeypatch.setattr(
+        multiprocessing, "get_context", lambda method: _NoQueueContext()
+    )
+    executor = UnsafeLocalCodeExecutor()
+    code_input = CodeExecutionInput(code='print("hi")')
+
+    with pytest.raises(
+        RuntimeError, match="could not start a worker process"
+    ) as exc_info:
+      executor.execute_code(mock_invocation_context, code_input)
+
+    assert "BrokenPipeError" in str(exc_info.value)
+    assert exc_info.value.__cause__ is broken_pipe
+
+  def test_execute_code_raises_when_worker_process_cannot_start(
+      self,
+      mock_invocation_context: InvocationContext,
+      monkeypatch: pytest.MonkeyPatch,
+  ):
+    """A sandbox that forbids spawning the worker yields an actionable error."""
+
+    class _NoStartContext:
+
+      def Queue(self):
+        return MagicMock()
+
+      def Process(self, **kwargs):
+        process = MagicMock()
+        process.start.side_effect = PermissionError(
+            1, "Operation not permitted"
+        )
+        return process
+
+    monkeypatch.setattr(
+        multiprocessing, "get_context", lambda method: _NoStartContext()
+    )
+    executor = UnsafeLocalCodeExecutor()
+    code_input = CodeExecutionInput(code='print("hi")')
+
+    with pytest.raises(
+        RuntimeError, match="could not start a worker process"
+    ) as exc_info:
+      executor.execute_code(mock_invocation_context, code_input)
+
+    assert "PermissionError" in str(exc_info.value)
+    assert isinstance(exc_info.value.__cause__, PermissionError)
+
+  def test_execute_code_propagates_non_oserror_setup_failure(
+      self,
+      mock_invocation_context: InvocationContext,
+      monkeypatch: pytest.MonkeyPatch,
+  ):
+    """A start-method error that is not an OSError is not rewritten."""
+    monkeypatch.setattr(
+        multiprocessing,
+        "get_context",
+        MagicMock(side_effect=ValueError("cannot find context for spawn")),
+    )
+    executor = UnsafeLocalCodeExecutor()
+    code_input = CodeExecutionInput(code='print("hi")')
+
+    with pytest.raises(ValueError, match="cannot find context"):
+      executor.execute_code(mock_invocation_context, code_input)
