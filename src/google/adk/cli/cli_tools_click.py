@@ -274,7 +274,27 @@ def _warn_if_with_ui(with_ui: bool) -> None:
     click.secho(f"WARNING: {_ADK_WEB_WARNING}", fg="yellow", err=True)
 
 
-class TelemetryGroup(click.Group):
+class _HelpOnNoArgsGroup(click.Group):
+  """Group that prints help and exits 0 when invoked with no subcommand.
+
+  click 8.2.0 changed the ``no_args_is_help`` path to raise
+  ``NoArgsIsHelpError`` -- a ``UsageError`` subclass, so the process exits with
+  status 2 instead of 0 (see https://github.com/pallets/click/issues/1489).
+  Because ADK depends on ``click>=8.1.8,<9`` with no lockfile, that would make
+  the exit code of a bare ``adk`` depend on which click a user resolved. Asking
+  a group for its usage is not a usage error, and shell wrappers running under
+  ``set -e`` depend on status 0, so ADK pins the behaviour itself and keeps
+  exiting 0 across the whole supported click range.
+  """
+
+  def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
+    if not args and self.no_args_is_help and not ctx.resilient_parsing:
+      click.echo(ctx.get_help(), color=ctx.color)
+      ctx.exit(0)
+    return super().parse_args(ctx, args)
+
+
+class TelemetryGroup(_HelpOnNoArgsGroup):
   """Custom Click Group to wrap execution for telemetry tracking."""
 
   def parse_args(self, ctx: click.Context, args: list[str]) -> list[str]:
@@ -393,7 +413,7 @@ def main(ctx: Optional[click.Context] = None) -> None:
         )
 
 
-@main.group("telemetry")
+@main.group("telemetry", cls=_HelpOnNoArgsGroup)
 def telemetry() -> None:
   """Manage telemetry settings."""
   pass
@@ -431,13 +451,13 @@ def telemetry_status() -> None:
     click.echo("Telemetry collection is not configured (defaults to OFF).")
 
 
-@main.group()
+@main.group(cls=_HelpOnNoArgsGroup)
 def deploy():
   """Deploys agent to hosted environments."""
   pass
 
 
-@main.group()
+@main.group(cls=_HelpOnNoArgsGroup)
 def conformance():
   """Conformance testing tools for ADK."""
   pass
@@ -1482,7 +1502,7 @@ def cli_optimize(
   click.echo("=" * 80)
 
 
-@main.group("eval_set")
+@main.group("eval_set", cls=_HelpOnNoArgsGroup)
 def eval_set():
   """Manage Eval Sets."""
   pass
@@ -2389,7 +2409,7 @@ def cli_deploy_cloud_run(
     click.secho(f"Deploy failed: {e}", fg="red", err=True)
 
 
-@main.group()
+@main.group(cls=_HelpOnNoArgsGroup)
 def migrate():
   """ADK migration commands."""
   pass
