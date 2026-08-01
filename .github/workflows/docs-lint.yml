@@ -1,0 +1,57 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Documentation-only changes do not match the path filters in
+# continuous-integration.yml, so they would otherwise land with no CI signal.
+# This workflow runs just the two pre-commit hooks that cover markdown, so a
+# docs pull request gets fast, relevant feedback without starting the full
+# Python test matrix.
+
+name: Docs Lint
+
+on:
+  push:
+    branches: [main, v1]
+    paths:
+      - '**.md'
+      - '.github/workflows/docs-lint.yml'
+  pull_request:
+    branches: [main, v1]
+    paths:
+      - '**.md'
+      - '.github/workflows/docs-lint.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  docs-lint:
+    name: Markdown Lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      # `pre-commit run` takes at most one hook id, so the two markdown hooks
+      # are invoked separately. Hook versions and file scopes stay defined in
+      # .pre-commit-config.yaml; this workflow only selects which ones run.
+      - name: Check markdown formatting (mdformat)
+        uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+        with:
+          extra_args: mdformat --all-files
+
+      - name: Check spelling (codespell)
+        uses: pre-commit/action@2c7b3805fd2a0fd8c1884dcaebf91fc102a13ecd # v3.0.1
+        with:
+          extra_args: codespell --all-files
