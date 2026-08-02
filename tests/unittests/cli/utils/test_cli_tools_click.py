@@ -1709,6 +1709,23 @@ def test_cli_run_log_level(
 
 
 @pytest.mark.unmute_click
+def test_telemetry_without_subcommand_shows_help() -> None:
+  """`adk telemetry` with no subcommand falls back to the group help text.
+
+  Only the help output is asserted: the exit code of click's
+  ``no_args_is_help`` fallback is 0 on click 8.1.x and 2 on click >= 8.2, and
+  ADK supports both (pyproject declares ``click>=8.1.8,<9``).
+  """
+  runner = CliRunner()
+  result = runner.invoke(cli_tools_click.main, ["telemetry"])
+
+  assert "Usage:" in result.output
+  assert "Manage telemetry settings." in result.output
+  for subcommand in ("enable", "disable", "status"):
+    assert subcommand in result.output
+
+
+@pytest.mark.unmute_click
 def test_telemetry_cli_commands(monkeypatch: pytest.MonkeyPatch) -> None:
   """Test adk telemetry commands."""
   consent_store = {"val": None}
@@ -1727,11 +1744,6 @@ def test_telemetry_cli_commands(monkeypatch: pytest.MonkeyPatch) -> None:
   )
 
   runner = CliRunner()
-
-  # Test running without subcommand shows help
-  result = runner.invoke(cli_tools_click.main, ["telemetry"])
-  assert result.exit_code == 0
-  assert "Usage:" in result.output
 
   # Test status subcommand
   result = runner.invoke(cli_tools_click.main, ["telemetry", "status"])
