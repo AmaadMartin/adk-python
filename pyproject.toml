@@ -114,10 +114,10 @@ optional-dependencies.db = [
 optional-dependencies.dev = [
   "codespell[toml]==2.4.2",
   "flit>=3.10",
-  # Lint tools used by scripts/run_precommit_checks.sh (which runs them directly,
-  # without the pre-commit framework). Formatters that rewrite files are pinned
-  # to the exact versions in .pre-commit-config.yaml so local runs produce
-  # byte-identical output to CI.
+  # Formatter and linter pins mirror the hook revisions in
+  # .pre-commit-config.yaml, which is what CI's lint job installs them from.
+  # Keeping the two in sync means running one of these tools directly out of a
+  # `uv sync --extra dev` environment produces the same result as CI.
   "isort==8.0.1",
   "mdformat==0.7.22",
   "mdformat-gfm",
