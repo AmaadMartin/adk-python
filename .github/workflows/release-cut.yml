@@ -69,7 +69,7 @@ jobs:
       # Action: CUT NEW RELEASE
       - name: Checkout base ref (Cut)
         if: inputs.action == 'cut'
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ inputs.commit_sha || steps.config.outputs.base_ref }}
           token: ${{ secrets.RELEASE_PAT }}
@@ -95,7 +95,7 @@ jobs:
       # Action: REGENERATE EXISTING PR
       - name: Checkout existing candidate branch (Regenerate)
         if: inputs.action == 'regenerate'
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           ref: ${{ steps.config.outputs.candidate_branch }}
           token: ${{ secrets.RELEASE_PAT }}
@@ -103,7 +103,7 @@ jobs:
       # Run Release Please
       - name: Run Release Please
         id: release_please
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4
         with:
           token: ${{ secrets.RELEASE_PAT }}
           config-file: ${{ steps.config.outputs.config_file }}
@@ -118,7 +118,7 @@ jobs:
       # so it also runs when release-please updates an existing PR (regenerate).
       - name: Set up Python
         if: steps.release_please.outputs.pr != ''
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: '3.11'
 
