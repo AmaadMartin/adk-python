@@ -72,9 +72,7 @@ def _execute_in_process(
   result_queue.put((stdout.getvalue(), error))
 
 
-def _execution_group(
-    process: multiprocessing.process.BaseProcess,
-) -> int | None:
+def _execution_group(process: BaseProcess) -> int | None:
   """Returns the group the execution detached into, or None if it has not."""
   if process.pid is None or not hasattr(os, 'killpg'):
     return None
@@ -96,7 +94,7 @@ def _signal_group(group: int, sig: int) -> None:
     logger.debug('Could not signal the execution process group.')
 
 
-def _kill_execution(process: multiprocessing.process.BaseProcess) -> None:
+def _kill_execution(process: BaseProcess) -> None:
   """Kills a timed-out execution along with any process it spawned."""
   # Resolved up front: once the execution process has been reaped its group can
   # no longer be looked up through it, and the group is what holds whatever the
