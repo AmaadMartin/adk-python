@@ -102,7 +102,7 @@ optional-dependencies.benchmark = [
   "google-benchmark>=1.9",
 ]
 optional-dependencies.community = [
-  "google-adk-community",
+  "google-adk-community>=0.5", # 0.5 dropped the google-genai<2 pin that conflicts with ADK's own google-genai floor.
 ]
 optional-dependencies.daytona = [
   "daytona>=0.191", # For DaytonaEnvironment remote sandbox.
@@ -120,7 +120,7 @@ optional-dependencies.dev = [
   # byte-identical output to CI.
   "isort==8.0.1",
   "mdformat==0.7.22",
-  "mdformat-gfm",
+  "mdformat-gfm>=0.4",
   "mypy>=1.15",
   "pre-commit>=4",
   "pre-commit-hooks==4.6",
@@ -132,13 +132,16 @@ optional-dependencies.dev = [
   "tox-uv>=1.33.2",
 ]
 optional-dependencies.docs = [
-  "autodoc-pydantic",
-  "furo",
-  "myst-parser",
-  "sphinx<9",
-  "sphinx-autodoc-typehints",
-  "sphinx-click",
-  "sphinx-rtd-theme",
+  # Floors track the newest release line of each tool that still supports ADK's
+  # minimum Python (3.10), so the group stays installable on every interpreter
+  # ADK claims to support.
+  "autodoc-pydantic>=2.2",
+  "furo>=2024.8.6",
+  "myst-parser>=4",
+  "sphinx>=8.1,<9",
+  "sphinx-autodoc-typehints>=3",
+  "sphinx-click>=6.1",
+  "sphinx-rtd-theme>=3",
 ]
 optional-dependencies.e2b = [
   "e2b>=2,<3", # For E2BEnvironment remote sandbox.
@@ -153,15 +156,15 @@ optional-dependencies.eval = [
   "tabulate>=0.9",
 ]
 optional-dependencies.extensions = [
-  "anthropic>=0.78",                                                 # For anthropic model support; 0.78 introduced ThinkingConfigAdaptiveParam (required for Claude Opus 4.7).
-  "beautifulsoup4>=3.2.2",                                           # For load_web_page tool.
-  "crewai[tools]; python_version>='3.11' and python_version<'3.12'", # For CrewaiTool; chromadb/pypika fail on 3.12+
-  "docker>=7",                                                       # For ContainerCodeExecutor
-  "google-cloud-firestore>=2.11,<3",                                 # For Firestore services
+  "anthropic>=0.78",                                                       # For anthropic model support; 0.78 introduced ThinkingConfigAdaptiveParam (required for Claude Opus 4.7).
+  "beautifulsoup4>=3.2.2",                                                 # For load_web_page tool.
+  "crewai[tools]>=0.95; python_version>='3.11' and python_version<'3.12'", # For CrewaiTool; 0.95 first exposes crewai.tools.BaseTool without pkg_resources (dropped in setuptools 82); chromadb/pypika fail on 3.12+
+  "docker>=7",                                                             # For ContainerCodeExecutor
+  "google-cloud-firestore>=2.11,<3",                                       # For Firestore services
   "k8s-agent-sandbox>=0.1.1.post3",
   "kubernetes>=29",
   "langgraph>=1.0.10,<2",
-  "langgraph-checkpoint>=4.1.1,<5",                                  # LangGraph's own floor still admits unsafe checkpoint deserialization.
+  "langgraph-checkpoint>=4.1.1,<5",                                        # LangGraph's own floor still admits unsafe checkpoint deserialization.
   "litellm>=1.84",
   "llama-index-embeddings-google-genai>=0.3",
   "llama-index-readers-file>=0.4",
@@ -208,12 +211,12 @@ optional-dependencies.otel-gcp = [
 optional-dependencies.slack = [ "slack-bolt>=1.22" ]
 optional-dependencies.test = [
   "a2a-sdk>=0.3.4,<2",
-  "anthropic>=0.78",                                                 # For anthropic model tests; 0.78 introduced ThinkingConfigAdaptiveParam (required for Claude Opus 4.7).
+  "anthropic>=0.78",                                                       # For anthropic model tests; 0.78 introduced ThinkingConfigAdaptiveParam (required for Claude Opus 4.7).
   "anyio>=4.9,<5",
   "beautifulsoup4>=3.2.2",
-  "crewai[tools]; python_version>='3.11' and python_version<'3.12'", # For CrewaiTool tests; chromadb/pypika fail on 3.12+
+  "crewai[tools]>=0.95; python_version>='3.11' and python_version<'3.12'", # For CrewaiTool tests; 0.95 first exposes crewai.tools.BaseTool without pkg_resources (dropped in setuptools 82); chromadb/pypika fail on 3.12+
   "daytona>=0.191",
-  "docker>=7",                                                       # For ContainerCodeExecutor tests
+  "docker>=7",                                                             # For ContainerCodeExecutor tests
   "e2b>=2,<3",
   "gepa>=0.1",
   "google-antigravity>=0.1,<0.2",
@@ -239,7 +242,7 @@ optional-dependencies.test = [
   "kubernetes>=29",
   "langchain-community>=0.3.17",
   "langgraph>=1.0.10,<2",
-  "langgraph-checkpoint>=4.1.1,<5",                                  # LangGraph's own floor still admits unsafe checkpoint deserialization.
+  "langgraph-checkpoint>=4.1.1,<5",                                        # LangGraph's own floor still admits unsafe checkpoint deserialization.
   "litellm>=1.84",
   "llama-index-readers-file>=0.4",
   "lxml>=5.3",
