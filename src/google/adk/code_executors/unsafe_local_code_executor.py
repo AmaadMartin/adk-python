@@ -18,12 +18,11 @@ from contextlib import redirect_stdout
 import io
 import logging
 import multiprocessing
+from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
 import os
-import queue
 import re
 import signal
-import time
 import traceback
 from typing import Any
 
@@ -41,19 +40,11 @@ logger = logging.getLogger('google_adk.' + __name__)
 # escalating to SIGKILL, so that the timeout itself cannot block forever.
 _TERMINATE_GRACE_SECONDS = 5
 
-# How long a single wait for the worker's result may block before the worker's
-# liveness is rechecked.
-_LIVENESS_POLL_SECONDS = 0.1
-
-# How long to keep reading after the worker has exited, so that a result it
-# flushed on its way out is still collected rather than declared lost.
-_EXIT_DRAIN_SECONDS = 1.0
-
 
 def _execute_in_process(
-    code: str, globals_: dict[str, Any], result_queue: multiprocessing.Queue
+    code: str, globals_: dict[str, Any], result_connection: Connection
 ) -> None:
-  """Executes code in a separate process and puts result in queue."""
+  """Executes code in a separate process and sends the result back."""
   # Detach into a new session/process group before running anything, so that a
   # timed-out execution can be killed together with everything it spawned.
   if hasattr(os, 'setsid'):
@@ -69,7 +60,7 @@ def _execute_in_process(
       exec(code, globals_, globals_)
   except BaseException:
     error = traceback.format_exc()
-  result_queue.put((stdout.getvalue(), error))
+  result_connection.send((stdout.getvalue(), error))
 
 
 def _execution_group(process: BaseProcess) -> int | None:
@@ -117,56 +108,6 @@ def _kill_execution(process: BaseProcess) -> None:
     process.join()
 
 
-def _wait_for_result(
-    process: BaseProcess,
-    result_queue: multiprocessing.Queue[tuple[str, str | None]],
-    timeout_seconds: float | None,
-) -> tuple[str, str | None] | None:
-  """Waits for the worker's result, its exit, or the timeout, whichever is first.
-
-  Unlike a bare `result_queue.get`, this also watches the worker itself, so a
-  worker that dies without producing a result is distinguishable from one that
-  is still working.
-
-  Args:
-    process: The worker running the code.
-    result_queue: The queue the worker reports its result on.
-    timeout_seconds: How long the worker may run, or None for no limit.
-
-  Returns:
-    The (stdout, error) the worker produced, or None if it exited without
-    producing one.
-
-  Raises:
-    queue.Empty: If the timeout elapsed while the worker was still running.
-  """
-  deadline = (
-      None if timeout_seconds is None else time.monotonic() + timeout_seconds
-  )
-  while True:
-    remaining = None if deadline is None else deadline - time.monotonic()
-    if remaining is not None and remaining <= 0:
-      raise queue.Empty()
-    wait = (
-        _LIVENESS_POLL_SECONDS
-        if remaining is None
-        else min(_LIVENESS_POLL_SECONDS, remaining)
-    )
-    try:
-      return result_queue.get(timeout=wait)
-    except queue.Empty:
-      pass
-    if not process.is_alive():
-      # The worker is gone, but a result it flushed on its way out can still
-      # be in flight, so the queue is drained before the result is declared
-      # lost. The timeout no longer applies here: there is nothing left
-      # running that could time out.
-      try:
-        return result_queue.get(timeout=_EXIT_DRAIN_SECONDS)
-      except queue.Empty:
-        return None
-
-
 def _prepare_globals(code: str, globals_: dict[str, Any]) -> None:
   """Prepare globals for code execution, injecting __name__ if needed."""
   if re.search(r"if\s+__name__\s*==\s*['\"]__main__['\"]", code):
@@ -205,18 +146,32 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
     _prepare_globals(code_execution_input.code, globals_)
 
     ctx = multiprocessing.get_context('spawn')
-    result_queue = ctx.Queue()
+    result_connection, worker_connection = ctx.Pipe(duplex=False)
     process = ctx.Process(
         target=_execute_in_process,
-        args=(code_execution_input.code, globals_, result_queue),
+        args=(code_execution_input.code, globals_, worker_connection),
         daemon=True,
     )
     process.start()
+    # Leaves the worker holding the only write end, so end of file on the read
+    # end means the worker is gone. That is what tells a worker which died
+    # without reporting anything apart from one that is still working, and it
+    # is why the wait below cannot block forever on a dead worker.
+    worker_connection.close()
 
     output = ''
     error = ''
-    try:
-      result = _wait_for_result(process, result_queue, self.timeout_seconds)
+    if not result_connection.poll(self.timeout_seconds):
+      _kill_execution(process)
+      error = f'Code execution timed out after {self.timeout_seconds} seconds.'
+    else:
+      try:
+        result = result_connection.recv()
+      except (EOFError, OSError):
+        # End of file, or a message cut short by the worker dying mid-send.
+        result = None
+      # Reaped before the exit code is read: it is only set once the worker has
+      # been waited for.
       process.join()
       if result is None:
         error = (
@@ -228,13 +183,9 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
         output, err = result
         if err:
           error = err
-    except queue.Empty:
-      _kill_execution(process)
-      error = f'Code execution timed out after {self.timeout_seconds} seconds.'
 
     # Collect the final result.
-    result_queue.close()
-    result_queue.join_thread()
+    result_connection.close()
     return CodeExecutionResult(
         stdout=output,
         stderr=error,
