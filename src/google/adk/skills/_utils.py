@@ -555,6 +555,10 @@ def _load_skill_from_gcs_dir(
       relative_path = blob.name[len(prefix) :]
       if not relative_path:
         continue
+      # Mirrors _load_dir/_load_zip_dir: never surface Python bytecode caches
+      # as skill resources.
+      if "__pycache__" in pathlib.PurePosixPath(relative_path).parts:
+        continue
 
       try:
         result[relative_path] = blob.download_as_text()
