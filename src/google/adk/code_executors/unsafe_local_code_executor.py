@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 from contextlib import redirect_stdout
+import ctypes
 import io
 import logging
 import multiprocessing
@@ -41,14 +42,21 @@ _TERMINATE_GRACE_SECONDS = 5
 
 
 def _execute_in_process(
-    code: str, globals_: dict[str, Any], result_queue: multiprocessing.Queue
+    code: str,
+    globals_: dict[str, Any],
+    result_queue: multiprocessing.Queue,
+    execution_group: ctypes.c_int,
 ) -> None:
   """Executes code in a separate process and puts result in queue."""
-  # Detach into a new session/process group before running anything, so that a
-  # timed-out execution can be killed together with everything it spawned.
+  # Detach into a new session/process group before running anything, so that
+  # the execution can be killed together with everything it spawned.
   if hasattr(os, 'setsid'):
     try:
       os.setsid()
+      # Reported from in here, once, rather than looked up later through this
+      # process: the group outlives the process, but a lookup through its pid
+      # dies with it, and what the code spawns lives in the group.
+      execution_group.value = os.getpgrp()
     except OSError:
       logger.debug('Could not detach the execution process group.')
 
@@ -62,22 +70,6 @@ def _execute_in_process(
   result_queue.put((stdout.getvalue(), error))
 
 
-def _execution_group(
-    process: multiprocessing.process.BaseProcess,
-) -> int | None:
-  """Returns the group the execution detached into, or None if it has not."""
-  if process.pid is None or not hasattr(os, 'killpg'):
-    return None
-  try:
-    group = os.getpgid(process.pid)
-    # Only report the group once the execution has detached into its own;
-    # otherwise the group is still ours and signalling it would take down the
-    # agent along with the code it is running.
-    return group if group != os.getpgid(0) else None
-  except OSError:
-    return None
-
-
 def _signal_group(group: int, sig: int) -> None:
   """Signals every process left in a group, tolerating an empty one."""
   try:
@@ -86,23 +78,26 @@ def _signal_group(group: int, sig: int) -> None:
     logger.debug('Could not signal the execution process group.')
 
 
-def _kill_execution(process: multiprocessing.process.BaseProcess) -> None:
-  """Kills a timed-out execution along with any process it spawned."""
-  # Resolved up front: once the execution process has been reaped its group can
-  # no longer be looked up through it, and the group is what holds whatever the
-  # code spawned.
-  group = _execution_group(process)
+def _kill_execution(
+    process: multiprocessing.process.BaseProcess, group: int
+) -> None:
+  """Kills an execution along with any process it spawned.
 
+  Args:
+    process: The execution process, which is joined (and so reaped) here.
+    group: The process group the execution reported detaching into, or 0 if it
+      never reported one and only `process` itself can be killed.
+  """
   # SIGTERM first, so the code and its children get the same grace period the
   # execution process itself gets before anything is killed outright.
-  if group is not None:
+  if group:
     _signal_group(group, signal.SIGTERM)
   process.terminate()
   process.join(_TERMINATE_GRACE_SECONDS)
 
   # Escalate unconditionally: the execution process exiting says nothing about
   # a child of it that is ignoring SIGTERM.
-  if group is not None:
+  if group:
     _signal_group(group, signal.SIGKILL)
   if process.is_alive():
     process.kill()
@@ -116,7 +111,12 @@ def _prepare_globals(code: str, globals_: dict[str, Any]) -> None:
 
 
 class UnsafeLocalCodeExecutor(BaseCodeExecutor):
-  """A code executor that unsafely execute code in the current local context."""
+  """A code executor that unsafely execute code in the current local context.
+
+  The code runs in a worker process that detaches into its own process group.
+  Anything the code leaves running in that group is killed when the call
+  returns, so an execution cannot outlive `execute_code`.
+  """
 
   # Overrides the BaseCodeExecutor attribute: this executor cannot be stateful.
   stateful: bool = Field(default=False, frozen=True, exclude=True)
@@ -148,9 +148,17 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
 
     ctx = multiprocessing.get_context('spawn')
     result_queue = ctx.Queue()
+    # Lock-free on purpose: one writer, one reader, one int. A lock could be
+    # left held by an execution that is SIGKILLed, which would hang this read.
+    execution_group = ctx.Value('i', 0, lock=False)
     process = ctx.Process(
         target=_execute_in_process,
-        args=(code_execution_input.code, globals_, result_queue),
+        args=(
+            code_execution_input.code,
+            globals_,
+            result_queue,
+            execution_group,
+        ),
         daemon=True,
     )
     process.start()
@@ -159,12 +167,16 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
     error = ''
     try:
       output, err = result_queue.get(timeout=self.timeout_seconds)
-      process.join()
       if err:
         error = err
     except queue.Empty:
-      _kill_execution(process)
       error = f'Code execution timed out after {self.timeout_seconds} seconds.'
+    finally:
+      # Torn down on every path, not just on timeout: code that returns
+      # normally can still leave a process of its own running, and the group
+      # is signalled before the worker is reaped so that its pid -- and with
+      # it the group id -- cannot be recycled first.
+      _kill_execution(process, execution_group.value)
 
     # Collect the final result.
     result_queue.close()
