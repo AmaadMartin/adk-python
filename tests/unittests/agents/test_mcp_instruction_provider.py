@@ -37,7 +37,6 @@ class TestMcpInstructionProvider:
     with patch.object(
         mcp_instruction_provider, "MCPSessionManager"
     ) as mock_mcp_session_manager_cls:
-      self.mock_mcp_session_manager_cls = mock_mcp_session_manager_cls
       self.mock_mcp_session_manager = mock_mcp_session_manager_cls.return_value
       self.mock_session = MagicMock()
       self.mock_session.list_prompts = AsyncMock()
