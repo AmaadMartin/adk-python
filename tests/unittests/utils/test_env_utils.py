@@ -30,6 +30,15 @@ import pytest
         ('FALSE', False),
         ('0', False),
         ('', False),
+        (' true', True),
+        ('true ', True),
+        (' 1 ', True),
+        ('\ttrue\n', True),
+        (' TRUE ', True),
+        (' false ', False),
+        (' 0 ', False),
+        ('   ', False),
+        ('tr ue', False),
     ],
 )
 def test_is_env_enabled(monkeypatch, env_value, expected):
@@ -44,6 +53,8 @@ def test_is_env_enabled(monkeypatch, env_value, expected):
         ('0', False),
         ('1', True),
         ('true', True),
+        (' 1 ', True),
+        (' 0 ', False),
     ],
 )
 def test_is_env_enabled_with_defaults(monkeypatch, default, expected):
@@ -55,6 +66,14 @@ def test_is_env_enabled_with_defaults(monkeypatch, default, expected):
 def test_is_enterprise_mode_enabled_via_enterprise_env(monkeypatch):
   """Enterprise mode is on when GOOGLE_GENAI_USE_ENTERPRISE is truthy."""
   monkeypatch.setenv('GOOGLE_GENAI_USE_ENTERPRISE', 'true')
+
+  assert is_enterprise_mode_enabled() is True
+
+
+def test_is_enterprise_mode_enabled_via_padded_enterprise_env(monkeypatch):
+  """A padded GOOGLE_GENAI_USE_ENTERPRISE still enables enterprise mode."""
+  monkeypatch.setenv('GOOGLE_GENAI_USE_ENTERPRISE', ' true')
+  monkeypatch.delenv('GOOGLE_GENAI_USE_VERTEXAI', raising=False)
 
   assert is_enterprise_mode_enabled() is True
 
