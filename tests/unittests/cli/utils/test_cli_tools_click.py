@@ -1830,10 +1830,14 @@ def test_telemetry_cli_commands(monkeypatch: pytest.MonkeyPatch) -> None:
 
   runner = CliRunner()
 
-  # Test running without subcommand shows help
+  # Test running without subcommand shows help. Click >= 8.2 reports a group
+  # invoked without a subcommand as a usage error (exit code 2) and writes the
+  # help to stderr, while click 8.1.x exited 0 and wrote it to stdout. Both are
+  # inside the supported range (click>=8.1.8,<9), so assert on the help text --
+  # which is the behaviour this test is about -- and not on the exit code.
   result = runner.invoke(cli_tools_click.main, ["telemetry"])
-  assert result.exit_code == 0
   assert "Usage:" in result.output
+  assert "Manage telemetry settings." in result.output
 
   # Test status subcommand
   result = runner.invoke(cli_tools_click.main, ["telemetry", "status"])
