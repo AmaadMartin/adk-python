@@ -198,22 +198,17 @@ jobs:
   # in pyproject.toml are never installed anywhere in CI. This job installs
   # them on the minimum supported Python and runs job 3a's suite against them.
   #
-  # `uv pip install` is deliberate, not a stand-in for `uv sync`: uv's lock is
-  # universal and covers EVERY extra, so `uv sync --extra test` would also
-  # resolve the floors of the docs and dev extras, several of which declare no
-  # lower bound and select unbuildable pre-2015 sdists. `uv pip install`
-  # resolves only what it installs: the runtime deps plus the test extra. The
-  # 3.10 pin is load-bearing for that too -- `crewai[tools]` in the test extra
-  # declares no lower bound either, and is kept out only by its own
-  # `python_version>='3.11'` marker.
+  # `uv pip install` is deliberate, not a stand-in for `uv sync`: it resolves
+  # only what it installs -- the runtime deps plus the test extra -- whereas
+  # `uv sync` resolves uv's universal lock across every extra.
   #
-  # TODO: Drop continue-on-error once the floors this job reports as broken
-  # today have been raised: a2a-sdk 0.3.4, daytona 0.191, e2b 2,
+  # Resolving the floors is a hard failure; only the test run is advisory.
+  # TODO: drop that step's continue-on-error once the floors it reports as
+  # broken today have been raised: a2a-sdk 0.3.4, daytona 0.191, e2b 2,
   # google-antigravity 0.1 and google-cloud-bigquery 2.2.
   dependency-floors:
     name: Dependency Floors (lowest-direct, Python 3.10)
     runs-on: ubuntu-latest
-    continue-on-error: true
     timeout-minutes: 15
     steps:
       - name: Checkout code
@@ -237,6 +232,7 @@ jobs:
           uv pip freeze
 
       - name: Run unit tests against the declared floors
+        continue-on-error: true
         run: |
           source .venv/bin/activate
           pytest tests/unittests \
