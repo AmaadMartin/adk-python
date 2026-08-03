@@ -67,7 +67,7 @@ optional-dependencies.agent-identity = [
 optional-dependencies.all = [
   "anyio>=4.10,<5",                                         # 4.10 added AsyncContextManagerMixin, required by httpx_ws.
   "daytona>=0.191",
-  "e2b>=2.16,<3",
+  "e2b>=2.16,<3",                                           # 2.16 first exports FileNotFoundException.
   "google-api-python-client>=2.157,<3",
   "google-cloud-aiplatform[agent-engines]>=1.148.1,<2",
   "google-cloud-bigquery>=3.14",                            # For Client.query_and_wait; earlier releases also import pkg_resources.
@@ -141,7 +141,7 @@ optional-dependencies.docs = [
   "sphinx-rtd-theme",
 ]
 optional-dependencies.e2b = [
-  "e2b>=2.16,<3", # For E2BEnvironment remote sandbox; 2.16 first exports FileNotFoundException.
+  "e2b>=2.16,<3", # For E2BEnvironment remote sandbox.
 ]
 optional-dependencies.eval = [
   "gepa>=0.1",
@@ -172,8 +172,8 @@ optional-dependencies.extensions = [
 ]
 optional-dependencies.gcp = [
   "google-cloud-aiplatform[agent-engines]>=1.148.1,<2",
-  "google-cloud-bigquery>=3.14",                            # For Client.query_and_wait; earlier releases also import pkg_resources.
-  "google-cloud-bigquery-storage>=2.17",                    # First release that does not import pkg_resources.
+  "google-cloud-bigquery>=3.14",
+  "google-cloud-bigquery-storage>=2.17",
   "google-cloud-bigtable>=2.39.1",
   "google-cloud-dataplex>=1.7,<3",
   "google-cloud-discoveryengine>=0.13.12,<0.14",
@@ -190,11 +190,11 @@ optional-dependencies.gcp = [
   "opentelemetry-exporter-gcp-trace>=1.9,<2",
   "opentelemetry-exporter-otlp-proto-http>=1.36",
   "opentelemetry-resourcedetector-gcp>=1.9.0a0,<2",
-  "pyarrow>=16",                                            # First release importable against NumPy 2.x.
+  "pyarrow>=16",
   "python-dateutil>=2.9.0.post0,<3",
 ]
 optional-dependencies.mcp = [
-  "anyio>=4.10,<5", # 4.10 added AsyncContextManagerMixin, required by httpx_ws.
+  "anyio>=4.10,<5",
   "mcp>=1.24,<2",
 ]
 optional-dependencies.oci = [
@@ -209,7 +209,7 @@ optional-dependencies.slack = [ "slack-bolt>=1.22" ]
 optional-dependencies.test = [
   "a2a-sdk>=0.3.11,<2",
   "anthropic>=0.78",                                                 # For anthropic model tests; 0.78 introduced ThinkingConfigAdaptiveParam (required for Claude Opus 4.7).
-  "anyio>=4.10,<5",                                                  # 4.10 added AsyncContextManagerMixin, required by httpx_ws.
+  "anyio>=4.10,<5",
   "beautifulsoup4>=3.2.2",
   "crewai[tools]; python_version>='3.11' and python_version<'3.12'", # For CrewaiTool tests; chromadb/pypika fail on 3.12+
   "daytona>=0.191",
@@ -220,8 +220,8 @@ optional-dependencies.test = [
   "google-api-python-client>=2.157,<3",
   "google-cloud-agentidentitycredentials>=0.1,<0.2",
   "google-cloud-aiplatform[agent-engines,evaluation]>=1.148.1,<2",
-  "google-cloud-bigquery>=3.14",                                     # For Client.query_and_wait; earlier releases also import pkg_resources.
-  "google-cloud-bigquery-storage>=2.17",                             # First release that does not import pkg_resources.
+  "google-cloud-bigquery>=3.14",
+  "google-cloud-bigquery-storage>=2.17",
   "google-cloud-bigtable>=2.39.1",
   "google-cloud-dataplex>=1.7,<3",
   "google-cloud-discoveryengine>=0.13.12,<0.14",
@@ -253,7 +253,7 @@ optional-dependencies.test = [
   "opentelemetry-resourcedetector-gcp>=1.9.0a0,<2",
   "pandas>=2.2.3",
   "protobuf>=6",
-  "pyarrow>=16",                                                     # First release importable against NumPy 2.x.
+  "pyarrow>=16",
   "pypika>=0.50",
   "pytest>=9,<10",
   "pytest-asyncio>=0.25",

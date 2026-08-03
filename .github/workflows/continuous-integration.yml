@@ -207,13 +207,14 @@ jobs:
   # declares no lower bound either, and is kept out only by its own
   # `python_version>='3.11'` marker.
   #
-  # TODO: Drop continue-on-error once the floors this job reports as broken
-  # today have been raised: a2a-sdk 0.3.4, daytona 0.191, e2b 2,
-  # google-antigravity 0.1 and google-cloud-bigquery 2.2.
+  # The venv deliberately lives outside the checkout. nltk (transitive, via
+  # rouge-score) blocks any nltk-initiated import whose origin resolves under
+  # the current working directory, so an in-tree venv makes nltk's `import
+  # regex` fail and takes the evaluation, optimization and eval CLI tests with
+  # it -- no matter which versions are resolved.
   dependency-floors:
     name: Dependency Floors (lowest-direct, Python 3.10)
     runs-on: ubuntu-latest
-    continue-on-error: true
     timeout-minutes: 15
     steps:
       - name: Checkout code
@@ -231,14 +232,14 @@ jobs:
 
       - name: Install and report the declared dependency floors
         run: |
-          uv venv .venv
-          source .venv/bin/activate
+          uv venv "$RUNNER_TEMP/floors-venv"
+          source "$RUNNER_TEMP/floors-venv/bin/activate"
           uv pip install --resolution lowest-direct -e ".[test]"
           uv pip freeze
 
       - name: Run unit tests against the declared floors
         run: |
-          source .venv/bin/activate
+          source "$RUNNER_TEMP/floors-venv/bin/activate"
           pytest tests/unittests \
             -n auto \
             --ignore=tests/unittests/artifacts/test_artifact_service.py \
