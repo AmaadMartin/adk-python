@@ -23,6 +23,17 @@ from pytest import FixtureRequest
 from pytest import hookimpl
 from pytest import Metafunc
 
+# nltk >= 3.10.1 installs an import hook (nltk/inisec.py) that refuses to import
+# any module whose file resolves inside the current working directory while nltk
+# is on the call stack. The documented dev layout puts the virtualenv in the repo
+# root (see CONTRIBUTING.md), so every installed package -- including nltk's own
+# dependency `regex` -- resolves "inside the CWD" and the eval/CLI tests fail to
+# import rouge_score. The hook's suggested remedy (`-P` / PYTHONSAFEPATH) does
+# not help: the check is path containment, not sys.path membership. Disable the
+# hook for the test process only; the CWD here is the project's own source tree,
+# which the test process already executes.
+os.environ.setdefault('NLTK_DISABLE_IMPORT_SECURITY', '1')
+
 _ENV_VARS = {
     'GOOGLE_API_KEY': 'fake_google_api_key',
     'GOOGLE_CLOUD_PROJECT': 'fake_google_cloud_project',
