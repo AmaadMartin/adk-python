@@ -1904,6 +1904,27 @@ def test_telemetry_group_without_subcommand_is_side_effect_free(
 
 
 @pytest.mark.unmute_click
+def test_telemetry_subcommand_does_not_echo_group_help(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """Selecting a subcommand leaves the group callback silent."""
+  monkeypatch.setattr(
+      "google.adk.cli.cli_tools_click.read_telemetry_consent", lambda: None
+  )
+
+  result = CliRunner().invoke(cli_tools_click.main, ["telemetry", "status"])
+
+  assert result.exit_code == 0
+  assert (
+      "Telemetry collection is not configured (defaults to OFF)"
+      in result.output
+  )
+  # The group help belongs to the bare invocation only; echoing it here would
+  # mean the `invoked_subcommand is None` guard had stopped guarding anything.
+  assert "Usage:" not in result.output
+
+
+@pytest.mark.unmute_click
 def test_telemetry_unknown_subcommand_is_usage_error() -> None:
   """`invoke_without_command=True` must not disable click's usage errors."""
   result = CliRunner().invoke(cli_tools_click.main, ["telemetry", "bogus"])
