@@ -49,6 +49,72 @@ def _is_alive(pid: int) -> bool:
   return state != "Z"
 
 
+def _await_written_pid(pid_file) -> int | None:
+  """Waits for the executed code to record the pid it forked."""
+  # Waiting for the pid to be written rather than for a fixed duration: the
+  # only thing that has to have happened is the fork. The file exists from the
+  # moment it is opened, so its content is what is polled for.
+  deadline = time.time() + 30
+  while time.time() < deadline and not _written_pid(pid_file):
+    time.sleep(0.05)
+  return _written_pid(pid_file)
+
+
+def _await_death(pid: int) -> bool:
+  """Waits for `pid` to stop being a live process, returning whether it did."""
+  deadline = time.time() + 10
+  while time.time() < deadline and _is_alive(pid):
+    time.sleep(0.05)
+  return not _is_alive(pid)
+
+
+def _kill_if_alive(pid: int | None) -> None:
+  """Cleans up a sleeper a failing test may have left behind."""
+  if pid is None:
+    return
+  try:
+    os.kill(pid, signal.SIGKILL)
+  except OSError:
+    pass
+
+
+def _fork_a_sleeper(pid_file, tail: str) -> str:
+  """Code that forks a 60s sleeper, records its pid, then runs `tail`.
+
+  Forked rather than spawned through `sys.executable`, so the descendant
+  exists within milliseconds and the tests never wait on interpreter start-up.
+
+  Args:
+    pid_file: The path the forked pid is written to.
+    tail: A single statement run once the pid has been recorded.
+  """
+  return textwrap.dedent(f"""
+      import os
+      import time
+
+      spawned = os.fork()
+      if spawned == 0:
+        # Detached from the caller's stdio, so a sleeper that outlives the
+        # code cannot hold the test harness's pipes open.
+        os.close(0)
+        os.close(1)
+        os.close(2)
+        time.sleep(60)
+        os._exit(0)
+      with open({str(pid_file)!r}, 'w') as f:
+        f.write(str(spawned))
+      {tail}
+      """)
+
+
+_needs_posix_process_groups = pytest.mark.skipif(
+    not hasattr(os, "killpg")
+    or not hasattr(os, "fork")
+    or not os.path.isdir("/proc"),
+    reason="Process-group teardown is checked on POSIX with /proc only.",
+)
+
+
 @pytest.fixture
 def mock_invocation_context() -> InvocationContext:
   """Provides a mock InvocationContext."""
@@ -164,16 +230,11 @@ class TestUnsafeLocalCodeExecutor:
         "killpg",
         lambda group, sig: signalled.append((group, sig)),
     )
-    monkeypatch.setattr(
-        unsafe_local_code_executor,
-        "_execution_group",
-        lambda process: 4321,
-    )
     process = MagicMock()
     process.is_alive.return_value = False
     process.terminate.side_effect = lambda: signalled.append(("child", "term"))
 
-    unsafe_local_code_executor._kill_execution(process)
+    unsafe_local_code_executor._kill_execution(process, 4321)
 
     assert signalled == [
         (4321, signal.SIGTERM),
@@ -184,64 +245,239 @@ class TestUnsafeLocalCodeExecutor:
         unsafe_local_code_executor._TERMINATE_GRACE_SECONDS
     )
 
+  def test_kill_execution_without_a_group_only_kills_the_process(
+      self, monkeypatch
+  ):
+    """An execution that never reported a group signals no group at all."""
+    signalled = []
+    monkeypatch.setattr(
+        unsafe_local_code_executor.os,
+        "killpg",
+        lambda group, sig: signalled.append((group, sig)),
+    )
+    process = MagicMock()
+    process.is_alive.return_value = False
+
+    unsafe_local_code_executor._kill_execution(process, 0)
+
+    assert signalled == []
+    process.terminate.assert_called_once_with()
+    process.join.assert_any_call(
+        unsafe_local_code_executor._TERMINATE_GRACE_SECONDS
+    )
+
   @pytest.mark.skipif(
-      not hasattr(os, "killpg")
-      or not hasattr(os, "fork")
-      or not os.path.isdir("/proc"),
-      reason="Process-group teardown is checked on POSIX with /proc only.",
+      not hasattr(os, "setsid"), reason="Detaching a group is POSIX-only."
   )
+  def test_no_group_is_reported_when_the_process_cannot_detach(
+      self, monkeypatch
+  ):
+    """A failed detach must never report the caller's own group."""
+
+    def _refuse_to_detach():
+      raise OSError("cannot detach")
+
+    monkeypatch.setattr(os, "setsid", _refuse_to_detach, raising=False)
+    execution_group = multiprocessing.get_context("spawn").Value(
+        "i", 0, lock=False
+    )
+    result_queue = multiprocessing.get_context("spawn").Queue()
+    try:
+      # Run in-process on purpose: the caller's own group is exactly what must
+      # not be reported, so the test process has to be the one that detaches.
+      unsafe_local_code_executor._execute_in_process(
+          'print("ok")', {}, result_queue, execution_group
+      )
+
+      assert execution_group.value == 0
+      assert result_queue.get(timeout=30) == ("ok\n", None)
+    finally:
+      result_queue.close()
+      result_queue.join_thread()
+
+  def test_no_group_is_reported_when_the_platform_cannot_signal_groups(
+      self, monkeypatch
+  ):
+    """A group that could never be signalled must not be reported."""
+    # `setsid` and `killpg` are separate platform features, so the executor
+    # has to check both: reporting a group it cannot `killpg` would make
+    # teardown raise `AttributeError` on every call.
+    monkeypatch.delattr(os, "killpg", raising=False)
+    ctx = multiprocessing.get_context("spawn")
+    execution_group = ctx.Value("i", 0, lock=False)
+    result_queue = ctx.Queue()
+    try:
+      # Safe to run in the test process: with no `killpg` the executor skips
+      # the detach as well, so the test runner keeps its own session.
+      unsafe_local_code_executor._execute_in_process(
+          'print("ok")', {}, result_queue, execution_group
+      )
+
+      assert execution_group.value == 0
+      assert result_queue.get(timeout=30) == ("ok\n", None)
+    finally:
+      result_queue.close()
+      result_queue.join_thread()
+
+  @_needs_posix_process_groups
+  def test_execution_process_reports_the_group_its_code_runs_in(self):
+    """The captured group is the one the executed code itself runs in."""
+    ctx = multiprocessing.get_context("spawn")
+    result_queue = ctx.Queue()
+    execution_group = ctx.Value("i", 0, lock=False)
+    process = ctx.Process(
+        target=unsafe_local_code_executor._execute_in_process,
+        args=(
+            "import os\nprint(os.getpgrp())",
+            {},
+            result_queue,
+            execution_group,
+        ),
+        daemon=True,
+    )
+    process.start()
+    try:
+      stdout, error = result_queue.get(timeout=30)
+      process.join(30)
+
+      assert error is None
+      assert execution_group.value == int(stdout.strip())
+      assert execution_group.value != os.getpgid(0)
+    finally:
+      if process.is_alive():
+        process.kill()
+      process.join()
+      result_queue.close()
+
+  @_needs_posix_process_groups
   def test_kill_execution_kills_what_the_code_spawned(self, tmp_path):
     """Killing a live execution takes the processes it spawned with it."""
     pid_file = tmp_path / "spawned.pid"
-    # Forked rather than spawned through `sys.executable`, so the descendant
-    # exists within milliseconds and the test never waits on interpreter
-    # start-up.
-    code = textwrap.dedent(f"""
-        import os
-        import time
-
-        spawned = os.fork()
-        if spawned == 0:
-          time.sleep(60)
-          os._exit(0)
-        with open({str(pid_file)!r}, 'w') as f:
-          f.write(str(spawned))
-        time.sleep(60)
-        """)
     ctx = multiprocessing.get_context("spawn")
     result_queue = ctx.Queue()
+    execution_group = ctx.Value("i", 0, lock=False)
     process = ctx.Process(
         target=unsafe_local_code_executor._execute_in_process,
-        args=(code, {}, result_queue),
+        args=(
+            _fork_a_sleeper(pid_file, "time.sleep(60)"),
+            {},
+            result_queue,
+            execution_group,
+        ),
         daemon=True,
     )
     process.start()
     spawned_pid = None
     try:
-      # Waiting for the pid to be written rather than for a fixed duration:
-      # the only thing that has to have happened is the fork. The file exists
-      # from the moment it is opened, so its content is what is polled for.
-      deadline = time.time() + 30
-      while time.time() < deadline and not _written_pid(pid_file):
-        time.sleep(0.05)
-      spawned_pid = _written_pid(pid_file)
+      spawned_pid = _await_written_pid(pid_file)
       if spawned_pid is None:
         pytest.skip("this environment could not start the execution process")
 
-      unsafe_local_code_executor._kill_execution(process)
+      unsafe_local_code_executor._kill_execution(process, execution_group.value)
 
       assert not process.is_alive()
-      deadline = time.time() + 10
-      while time.time() < deadline and _is_alive(spawned_pid):
-        time.sleep(0.05)
-      assert not _is_alive(spawned_pid)
+      assert _await_death(spawned_pid)
     finally:
-      if spawned_pid is not None:
-        try:
-          os.kill(spawned_pid, signal.SIGKILL)
-        except OSError:
-          pass
+      _kill_if_alive(spawned_pid)
       if process.is_alive():
         process.kill()
       process.join()
       result_queue.close()
+
+  @_needs_posix_process_groups
+  def test_kill_execution_reaches_descendants_after_the_process_is_reaped(
+      self, tmp_path
+  ):
+    """The group stays usable once the execution process is gone and reaped."""
+    pid_file = tmp_path / "spawned.pid"
+    ctx = multiprocessing.get_context("spawn")
+    result_queue = ctx.Queue()
+    execution_group = ctx.Value("i", 0, lock=False)
+    process = ctx.Process(
+        target=unsafe_local_code_executor._execute_in_process,
+        # `os._exit(0)` stands in for the ways an execution can die without
+        # reporting anything: a crashed interpreter, an OOM kill, or code that
+        # exits the process itself.
+        args=(
+            _fork_a_sleeper(pid_file, "os._exit(0)"),
+            {},
+            result_queue,
+            execution_group,
+        ),
+        daemon=True,
+    )
+    process.start()
+    spawned_pid = None
+    try:
+      spawned_pid = _await_written_pid(pid_file)
+      if spawned_pid is None:
+        pytest.skip("this environment could not start the execution process")
+      execution_pid = process.pid
+      assert execution_pid is not None
+      process.join(30)
+      assert not process.is_alive()
+      # The lookup the group used to be resolved through is gone with it, so
+      # only a group captured before the execution died can still be killed.
+      with pytest.raises(ProcessLookupError):
+        os.getpgid(execution_pid)
+
+      unsafe_local_code_executor._kill_execution(process, execution_group.value)
+
+      assert _await_death(spawned_pid)
+    finally:
+      _kill_if_alive(spawned_pid)
+      if process.is_alive():
+        process.kill()
+      process.join()
+      result_queue.close()
+
+  @_needs_posix_process_groups
+  def test_execute_code_kills_a_process_the_code_left_running(
+      self, mock_invocation_context: InvocationContext, tmp_path
+  ):
+    """Code that succeeds still cannot leave a process behind."""
+    pid_file = tmp_path / "spawned.pid"
+    executor = UnsafeLocalCodeExecutor()
+    code_input = CodeExecutionInput(
+        code=_fork_a_sleeper(pid_file, "print('done')")
+    )
+    spawned_pid = None
+    try:
+      result = executor.execute_code(mock_invocation_context, code_input)
+      spawned_pid = _written_pid(pid_file)
+
+      assert result.stdout == "done\n"
+      assert result.stderr == ""
+      assert spawned_pid is not None
+      assert _await_death(spawned_pid)
+    finally:
+      _kill_if_alive(spawned_pid)
+
+  @_needs_posix_process_groups
+  def test_execute_code_kills_descendants_when_the_code_exits_abruptly(
+      self, mock_invocation_context: InvocationContext, tmp_path
+  ):
+    """An execution that dies without reporting still takes its group with it."""
+    pid_file = tmp_path / "spawned.pid"
+    # The timeout has to outlast the spawned interpreter's start-up, or the
+    # code never reaches the fork this test is about; a worker that dies
+    # without reporting is only noticed when the deadline expires, so the call
+    # costs the whole timeout.
+    executor = UnsafeLocalCodeExecutor(timeout_seconds=10)
+    code_input = CodeExecutionInput(
+        code=_fork_a_sleeper(pid_file, "os._exit(0)")
+    )
+    spawned_pid = None
+    try:
+      result = executor.execute_code(mock_invocation_context, code_input)
+      spawned_pid = _written_pid(pid_file)
+      if spawned_pid is None:
+        pytest.skip("this environment could not start the execution process")
+
+      # Reporting an abrupt exit as a timeout is a separate defect; this test
+      # pins the teardown, so it asserts the wording as it stands today.
+      assert result.stdout == ""
+      assert "Code execution timed out after 10 seconds." in result.stderr
+      assert _await_death(spawned_pid)
+    finally:
+      _kill_if_alive(spawned_pid)
