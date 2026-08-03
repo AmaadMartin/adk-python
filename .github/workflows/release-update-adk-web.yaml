@@ -26,6 +26,9 @@ on:
         required: false
         default: ''
 
+permissions:
+  contents: read
+
 jobs:
   update-frontend:
     if: github.repository == 'google/adk-python'
