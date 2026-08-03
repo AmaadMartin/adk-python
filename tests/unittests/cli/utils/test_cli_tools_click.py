@@ -1834,10 +1834,6 @@ def test_telemetry_cli_commands(monkeypatch: pytest.MonkeyPatch) -> None:
   result = runner.invoke(cli_tools_click.main, ["telemetry"])
   assert result.exit_code == 0
   assert "Usage:" in result.output
-  assert "Manage telemetry settings." in result.output
-  assert "enable" in result.output
-  assert "disable" in result.output
-  assert "status" in result.output
 
   # Test status subcommand
   result = runner.invoke(cli_tools_click.main, ["telemetry", "status"])
@@ -1896,7 +1892,12 @@ def test_telemetry_group_without_subcommand_is_side_effect_free(
   result = CliRunner().invoke(cli_tools_click.main, ["telemetry"])
 
   assert result.exit_code == 0
+  # The whole group help, not just a usage line.
   assert "Usage:" in result.output
+  assert "Manage telemetry settings." in result.output
+  assert "enable" in result.output
+  assert "disable" in result.output
+  assert "status" in result.output
   assert "Help improve the ADK" not in result.output
   mock_read.assert_not_called()
   mock_write.assert_not_called()

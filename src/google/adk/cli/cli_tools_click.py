@@ -398,11 +398,9 @@ def main(ctx: Optional[click.Context] = None) -> None:
 @click.pass_context
 def telemetry(ctx: click.Context) -> None:
   """Manage telemetry settings."""
-  # Emit the help explicitly instead of relying on click's `no_args_is_help`
-  # default, which printed to stdout and exited 0 up to click 8.1.x but prints
-  # to stderr and exits 2 from click 8.2 onwards. `invoke_without_command`
-  # turns that default off, so a bare `adk telemetry` behaves identically
-  # across the whole supported `click>=8.1.8,<9` range.
+  # click 8.1's `no_args_is_help` printed help to stdout and exited 0; 8.2+
+  # prints to stderr and exits 2. `invoke_without_command=True` disables that
+  # default, so bare `adk telemetry` is identical across `click>=8.1.8,<9`.
   if ctx.invoked_subcommand is None:
     click.echo(ctx.get_help())
 
