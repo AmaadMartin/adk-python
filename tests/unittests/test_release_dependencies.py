@@ -29,6 +29,10 @@ regressions documented in the bare-install audit cannot silently re-emerge:
   defers the optional MCP server stack instead of importing it at Agent startup.
 * Every main dep MUST declare a lower bound, so the Dependency Floors CI job
   can install the floors the manifest advertises.
+* Every optional-dependency requirement MUST declare a lower bound too. uv's
+  lockfile is universal -- it covers every extra at once -- so an unbounded
+  requirement in an extra nobody installs is still enough to break
+  ``uv sync --resolution lowest-direct`` for everybody.
 """
 
 from __future__ import annotations
@@ -81,6 +85,11 @@ def _find_pyproject() -> Path:
 
 
 _PYPROJECT_PATH = _find_pyproject()
+
+with _PYPROJECT_PATH.open('rb') as _fh:
+  # Read at import time: parametrize expands before fixtures exist. Taking the
+  # names from the manifest covers a newly added extra automatically.
+  _EXTRA_NAMES = sorted(tomllib.load(_fh)['project']['optional-dependencies'])
 
 
 @pytest.fixture(scope='module')
@@ -149,6 +158,10 @@ def test_main_deps_include_packaging(pyproject: dict) -> None:
         ('aiohttp!=3.14.2', False),
         ('google-auth[pyopenssl]>=2.47', True),
         ('google-adk-community', False),
+        ('mdformat-gfm~=0.4', True),
+        # An upper bound alone still leaves the resolver free to reach back to
+        # the first release ever published.
+        ('sphinx<9', False),
     ],
 )
 def test_declares_lower_bound(requirement: str, expected: bool) -> None:
@@ -173,6 +186,34 @@ def test_main_deps_all_declare_a_lower_bound(pyproject: dict) -> None:
       f'These [project] dependencies declare no lower bound: {unbounded}. '
       'Give each one a `>=` floor; without it `pip install google-adk` under '
       'a lowest-version resolution selects the oldest release on PyPI.'
+  )
+
+
+@pytest.mark.parametrize('extra', _EXTRA_NAMES)
+def test_optional_dependencies_all_declare_a_lower_bound(
+    pyproject: dict, extra: str
+) -> None:
+  """Every requirement in an extra must say how old a release it tolerates.
+
+  uv's lockfile is universal: one lock covers every extra, so
+  ``uv sync --extra test --resolution lowest-direct`` resolves the ``docs``
+  extra as well even though it never installs it. An unbounded entry there
+  used to select ``sphinx-rtd-theme==0.1.1``, a 2013 sdist that cannot build
+  under a modern backend, and the whole command failed.
+  """
+  # Scoped to the extras; [project] dependencies have their own guard in
+  # test_main_deps_all_declare_a_lower_bound.
+  unbounded = sorted(
+      raw
+      for raw in pyproject['project']['optional-dependencies'][extra]
+      if not _declares_lower_bound(raw)
+  )
+  assert not unbounded, (
+      f'These requirements in the {extra!r} extra declare no lower bound: '
+      f'{unbounded}. Give each one a `>=` floor; uv resolves every extra when '
+      'it builds its universal lock, so one unbounded entry is enough to make '
+      '`uv sync --resolution lowest-direct` pick a decade-old release and '
+      'fail for extras that are not even being installed.'
   )
 
 
