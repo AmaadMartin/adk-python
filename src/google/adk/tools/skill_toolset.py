@@ -679,8 +679,10 @@ class _SkillScriptCodeExecutor:
       if scr is not None and scr.src is not None:
         files_dict[f"scripts/{scr_name}"] = scr.src
 
+    # len() on a str counts code points, not bytes; encode so the total is
+    # comparable to _MAX_SKILL_PAYLOAD_BYTES.
     total_size = sum(
-        len(v) if isinstance(v, (str, bytes)) else 0
+        len(v.encode("utf-8")) if isinstance(v, str) else len(v)
         for v in files_dict.values()
     )
     if total_size > _MAX_SKILL_PAYLOAD_BYTES:
