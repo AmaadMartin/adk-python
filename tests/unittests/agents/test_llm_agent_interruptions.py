@@ -132,6 +132,7 @@ def create_lro_tool(name: str = 'long_running_op') -> LongRunningFunctionTool:
 class TestSingleAgentInterruptions:
   """Tests for single agent triggering interruptions."""
 
+  @pytest.mark.asyncio
   async def test_single_agent_yields_on_long_running_tool(self):
     """Single agent yields on Long Running Tool.
 
@@ -166,6 +167,7 @@ class TestSingleAgentInterruptions:
     assert any('Final answer' in t for t in text_parts(resume_events))
     assert len(mock_model.requests) == 2
 
+  @pytest.mark.asyncio
   async def test_single_agent_request_input_tool_interrupt_and_resume(self):
     """Test that using RequestInputTool successfully triggers an interrupt and resumes with user input."""
     from google.adk.tools import request_input
@@ -219,6 +221,7 @@ class TestSingleAgentInterruptions:
         for c in second_req_contents
     )
 
+  @pytest.mark.asyncio
   async def test_single_agent_request_input_tool_structured_schema(self):
     """Test that using RequestInputTool with a structured object schema successfully interrupts and resumes with a dictionary response."""
     from google.adk.tools import request_input
@@ -292,6 +295,7 @@ class TestSingleAgentInterruptions:
 class TestNestedAgentInterruptions:
   """Tests for multi-agent setups with interruptions."""
 
+  @pytest.mark.asyncio
   async def test_child_agent_interrupt_and_resume(self):
     """Child agent yields on LRO and resumes successfully.
 
@@ -353,6 +357,7 @@ class TestNestedAgentInterruptions:
     # Then it should complete successfully
     assert any('Child final answer' in t for t in text_parts(resume_events))
 
+  @pytest.mark.asyncio
   @pytest.mark.xfail(reason='Task agent as subagent not supported yet.')
   async def test_task_child_agent_interrupt_and_resume(self):
     """Task child agent yields on LRO and resumes successfully.
@@ -419,6 +424,7 @@ class TestNestedAgentInterruptions:
     # Then it should complete successfully
     assert any('Parent final answer' in t for t in text_parts(resume_events))
 
+  @pytest.mark.asyncio
   @pytest.mark.xfail(reason='Single-turn agent as subagent not supported yet.')
   async def test_single_turn_child_agent_interrupt_and_resume(self):
     """Single-turn child agent yields on LRO and resumes successfully.
