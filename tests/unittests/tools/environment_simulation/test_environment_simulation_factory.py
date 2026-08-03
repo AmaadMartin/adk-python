@@ -24,7 +24,6 @@ from google.adk.tools.environment_simulation.environment_simulation_plugin impor
 import pytest
 
 
-@pytest.mark.asyncio
 @patch(
     "google.adk.tools.environment_simulation.environment_simulation_factory.EnvironmentSimulationEngine"
 )
@@ -43,6 +42,7 @@ class TestEnvironmentSimulationFactory:
         ]
     )
 
+  @pytest.mark.asyncio
   async def test_create_callback(self, mock_engine_class, mock_config):
     """Test that create_callback returns a valid callable."""
     mock_engine_instance = MagicMock()
