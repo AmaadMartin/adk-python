@@ -12,10 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections.abc import Iterator
+import logging
 import multiprocessing
 import os
+import queue
 import signal
 import textwrap
+import threading
 import time
 from unittest.mock import MagicMock
 
@@ -47,6 +51,89 @@ def _is_alive(pid: int) -> bool:
   except OSError:
     return False
   return state != "Z"
+
+
+def _worker_exit_stderr(exitcode: int) -> str:
+  """The stderr a worker that exited without a result must be reported with."""
+  return (
+      "The code execution worker exited without returning a result (exit code"
+      f" {exitcode})."
+  )
+
+
+class _FakeProcess:
+  """A stand-in worker whose liveness the wait loop polls."""
+
+  def __init__(self, alive: bool):
+    self._alive = alive
+
+  def is_alive(self) -> bool:
+    return self._alive
+
+
+class _InFlightResultQueue(queue.Queue[tuple[str, str | None]]):
+  """A queue whose first read misses the result already put on it.
+
+  Stands in for the instant in which the worker has been reaped but the result
+  it wrote is still travelling through the real queue's feeder thread and pipe.
+  A real queue cannot be made to lose that race on demand.
+  """
+
+  def __init__(self):
+    super().__init__()
+    self._reads = 0
+
+  def get(
+      self, block: bool = True, timeout: float | None = None
+  ) -> tuple[str, str | None]:
+    self._reads += 1
+    if self._reads == 1:
+      raise queue.Empty()
+    return super().get(block=block, timeout=timeout)
+
+
+def _execute_with_watchdog(
+    executor: UnsafeLocalCodeExecutor,
+    invocation_context: InvocationContext,
+    code_input: CodeExecutionInput,
+    seconds: float,
+) -> CodeExecutionResult:
+  """Runs execute_code on a daemon thread so a hang fails instead of wedging.
+
+  A regression here blocks forever, which would hang the whole test run; the
+  daemon thread turns that into a failed assertion.
+  """
+  outcome: list[CodeExecutionResult | BaseException] = []
+
+  def _capture() -> None:
+    try:
+      outcome.append(executor.execute_code(invocation_context, code_input))
+    except BaseException as exc:
+      outcome.append(exc)
+
+  thread = threading.Thread(target=_capture, daemon=True)
+  thread.start()
+  thread.join(seconds)
+  if thread.is_alive():
+    pytest.fail(
+        f"execute_code did not return within {seconds}s; it is blocked waiting"
+        " for a worker that already exited."
+    )
+  result = outcome[0]
+  if isinstance(result, BaseException):
+    raise result
+  return result
+
+
+@pytest.fixture
+def spawn_result_queue() -> Iterator[multiprocessing.Queue]:
+  """A real spawn-context result queue, torn down after the test."""
+  result_queue = multiprocessing.get_context("spawn").Queue()
+  try:
+    yield result_queue
+  finally:
+    result_queue.close()
+    result_queue.join_thread()
 
 
 @pytest.fixture
@@ -155,6 +242,130 @@ class TestUnsafeLocalCodeExecutor:
 
     assert result.stdout == ""
     assert "Code execution timed out after 1 seconds." in result.stderr
+
+  def test_execute_code_reports_a_worker_that_exited_without_a_result(
+      self,
+      mock_invocation_context: InvocationContext,
+      caplog: pytest.LogCaptureFixture,
+  ):
+    """The default (no timeout) configuration reports the exit, never hangs."""
+    caplog.set_level(logging.WARNING)
+    executor = UnsafeLocalCodeExecutor()
+    assert executor.timeout_seconds is None
+    code_input = CodeExecutionInput(code="import os\nos._exit(1)")
+
+    result = _execute_with_watchdog(
+        executor, mock_invocation_context, code_input, seconds=30
+    )
+
+    assert result.stdout == ""
+    assert result.stderr == _worker_exit_stderr(1)
+    # The failure leaves no traceback anywhere else, so it is logged too.
+    assert _worker_exit_stderr(1) in caplog.text
+
+  def test_execute_code_worker_exit_is_not_reported_as_a_timeout(
+      self, mock_invocation_context: InvocationContext
+  ):
+    executor = UnsafeLocalCodeExecutor(timeout_seconds=10)
+    code_input = CodeExecutionInput(code="import os\nos._exit(1)")
+
+    started = time.monotonic()
+    result = _execute_with_watchdog(
+        executor, mock_invocation_context, code_input, seconds=30
+    )
+    elapsed = time.monotonic() - started
+
+    assert result.stdout == ""
+    assert result.stderr == _worker_exit_stderr(1)
+    assert "timed out" not in result.stderr
+    # The wait ended on the worker's death, not on the 10 second deadline.
+    assert elapsed < 10
+
+  @pytest.mark.skipif(
+      not hasattr(signal, "SIGKILL"), reason="SIGKILL is POSIX-only."
+  )
+  def test_execute_code_reports_the_signal_a_killed_worker_died_of(
+      self, mock_invocation_context: InvocationContext
+  ):
+    """A worker reaped from outside, as the OOM killer reaps one."""
+    executor = UnsafeLocalCodeExecutor(timeout_seconds=10)
+    code_input = CodeExecutionInput(
+        code="import os\nimport signal\nos.kill(os.getpid(), signal.SIGKILL)"
+    )
+
+    result = _execute_with_watchdog(
+        executor, mock_invocation_context, code_input, seconds=30
+    )
+
+    assert result.stdout == ""
+    assert result.stderr == _worker_exit_stderr(-signal.SIGKILL)
+
+  def test_execute_code_keeps_waiting_for_a_worker_that_is_still_working(
+      self, mock_invocation_context: InvocationContext
+  ):
+    """A slow worker is waited on, never declared dead, with no timeout set."""
+    executor = UnsafeLocalCodeExecutor()
+    # Outlasts a poll and the whole post-exit drain, so a wait that misjudged
+    # the worker's liveness would already have given up on it.
+    slept = (
+        unsafe_local_code_executor._LIVENESS_POLL_SECONDS
+        + unsafe_local_code_executor._EXIT_DRAIN_SECONDS
+        + 1
+    )
+    code_input = CodeExecutionInput(
+        code=f"import time\ntime.sleep({slept})\nprint('late')"
+    )
+
+    result = _execute_with_watchdog(
+        executor, mock_invocation_context, code_input, seconds=60
+    )
+
+    assert result.stdout == "late\n"
+    assert result.stderr == ""
+
+  def test_wait_for_result_returns_a_result_flushed_as_the_worker_exited(self):
+    """A result still in flight from a reaped worker is not declared lost."""
+    result_queue = _InFlightResultQueue()
+    result_queue.put(("out\n", None))
+
+    result = unsafe_local_code_executor._wait_for_result(
+        _FakeProcess(alive=False), result_queue, None
+    )
+
+    assert result == ("out\n", None)
+
+  def test_wait_for_result_raises_when_the_timeout_elapses_with_a_live_worker(
+      self,
+      spawn_result_queue: multiprocessing.Queue,
+      monkeypatch: pytest.MonkeyPatch,
+  ):
+    # A poll interval far longer than the deadline: the wait still has to end
+    # at the deadline, which only holds if each poll is clamped to what is
+    # left of it.
+    monkeypatch.setattr(
+        unsafe_local_code_executor, "_LIVENESS_POLL_SECONDS", 5.0
+    )
+    started = time.monotonic()
+
+    with pytest.raises(queue.Empty):
+      unsafe_local_code_executor._wait_for_result(
+          _FakeProcess(alive=True), spawn_result_queue, 0.3
+      )
+
+    # Neither cut short of the deadline, nor carried past it by the poll.
+    assert 0.3 <= time.monotonic() - started < 2
+
+  def test_wait_for_result_raises_immediately_for_a_zero_timeout(
+      self, spawn_result_queue: multiprocessing.Queue
+  ):
+    started = time.monotonic()
+
+    with pytest.raises(queue.Empty):
+      unsafe_local_code_executor._wait_for_result(
+          _FakeProcess(alive=True), spawn_result_queue, 0
+      )
+
+    assert time.monotonic() - started < 1
 
   def test_kill_execution_signals_group_before_killing_it(self, monkeypatch):
     """The group gets SIGTERM and its grace period before SIGKILL."""

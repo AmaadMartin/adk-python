@@ -18,10 +18,12 @@ from contextlib import redirect_stdout
 import io
 import logging
 import multiprocessing
+from multiprocessing.process import BaseProcess
 import os
 import queue
 import re
 import signal
+import time
 import traceback
 from typing import Any
 
@@ -38,6 +40,14 @@ logger = logging.getLogger('google_adk.' + __name__)
 # How long to wait for a timed-out execution to exit after SIGTERM before
 # escalating to SIGKILL, so that the timeout itself cannot block forever.
 _TERMINATE_GRACE_SECONDS = 5
+
+# How long a single wait for the worker's result may block before the worker's
+# liveness is rechecked.
+_LIVENESS_POLL_SECONDS = 0.1
+
+# How long to keep reading after the worker has exited, so that a result it
+# flushed on its way out is still collected rather than declared lost.
+_EXIT_DRAIN_SECONDS = 1.0
 
 
 def _execute_in_process(
@@ -109,6 +119,56 @@ def _kill_execution(process: multiprocessing.process.BaseProcess) -> None:
     process.join()
 
 
+def _wait_for_result(
+    process: BaseProcess,
+    result_queue: multiprocessing.Queue[tuple[str, str | None]],
+    timeout_seconds: float | None,
+) -> tuple[str, str | None] | None:
+  """Waits for the worker's result, its exit, or the timeout, whichever is first.
+
+  Unlike a bare `result_queue.get`, this also watches the worker itself, so a
+  worker that dies without producing a result is distinguishable from one that
+  is still working.
+
+  Args:
+    process: The worker running the code.
+    result_queue: The queue the worker reports its result on.
+    timeout_seconds: How long the worker may run, or None for no limit.
+
+  Returns:
+    The (stdout, error) the worker produced, or None if it exited without
+    producing one.
+
+  Raises:
+    queue.Empty: If the timeout elapsed while the worker was still running.
+  """
+  deadline = (
+      None if timeout_seconds is None else time.monotonic() + timeout_seconds
+  )
+  while True:
+    remaining = None if deadline is None else deadline - time.monotonic()
+    if remaining is not None and remaining <= 0:
+      raise queue.Empty()
+    wait = (
+        _LIVENESS_POLL_SECONDS
+        if remaining is None
+        else min(_LIVENESS_POLL_SECONDS, remaining)
+    )
+    try:
+      return result_queue.get(timeout=wait)
+    except queue.Empty:
+      pass
+    if not process.is_alive():
+      # The worker is gone, but a result it flushed on its way out can still
+      # be in flight, so the queue is drained before the result is declared
+      # lost. The timeout no longer applies here: there is nothing left
+      # running that could time out.
+      try:
+        return result_queue.get(timeout=_EXIT_DRAIN_SECONDS)
+      except queue.Empty:
+        return None
+
+
 def _prepare_globals(code: str, globals_: dict[str, Any]) -> None:
   """Prepare globals for code execution, injecting __name__ if needed."""
   if re.search(r"if\s+__name__\s*==\s*['\"]__main__['\"]", code):
@@ -158,10 +218,18 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
     output = ''
     error = ''
     try:
-      output, err = result_queue.get(timeout=self.timeout_seconds)
+      result = _wait_for_result(process, result_queue, self.timeout_seconds)
       process.join()
-      if err:
-        error = err
+      if result is None:
+        error = (
+            'The code execution worker exited without returning a result'
+            f' (exit code {process.exitcode}).'
+        )
+        logger.warning(error)
+      else:
+        output, err = result
+        if err:
+          error = err
     except queue.Empty:
       _kill_execution(process)
       error = f'Code execution timed out after {self.timeout_seconds} seconds.'
