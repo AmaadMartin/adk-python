@@ -76,7 +76,7 @@ async def _run_live_single_call(tool: BaseTool) -> Optional[Event]:
 @pytest.mark.parametrize('tool_result', _FALSY_RESPONSES)
 @pytest.mark.asyncio
 async def test_live_long_running_tool_with_falsy_result_emits_no_event(
-    tool_result,
+    tool_result: object,
 ):
   """A long-running tool returning a falsy value emits no function response."""
   tool = LongRunningFunctionTool(func=_make_tool_func(tool_result))
@@ -98,7 +98,7 @@ async def test_live_long_running_tool_with_falsy_result_emits_no_event(
 )
 @pytest.mark.asyncio
 async def test_live_regular_tool_with_falsy_result_still_emits_event(
-    tool_result, expected_response
+    tool_result: object, expected_response: dict[str, object]
 ):
   """A non-long-running tool returning a falsy value still emits a response."""
   tool = FunctionTool(_make_tool_func(tool_result))
@@ -106,7 +106,9 @@ async def test_live_regular_tool_with_falsy_result_still_emits_event(
   result = await _run_live_single_call(tool)
 
   assert result is not None
-  assert result.content.parts[0].function_response.response == expected_response
+  assert [r.response for r in result.get_function_responses()] == [
+      expected_response
+  ]
 
 
 @pytest.mark.asyncio
@@ -117,6 +119,6 @@ async def test_live_long_running_tool_with_truthy_result_emits_event():
   result = await _run_live_single_call(tool)
 
   assert result is not None
-  assert result.content.parts[0].function_response.response == {
-      'status': 'pending'
-  }
+  assert [r.response for r in result.get_function_responses()] == [
+      {'status': 'pending'}
+  ]
