@@ -187,6 +187,13 @@ part before or alongside your code PR.
    The pre-commit hooks run `isort`, `pyink`, `addlicense`, and
    `mdformat` automatically on each commit.
 
+   Regenerating the `constraints-*.txt` files is not automatic. Run it on
+   demand (requires `uv` and network access to PyPI):
+
+   ```shell
+   ./scripts/update_constraints.sh
+   ```
+
 1. **Create virtual environment and install dependencies:**
 
    ```shell
