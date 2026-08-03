@@ -49,8 +49,10 @@ def _execute_in_process(
 ) -> None:
   """Executes code in a separate process and puts result in queue."""
   # Detach into a new session/process group before running anything, so that
-  # the execution can be killed together with everything it spawned.
-  if hasattr(os, 'setsid'):
+  # the execution can be killed together with everything it spawned. Both
+  # halves are checked: detaching buys nothing on a platform that cannot then
+  # signal the group, and a group reported there could never be acted on.
+  if hasattr(os, 'setsid') and hasattr(os, 'killpg'):
     try:
       os.setsid()
       # Reported from in here, once, rather than looked up later through this

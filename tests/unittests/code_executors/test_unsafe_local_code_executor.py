@@ -295,6 +295,30 @@ class TestUnsafeLocalCodeExecutor:
       result_queue.close()
       result_queue.join_thread()
 
+  def test_no_group_is_reported_when_the_platform_cannot_signal_groups(
+      self, monkeypatch
+  ):
+    """A group that could never be signalled must not be reported."""
+    # `setsid` and `killpg` are separate platform features, so the executor
+    # has to check both: reporting a group it cannot `killpg` would make
+    # teardown raise `AttributeError` on every call.
+    monkeypatch.delattr(os, "killpg", raising=False)
+    ctx = multiprocessing.get_context("spawn")
+    execution_group = ctx.Value("i", 0, lock=False)
+    result_queue = ctx.Queue()
+    try:
+      # Safe to run in the test process: with no `killpg` the executor skips
+      # the detach as well, so the test runner keeps its own session.
+      unsafe_local_code_executor._execute_in_process(
+          'print("ok")', {}, result_queue, execution_group
+      )
+
+      assert execution_group.value == 0
+      assert result_queue.get(timeout=30) == ("ok\n", None)
+    finally:
+      result_queue.close()
+      result_queue.join_thread()
+
   @_needs_posix_process_groups
   def test_execution_process_reports_the_group_its_code_runs_in(self):
     """The captured group is the one the executed code itself runs in."""
