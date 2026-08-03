@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import multiprocessing
 import os
 import signal
 import textwrap
+import threading
 import time
 from unittest.mock import MagicMock
 
@@ -47,6 +49,47 @@ def _is_alive(pid: int) -> bool:
   except OSError:
     return False
   return state != "Z"
+
+
+def _worker_exit_stderr(exitcode: int) -> str:
+  """The stderr a worker that exited without a result must be reported with."""
+  return (
+      "The code execution worker exited without returning a result (exit code"
+      f" {exitcode})."
+  )
+
+
+def _execute_with_watchdog(
+    executor: UnsafeLocalCodeExecutor,
+    invocation_context: InvocationContext,
+    code_input: CodeExecutionInput,
+    seconds: float,
+) -> CodeExecutionResult:
+  """Runs execute_code on a daemon thread so a hang fails instead of wedging.
+
+  A regression here blocks forever, which would hang the whole test run; the
+  daemon thread turns that into a failed assertion.
+  """
+  outcome: list[CodeExecutionResult | BaseException] = []
+
+  def _capture() -> None:
+    try:
+      outcome.append(executor.execute_code(invocation_context, code_input))
+    except BaseException as exc:
+      outcome.append(exc)
+
+  thread = threading.Thread(target=_capture, daemon=True)
+  thread.start()
+  thread.join(seconds)
+  if thread.is_alive():
+    pytest.fail(
+        f"execute_code did not return within {seconds}s; it is blocked waiting"
+        " for a worker that already exited."
+    )
+  result = outcome[0]
+  if isinstance(result, BaseException):
+    raise result
+  return result
 
 
 @pytest.fixture
@@ -156,6 +199,97 @@ class TestUnsafeLocalCodeExecutor:
     assert result.stdout == ""
     assert "Code execution timed out after 1 seconds." in result.stderr
 
+  def test_execute_code_reports_a_worker_that_exited_without_a_result(
+      self,
+      mock_invocation_context: InvocationContext,
+      caplog: pytest.LogCaptureFixture,
+  ):
+    """The default (no timeout) configuration reports the exit, never hangs."""
+    caplog.set_level(logging.WARNING)
+    executor = UnsafeLocalCodeExecutor()
+    assert executor.timeout_seconds is None
+    code_input = CodeExecutionInput(code="import os\nos._exit(1)")
+
+    result = _execute_with_watchdog(
+        executor, mock_invocation_context, code_input, seconds=30
+    )
+
+    assert result.stdout == ""
+    assert result.stderr == _worker_exit_stderr(1)
+    # The failure leaves no traceback anywhere else, so it is logged too.
+    assert _worker_exit_stderr(1) in caplog.text
+
+  def test_execute_code_worker_exit_is_not_reported_as_a_timeout(
+      self, mock_invocation_context: InvocationContext
+  ):
+    executor = UnsafeLocalCodeExecutor(timeout_seconds=10)
+    code_input = CodeExecutionInput(code="import os\nos._exit(1)")
+
+    started = time.monotonic()
+    result = _execute_with_watchdog(
+        executor, mock_invocation_context, code_input, seconds=30
+    )
+    elapsed = time.monotonic() - started
+
+    assert result.stdout == ""
+    assert result.stderr == _worker_exit_stderr(1)
+    assert "timed out" not in result.stderr
+    # The wait ended on the worker's death, not on the 10 second deadline.
+    assert elapsed < 10
+
+  @pytest.mark.skipif(
+      not hasattr(signal, "SIGKILL"), reason="SIGKILL is POSIX-only."
+  )
+  def test_execute_code_reports_the_signal_a_killed_worker_died_of(
+      self, mock_invocation_context: InvocationContext
+  ):
+    """A worker reaped from outside, as the OOM killer reaps one."""
+    executor = UnsafeLocalCodeExecutor(timeout_seconds=10)
+    code_input = CodeExecutionInput(
+        code="import os\nimport signal\nos.kill(os.getpid(), signal.SIGKILL)"
+    )
+
+    result = _execute_with_watchdog(
+        executor, mock_invocation_context, code_input, seconds=30
+    )
+
+    assert result.stdout == ""
+    assert result.stderr == _worker_exit_stderr(-signal.SIGKILL)
+
+  def test_execute_code_keeps_waiting_for_a_worker_that_is_still_working(
+      self, mock_invocation_context: InvocationContext
+  ):
+    """A slow worker is waited on, never declared dead, with no timeout set."""
+    executor = UnsafeLocalCodeExecutor()
+    # Long enough that a wait which gave up on the worker early, rather than
+    # waiting for it to report, would be caught doing so.
+    code_input = CodeExecutionInput(
+        code="import time\ntime.sleep(2)\nprint('late')"
+    )
+
+    result = _execute_with_watchdog(
+        executor, mock_invocation_context, code_input, seconds=60
+    )
+
+    assert result.stdout == "late\n"
+    assert result.stderr == ""
+
+  def test_execute_code_returns_a_result_larger_than_the_pipe_buffer(
+      self, mock_invocation_context: InvocationContext
+  ):
+    """A worker blocked writing a big result is read, not waited on to exit."""
+    executor = UnsafeLocalCodeExecutor()
+    # Well past the ~64KB pipe buffer, so the worker's write blocks until the
+    # parent reads it. Reaping the worker before reading would deadlock.
+    code_input = CodeExecutionInput(code="print('x' * 200_000)")
+
+    result = _execute_with_watchdog(
+        executor, mock_invocation_context, code_input, seconds=60
+    )
+
+    assert result.stdout == "x" * 200_000 + "\n"
+    assert result.stderr == ""
+
   def test_kill_execution_signals_group_before_killing_it(self, monkeypatch):
     """The group gets SIGTERM and its grace period before SIGKILL."""
     signalled = []
@@ -209,10 +343,10 @@ class TestUnsafeLocalCodeExecutor:
         time.sleep(60)
         """)
     ctx = multiprocessing.get_context("spawn")
-    result_queue = ctx.Queue()
+    result_connection, worker_connection = ctx.Pipe(duplex=False)
     process = ctx.Process(
         target=unsafe_local_code_executor._execute_in_process,
-        args=(code, {}, result_queue),
+        args=(code, {}, worker_connection),
         daemon=True,
     )
     process.start()
@@ -244,4 +378,5 @@ class TestUnsafeLocalCodeExecutor:
       if process.is_alive():
         process.kill()
       process.join()
-      result_queue.close()
+      result_connection.close()
+      worker_connection.close()

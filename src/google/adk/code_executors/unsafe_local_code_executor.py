@@ -18,8 +18,9 @@ from contextlib import redirect_stdout
 import io
 import logging
 import multiprocessing
+from multiprocessing.connection import Connection
+from multiprocessing.process import BaseProcess
 import os
-import queue
 import re
 import signal
 import traceback
@@ -41,9 +42,9 @@ _TERMINATE_GRACE_SECONDS = 5
 
 
 def _execute_in_process(
-    code: str, globals_: dict[str, Any], result_queue: multiprocessing.Queue
+    code: str, globals_: dict[str, Any], result_connection: Connection
 ) -> None:
-  """Executes code in a separate process and puts result in queue."""
+  """Executes code in a separate process and sends the result back."""
   # Detach into a new session/process group before running anything, so that a
   # timed-out execution can be killed together with everything it spawned.
   if hasattr(os, 'setsid'):
@@ -59,12 +60,10 @@ def _execute_in_process(
       exec(code, globals_, globals_)
   except BaseException:
     error = traceback.format_exc()
-  result_queue.put((stdout.getvalue(), error))
+  result_connection.send((stdout.getvalue(), error))
 
 
-def _execution_group(
-    process: multiprocessing.process.BaseProcess,
-) -> int | None:
+def _execution_group(process: BaseProcess) -> int | None:
   """Returns the group the execution detached into, or None if it has not."""
   if process.pid is None or not hasattr(os, 'killpg'):
     return None
@@ -86,7 +85,7 @@ def _signal_group(group: int, sig: int) -> None:
     logger.debug('Could not signal the execution process group.')
 
 
-def _kill_execution(process: multiprocessing.process.BaseProcess) -> None:
+def _kill_execution(process: BaseProcess) -> None:
   """Kills a timed-out execution along with any process it spawned."""
   # Resolved up front: once the execution process has been reaped its group can
   # no longer be looked up through it, and the group is what holds whatever the
@@ -147,28 +146,46 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
     _prepare_globals(code_execution_input.code, globals_)
 
     ctx = multiprocessing.get_context('spawn')
-    result_queue = ctx.Queue()
+    result_connection, worker_connection = ctx.Pipe(duplex=False)
     process = ctx.Process(
         target=_execute_in_process,
-        args=(code_execution_input.code, globals_, result_queue),
+        args=(code_execution_input.code, globals_, worker_connection),
         daemon=True,
     )
     process.start()
+    # Leaves the worker holding the only write end, so end of file on the read
+    # end means the worker is gone. That is what tells a worker which died
+    # without reporting anything apart from one that is still working, and it
+    # is why the wait below cannot block forever on a dead worker.
+    worker_connection.close()
 
     output = ''
     error = ''
-    try:
-      output, err = result_queue.get(timeout=self.timeout_seconds)
-      process.join()
-      if err:
-        error = err
-    except queue.Empty:
+    if not result_connection.poll(self.timeout_seconds):
       _kill_execution(process)
       error = f'Code execution timed out after {self.timeout_seconds} seconds.'
+    else:
+      try:
+        result = result_connection.recv()
+      except (EOFError, OSError):
+        # End of file, or a message cut short by the worker dying mid-send.
+        result = None
+      # Reaped before the exit code is read: it is only set once the worker has
+      # been waited for.
+      process.join()
+      if result is None:
+        error = (
+            'The code execution worker exited without returning a result'
+            f' (exit code {process.exitcode}).'
+        )
+        logger.warning(error)
+      else:
+        output, err = result
+        if err:
+          error = err
 
     # Collect the final result.
-    result_queue.close()
-    result_queue.join_thread()
+    result_connection.close()
     return CodeExecutionResult(
         stdout=output,
         stderr=error,
