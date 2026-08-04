@@ -52,9 +52,7 @@ class ListSessionsResponse(BaseModel):
   - ``state`` is the same merged view ``get_session`` returns: the session's
     own state, plus app-scoped entries under the ``app:`` prefix and
     user-scoped entries under the ``user:`` prefix, for services that keep
-    separate app and user state stores. ``VertexAiSessionService`` has no
-    separate app or user state stores, so its state is whatever the remote
-    returns.
+    separate app and user state stores.
   """
 
   sessions: list[Session] = Field(default_factory=list)
