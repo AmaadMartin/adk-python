@@ -434,3 +434,24 @@ def test__load_skills_from_dir_errors(tmp_path):
   file_path.write_text("hello")
   with pytest.raises(ValueError, match="not a directory"):
     _load_skills_from_dir(file_path)
+
+
+def test__load_skill_from_dir_rejects_flattened_frontmatter(tmp_path):
+  """A SKILL.md whose frontmatter a markdown formatter flattened is rejected.
+
+  CommonMark reads a '---' delimited block as a setext heading plus a thematic
+  break, so a formatter can rewrite it into a rule and an ATX heading. The
+  result is no longer frontmatter and must not load.
+  """
+  skill_dir = tmp_path / "weather-skill"
+  skill_dir.mkdir()
+  (skill_dir / "SKILL.md").write_text(
+      "______________________________________________________________________\n"
+      "\n"
+      "## name: weather-skill description: A skill that reports weather.\n"
+      "\n"
+      "Step 1: Do the thing.\n"
+  )
+
+  with pytest.raises(ValueError, match="must start with YAML frontmatter"):
+    _load_skill_from_dir(skill_dir)

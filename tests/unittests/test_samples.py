@@ -23,6 +23,7 @@ from google.adk.agents import config_agent_utils
 from google.adk.apps.app import App
 from google.adk.cli.agent_test_runner import test_agent_replay as _test_agent_replay
 from google.adk.cli.utils.agent_loader import AgentLoader
+from google.adk.skills import load_skill_from_dir
 from google.genai import types
 import pytest
 
@@ -256,3 +257,23 @@ def test_sample_loads(sample_dir: Path, monkeypatch):
   assert getattr(
       root_agent, "name", None
   ), f"{sample_dir} root agent has no name"
+
+
+def get_sample_skill_dirs():
+  """Yields a pytest param per skill directory under contributing/samples."""
+  skill_dirs = {
+      skill_md.parent
+      for pattern in ("SKILL.md", "skill.md")
+      for skill_md in SAMPLES_DIR.rglob(pattern)
+  }
+  for skill_dir in sorted(skill_dirs):
+    rel = skill_dir.relative_to(SAMPLES_DIR).as_posix()
+    yield pytest.param(skill_dir, id=rel)
+
+
+@pytest.mark.parametrize("skill_dir", list(get_sample_skill_dirs()))
+def test_sample_skill_loads(skill_dir: Path):
+  """Every sample SKILL.md parses through the public skills loader."""
+  skill = load_skill_from_dir(skill_dir)
+  assert skill.name == skill_dir.name
+  assert skill.description
