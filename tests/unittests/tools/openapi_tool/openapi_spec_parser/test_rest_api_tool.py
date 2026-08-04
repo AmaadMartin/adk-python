@@ -37,6 +37,7 @@ from google.adk.features._feature_registry import temporary_feature_override
 from google.adk.sessions.state import State
 from google.adk.tools.openapi_tool.auth.auth_helpers import token_to_scheme_credential
 from google.adk.tools.openapi_tool.common.common import ApiParameter
+from google.adk.tools.openapi_tool.openapi_spec_parser.openapi_spec_parser import OpenApiSpecParser
 from google.adk.tools.openapi_tool.openapi_spec_parser.openapi_spec_parser import OperationEndpoint
 from google.adk.tools.openapi_tool.openapi_spec_parser.operation_parser import OperationParser
 from google.adk.tools.openapi_tool.openapi_spec_parser.rest_api_tool import RestApiTool
@@ -153,6 +154,40 @@ def sample_auth_credential():
       "apikey", "header", "", "sample_auth_credential_internal_test"
   )
   return credential
+
+
+# A spec that exercises both halves of path containment end to end: a templated
+# server URL that must be resolved at parse time, and a path parameter whose
+# value must stay inside its own segment.
+_PETS_SPEC_WITH_TEMPLATED_SERVER = {
+    "openapi": "3.1.0",
+    "info": {"title": "Pets", "version": "1.0.0"},
+    "servers": [{
+        "url": "https://{region}.api.example.com",
+        "variables": {"region": {"default": "us", "enum": ["us", "eu"]}},
+    }],
+    "paths": {
+        "/pets/{pet_id}": {
+            "get": {
+                "operationId": "getPet",
+                "parameters": [{
+                    "name": "pet_id",
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "string"},
+                }],
+                "responses": {
+                    "200": {
+                        "description": "ok",
+                        "content": {
+                            "application/json": {"schema": {"type": "string"}}
+                        },
+                    }
+                },
+            }
+        }
+    },
+}
 
 
 def build_path_param_tool(
@@ -1059,6 +1094,43 @@ class TestRestApiTool:
     )
 
     assert request_params["params"] == {"filter": "../../admin?x=1"}
+
+  @pytest.mark.asyncio
+  async def test_call_end_to_end_contains_hostile_path_param(
+      self, mock_tool_context
+  ):
+    """Proves containment on the wire, through the real parser and httpx."""
+    captured: List[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+      captured.append(request)
+      return httpx.Response(200, json={"ok": True})
+
+    parsed = OpenApiSpecParser().parse(_PETS_SPEC_WITH_TEMPLATED_SERVER)[0]
+    tool = RestApiTool.from_parsed_operation(
+        parsed,
+        httpx_client_factory=lambda: httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ),
+    )
+
+    await tool.call(
+        args={"pet_id": "../../admin/export"}, tool_context=mock_tool_context
+    )
+    await tool.call(
+        args={"pet_id": "x?role=admin"}, tool_context=mock_tool_context
+    )
+
+    # The templated server variable is resolved, and neither hostile value
+    # escaped its path segment once httpx normalized the request URL.
+    assert captured[0].url.host == "us.api.example.com"
+    assert str(captured[0].url) == (
+        "https://us.api.example.com/pets/..%2F..%2Fadmin%2Fexport"
+    )
+    assert str(captured[1].url) == (
+        "https://us.api.example.com/pets/x%3Frole%3Dadmin"
+    )
+    assert captured[1].url.params.get("role") is None
 
   def test_prepare_request_params_header_param(
       self,

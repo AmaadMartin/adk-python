@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import copy
+import re
 from typing import Any
 from typing import Dict
 from typing import List
@@ -44,6 +45,49 @@ _VALID_SCHEMA_TYPES: Set[str] = frozenset({
 })
 
 _SCHEMA_CONTAINER_KEYS: Set[str] = frozenset({"schema", "schemas"})
+
+_SERVER_VARIABLE_PATTERN = re.compile(r"{([^{}]*)}")
+
+
+def _resolve_server_url(server: Dict[str, Any]) -> str:
+  """Resolves the OpenAPI server URL, substituting its declared variables.
+
+  OpenAPI allows a templated server URL such as
+  ``https://{region}.api.example.com`` with a ``variables`` map that declares a
+  ``default`` (and optionally an ``enum``) for each placeholder. Substituting
+  them here means the base URL handed to ``RestApiTool`` is a concrete URL with
+  no template left in it.
+
+  Args:
+      server: A single OpenAPI Server Object.
+
+  Returns:
+      The server URL with every ``{variable}`` replaced by its declared value.
+
+  Raises:
+      ValueError: If the URL contains a placeholder with no declared default or
+        enum value to resolve it from.
+  """
+  url: str = server.get("url", "")
+  if "{" not in url:
+    return url
+
+  variables = server.get("variables") or {}
+
+  def resolve(match: re.Match[str]) -> str:
+    name = match.group(1)
+    declared = variables.get(name)
+    if isinstance(declared, dict):
+      if declared.get("default") is not None:
+        return str(declared["default"])
+      if declared.get("enum"):
+        return str(declared["enum"][0])
+    raise ValueError(
+        f"Unresolved OpenAPI server variable '{name}' in server URL '{url}':"
+        " declare a default or an enum value for it."
+    )
+
+  return _SERVER_VARIABLE_PATTERN.sub(resolve, url)
 
 
 class OperationEndpoint(BaseModel):
@@ -179,7 +223,7 @@ class OpenApiSpecParser:
     # Taking first server url, or default to empty string if not present
     base_url = ""
     if openapi_spec.get("servers"):
-      base_url = openapi_spec["servers"][0].get("url", "")
+      base_url = _resolve_server_url(openapi_spec["servers"][0])
 
     # Get global security scheme (if any)
     global_scheme_name = None
