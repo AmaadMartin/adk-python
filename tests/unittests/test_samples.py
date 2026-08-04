@@ -275,5 +275,6 @@ def get_sample_skill_dirs():
 def test_sample_skill_loads(skill_dir: Path):
   """Every sample SKILL.md parses through the public skills loader."""
   skill = load_skill_from_dir(skill_dir)
-  assert skill.name == skill_dir.name
-  assert skill.description
+  # The loader already enforces name == directory name and a non-empty
+  # description; an empty body is the failure it does not catch.
+  assert skill.instructions.strip()
