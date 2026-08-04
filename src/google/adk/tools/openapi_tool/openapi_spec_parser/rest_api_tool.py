@@ -25,6 +25,7 @@ from typing import Optional
 from typing import Tuple
 from typing import Union
 from urllib.parse import parse_qs
+from urllib.parse import quote
 from urllib.parse import urlparse
 from urllib.parse import urlunparse
 
@@ -86,6 +87,31 @@ when the request completes, the factory must return a fresh client on every
 call. This unlocks knobs that the narrower ``ssl_verify`` parameter can't
 reach: proxies, HTTP/2, custom transports (e.g. request-signing), and so on.
 """
+
+
+def _encode_path_param(value: Any) -> str:
+  """Percent-encodes a value for use as a single URL path segment.
+
+  Path parameter values come from the model, so they are untrusted: substituted
+  raw, a value such as ``../../admin`` or ``x?a=b`` would add path segments or
+  query parameters to the tool's declared endpoint. Encoding every reserved
+  character confines the value to one inert segment while still transmitting it
+  verbatim, since an RFC 3986 compliant server decodes it back.
+
+  Args:
+    value: The parameter value; stringified the same way ``str.format`` did.
+
+  Returns:
+    The percent-encoded value.
+  """
+  encoded = quote(str(value), safe="")
+  # "." and ".." are unreserved, so quote() leaves them alone, but an RFC 3986
+  # client removes them as relative path segments before sending: httpx turns
+  # ".../test/.." into the API root. Encode the dots so the value stays a
+  # literal segment.
+  if encoded in (".", ".."):
+    encoded = encoded.replace(".", "%2E")
+  return encoded
 
 
 class RestApiTool(BaseTool):
@@ -362,7 +388,7 @@ class RestApiTool(BaseTool):
     if not method:
       raise ValueError("Operation method not found.")
 
-    path_params: Dict[str, Any] = {}
+    path_params: Dict[str, str] = {}
     query_params: Dict[str, Any] = {}
     header_params: Dict[str, Any] = {}
     cookie_params: Dict[str, Any] = {}
@@ -392,7 +418,7 @@ class RestApiTool(BaseTool):
       param_location = param_obj.param_location
 
       if param_location == "path":
-        path_params[original_k] = v
+        path_params[original_k] = _encode_path_param(v)
       elif param_location == "query":
         if v is not None:
           query_params[original_k] = v
@@ -404,7 +430,10 @@ class RestApiTool(BaseTool):
     # Construct URL
     base_url = self.endpoint.base_url or ""
     base_url = base_url[:-1] if base_url.endswith("/") else base_url
-    url = f"{base_url}{self.endpoint.path.format(**path_params)}"
+    # Substitute into the path only, then prefix the base URL: a path parameter
+    # value must never be able to reach the scheme or host.
+    path = self.endpoint.path.format(**path_params)
+    url = f"{base_url}{path}"
 
     # Move query params embedded in the path into query_params, since httpx
     # replaces (rather than merges) the URL query string when `params` is set.
