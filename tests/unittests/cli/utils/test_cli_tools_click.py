@@ -307,6 +307,209 @@ def test_cli_telemetry_records_early_crash(
     assert source["command_run"]["exception_type"] == "KeyboardInterrupt"
 
 
+def _enable_telemetry_to_tmp_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+  """Opts telemetry in and redirects its storage under `tmp_path`.
+
+  Consent is granted so that a missing record proves the recording was skipped
+  rather than merely disabled.
+
+  Returns:
+    The path the metrics queue would be written to.
+  """
+  monkeypatch.setattr(
+      "google.adk.cli.cli_tools_click.read_telemetry_consent", lambda: True
+  )
+  temp_queue = tmp_path / "telemetry_queue.jsonl"
+  monkeypatch.setattr(
+      "google.adk.cli._telemetry._constants.QUEUE_FILE", str(temp_queue)
+  )
+  monkeypatch.setattr(
+      "google.adk.cli._telemetry._constants.TELEMETRY_SESSIONS_DIR",
+      str(tmp_path / "telemetry_sessions"),
+  )
+  return temp_queue
+
+
+def _read_command_runs(queue_file: Path) -> List[Dict[str, Any]]:
+  """Returns the `command_run` payload of every queued telemetry event."""
+  return [
+      json.loads(json.loads(line)["source_extension_json"])["command_run"]
+      for line in queue_file.read_text(encoding="utf-8").splitlines()
+  ]
+
+
+@pytest.mark.unmute_click
+@pytest.mark.parametrize(
+    "group_name", ["deploy", "conformance", "eval_set", "migrate"]
+)
+def test_cli_telemetry_skips_group_help_when_no_subcommand(
+    group_name: str, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """A group with no subcommand only prints help, so nothing is recorded."""
+  temp_queue = _enable_telemetry_to_tmp_path(tmp_path, monkeypatch)
+
+  result = CliRunner().invoke(cli_tools_click.main, [group_name])
+
+  # click 8.1.x echoes the help and exits 0; click >= 8.2 raises
+  # NoArgsIsHelpError and exits 2. Both are help, not a command run.
+  assert result.exit_code in (0, 2)
+  assert "Usage:" in result.output
+  assert not temp_queue.exists()
+
+
+def test_cli_telemetry_records_group_with_subcommand(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """Skipping the help fallback must not drop a real subcommand run."""
+  temp_queue = _enable_telemetry_to_tmp_path(tmp_path, monkeypatch)
+
+  @click.group(cls=cli_tools_click.TelemetryGroup)
+  def test_group():
+    pass
+
+  @click.group("outer")
+  def outer():
+    pass
+
+  @outer.command("leaf")
+  def leaf():
+    pass
+
+  test_group.add_command(outer)
+  runner = CliRunner()
+
+  assert runner.invoke(test_group, ["outer"]).exit_code in (0, 2)
+  assert not temp_queue.exists()
+
+  result = runner.invoke(test_group, ["outer", "leaf"])
+
+  assert result.exit_code == 0
+  (command_run,) = _read_command_runs(temp_queue)
+  assert command_run["command"] == "outer"
+  assert command_run["subcommand"] == "leaf"
+  assert command_run["exit_code"] == 0
+  assert "exception_type" not in command_run
+
+
+def test_cli_telemetry_records_group_invoked_without_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """A group whose callback runs without a subcommand is a real command run."""
+  temp_queue = _enable_telemetry_to_tmp_path(tmp_path, monkeypatch)
+  invocations: List[str] = []
+
+  @click.group(cls=cli_tools_click.TelemetryGroup)
+  def test_group():
+    pass
+
+  # `invoke_without_command` turns off click's `no_args_is_help` default, so
+  # the callback -- not the help text -- is what a bare invocation produces.
+  @click.group("standalone", invoke_without_command=True)
+  def standalone():
+    invocations.append("standalone")
+
+  test_group.add_command(standalone)
+
+  result = CliRunner().invoke(test_group, ["standalone"])
+
+  assert result.exit_code == 0
+  assert invocations == ["standalone"]
+  (command_run,) = _read_command_runs(temp_queue)
+  assert command_run["command"] == "standalone"
+  assert command_run["subcommand"] == ""
+  assert command_run["exit_code"] == 0
+
+
+def test_cli_telemetry_records_unknown_subcommand(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """An unknown subcommand is a failed run, not a help request."""
+  temp_queue = _enable_telemetry_to_tmp_path(tmp_path, monkeypatch)
+
+  @click.group(cls=cli_tools_click.TelemetryGroup)
+  def test_group():
+    pass
+
+  @click.group("outer")
+  def outer():
+    pass
+
+  @outer.command("leaf")
+  def leaf():
+    pass
+
+  test_group.add_command(outer)
+
+  result = CliRunner().invoke(test_group, ["outer", "bogus"])
+
+  assert result.exit_code == 2
+  (command_run,) = _read_command_runs(temp_queue)
+  assert command_run["command"] == "outer"
+  assert command_run["subcommand"] == ""
+  assert command_run["exit_code"] == 1
+  # The recorded exception_type is version-dependent (`UsageError` on click
+  # 8.1.x, `NoSuchCommand` on click >= 8.2), so only its presence is pinned.
+  assert command_run["exception_type"]
+
+
+def test_cli_telemetry_records_leaf_command_needing_arguments(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """Only a *group's* help fallback is excluded, not a leaf command's."""
+  temp_queue = _enable_telemetry_to_tmp_path(tmp_path, monkeypatch)
+
+  @click.group(cls=cli_tools_click.TelemetryGroup)
+  def test_group():
+    pass
+
+  @test_group.command("needs_args", no_args_is_help=True)
+  @click.argument("target")
+  def needs_args(target: str):
+    pass
+
+  result = CliRunner().invoke(test_group, ["needs_args"])
+
+  (command_run,) = _read_command_runs(temp_queue)
+  assert command_run["command"] == "needs_args"
+  assert command_run["subcommand"] == ""
+
+
+def test_cli_telemetry_records_dynamically_resolved_command(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """A command resolved outside `Group.commands` is still recorded."""
+  temp_queue = _enable_telemetry_to_tmp_path(tmp_path, monkeypatch)
+
+  @click.command("dynamic")
+  def dynamic():
+    pass
+
+  class DynamicGroup(cli_tools_click.TelemetryGroup):
+    """Group that resolves a command it never registers in `commands`."""
+
+    def get_command(
+        self, ctx: click.Context, cmd_name: str
+    ) -> Optional[click.Command]:
+      if cmd_name == "dynamic":
+        return dynamic
+      return super().get_command(ctx, cmd_name)
+
+  @click.group(cls=DynamicGroup)
+  def test_group():
+    pass
+
+  result = CliRunner().invoke(test_group, ["dynamic"])
+
+  assert result.exit_code == 0
+  # The name resolver only walks `Group.commands`, so it finds nothing and the
+  # event carries no command name -- but the run is still recorded.
+  (command_run,) = _read_command_runs(temp_queue)
+  assert command_run["command"] == ""
+  assert command_run["exit_code"] == 0
+
+
 # cli run
 @pytest.mark.parametrize(
     "cli_args,expected_session_uri,expected_artifact_uri,expected_memory_uri",
