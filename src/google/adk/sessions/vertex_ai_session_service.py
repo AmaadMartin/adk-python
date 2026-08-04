@@ -58,8 +58,8 @@ _ACTION_FIELDS_PERSISTED_ELSEWHERE = {
 }
 """EventActions fields kept out of the `_actions` custom_metadata sidecar.
 
-The first six are modeled natively by the Agent Engine Sessions API on the
-typed `actions` field, and `compaction` has its own metadata key. Every other
+All but `compaction` are modeled natively by the Agent Engine Sessions API on
+the typed `actions` field; `compaction` has its own metadata key. Every other
 EventActions field has to ride in custom_metadata because the Vertex AI SDK
 validates `actions` against a closed model (`extra='forbid'`), so an unknown
 key makes `appendEvent` raise before the request is even sent.
@@ -463,8 +463,11 @@ class VertexAiSessionService(BaseSessionService):
           value=compaction_dict,
       )
     # Fields the typed `actions` channel cannot carry (see
-    # _ACTION_FIELDS_PERSISTED_ELSEWHERE) ride here, so that new EventActions
-    # fields survive the raw_event fallback path without a further edit.
+    # _ACTION_FIELDS_PERSISTED_ELSEWHERE) ride here, so that the legacy
+    # representation stays lossless for new EventActions fields. Written on
+    # every append, like the two sidecars above: `config` is built once and the
+    # raw_event fallback below resends that same dict, so a sidecar added only
+    # after the ValidationError would come too late.
     # `exclude_defaults` keeps untouched fields (e.g. the
     # `requested_tool_confirmations` empty dict) out of the payload while still
     # persisting a value a caller explicitly set to an empty container.
@@ -621,11 +624,7 @@ def _from_api_event(api_event_obj: vertexai.types.SessionEvent) -> Event:
     compaction_data = None
     usage_metadata_data = None
     extra_actions_data = None
-    if custom_metadata and (
-        _COMPACTION_CUSTOM_METADATA_KEY in custom_metadata
-        or _USAGE_METADATA_CUSTOM_METADATA_KEY in custom_metadata
-        or _ACTIONS_CUSTOM_METADATA_KEY in custom_metadata
-    ):
+    if custom_metadata:
       custom_metadata = dict(custom_metadata)  # avoid mutating the API response
       compaction_data = custom_metadata.pop(
           _COMPACTION_CUSTOM_METADATA_KEY, None
@@ -656,9 +655,7 @@ def _from_api_event(api_event_obj: vertexai.types.SessionEvent) -> Event:
 
   actions_payload: dict[str, Any] = {}
   if actions:
-    actions_dict: dict[str, Any] = actions.model_dump(
-        exclude_none=True, mode='python'
-    )
+    actions_dict = actions.model_dump(exclude_none=True, mode='python')
     rename_map = {'transfer_agent': 'transfer_to_agent'}
     actions_payload = {rename_map.get(k, k): v for k, v in actions_dict.items()}
   if extra_actions_data:
