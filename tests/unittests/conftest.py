@@ -113,9 +113,7 @@ def _is_explicitly_marked(mark_name: str, metafunc: Metafunc) -> bool:
 # unittest.mock records every patch started with patch(...).start() here and
 # only drops it on stop(); this is the list patch.stopall() drains. It is a
 # private attribute, so degrade to a no-op if a future Python removes it.
-_ACTIVE_PATCHES = getattr(
-    getattr(mock, '_patch', None), '_active_patches', None
-)
+_ACTIVE_PATCHES = getattr(mock._patch, '_active_patches', None)
 
 
 def _describe_patch(patcher: 'mock._patch | mock._patch_dict') -> str:
