@@ -49,6 +49,7 @@ from google.genai import types
 from opentelemetry import trace
 import pyarrow as pa
 import pytest
+import pytest_asyncio
 
 PROJECT_ID = "test-gcp-project"
 DATASET_ID = "adk_logs"
@@ -242,7 +243,7 @@ def mock_storage_client():
     yield mock_client
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def bq_plugin_inst(
     mock_auth_default,
     mock_bq_client,
