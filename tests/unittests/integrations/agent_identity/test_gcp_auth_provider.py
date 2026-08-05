@@ -49,6 +49,7 @@ def test_supported_auth_schemes(gcp_auth_provider):
   assert GcpAuthProviderScheme in gcp_auth_provider.supported_auth_schemes
 
 
+@pytest.mark.asyncio
 async def test_get_auth_credential_raises_error_for_invalid_auth_scheme(
     context,
 ):
@@ -61,6 +62,7 @@ async def test_get_auth_credential_raises_error_for_invalid_auth_scheme(
     await provider.get_auth_credential(invalid_auth_config, context)
 
 
+@pytest.mark.asyncio
 @patch(
     "google.adk.integrations.agent_identity.gcp_auth_provider._IamConnectorCredentialsProvider"
 )
@@ -87,6 +89,7 @@ async def test_get_auth_credential_routes_to_iam_connector_service_provider(
   )
 
 
+@pytest.mark.asyncio
 @patch(
     "google.adk.integrations.agent_identity.gcp_auth_provider._AgentIdentityCredentialsProvider"
 )
