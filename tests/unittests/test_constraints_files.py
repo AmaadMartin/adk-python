@@ -17,7 +17,7 @@
 ``README.md`` tells users to install with ``pip install google-adk -c
 constraints-<ver>.txt``, so those files must be committed and must stay
 readable by ``scripts/update_constraints.sh --check``. These tests pin the
-three properties whose absence kept the lint gate permanently red:
+properties whose absence kept the lint gate permanently red:
 
 * The files exist for every interpreter the script generates.
 * Their two-line header is the one the script reconstructs. ``--check`` parses
@@ -47,14 +47,14 @@ import re
 import pytest
 import yaml
 
-from tests.unittests.test_release_dependencies import _find_pyproject
-
 try:
   import tomllib
 except ImportError:
   import tomli as tomllib
 
-_REPO_ROOT = _find_pyproject().parent
+# tests/unittests/<this file> -> the repo root. Kept lexical rather than
+# resolved: the test tree may be symlinked.
+_REPO_ROOT = Path(__file__).parents[2]
 _SCRIPT_PATH = _REPO_ROOT / 'scripts' / 'update_constraints.sh'
 
 if not _SCRIPT_PATH.is_file():
@@ -177,7 +177,7 @@ def test_constraints_files_still_pin_google_adk_community(version: str) -> None:
 
 
 def test_script_versions_match_python_classifiers() -> None:
-  with _find_pyproject().open('rb') as fh:
+  with (_REPO_ROOT / 'pyproject.toml').open('rb') as fh:
     classifiers = tomllib.load(fh)['project']['classifiers']
 
   classified = {

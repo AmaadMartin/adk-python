@@ -84,11 +84,14 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
   # stale on the next release and silently downgrades the very package being
   # installed. google-adk-community stays pinned: it is a real transitive
   # dependency, not the package under installation.
-  GENERATION_CMD="uv pip compile pyproject.toml --all-extras --no-emit-package google-adk --python-version $ver"
+  COMPILE_CMD="uv pip compile pyproject.toml --all-extras --no-emit-package google-adk --python-version $ver"
   if [ -n "$date_to_use" ]; then
-    GENERATION_CMD="$GENERATION_CMD --exclude-newer $date_to_use"
+    COMPILE_CMD="$COMPILE_CMD --exclude-newer $date_to_use"
   fi
-  GENERATION_CMD="$GENERATION_CMD --index-url https://pypi.org/simple -o $TARGET_FILE"
+  COMPILE_CMD="$COMPILE_CMD --index-url https://pypi.org/simple"
+  # Everything above is destination-independent, so each use appends its own
+  # -o rather than rewriting one that is already baked in.
+  GENERATION_CMD="$COMPILE_CMD -o $TARGET_FILE"
 
   echo "Found generation command: $GENERATION_CMD"
 
@@ -106,11 +109,8 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
     cp "$TARGET_FILE" "$NEW_FILE"
   fi
 
-  # Redirect output; GENERATION_CMD always ends in "-o $TARGET_FILE".
-  RUN_CMD=$(echo "$GENERATION_CMD" | sed -E "s/-o [^ ]+/-o $NEW_FILE/")
-
-  echo "Running: $RUN_CMD"
-  if ! eval "$RUN_CMD"; then
+  echo "Running: $COMPILE_CMD -o $NEW_FILE"
+  if ! eval "$COMPILE_CMD -o $NEW_FILE"; then
     echo "❌ Resolution failed for $TARGET_FILE."
     echo "   A dependency requirement in pyproject.toml cannot be satisfied for Python $ver."
     EXIT_CODE=1
