@@ -1069,6 +1069,7 @@ async def test_retrieve_profiles_empty_results(mock_vertexai_client, caplog):
   assert not result
 
 
+@pytest.mark.asyncio
 async def test_search_memory_uses_async_client_path():
   sync_client = mock.MagicMock()
   sync_client.agent_engines.memories.retrieve.side_effect = AssertionError(
