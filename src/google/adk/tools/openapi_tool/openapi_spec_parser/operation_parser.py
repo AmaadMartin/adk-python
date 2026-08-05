@@ -215,8 +215,12 @@ class OperationParser:
       )
       content = response.content or {}
       for mime_type in content:
-        if content[mime_type].schema_:
-          return_schema = content[mime_type].schema_
+        # An unresolved Reference carries no type information, so it is not a
+        # usable return schema. A '$ref' read from a spec validates as a
+        # Schema, so only a hand-built Reference reaches this branch.
+        schema = content[mime_type].schema_
+        if isinstance(schema, Schema):
+          return_schema = schema
           break
 
     self._return_value = ApiParameter(

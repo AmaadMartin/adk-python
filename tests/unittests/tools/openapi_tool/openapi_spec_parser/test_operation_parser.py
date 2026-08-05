@@ -15,6 +15,7 @@
 from fastapi.openapi.models import MediaType
 from fastapi.openapi.models import Operation
 from fastapi.openapi.models import Parameter
+from fastapi.openapi.models import Reference
 from fastapi.openapi.models import RequestBody
 from fastapi.openapi.models import Response
 from fastapi.openapi.models import Schema
@@ -329,6 +330,27 @@ def test_process_return_value_no_schema(sample_operation):
   )
   parser = OperationParser(operation_no_schema, should_parse=False)
   parser._process_return_value()
+  assert parser._return_value.type_hint == 'Any'
+
+
+def test_process_return_value_unresolved_reference_schema():
+  """Tests that an unresolved reference is not used as the return schema."""
+  operation = Operation(
+      responses={
+          '200': Response(
+              description='Success',
+              content={
+                  'application/json': MediaType(
+                      schema=Reference(**{'$ref': '#/components/schemas/Thing'})
+                  )
+              },
+          )
+      }
+  )
+
+  parser = OperationParser(operation, should_parse=False)
+  parser._process_return_value()
+
   assert parser._return_value.type_hint == 'Any'
 
 
