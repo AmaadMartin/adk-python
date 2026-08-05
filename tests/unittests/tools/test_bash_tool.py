@@ -214,7 +214,34 @@ class TestExecuteBashTool:
         args={"command": "python3 -c 'import sys; sys.stderr.write(\"err\")'"},
         tool_context=tool_context_confirmed,
     )
-    assert "err" in result["stderr"]
+    # A substring check is not enough here: "err" also occurs inside the
+    # "<no stderr captured>" placeholder that the tool returns when the
+    # subprocess never runs.
+    assert "error" not in result
+    assert result["stderr"].strip() == "err"
+    assert result["returncode"] == 0
+
+  @pytest.mark.asyncio
+  async def test_spawn_failure_reports_error(
+      self, workspace, tool_context_confirmed
+  ):
+    tool = bash_tool.ExecuteBashTool(workspace=workspace)
+    with mock.patch.object(
+        asyncio,
+        "create_subprocess_exec",
+        autospec=True,
+        side_effect=FileNotFoundError(
+            2, "No such file or directory", "python3"
+        ),
+    ):
+      result = await tool.run_async(
+          args={"command": "python3 -c 'pass'"},
+          tool_context=tool_context_confirmed,
+      )
+    assert "Execution failed" in result["error"]
+    assert result["stdout"] == "<no stdout captured>"
+    assert result["stderr"] == "<no stderr captured>"
+    assert "returncode" not in result
 
   @pytest.mark.asyncio
   async def test_nonzero_returncode(self, workspace, tool_context_confirmed):
