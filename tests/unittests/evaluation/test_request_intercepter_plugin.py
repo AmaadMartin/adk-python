@@ -20,10 +20,12 @@ from google.adk.evaluation.request_intercepter_plugin import _RequestIntercepter
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
+import pytest
 
 
 class TestRequestIntercepterPlugin:
 
+  @pytest.mark.asyncio
   async def test_intercept_request_and_response(self, mocker):
     plugin = _RequestIntercepterPlugin(name="test_plugin")
     llm_request = LlmRequest(

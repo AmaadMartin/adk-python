@@ -1079,6 +1079,7 @@ async def test_error_event_emitted_on_each_retry(
 @pytest.mark.skipif(
     sys.version_info < (3, 11), reason='asyncio.timeout requires Python 3.11+'
 )
+@pytest.mark.asyncio
 async def test_node_runner_timeout():
   async def slow_route(ctx, node_input):
     await asyncio.sleep(2)
@@ -1101,6 +1102,7 @@ async def test_node_runner_timeout():
 @pytest.mark.skip(
     reason='Timeout is now supported in Python 3.10 via asyncio.wait_for',
 )
+@pytest.mark.asyncio
 async def test_node_runner_timeout_warning(caplog):
   async def slow_route(ctx, node_input):
     await asyncio.sleep(0.5)
