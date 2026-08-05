@@ -458,6 +458,7 @@ class TestSaveFilesAsArtifactsPlugin:
     assert "[Upload Error:" in result.parts[2].text
     assert "large.pdf" in result.parts[2].text
 
+  @pytest.mark.asyncio
   async def test_artifact_delta_reporting(self):
     """Test that the artifact delta is written to state then event actions."""
 
