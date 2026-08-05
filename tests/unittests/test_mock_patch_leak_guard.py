@@ -21,6 +21,7 @@ suite that leaks on purpose would trip the guard on the test running it.
 """
 
 import pathlib
+import re
 from unittest import mock
 
 from pytest import Pytester
@@ -235,9 +236,9 @@ def test_guard_names_an_instance_target_by_repr(pytester: Pytester):
   result = pytester.runpytest_subprocess()
 
   result.assert_outcomes(passed=1, errors=1)
-  output = result.stdout.str()
-  assert '_Holder object at' in output
-  assert '.value' in output
+  assert re.search(
+      r'_Holder object at 0x[0-9a-f]+>\.value', result.stdout.str()
+  )
 
 
 def test_guard_undoes_the_leak_so_later_tests_are_clean(pytester: Pytester):
