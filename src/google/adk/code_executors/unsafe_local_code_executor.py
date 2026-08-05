@@ -118,6 +118,23 @@ def _prepare_globals(code: str, globals_: dict[str, Any]) -> None:
 class UnsafeLocalCodeExecutor(BaseCodeExecutor):
   """A code executor that unsafely execute code in the current local context."""
 
+  # Overrides the BaseCodeExecutor attribute: unlike the base default of None,
+  # the wait for a result here is always finite and must be positive (None or 0
+  # would mean no bound at all).
+  timeout_seconds: int = Field(default=300, gt=0)
+  """The wall-clock timeout in seconds for a single code execution.
+
+  The code runs in the agent's own process tree, so an unbounded run (e.g. a
+  loop emitted by the model) would wedge the calling thread for good. Defaults
+  to 300, matching ``ContainerCodeExecutor`` and ``GkeCodeExecutor``. A
+  computation that legitimately runs longer than the timeout is killed, so
+  raise it rather than removing it; ``None`` is rejected, unlike on the base
+  class.
+
+  When the timeout expires the executed code is killed along with the process
+  group it runs in, so what it spawned goes with it.
+  """
+
   # Overrides the BaseCodeExecutor attribute: this executor cannot be stateful.
   stateful: bool = Field(default=False, frozen=True, exclude=True)
 
