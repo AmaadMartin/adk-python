@@ -15,11 +15,13 @@
 from fastapi.openapi.models import MediaType
 from fastapi.openapi.models import Operation
 from fastapi.openapi.models import Parameter
+from fastapi.openapi.models import Reference
 from fastapi.openapi.models import RequestBody
 from fastapi.openapi.models import Response
 from fastapi.openapi.models import Schema
 from google.adk.tools.openapi_tool.common.common import ApiParameter
 from google.adk.tools.openapi_tool.openapi_spec_parser.operation_parser import OperationParser
+from pydantic import ValidationError
 import pytest
 
 
@@ -330,6 +332,85 @@ def test_process_return_value_no_schema(sample_operation):
   parser = OperationParser(operation_no_schema, should_parse=False)
   parser._process_return_value()
   assert parser._return_value.type_hint == 'Any'
+
+
+def test_process_return_value_unresolved_reference_schema():
+  """Tests that an unresolved reference is not used as the return schema."""
+  operation = Operation(
+      responses={
+          '200': Response(
+              description='Success',
+              content={
+                  'application/json': MediaType(
+                      schema=Reference(**{'$ref': '#/components/schemas/Thing'})
+                  )
+              },
+          )
+      }
+  )
+
+  parser = OperationParser(operation, should_parse=False)
+  parser._process_return_value()
+
+  assert parser._return_value.type_hint == 'Any'
+
+
+def test_process_return_value_malformed_2xx_response_raises():
+  """Tests that a 2xx entry that is not a valid response object raises."""
+  operation = Operation.model_validate({
+      'operationId': 'get_thing',
+      'responses': {
+          '200': {
+              'description': 123,
+              'content': {'application/json': {'schema': {'type': 'string'}}},
+          }
+      },
+  })
+
+  with pytest.raises(ValueError) as excinfo:
+    OperationParser(operation)
+
+  message = str(excinfo.value)
+  assert message.startswith(
+      "Invalid OpenAPI response object for status code '200': "
+  )
+  assert 'description' in message
+
+
+def test_process_return_value_non_object_2xx_response_raises():
+  """Tests that a 2xx entry that is not an object at all raises."""
+  operation = Operation.model_validate({
+      'operationId': 'get_thing',
+      'responses': {'200': ['nope']},
+  })
+
+  with pytest.raises(ValueError) as excinfo:
+    OperationParser(operation)
+
+  message = str(excinfo.value)
+  assert message.startswith(
+      "Invalid OpenAPI response object for status code '200': "
+  )
+  assert isinstance(excinfo.value.__cause__, ValidationError)
+
+
+def test_malformed_non_2xx_response_is_ignored():
+  """Tests that only 2xx entries are validated."""
+  operation = Operation.model_validate({
+      'operationId': 'get_thing',
+      'responses': {
+          '200': {
+              'description': 'ok',
+              'content': {'application/json': {'schema': {'type': 'string'}}},
+          },
+          '400': {'description': 123},
+      },
+  })
+
+  parser = OperationParser(operation)
+
+  assert parser.get_return_type_hint() == 'str'
+  assert 'Returns (str): ok' in parser.get_pydoc_string()
 
 
 def test_get_function_name(sample_operation):

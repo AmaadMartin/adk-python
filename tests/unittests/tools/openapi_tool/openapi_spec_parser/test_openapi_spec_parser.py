@@ -866,3 +866,15 @@ def test_sanitize_schema_types_removes_all_invalid_list(openapi_spec_generator):
 
   # Type field should be removed entirely
   assert "type" not in sanitized["schema"]
+
+
+def test_parse_spec_with_malformed_2xx_response(openapi_spec_generator):
+  """Test that a malformed 2xx response object reports the status code."""
+  openapi_spec = create_minimal_openapi_spec()
+  openapi_spec["paths"]["/test"]["get"]["responses"]["200"]["description"] = 123
+
+  with pytest.raises(
+      ValueError,
+      match="Invalid OpenAPI response object for status code '200'",
+  ):
+    openapi_spec_generator.parse(openapi_spec)

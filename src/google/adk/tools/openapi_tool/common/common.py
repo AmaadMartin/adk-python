@@ -26,8 +26,28 @@ from fastapi.openapi.models import Schema
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic import model_serializer
+from pydantic import ValidationError
 
 from ..._gemini_schema_util import _to_snake_case
+
+
+def _ensure_response(status_code: str, response: Any) -> Response:
+  """Returns an OpenAPI response entry as a validated `Response`.
+
+  `fastapi.openapi.models.Operation.responses` is typed
+  `Dict[str, Union[Response, Any]]`. The `Any` member makes pydantic keep the
+  raw value whenever `Response` validation fails instead of surfacing the
+  error, so callers cannot assume the entry is a `Response`.
+
+  Raises:
+    ValueError: If the entry is not a valid OpenAPI response object.
+  """
+  try:
+    return Response.model_validate(response)
+  except ValidationError as e:
+    raise ValueError(
+        f'Invalid OpenAPI response object for status code {status_code!r}: {e}'
+    ) from e
 
 
 def rename_python_keywords(s: str, prefix: str = 'param_') -> str:
@@ -222,6 +242,9 @@ class PydocHelper:
 
     Returns:
       str: The generated return value Python documentation string.
+
+    Raises:
+      ValueError: If a 2xx entry is not a valid OpenAPI response object.
     """
     return_doc = ''
 
@@ -233,16 +256,16 @@ class PydocHelper:
         responses.items(),
         key=lambda item: int(item[0]) if item[0].isdigit() else float('inf'),
     )
-    qualified_response = next(
-        filter(
-            lambda r: r[0].startswith('2') and r[1].content,
-            sorted_responses,
-        ),
-        None,
-    )
-    if not qualified_response:
+    response_details = None
+    for status_code, entry in sorted_responses:
+      if not status_code.startswith('2'):
+        continue
+      response = _ensure_response(status_code, entry)
+      if response.content:
+        response_details = response
+        break
+    if response_details is None:
       return ''
-    response_details = qualified_response[1]
 
     description = (response_details.description or '').strip()
     content = response_details.content or {}
