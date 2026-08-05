@@ -15,16 +15,12 @@ from __future__ import annotations
 
 import asyncio
 import collections
-import contextlib
 import json
 import logging
-import multiprocessing
-import multiprocessing.spawn
 import os
 from pathlib import Path
 from pathlib import PurePosixPath
 import shlex
-import shutil
 import subprocess
 import sys
 from unittest import mock
@@ -1714,19 +1710,18 @@ def _make_real_executor_toolset(skills, **kwargs):
   return skill_toolset.SkillToolset(skills, code_executor=executor, **kwargs)
 
 
-# ── Interpreter resolution for the real executor ──
+# ── Interpreter guard for the real executor ──
 
-# Runners that ship a self-contained test binary can leave the interpreter
-# unavailable to re-invoke; point this at one that can run these tests.
-_INTERPRETER_ENV_VAR = "ADK_TEST_PYTHON_INTERPRETER"
 _INTERPRETER_PROBE_TIMEOUT_SECONDS = 30
 # The executor's spawned child imports the ADK package to reach the worker
 # function, so an interpreter without the package cannot run these tests.
 _INTERPRETER_PROBE_CODE = "import google.adk"
 
 
-def _can_be_reinvoked(interpreter: str) -> bool:
+def _can_be_reinvoked(interpreter: str | None) -> bool:
   """Returns whether `interpreter` runs the code the executor's child needs."""
+  if not interpreter:
+    return False
   try:
     completed = subprocess.run(
         [interpreter, "-c", _INTERPRETER_PROBE_CODE],
@@ -1739,59 +1734,12 @@ def _can_be_reinvoked(interpreter: str) -> bool:
   return completed.returncode == 0
 
 
-def _resolve_python_interpreter() -> str | None:
-  """Returns an interpreter the code executor can re-invoke, or None."""
-  candidates = (
-      os.environ.get(_INTERPRETER_ENV_VAR),
-      sys.executable,
-      shutil.which("python3"),
-      shutil.which("python"),
-  )
-  for candidate in candidates:
-    if candidate and _can_be_reinvoked(candidate):
-      return candidate
-  return None
-
-
-@contextlib.contextmanager
-def _spawn_interpreter():
-  """Runs spawned executions under a usable interpreter, then restores it.
-
-  `UnsafeLocalCodeExecutor` executes code in a `multiprocessing` `spawn` child,
-  and `multiprocessing` re-invokes the interpreter it recorded at import time
-  rather than reading `sys.executable`, so `set_executable` is the knob that
-  decides what actually runs. It is process-global, hence the restore.
-  """
-  interpreter = _resolve_python_interpreter()
-  if interpreter is None:
-    pytest.skip(
-        "No Python interpreter available to re-invoke; set"
-        f" {_INTERPRETER_ENV_VAR} to one that can run these tests."
-    )
-  previous = multiprocessing.spawn.get_executable()
-  multiprocessing.set_executable(interpreter)
-  try:
-    yield interpreter
-  finally:
-    multiprocessing.set_executable(previous)
-
-
-@pytest.fixture(name="real_code_executor_interpreter")
-def _real_code_executor_interpreter():
-  """Scopes the interpreter for the real-executor tests, or skips them."""
-  with _spawn_interpreter() as interpreter:
-    yield interpreter
-
-
-def _probe_allowing(*allowed: str):
-  """Returns a `subprocess.run` stand-in that only `allowed` programs pass."""
-
-  def run(cmd, **kwargs):
-    del kwargs  # The probe's keyword arguments do not change the verdict.
-    assert cmd[0], "A falsy candidate must not reach the probe."
-    return subprocess.CompletedProcess(cmd, 0 if cmd[0] in allowed else 1)
-
-  return run
+# `multiprocessing` spawns the executor's child with this interpreter, so a
+# runner that ships a self-contained test binary cannot run these tests.
+_NEEDS_REAL_INTERPRETER = pytest.mark.skipif(
+    not _can_be_reinvoked(sys.executable),
+    reason="This interpreter cannot be re-invoked to run a skill script.",
+)
 
 
 def test_can_be_reinvoked_accepts_the_running_interpreter():
@@ -1802,6 +1750,12 @@ def test_can_be_reinvoked_accepts_the_running_interpreter():
 def test_can_be_reinvoked_rejects_a_missing_program():
   """A path that is not a program is rejected, not raised."""
   assert not _can_be_reinvoked("/definitely/not/a/real/python")
+
+
+@pytest.mark.parametrize("interpreter", [None, ""])
+def test_can_be_reinvoked_rejects_an_unset_interpreter(interpreter):
+  """A self-contained test binary leaves `sys.executable` unset."""
+  assert not _can_be_reinvoked(interpreter)
 
 
 @pytest.mark.skipif(
@@ -1862,93 +1816,6 @@ def test_can_be_reinvoked_rejects_an_interpreter_that_hangs(monkeypatch):
   assert not _can_be_reinvoked("python3")
 
 
-def test_resolve_prefers_the_environment_override(monkeypatch):
-  """The override wins even when `sys.executable` also passes the probe."""
-  monkeypatch.setenv(_INTERPRETER_ENV_VAR, "/override/python")
-  monkeypatch.setattr(sys, "executable", "/current/python")
-  monkeypatch.setattr(
-      subprocess, "run", _probe_allowing("/override/python", "/current/python")
-  )
-  assert _resolve_python_interpreter() == "/override/python"
-
-
-def test_resolve_falls_back_to_sys_executable(monkeypatch):
-  """Without an override, the running interpreter is used."""
-  monkeypatch.delenv(_INTERPRETER_ENV_VAR, raising=False)
-  monkeypatch.setattr(sys, "executable", "/current/python")
-  monkeypatch.setattr(subprocess, "run", _probe_allowing("/current/python"))
-  assert _resolve_python_interpreter() == "/current/python"
-
-
-def test_resolve_skips_an_override_that_cannot_be_reinvoked(monkeypatch):
-  """A broken override falls through to the next candidate."""
-  monkeypatch.setenv(_INTERPRETER_ENV_VAR, "/no/such/python")
-  monkeypatch.setattr(sys, "executable", "/current/python")
-  monkeypatch.setattr(subprocess, "run", _probe_allowing("/current/python"))
-  assert _resolve_python_interpreter() == "/current/python"
-
-
-@pytest.mark.parametrize(
-    "which_results, expected",
-    [
-        ({"python3": "/path/python3", "python": None}, "/path/python3"),
-        ({"python3": None, "python": "/path/python"}, "/path/python"),
-    ],
-)
-def test_resolve_falls_back_to_path(monkeypatch, which_results, expected):
-  """An empty `sys.executable` falls through to the PATH candidates."""
-  monkeypatch.delenv(_INTERPRETER_ENV_VAR, raising=False)
-  monkeypatch.setattr(sys, "executable", "")
-  monkeypatch.setattr(shutil, "which", which_results.get)
-  monkeypatch.setattr(subprocess, "run", _probe_allowing(expected))
-  assert _resolve_python_interpreter() == expected
-
-
-def test_resolve_returns_none_when_nothing_can_be_reinvoked(monkeypatch):
-  """Resolution reports failure instead of fabricating a path."""
-  monkeypatch.delenv(_INTERPRETER_ENV_VAR, raising=False)
-  monkeypatch.setattr(sys, "executable", "/current/python")
-  monkeypatch.setattr(shutil, "which", lambda name: None)
-  monkeypatch.setattr(subprocess, "run", _probe_allowing())
-  assert _resolve_python_interpreter() is None
-
-
-def test_spawn_interpreter_skips_when_no_interpreter_is_usable(monkeypatch):
-  """An unusable environment skips the test instead of failing it."""
-  monkeypatch.delenv(_INTERPRETER_ENV_VAR, raising=False)
-  monkeypatch.setattr(sys, "executable", "/current/python")
-  monkeypatch.setattr(shutil, "which", lambda name: None)
-  monkeypatch.setattr(subprocess, "run", _probe_allowing())
-  before = multiprocessing.spawn.get_executable()
-  with pytest.raises(pytest.skip.Exception, match=_INTERPRETER_ENV_VAR):
-    contextlib.ExitStack().enter_context(_spawn_interpreter())
-  assert multiprocessing.spawn.get_executable() == before
-
-
-def test_spawn_interpreter_restores_the_previous_executable(monkeypatch):
-  """The resolved interpreter applies to spawning, and only inside the scope."""
-  monkeypatch.setenv(_INTERPRETER_ENV_VAR, "/sentinel/python")
-  monkeypatch.setattr(subprocess, "run", _probe_allowing("/sentinel/python"))
-  before = multiprocessing.spawn.get_executable()
-  with _spawn_interpreter() as interpreter:
-    assert interpreter == "/sentinel/python"
-    assert os.fsdecode(multiprocessing.spawn.get_executable()) == interpreter
-  assert multiprocessing.spawn.get_executable() == before
-
-
-def test_spawn_interpreter_restores_the_previous_executable_after_an_error(
-    monkeypatch,
-):
-  """A failing test still leaves the spawn interpreter as it found it."""
-  monkeypatch.setenv(_INTERPRETER_ENV_VAR, "/sentinel/python")
-  monkeypatch.setattr(subprocess, "run", _probe_allowing("/sentinel/python"))
-  before = multiprocessing.spawn.get_executable()
-  with pytest.raises(RuntimeError, match="boom"):
-    with _spawn_interpreter():
-      raise RuntimeError("boom")
-  assert multiprocessing.spawn.get_executable() == before
-
-
 def test_make_real_executor_toolset_leaves_sys_executable_alone(monkeypatch):
   """The toolset helper rebinds no process-global, not even an unset one."""
   script = models.Script(src="print('hello world')")
@@ -1959,7 +1826,7 @@ def test_make_real_executor_toolset_leaves_sys_executable_alone(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("real_code_executor_interpreter")
+@_NEEDS_REAL_INTERPRETER
 async def test_integration_python_stdout():
   """Real executor: Python script stdout is captured."""
   script = models.Script(src="print('hello world')")
@@ -1981,7 +1848,7 @@ async def test_integration_python_stdout():
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("real_code_executor_interpreter")
+@_NEEDS_REAL_INTERPRETER
 async def test_integration_python_unicode_materialization():
   """Real executor: Python script with unicode resources."""
   script = models.Script(
@@ -2011,7 +1878,7 @@ async def test_integration_python_unicode_materialization():
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("real_code_executor_interpreter")
+@_NEEDS_REAL_INTERPRETER
 async def test_integration_python_imports_sibling_script_module():
   """Real executor: Python scripts can import helpers from scripts/."""
   skill = _make_skill_with_scripts(
@@ -2042,7 +1909,7 @@ async def test_integration_python_imports_sibling_script_module():
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("real_code_executor_interpreter")
+@_NEEDS_REAL_INTERPRETER
 async def test_integration_python_sys_exit_zero():
   """Real executor: sys.exit(0) is treated as success."""
   script = models.Script(src="import sys; sys.exit(0)")
@@ -2062,7 +1929,7 @@ async def test_integration_python_sys_exit_zero():
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("real_code_executor_interpreter")
+@_NEEDS_REAL_INTERPRETER
 async def test_integration_shell_stdout_and_stderr():
   """Real executor: shell script preserves both stdout and stderr."""
   script = models.Script(src="echo output; echo warning >&2")
@@ -2084,7 +1951,7 @@ async def test_integration_shell_stdout_and_stderr():
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("real_code_executor_interpreter")
+@_NEEDS_REAL_INTERPRETER
 async def test_integration_shell_stderr_only():
   """Real executor: shell script with only stderr reports error."""
   script = models.Script(src="echo failure >&2")
@@ -2274,7 +2141,7 @@ async def test_execute_script_input_files_packaged(mock_skill1):
 
 
 @pytest.mark.asyncio
-@pytest.mark.usefixtures("real_code_executor_interpreter")
+@_NEEDS_REAL_INTERPRETER
 async def test_integration_shell_nonzero_exit():
   """Real executor: shell script with non-zero exit via JSON envelope."""
   script = models.Script(src="exit 42")
