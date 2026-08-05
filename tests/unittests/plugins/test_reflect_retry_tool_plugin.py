@@ -58,7 +58,8 @@ class CustomErrorExtractionPlugin(ReflectAndRetryToolPlugin):
 
 
 # Inheriting from IsolatedAsyncioTestCase ensures consistent behavior, because
-# pytest-asyncio's own event-loop scoping varies across versions.
+# pytest-asyncio's own event-loop scoping varies across versions. unittest runs
+# these coroutines, so the async tests below need no @pytest.mark.asyncio.
 class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
   """Comprehensive tests for ReflectAndRetryToolPlugin focusing on behavior."""
 
