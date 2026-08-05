@@ -74,6 +74,7 @@ class TestCachePerformanceAnalyzer:
     """Test analyzer initialization."""
     assert self.analyzer.session_service == self.mock_session_service
 
+  @pytest.mark.asyncio
   async def test_get_agent_cache_history_empty_session(self):
     """Test getting cache history from empty session."""
     mock_session = Session(
@@ -90,6 +91,7 @@ class TestCachePerformanceAnalyzer:
 
     assert result == []
 
+  @pytest.mark.asyncio
   async def test_get_agent_cache_history_no_cache_events(self):
     """Test getting cache history when no events have cache metadata."""
     events = [
@@ -112,6 +114,7 @@ class TestCachePerformanceAnalyzer:
 
     assert result == []
 
+  @pytest.mark.asyncio
   async def test_get_agent_cache_history_specific_agent(self):
     """Test getting cache history for specific agent."""
     cache1 = self.create_cache_metadata(invocations_used=1, cache_name="cache1")
@@ -142,6 +145,7 @@ class TestCachePerformanceAnalyzer:
     assert result[0] == cache1
     assert result[1] == cache3
 
+  @pytest.mark.asyncio
   async def test_get_agent_cache_history_all_agents(self):
     """Test getting cache history for all agents."""
     cache1 = self.create_cache_metadata(invocations_used=1, cache_name="cache1")
@@ -171,6 +175,7 @@ class TestCachePerformanceAnalyzer:
     assert result[0] == cache1
     assert result[1] == cache2
 
+  @pytest.mark.asyncio
   async def test_analyze_agent_cache_performance_no_cache_data(self):
     """Test analysis with no cache data."""
     mock_session = Session(
@@ -187,6 +192,7 @@ class TestCachePerformanceAnalyzer:
 
     assert result["status"] == "no_cache_data"
 
+  @pytest.mark.asyncio
   async def test_analyze_agent_cache_performance_with_cache_data(self):
     """Test comprehensive analysis with cache data and token metrics."""
     cache1 = self.create_cache_metadata(invocations_used=2, cache_name="cache1")
@@ -258,6 +264,7 @@ class TestCachePerformanceAnalyzer:
         < 0.01
     )
 
+  @pytest.mark.asyncio
   async def test_analyze_agent_cache_performance_single_cache(self):
     """Test analysis with single cache instance."""
     cache = self.create_cache_metadata(
@@ -299,6 +306,7 @@ class TestCachePerformanceAnalyzer:
     assert result["cache_utilization_ratio_percent"] == 100.0  # 1/1 * 100
     assert result["avg_cached_tokens_per_request"] == 1500.0
 
+  @pytest.mark.asyncio
   async def test_analyze_agent_cache_performance_no_token_data(self):
     """Test analysis when events have no usage_metadata."""
     cache = self.create_cache_metadata(invocations_used=5)
@@ -328,6 +336,7 @@ class TestCachePerformanceAnalyzer:
     assert result["cache_utilization_ratio_percent"] == 0.0
     assert result["avg_cached_tokens_per_request"] == 0.0
 
+  @pytest.mark.asyncio
   async def test_analyze_agent_cache_performance_zero_invocations(self):
     """Test analysis with zero invocations."""
     cache = self.create_cache_metadata(
@@ -363,6 +372,7 @@ class TestCachePerformanceAnalyzer:
     assert result["total_prompt_tokens"] == 1000
     assert result["total_cached_tokens"] == 500
 
+  @pytest.mark.asyncio
   async def test_session_service_integration(self):
     """Test integration with session service."""
     cache_metadata = self.create_cache_metadata(invocations_used=7)
@@ -401,6 +411,7 @@ class TestCachePerformanceAnalyzer:
     assert result["status"] == "active"
     assert result["requests_with_cache"] == 1
 
+  @pytest.mark.asyncio
   async def test_analyze_agent_cache_performance_with_fingerprint_only(self):
     """Fingerprint-only entries (cache_name=None, invocations_used=None) don't crash."""
     fp_only = CacheMetadata(fingerprint="fp", contents_count=3)
@@ -445,6 +456,7 @@ class TestCachePerformanceAnalyzer:
     assert result["cache_refreshes"] == 1
     assert result["requests_with_cache"] == 2
 
+  @pytest.mark.asyncio
   async def test_mixed_agents_filtering(self):
     """Test that analysis correctly filters by agent name."""
     target_cache = self.create_cache_metadata(
