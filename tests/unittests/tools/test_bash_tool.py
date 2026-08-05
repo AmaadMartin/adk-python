@@ -238,10 +238,13 @@ class TestExecuteBashTool:
           args={"command": "python3 -c 'pass'"},
           tool_context=tool_context_confirmed,
       )
+    # An attempted execution reports the same keys however it ended, so a
+    # caller can read result["returncode"] without first testing the key.
+    assert set(result) == {"error", "stdout", "stderr", "returncode"}
     assert "Execution failed" in result["error"]
     assert result["stdout"] == "<no stdout captured>"
     assert result["stderr"] == "<no stderr captured>"
-    assert "returncode" not in result
+    assert result["returncode"] is None
 
   @pytest.mark.asyncio
   async def test_nonzero_returncode(self, workspace, tool_context_confirmed):
@@ -257,6 +260,7 @@ class TestExecuteBashTool:
     tool = bash_tool.ExecuteBashTool(workspace=workspace)
     mock_process = mock.AsyncMock()
     mock_process.pid = 12345
+    mock_process.returncode = -9
     mock_process.communicate.return_value = (b"", b"")
     with (
         mock.patch.object(
@@ -275,8 +279,9 @@ class TestExecuteBashTool:
           tool_context=tool_context_confirmed,
       )
       mock_killpg.assert_called_with(12345, signal.SIGKILL)
-    assert "error" in result
+    assert set(result) == {"error", "stdout", "stderr", "returncode"}
     assert "timed out" in result["error"].lower()
+    assert result["returncode"] == -9
 
   @pytest.mark.asyncio
   async def test_cwd_is_workspace(self, workspace, tool_context_confirmed):
