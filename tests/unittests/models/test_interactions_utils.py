@@ -1908,6 +1908,7 @@ async def _collect_stream_responses(events: list[object]):
   return responses
 
 
+@pytest.mark.asyncio
 async def test_generate_content_via_interactions_stream_characterization():
   """Streaming yields text responses carrying the interaction id."""
   responses = await _collect_stream_responses(_build_simple_text_stream())
@@ -1948,6 +1949,7 @@ async def _drain(
   return [resp async for resp in responses]
 
 
+@pytest.mark.asyncio
 async def test_create_interactions_streaming_forwards_kwargs_and_converts():
   """Streaming forwards create_kwargs verbatim (plus stream) and converts."""
   # Arrange.
@@ -1989,6 +1991,7 @@ async def test_create_interactions_streaming_forwards_kwargs_and_converts():
   assert 'Sunny in Tokyo.' in joined
 
 
+@pytest.mark.asyncio
 async def test_create_interactions_non_streaming_forwards_kwargs_and_yields_single_response():
   """Non-streaming forwards kwargs verbatim and yields a single response."""
   # Arrange.
@@ -2024,6 +2027,7 @@ async def test_create_interactions_non_streaming_forwards_kwargs_and_yields_sing
   assert responses[0].content.parts[0].text == 'Sunny in Tokyo.'
 
 
+@pytest.mark.asyncio
 async def test_generate_content_via_interactions_non_streaming_yields_single_response():
   """The public function yields a single response on the non-streaming path."""
   # Arrange.
@@ -2202,6 +2206,7 @@ class TestBuildMcpServerParam:
     assert 'allowed_tools' not in param
 
 
+@pytest.mark.asyncio
 async def test_create_interactions_forwards_extra_headers_streaming():
   """extra_headers is forwarded to interactions.create on the streaming path."""
   api_client = _FakeApiClient(_build_simple_text_stream())
@@ -2223,6 +2228,7 @@ async def test_create_interactions_forwards_extra_headers_streaming():
   assert api_client.create_calls[0]['extra_headers'] == {'x-custom': 'v'}
 
 
+@pytest.mark.asyncio
 async def test_create_interactions_forwards_extra_headers_non_streaming():
   """extra_headers is forwarded to interactions.create on the non-stream path."""
   api_client = _FakeApiClient(interaction=_build_non_streaming_interaction())
@@ -2244,6 +2250,7 @@ async def test_create_interactions_forwards_extra_headers_non_streaming():
   assert api_client.create_calls[0]['extra_headers'] == {'x-custom': 'v'}
 
 
+@pytest.mark.asyncio
 async def test_generate_content_via_interactions_forwards_request_headers():
   """User headers on the request reach interactions.create as extra_headers."""
   api_client = _FakeApiClient(_build_simple_text_stream())
@@ -2261,6 +2268,7 @@ async def test_generate_content_via_interactions_forwards_request_headers():
   assert 'google-adk/' in extra_headers['x-goog-api-client']
 
 
+@pytest.mark.asyncio
 async def test_generate_content_via_interactions_sends_tracking_headers_without_config_headers():
   """With no request headers, tracking headers are still forwarded."""
   from google.adk.utils._google_client_headers import get_tracking_headers
