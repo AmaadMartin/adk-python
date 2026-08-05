@@ -33,10 +33,11 @@ jobs:
   close-imported-pr:
     if: github.repository == 'google/adk-python'
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-      issues: write
-      contents: read
+    # This job never checks out the repository, and its single github-script
+    # step authenticates with the ADK_TRIAGE_AGENT PAT, so the ambient token
+    # needs no scopes at all. Adding a checkout step here would require
+    # restoring `contents: read`.
+    permissions: {}
 
     steps:
       - name: Check for Copybara commits and close PRs

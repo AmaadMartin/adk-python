@@ -47,7 +47,9 @@ jobs:
     if: github.repository == 'google/adk-python'
     runs-on: ubuntu-latest
     permissions:
-      pull-requests: write
+      # actions/checkout is the only consumer of the ambient token here. Every
+      # PR write (labels, assignee) is made by the triaging agent with the
+      # ADK_TRIAGE_AGENT PAT, so no write scope is needed.
       contents: read
 
     steps:
