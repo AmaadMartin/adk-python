@@ -80,6 +80,7 @@ class TestContextCacheRequestProcessor:
         created_at=time.time() - 600,
     )
 
+  @pytest.mark.asyncio
   async def test_no_cache_config(self):
     """Test processor with no cache config."""
     agent = LlmAgent(name="test_agent")
@@ -107,6 +108,7 @@ class TestContextCacheRequestProcessor:
     assert len(events) == 0  # No events yielded
     assert llm_request.cache_config is None
 
+  @pytest.mark.asyncio
   async def test_with_cache_config_no_session_events(self):
     """Test processor with cache config but no session events."""
     agent = LlmAgent(name="test_agent")
@@ -135,6 +137,7 @@ class TestContextCacheRequestProcessor:
     assert llm_request.cache_config == self.cache_config
     assert llm_request.cache_metadata is None
 
+  @pytest.mark.asyncio
   async def test_with_cache_metadata_same_invocation(self):
     """Test processor finds cache metadata from same invocation."""
     agent = LlmAgent(name="test_agent")
@@ -176,6 +179,7 @@ class TestContextCacheRequestProcessor:
     assert llm_request.cache_metadata == cache_metadata
     assert llm_request.cache_metadata.invocations_used == 5  # No increment
 
+  @pytest.mark.asyncio
   async def test_with_cache_metadata_different_invocation(self):
     """Test processor finds cache metadata from different invocation."""
     agent = LlmAgent(name="test_agent")
@@ -217,6 +221,7 @@ class TestContextCacheRequestProcessor:
     assert llm_request.cache_metadata is not None
     assert llm_request.cache_metadata.invocations_used == 6  # Incremented
 
+  @pytest.mark.asyncio
   async def test_cache_metadata_agent_filtering(self):
     """Test that cache metadata is filtered by agent name."""
     agent = LlmAgent(name="target_agent")
@@ -267,6 +272,7 @@ class TestContextCacheRequestProcessor:
     assert llm_request.cache_metadata.cache_name == target_cache.cache_name
     assert llm_request.cache_metadata.invocations_used == 4  # target_cache + 1
 
+  @pytest.mark.asyncio
   async def test_latest_cache_metadata_selected(self):
     """Test that the latest cache metadata is selected."""
     agent = LlmAgent(name="test_agent")
@@ -318,6 +324,7 @@ class TestContextCacheRequestProcessor:
     assert llm_request.cache_metadata.cache_name == newer_cache.cache_name
     assert llm_request.cache_metadata.invocations_used == 6  # newer_cache + 1
 
+  @pytest.mark.asyncio
   async def test_no_cache_metadata_events(self):
     """Test when session has events but no cache metadata."""
     agent = LlmAgent(name="test_agent")
@@ -352,6 +359,7 @@ class TestContextCacheRequestProcessor:
     assert llm_request.cache_config == self.cache_config
     assert llm_request.cache_metadata is None
 
+  @pytest.mark.asyncio
   async def test_empty_session(self):
     """Test with empty session."""
     agent = LlmAgent(name="test_agent")
@@ -381,6 +389,7 @@ class TestContextCacheRequestProcessor:
     assert llm_request.cache_config == self.cache_config
     assert llm_request.cache_metadata is None
 
+  @pytest.mark.asyncio
   async def test_processor_yields_no_events(self):
     """Test that processor yields no events."""
     agent = LlmAgent(name="test_agent")
@@ -408,6 +417,7 @@ class TestContextCacheRequestProcessor:
     # Processor should never yield events
     assert len(events) == 0
 
+  @pytest.mark.asyncio
   async def test_mixed_events_scenario(self):
     """Test complex scenario with mixed events."""
     agent = LlmAgent(name="test_agent")
@@ -453,6 +463,7 @@ class TestContextCacheRequestProcessor:
     assert llm_request.cache_metadata is not None
     assert llm_request.cache_metadata.invocations_used == 11  # 10 + 1
 
+  @pytest.mark.asyncio
   async def test_cacheable_contents_token_count_extraction(self):
     """Test that previous prompt token count is extracted and set."""
     agent = LlmAgent(name="test_agent")
@@ -493,6 +504,7 @@ class TestContextCacheRequestProcessor:
     # Should extract token count from the event
     assert llm_request.cacheable_contents_token_count == 1024
 
+  @pytest.mark.asyncio
   async def test_cacheable_contents_token_count_no_usage_metadata(self):
     """Test when no usage metadata is available."""
     agent = LlmAgent(name="test_agent")
@@ -526,6 +538,7 @@ class TestContextCacheRequestProcessor:
     # Should not set token count when no usage metadata
     assert llm_request.cacheable_contents_token_count is None
 
+  @pytest.mark.asyncio
   async def test_cacheable_contents_token_count_agent_filtering(self):
     """Test that token count is filtered by agent name."""
     agent = LlmAgent(name="target_agent")
@@ -565,6 +578,7 @@ class TestContextCacheRequestProcessor:
     # Should use target_agent's token count, not other_agent's
     assert llm_request.cacheable_contents_token_count == 1024
 
+  @pytest.mark.asyncio
   async def test_cacheable_contents_token_count_latest_selected(self):
     """Test that the most recent token count is selected."""
     agent = LlmAgent(name="test_agent")
@@ -604,6 +618,7 @@ class TestContextCacheRequestProcessor:
     # Should use the latest (most recent) token count
     assert llm_request.cacheable_contents_token_count == 1024
 
+  @pytest.mark.asyncio
   async def test_cache_metadata_and_token_count_both_found(self):
     """Test that both cache metadata and token count are found in single pass."""
     agent = LlmAgent(name="test_agent")
