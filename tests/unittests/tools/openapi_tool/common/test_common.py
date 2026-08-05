@@ -436,19 +436,25 @@ class TestPydocHelper:
                       'application/json': {'schema': {'type': 'string'}}
                   },
               },
-              "Invalid OpenAPI response object for status code '200':"
-              ' description: Input should be a valid string',
+              (
+                  "Invalid OpenAPI response object for status code '200':"
+                  ' description: Input should be a valid string'
+              ),
           ),
           (
               {'description': 123, 'content': 'not-a-map'},
-              "Invalid OpenAPI response object for status code '200':"
-              ' description: Input should be a valid string; content: Input'
-              ' should be a valid dictionary',
+              (
+                  "Invalid OpenAPI response object for status code '200':"
+                  ' description: Input should be a valid string; content: Input'
+                  ' should be a valid dictionary'
+              ),
           ),
           (
               ['nope'],
-              "Invalid OpenAPI response object for status code '200': Input"
-              ' should be a valid dictionary or instance of Response',
+              (
+                  "Invalid OpenAPI response object for status code '200': Input"
+                  ' should be a valid dictionary or instance of Response'
+              ),
           ),
       ],
   )
@@ -472,9 +478,8 @@ class TestPydocHelper:
     with pytest.raises(ValueError) as excinfo:
       PydocHelper.generate_return_doc(responses)
 
-    assert (
-        "Invalid OpenAPI response object for status code '200'"
-        in str(excinfo.value)
+    assert "Invalid OpenAPI response object for status code '200'" in str(
+        excinfo.value
     )
 
   def test_generate_return_doc_accepts_unvalidated_response_dicts(self):

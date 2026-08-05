@@ -44,13 +44,12 @@ def _ensure_response(status_code: str, response: Any) -> Response:
     response: The value stored under that status code.
 
   Returns:
-    The entry as a `Response`.
+    The entry as a `Response`. An entry that already is a `Response` is
+    returned unchanged.
 
   Raises:
     ValueError: If the entry is not a valid OpenAPI response object.
   """
-  if isinstance(response, Response):
-    return response
   try:
     return Response.model_validate(response)
   except ValidationError as e:
