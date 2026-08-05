@@ -154,25 +154,16 @@ class ExecuteBashTool(BaseTool):
   ) -> Any:
     """Runs the requested bash command and reports the outcome as a dict.
 
-    The tool never raises across its own boundary. It reports every failure
-    as data, in one of two shapes:
+    The tool never raises; callers detect failure with `result.get("error")`.
 
-    * A refusal, when the command never ran, is `{"error": <str>}` alone.
-      The tool refuses a missing command, a command the policy blocks, a
-      command awaiting or denied confirmation, and any non-POSIX host.
-    * An attempted execution always carries `stdout`, `stderr` and
-      `returncode`, plus `error` when the command timed out or the tool
-      could not run it. `returncode` is the exit status of the child
-      process, or `None` when no exit status is available.
+    * A refusal, when the command never ran: `{"error": <str>}` alone.
+    * An attempted execution: always `stdout`, `stderr` and `returncode`,
+      plus `error` on timeout or failure. `returncode` is the child's exit
+      status, or `None` when no exit status is available.
 
     Args:
       args: Tool arguments. `command` holds the bash command to run.
       tool_context: The tool context, which carries the user confirmation.
-
-    Returns:
-      A result dict in one of the two shapes above. Branch on
-      `result.get("error")` to detect a failure. Do not branch on the
-      presence of a key.
     """
     command = args.get("command")
     if not command:
