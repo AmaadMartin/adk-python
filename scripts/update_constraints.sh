@@ -74,12 +74,24 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
     fi
   fi
 
-  # Construct the command from scratch
-  GENERATION_CMD="uv pip compile pyproject.toml --all-extras --python-version $ver"
+  # Construct the command from scratch.
+  #
+  # --no-emit-package google-adk: --all-extras pulls in the `community` extra,
+  # whose google-adk-community depends back on google-adk, so uv would pin
+  # google-adk itself. README.md tells users to run
+  # `pip install google-adk -c constraints-<ver>.txt`, and these files are
+  # regenerated only when pyproject.toml dependencies change, so that pin goes
+  # stale on the next release and silently downgrades the very package being
+  # installed. google-adk-community stays pinned: it is a real transitive
+  # dependency, not the package under installation.
+  COMPILE_CMD="uv pip compile pyproject.toml --all-extras --no-emit-package google-adk --python-version $ver"
   if [ -n "$date_to_use" ]; then
-    GENERATION_CMD="$GENERATION_CMD --exclude-newer $date_to_use"
+    COMPILE_CMD="$COMPILE_CMD --exclude-newer $date_to_use"
   fi
-  GENERATION_CMD="$GENERATION_CMD --index-url https://pypi.org/simple -o $TARGET_FILE"
+  COMPILE_CMD="$COMPILE_CMD --index-url https://pypi.org/simple"
+  # Everything above is destination-independent, so each use appends its own
+  # -o rather than rewriting one that is already baked in.
+  GENERATION_CMD="$COMPILE_CMD -o $TARGET_FILE"
 
   echo "Found generation command: $GENERATION_CMD"
 
@@ -89,22 +101,18 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
   # file as version *preferences*, which keeps resolutions stable across runs.
   # Do not pass the committed file via --constraint: uv then records it as a
   # source in every "# via" annotation, so the regenerated file can never
-  # match the committed one and the check reports a permanent diff.
+  # match the committed one and the check reports a permanent diff. The rm
+  # covers the skipped-cp case, where a candidate left behind by a killed run
+  # would otherwise seed uv; cleanup() handles every other temp file.
   rm -f "$NEW_FILE"
   if [ -s "$TARGET_FILE" ]; then
     cp "$TARGET_FILE" "$NEW_FILE"
   fi
 
-  # Modify the GENERATION_CMD to output to NEW_FILE.
-  RUN_CMD=$(echo "$GENERATION_CMD" | sed -E "s/-o [^ ]+/-o $NEW_FILE/")
-  RUN_CMD=$(echo "$RUN_CMD" | sed -E "s/--output-file [^ ]+/--output-file $NEW_FILE/")
-  RUN_CMD=$(echo "$RUN_CMD" | sed -E "s/--output-file=[^ ]+/--output-file=$NEW_FILE/")
-
-  echo "Running: $RUN_CMD"
-  if ! eval "$RUN_CMD"; then
+  echo "Running: $COMPILE_CMD -o $NEW_FILE"
+  if ! eval "$COMPILE_CMD -o $NEW_FILE"; then
     echo "❌ Resolution failed for $TARGET_FILE."
     echo "   A dependency requirement in pyproject.toml cannot be satisfied for Python $ver."
-    rm -f "$NEW_FILE"
     EXIT_CODE=1
     continue
   fi
@@ -121,19 +129,16 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
   # Compare
   if diff -u "$TARGET_FILE" "$NEW_FILE"; then
     echo "✅ $TARGET_FILE is up-to-date."
-    rm -f "$NEW_FILE"
   else
     if [ "$CHECK_ONLY" = true ]; then
       echo "❌ $TARGET_FILE is OUT OF DATE!"
       echo "   Please run the update script locally to update it and commit the changes:"
       echo "   $ ./scripts/update_constraints.sh"
-      rm -f "$NEW_FILE"
       EXIT_CODE=1
     else
       echo "🔄 $TARGET_FILE was OUT OF DATE. Updating it automatically..."
       cp "$NEW_FILE" "$TARGET_FILE"
       echo "✅ $TARGET_FILE has been updated locally."
-      rm -f "$NEW_FILE"
       EXIT_CODE=1
     fi
   fi
