@@ -152,6 +152,19 @@ class ExecuteBashTool(BaseTool):
   async def run_async(
       self, *, args: dict[str, Any], tool_context: ToolContext
   ) -> Any:
+    """Runs the requested bash command and reports the outcome as a dict.
+
+    The tool never raises; callers detect failure with `result.get("error")`.
+
+    * A refusal, when the command never ran: `{"error": <str>}` alone.
+    * An attempted execution: always `stdout`, `stderr` and `returncode`,
+      plus `error` on timeout or failure. `returncode` is the child's exit
+      status, or `None` when no exit status is available.
+
+    Args:
+      args: Tool arguments. `command` holds the bash command to run.
+      tool_context: The tool context, which carries the user confirmation.
+    """
     command = args.get("command")
     if not command:
       return {"error": "Command is required."}
@@ -251,6 +264,7 @@ class ExecuteBashTool(BaseTool):
           "error": f"Execution failed: {str(e)}",
           "stdout": stdout_res,
           "stderr": stderr_res,
+          "returncode": None,
       }
 
   def _detect_error_in_response(self, response: Any) -> Optional[str]:
