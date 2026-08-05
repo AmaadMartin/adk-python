@@ -23,6 +23,7 @@ import multiprocessing.spawn
 import os
 from pathlib import Path
 from pathlib import PurePosixPath
+import shlex
 import shutil
 import subprocess
 import sys
@@ -1719,13 +1720,16 @@ def _make_real_executor_toolset(skills, **kwargs):
 # unavailable to re-invoke; point this at one that can run these tests.
 _INTERPRETER_ENV_VAR = "ADK_TEST_PYTHON_INTERPRETER"
 _INTERPRETER_PROBE_TIMEOUT_SECONDS = 30
+# The executor's spawned child imports the ADK package to reach the worker
+# function, so an interpreter without the package cannot run these tests.
+_INTERPRETER_PROBE_CODE = "import google.adk"
 
 
 def _can_be_reinvoked(interpreter: str) -> bool:
-  """Returns whether `interpreter` actually runs when invoked as a program."""
+  """Returns whether `interpreter` runs the code the executor's child needs."""
   try:
     completed = subprocess.run(
-        [interpreter, "-c", "import sys; sys.exit(0)"],
+        [interpreter, "-c", _INTERPRETER_PROBE_CODE],
         capture_output=True,
         timeout=_INTERPRETER_PROBE_TIMEOUT_SECONDS,
         check=False,
@@ -1798,6 +1802,42 @@ def test_can_be_reinvoked_accepts_the_running_interpreter():
 def test_can_be_reinvoked_rejects_a_missing_program():
   """A path that is not a program is rejected, not raised."""
   assert not _can_be_reinvoked("/definitely/not/a/real/python")
+
+
+@pytest.mark.skipif(
+    os.name != "posix", reason="The stub programs below need a shebang."
+)
+def test_can_be_reinvoked_rejects_a_program_that_cannot_execute_code(tmp_path):
+  """Starting and reporting a version is not enough; the code must run."""
+  stub = tmp_path / "version_only_python"
+  stub.write_text(
+      '#!/bin/sh\ncase "$1" in\n  --version) exit 0 ;;\n  *) exit 1 ;;\nesac\n'
+  )
+  stub.chmod(0o755)
+  assert not _can_be_reinvoked(str(stub))
+
+
+@pytest.mark.skipif(
+    os.name != "posix", reason="The stub programs below need a shebang."
+)
+def test_can_be_reinvoked_rejects_an_interpreter_without_the_adk_package(
+    tmp_path,
+):
+  """An interpreter that cannot import ADK cannot run the executor's child."""
+  stub = tmp_path / "python_without_site_packages"
+  # -S drops site-packages, so this interpreter runs code but has no ADK.
+  stub.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} -S "$@"\n')
+  stub.chmod(0o755)
+  assert (
+      subprocess.run(  # The stub itself is a working interpreter.
+          [str(stub), "-c", "import sys; sys.exit(0)"],
+          capture_output=True,
+          timeout=_INTERPRETER_PROBE_TIMEOUT_SECONDS,
+          check=False,
+      ).returncode
+      == 0
+  )
+  assert not _can_be_reinvoked(str(stub))
 
 
 def test_can_be_reinvoked_rejects_an_interpreter_that_exits_non_zero(
