@@ -325,22 +325,25 @@ class TelemetryGroup(click.Group):
           subcommand = resolved[1] if len(resolved) > 1 else ""
 
           sub_args = full_args[len(resolved) :]
-          sub_ctx = None
-          if cmd_obj is not None:
-            try:
-              # Reconstruct the subcommand context to query parameters.
-              sub_ctx = cmd_obj.make_context(command, sub_args, parent=ctx)
-            except Exception:  # pylint: disable=broad-except
-              pass
 
           # A group invoked without a subcommand only prints its help: click
           # >= 8.2 raises NoArgsIsHelpError and click 8.1.x calls ctx.exit(),
-          # and neither is a command run. Skip it like --help/-h above.
+          # and neither is a command run. Skip it like --help/-h above. This
+          # is checked before make_context, which on click 8.1.x would echo
+          # the group help a second time.
           shows_group_help = (
               isinstance(cmd_obj, click.Group)
               and cmd_obj.no_args_is_help
               and not sub_args
           )
+
+          sub_ctx = None
+          if cmd_obj is not None and not shows_group_help:
+            try:
+              # Reconstruct the subcommand context to query parameters.
+              sub_ctx = cmd_obj.make_context(command, sub_args, parent=ctx)
+            except Exception:  # pylint: disable=broad-except
+              pass
 
           # Check consent before instantiating MetricsCollector
           if not shows_group_help and read_telemetry_consent() is True:

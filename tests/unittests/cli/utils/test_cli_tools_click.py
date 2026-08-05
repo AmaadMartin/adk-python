@@ -355,7 +355,9 @@ def test_cli_telemetry_skips_group_help_when_no_subcommand(
   # click 8.1.x echoes the help and exits 0; click >= 8.2 raises
   # NoArgsIsHelpError and exits 2. Both are help, not a command run.
   assert result.exit_code in (0, 2)
-  assert "Usage:" in result.output
+  # Exactly once: on click 8.1.x the telemetry `finally` used to rebuild the
+  # subcommand context, whose parse_args echoed the group help a second time.
+  assert result.output.count("Usage:") == 1
   assert not temp_queue.exists()
 
 
@@ -469,7 +471,7 @@ def test_cli_telemetry_records_leaf_command_needing_arguments(
   def needs_args(target: str):
     pass
 
-  result = CliRunner().invoke(test_group, ["needs_args"])
+  CliRunner().invoke(test_group, ["needs_args"])
 
   (command_run,) = _read_command_runs(temp_queue)
   assert command_run["command"] == "needs_args"
