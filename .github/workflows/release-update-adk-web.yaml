@@ -31,9 +31,7 @@ jobs:
     if: github.repository == 'google/adk-python'
     runs-on: ubuntu-latest
     permissions:
-      # Checkout runs with persist-credentials: false, and both the branch push
-      # and the PR creation use the RELEASE_PAT, so the ambient token is only
-      # needed for checkout's initial fetch.
+      # Only actions/checkout uses the ambient token; all writes use the RELEASE_PAT.
       contents: read
 
     steps:
