@@ -426,6 +426,96 @@ class TestPydocHelper:
         == expected_doc
     )
 
+  @pytest.mark.parametrize(
+      'response, expected_message',
+      [
+          (
+              {
+                  'description': 123,
+                  'content': {
+                      'application/json': {'schema': {'type': 'string'}}
+                  },
+              },
+              "Invalid OpenAPI response object for status code '200':"
+              ' description: Input should be a valid string',
+          ),
+          (
+              {'description': 123, 'content': 'not-a-map'},
+              "Invalid OpenAPI response object for status code '200':"
+              ' description: Input should be a valid string; content: Input'
+              ' should be a valid dictionary',
+          ),
+          (
+              ['nope'],
+              "Invalid OpenAPI response object for status code '200': Input"
+              ' should be a valid dictionary or instance of Response',
+          ),
+      ],
+  )
+  def test_generate_return_doc_malformed_2xx_response_raises(
+      self, response, expected_message
+  ):
+    with pytest.raises(ValueError) as excinfo:
+      PydocHelper.generate_return_doc({'200': response})
+
+    assert str(excinfo.value) == expected_message
+
+  def test_generate_return_doc_malformed_2xx_response_is_not_skipped(self):
+    responses = {
+        '200': {'description': 123, 'content': {}},
+        '201': Response.model_validate({
+            'description': '201 response',
+            'content': {'application/json': {'schema': {'type': 'string'}}},
+        }),
+    }
+
+    with pytest.raises(ValueError) as excinfo:
+      PydocHelper.generate_return_doc(responses)
+
+    assert (
+        "Invalid OpenAPI response object for status code '200'"
+        in str(excinfo.value)
+    )
+
+  def test_generate_return_doc_accepts_unvalidated_response_dicts(self):
+    responses = {
+        '200': {
+            'description': 'Successful response',
+            'content': {'application/json': {'schema': {'type': 'string'}}},
+        }
+    }
+
+    assert (
+        PydocHelper.generate_return_doc(responses)
+        == 'Returns (str): Successful response'
+    )
+
+  @pytest.mark.parametrize(
+      'success_response, expected_doc',
+      [
+          (
+              {
+                  'description': 'ok',
+                  'content': {
+                      'application/json': {'schema': {'type': 'string'}}
+                  },
+              },
+              'Returns (str): ok',
+          ),
+          ({'description': 'ok'}, ''),
+      ],
+  )
+  def test_generate_return_doc_ignores_malformed_non_2xx_responses(
+      self, success_response, expected_doc
+  ):
+    responses = {
+        '200': Response.model_validate(success_response),
+        '400': {'description': 123},
+        'default': ['nope'],
+    }
+
+    assert PydocHelper.generate_return_doc(responses) == expected_doc
+
 
 if __name__ == '__main__':
   pytest.main([__file__])

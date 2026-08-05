@@ -28,6 +28,7 @@ from fastapi.openapi.models import Parameter
 from fastapi.openapi.models import Schema
 
 from ..._gemini_schema_util import _to_snake_case
+from ..common.common import _ensure_response
 from ..common.common import ApiParameter
 from ..common.common import PydocHelper
 from ..common.common import rename_python_keywords
@@ -208,8 +209,11 @@ class OperationParser:
     )
     min_20x_status_code = min(valid_codes) if valid_codes else None
 
-    if min_20x_status_code and responses[min_20x_status_code].content:
-      content = responses[min_20x_status_code].content
+    if min_20x_status_code:
+      response = _ensure_response(
+          min_20x_status_code, responses[min_20x_status_code]
+      )
+      content = response.content or {}
       for mime_type in content:
         if content[mime_type].schema_:
           return_schema = content[mime_type].schema_

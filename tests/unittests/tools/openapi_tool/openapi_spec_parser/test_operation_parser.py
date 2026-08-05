@@ -332,6 +332,62 @@ def test_process_return_value_no_schema(sample_operation):
   assert parser._return_value.type_hint == 'Any'
 
 
+def test_process_return_value_malformed_2xx_response_raises():
+  """Tests that a 2xx entry that is not a valid response object raises."""
+  operation = Operation.model_validate({
+      'operationId': 'get_thing',
+      'responses': {
+          '200': {
+              'description': 123,
+              'content': {'application/json': {'schema': {'type': 'string'}}},
+          }
+      },
+  })
+
+  with pytest.raises(ValueError) as excinfo:
+    OperationParser(operation)
+
+  assert str(excinfo.value) == (
+      "Invalid OpenAPI response object for status code '200': description:"
+      ' Input should be a valid string'
+  )
+
+
+def test_process_return_value_non_object_2xx_response_raises():
+  """Tests that a 2xx entry that is not an object at all raises."""
+  operation = Operation.model_validate({
+      'operationId': 'get_thing',
+      'responses': {'200': ['nope']},
+  })
+
+  with pytest.raises(ValueError) as excinfo:
+    OperationParser(operation)
+
+  assert str(excinfo.value) == (
+      "Invalid OpenAPI response object for status code '200': Input should be"
+      ' a valid dictionary or instance of Response'
+  )
+
+
+def test_malformed_non_2xx_response_is_ignored():
+  """Tests that only 2xx entries are validated."""
+  operation = Operation.model_validate({
+      'operationId': 'get_thing',
+      'responses': {
+          '200': {
+              'description': 'ok',
+              'content': {'application/json': {'schema': {'type': 'string'}}},
+          },
+          '400': {'description': 123},
+      },
+  })
+
+  parser = OperationParser(operation)
+
+  assert parser.get_return_type_hint() == 'str'
+  assert 'Returns (str): ok' in parser.get_pydoc_string()
+
+
 def test_get_function_name(sample_operation):
   """Test get_function_name method."""
   parser = OperationParser(sample_operation)
