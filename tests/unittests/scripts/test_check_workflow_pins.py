@@ -184,10 +184,6 @@ def test_main_reports_an_unpinned_file(
   assert "'actions/checkout@v6'" in out
 
 
-@pytest.mark.skipif(
-    not _SCRIPT.is_file(),
-    reason='scripts/ is absent from this copy of the source tree.',
-)
 def test_script_runs_as_an_executable_and_exits_non_zero(
     tmp_path: pathlib.Path,
 ) -> None:
@@ -207,10 +203,6 @@ def test_script_runs_as_an_executable_and_exits_non_zero(
   assert f'{workflow}:2:' in result.stdout
 
 
-@pytest.mark.skipif(
-    not _WORKFLOWS_DIR.is_dir(),
-    reason='.github/workflows is absent from this copy of the source tree.',
-)
 def test_every_repository_workflow_is_pinned() -> None:
   offenders = {
       str(
@@ -224,10 +216,6 @@ def test_every_repository_workflow_is_pinned() -> None:
   assert {name: found for name, found in offenders.items() if found} == {}
 
 
-@pytest.mark.skipif(
-    not _CI_WORKFLOW.is_file(),
-    reason='.github/workflows is absent from this copy of the source tree.',
-)
 @pytest.mark.parametrize('event', ['push', 'pull_request'])
 def test_continuous_integration_triggers_on_workflow_changes(
     event: str,
