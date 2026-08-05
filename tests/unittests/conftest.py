@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import contextlib
 import os
+from unittest import mock
 
 import pytest
 
@@ -106,3 +108,59 @@ def _is_explicitly_marked(mark_name: str, metafunc: Metafunc) -> bool:
       if mark.name == 'parametrize' and mark.args[0] == mark_name:
         return True
   return False
+
+
+# unittest.mock records every patch started with patch(...).start() here and
+# only drops it on stop(); this is the list patch.stopall() drains. It is a
+# private attribute, so degrade to a no-op if a future Python removes it.
+_ACTIVE_PATCHES = getattr(mock._patch, '_active_patches', None)
+
+
+def _describe_patch(patcher: 'mock._patch | mock._patch_dict') -> str:
+  """Renders a started patcher for the failure message."""
+  if not isinstance(patcher, mock._patch):
+    # patch.dict lands in the same list, patches a mapping in place, and so
+    # carries no target attribute to name.
+    return f'patch.dict({type(patcher.in_dict).__name__})'
+  target = patcher.target
+  target_name = getattr(target, '__name__', None) or repr(target)
+  return f'{target_name}.{patcher.attribute}'
+
+
+@fixture(autouse=True)
+def _no_leaked_mock_patches(request: FixtureRequest):
+  """Fails any test that leaves a mock patch it started still installed.
+
+  A patch(...).start() without a matching stop() replaces the target attribute
+  for the rest of the worker process, so later tests fail in ways that depend
+  on ordering and look unrelated. This fixture is function scoped and autouse,
+  and because conftest autouse fixtures are finalized last it observes the
+  state after setup_method/teardown_method, setUp/tearDown, addCleanup and the
+  mocker fixture have all run.
+  """
+  if _ACTIVE_PATCHES is None:
+    yield
+    return
+  before = list(_ACTIVE_PATCHES)
+  yield
+  # _patch has no __eq__, so `in` compares identity; keeping `before` alive
+  # also stops id() reuse from hiding a leak.
+  leaked = [p for p in _ACTIVE_PATCHES if p not in before]
+  if not leaked:
+    return
+  # Describe before stopping: _patch.__exit__ deletes .target.
+  described = ', '.join(_describe_patch(p) for p in leaked)
+  # Reverse order, so nested patches of one attribute unwind to the original.
+  for patcher in reversed(leaked):
+    # A patcher that cannot be stopped must not skip the remaining repairs or
+    # hide the report below.
+    with contextlib.suppress(Exception):
+      patcher.stop()
+  pytest.fail(
+      f'{request.node.nodeid} finished with {len(leaked)} mock patch(es) still'
+      f' installed: {described}. Every patch(...).start() needs a matching'
+      ' stop() -- prefer addCleanup(patcher.stop), a teardown hook, the mocker'
+      ' fixture, or patch(...) as a context manager/decorator. The leaked'
+      ' patches were undone so later tests are unaffected.',
+      pytrace=False,
+  )
