@@ -15,8 +15,6 @@
 
 from __future__ import annotations
 
-import os
-import tempfile
 from typing import Any
 from typing import cast
 from unittest import mock
@@ -164,14 +162,11 @@ class TestBuildWrapperCodePathTraversal:
       self, mock_skill_with_traversal_paths: models.Skill
   ) -> None:
     """Verify that the generated wrapper code contains traversal checks."""
-    executor = _make_mock_executor(stdout="done\n")
-    toolset = skill_toolset.SkillToolset(
-        [mock_skill_with_traversal_paths], code_executor=executor
-    )
+    executor = _make_mock_executor()
 
     # Access the internal _SkillScriptCodeExecutor to test _build_wrapper_code
     script_executor = skill_toolset._SkillScriptCodeExecutor(
-        mock_skill_with_traversal_paths, executor
+        executor, skill_toolset._DEFAULT_SCRIPT_TIMEOUT
     )
     code = script_executor._build_wrapper_code(
         mock_skill_with_traversal_paths, "exploit.py", None
@@ -191,11 +186,10 @@ class TestBuildWrapperCodePathTraversal:
 
   def test_safe_paths_pass_validation(self, safe_skill: models.Skill) -> None:
     """Verify that legitimate paths (including subdirectories) still work."""
-    executor = _make_mock_executor(stdout="hello\n")
-    toolset = skill_toolset.SkillToolset([safe_skill], code_executor=executor)
+    executor = _make_mock_executor()
 
     script_executor = skill_toolset._SkillScriptCodeExecutor(
-        safe_skill, executor
+        executor, skill_toolset._DEFAULT_SCRIPT_TIMEOUT
     )
     code = script_executor._build_wrapper_code(safe_skill, "run.py", None)
 
@@ -227,7 +221,7 @@ class TestBuildWrapperCodePathTraversal:
     )
     tool = skill_toolset.RunSkillScriptTool(toolset)
     ctx = _make_tool_context_with_agent()
-    result = await tool.run_async(
+    await tool.run_async(
         args={
             "skill_name": "evil_skill",
             "file_path": "exploit.py",
@@ -253,7 +247,7 @@ class TestBuildWrapperCodePathTraversal:
     )
 
     script_executor = skill_toolset._SkillScriptCodeExecutor(
-        safe_skill, executor
+        executor, skill_toolset._DEFAULT_SCRIPT_TIMEOUT
     )
     code = script_executor._build_wrapper_code(safe_skill, "run.py", None)
 
@@ -271,10 +265,27 @@ class TestBuildWrapperCodePathTraversal:
     safe_skill.resources.get_asset.side_effect = lambda name: "root:x:0:0:root"
 
     script_executor = skill_toolset._SkillScriptCodeExecutor(
-        safe_skill, executor
+        executor, skill_toolset._DEFAULT_SCRIPT_TIMEOUT
     )
     code = script_executor._build_wrapper_code(safe_skill, "run.py", None)
 
     # The validation should check for absolute paths
     assert "isabs" in code
     assert "PermissionError" in code
+
+  def test_shell_wrapper_uses_configured_script_timeout(
+      self, safe_skill: models.Skill
+  ) -> None:
+    """The shell branch reads self._script_timeout, so it must be an int."""
+    executor = _make_mock_executor()
+
+    script_executor = skill_toolset._SkillScriptCodeExecutor(
+        executor, skill_toolset._DEFAULT_SCRIPT_TIMEOUT
+    )
+    code = script_executor._build_wrapper_code(safe_skill, "run.sh", None)
+
+    assert code is not None
+    assert f"timeout={skill_toolset._DEFAULT_SCRIPT_TIMEOUT!r}" in code
+    assert (
+        f"Timed out after {skill_toolset._DEFAULT_SCRIPT_TIMEOUT}s" in code
+    ), "The generated shell wrapper must interpolate an integer timeout"
