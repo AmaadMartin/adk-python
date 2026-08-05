@@ -16,8 +16,10 @@ from __future__ import annotations
 
 import pathlib
 import subprocess
+from typing import Any
 
 import pytest
+import yaml
 
 from scripts import check_workflow_pins
 
@@ -25,6 +27,8 @@ _SHA = 'df4cb1c069e1874edd31b4311f1884172cec0e10'
 _REPO_ROOT = pathlib.Path(__file__).parents[3]
 _WORKFLOWS_DIR = _REPO_ROOT / '.github' / 'workflows'
 _SCRIPT = _REPO_ROOT / 'scripts' / 'check_workflow_pins.py'
+_CI_WORKFLOW = _WORKFLOWS_DIR / 'continuous-integration.yml'
+_WORKFLOWS_PATH_FILTER = '.github/workflows/**'
 
 
 def test_pinned_ref_with_version_comment_is_accepted() -> None:
@@ -218,3 +222,25 @@ def test_every_repository_workflow_is_pinned() -> None:
       if path.suffix in ('.yml', '.yaml')
   }
   assert {name: found for name, found in offenders.items() if found} == {}
+
+
+@pytest.mark.skipif(
+    not _CI_WORKFLOW.is_file(),
+    reason='.github/workflows is absent from this copy of the source tree.',
+)
+@pytest.mark.parametrize('event', ['push', 'pull_request'])
+def test_continuous_integration_triggers_on_workflow_changes(
+    event: str,
+) -> None:
+  # Continuous Integration is the only workflow that runs pre-commit, so it is
+  # the only place this check runs server-side. Its triggers are restricted by
+  # a paths allow-list; drop `.github/workflows/**` from either one and a pull
+  # request that edits only a workflow runs no CI, which leaves the hook
+  # enforced solely by contributors who installed it.
+  workflow: dict[Any, Any] = yaml.safe_load(
+      _CI_WORKFLOW.read_text(encoding='utf-8')
+  )
+  # PyYAML reads the bare `on` key as the YAML 1.1 boolean `True`.
+  triggers = workflow[True]
+
+  assert _WORKFLOWS_PATH_FILTER in triggers[event]['paths']
