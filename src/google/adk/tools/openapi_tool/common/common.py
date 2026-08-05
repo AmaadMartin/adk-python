@@ -39,28 +39,14 @@ def _ensure_response(status_code: str, response: Any) -> Response:
   raw value whenever `Response` validation fails instead of surfacing the
   error, so callers cannot assume the entry is a `Response`.
 
-  Args:
-    status_code: The status code the response is keyed by in the spec.
-    response: The value stored under that status code.
-
-  Returns:
-    The entry as a `Response`. An entry that already is a `Response` is
-    returned unchanged.
-
   Raises:
     ValueError: If the entry is not a valid OpenAPI response object.
   """
   try:
     return Response.model_validate(response)
   except ValidationError as e:
-    reasons = []
-    for error in e.errors():
-      location = '.'.join(str(part) for part in error['loc'])
-      msg = error['msg']
-      reasons.append(f'{location}: {msg}' if location else msg)
     raise ValueError(
-        f'Invalid OpenAPI response object for status code {status_code!r}:'
-        f' {"; ".join(reasons)}'
+        f'Invalid OpenAPI response object for status code {status_code!r}: {e}'
     ) from e
 
 

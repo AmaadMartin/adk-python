@@ -21,6 +21,7 @@ from fastapi.openapi.models import Response
 from fastapi.openapi.models import Schema
 from google.adk.tools.openapi_tool.common.common import ApiParameter
 from google.adk.tools.openapi_tool.openapi_spec_parser.operation_parser import OperationParser
+from pydantic import ValidationError
 import pytest
 
 
@@ -369,10 +370,11 @@ def test_process_return_value_malformed_2xx_response_raises():
   with pytest.raises(ValueError) as excinfo:
     OperationParser(operation)
 
-  assert str(excinfo.value) == (
-      "Invalid OpenAPI response object for status code '200': description:"
-      ' Input should be a valid string'
+  message = str(excinfo.value)
+  assert message.startswith(
+      "Invalid OpenAPI response object for status code '200': "
   )
+  assert 'description' in message
 
 
 def test_process_return_value_non_object_2xx_response_raises():
@@ -385,10 +387,11 @@ def test_process_return_value_non_object_2xx_response_raises():
   with pytest.raises(ValueError) as excinfo:
     OperationParser(operation)
 
-  assert str(excinfo.value) == (
-      "Invalid OpenAPI response object for status code '200': Input should be"
-      ' a valid dictionary or instance of Response'
+  message = str(excinfo.value)
+  assert message.startswith(
+      "Invalid OpenAPI response object for status code '200': "
   )
+  assert isinstance(excinfo.value.__cause__, ValidationError)
 
 
 def test_malformed_non_2xx_response_is_ignored():

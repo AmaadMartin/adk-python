@@ -22,6 +22,7 @@ from google.adk.tools.openapi_tool.common.common import ApiParameter
 from google.adk.tools.openapi_tool.common.common import PydocHelper
 from google.adk.tools.openapi_tool.common.common import rename_python_keywords
 from google.adk.tools.openapi_tool.common.common import TypeHintHelper
+from pydantic import ValidationError
 import pytest
 
 
@@ -427,7 +428,7 @@ class TestPydocHelper:
     )
 
   @pytest.mark.parametrize(
-      'response, expected_message',
+      'response, expected_reason',
       [
           (
               {
@@ -436,35 +437,24 @@ class TestPydocHelper:
                       'application/json': {'schema': {'type': 'string'}}
                   },
               },
-              (
-                  "Invalid OpenAPI response object for status code '200':"
-                  ' description: Input should be a valid string'
-              ),
+              'description',
           ),
-          (
-              {'description': 123, 'content': 'not-a-map'},
-              (
-                  "Invalid OpenAPI response object for status code '200':"
-                  ' description: Input should be a valid string; content: Input'
-                  ' should be a valid dictionary'
-              ),
-          ),
-          (
-              ['nope'],
-              (
-                  "Invalid OpenAPI response object for status code '200': Input"
-                  ' should be a valid dictionary or instance of Response'
-              ),
-          ),
+          ({'description': 'ok', 'content': 'not-a-map'}, 'content'),
+          (['nope'], 'Response'),
       ],
   )
   def test_generate_return_doc_malformed_2xx_response_raises(
-      self, response, expected_message
+      self, response, expected_reason
   ):
     with pytest.raises(ValueError) as excinfo:
       PydocHelper.generate_return_doc({'200': response})
 
-    assert str(excinfo.value) == expected_message
+    message = str(excinfo.value)
+    assert message.startswith(
+        "Invalid OpenAPI response object for status code '200': "
+    )
+    assert expected_reason in message
+    assert isinstance(excinfo.value.__cause__, ValidationError)
 
   def test_generate_return_doc_malformed_2xx_response_is_not_skipped(self):
     responses = {
