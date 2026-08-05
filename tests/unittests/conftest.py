@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import contextlib
 import os
 from unittest import mock
 
@@ -117,8 +118,12 @@ _ACTIVE_PATCHES = getattr(
 )
 
 
-def _describe_patch(patcher: 'mock._patch') -> str:
-  """Renders a started patcher as 'target.attribute' for error messages."""
+def _describe_patch(patcher: 'mock._patch | mock._patch_dict') -> str:
+  """Renders a started patcher for the failure message."""
+  if not isinstance(patcher, mock._patch):
+    # patch.dict lands in the same list, patches a mapping in place, and so
+    # carries no target attribute to name.
+    return f'patch.dict({type(patcher.in_dict).__name__})'
   target = patcher.target
   target_name = getattr(target, '__name__', None) or repr(target)
   return f'{target_name}.{patcher.attribute}'
@@ -149,7 +154,10 @@ def _no_leaked_mock_patches(request: FixtureRequest):
   described = ', '.join(_describe_patch(p) for p in leaked)
   # Reverse order, so nested patches of one attribute unwind to the original.
   for patcher in reversed(leaked):
-    patcher.stop()
+    # A patcher that cannot be stopped must not skip the remaining repairs or
+    # hide the report below.
+    with contextlib.suppress(Exception):
+      patcher.stop()
   pytest.fail(
       f'{request.node.nodeid} finished with {len(leaked)} mock patch(es) still'
       f' installed: {described}. Every patch(...).start() needs a matching'

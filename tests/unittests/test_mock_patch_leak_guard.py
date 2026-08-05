@@ -33,6 +33,7 @@ _CONFTEST_SOURCE = (pathlib.Path(__file__).parent / 'conftest.py').read_text()
 _VICTIM_MODULE = """
 TARGET = 'original'
 MODULE_TARGET = 'original'
+DICT_TARGET = {'key': 'original'}
 
 
 class _Holder:
@@ -94,6 +95,52 @@ import victim_nested
 
 def test_target_is_restored():
   assert victim_nested.TARGET == 'original'
+"""
+
+_MIXED_LEAK_SUITE = """
+from unittest import mock
+
+import victim_mixed
+
+
+def test_leaks_a_patch_dict_and_a_patch():
+  mock.patch.dict(victim_mixed.DICT_TARGET, {'key': 'leaked'}).start()
+  mock.patch.object(victim_mixed, 'TARGET', 'leaked').start()
+  assert victim_mixed.DICT_TARGET == {'key': 'leaked'}
+  assert victim_mixed.TARGET == 'leaked'
+"""
+
+_MIXED_RESTORED_SUITE = """
+import victim_mixed
+
+
+def test_both_leaks_are_undone():
+  assert victim_mixed.DICT_TARGET == {'key': 'original'}
+  assert victim_mixed.TARGET == 'original'
+"""
+
+# The created attribute is gone by the time the guard stops the patcher, so
+# _patch.__exit__ raises AttributeError from its delattr.
+_UNSTOPPABLE_LEAK_SUITE = """
+from unittest import mock
+
+import victim_unstoppable
+
+
+def test_leaks_a_patcher_that_cannot_be_stopped():
+  mock.patch.object(victim_unstoppable, 'TARGET', 'leaked').start()
+  mock.patch.object(
+      victim_unstoppable, 'CREATED', 'leaked', create=True
+  ).start()
+  del victim_unstoppable.CREATED
+"""
+
+_UNSTOPPABLE_RESTORED_SUITE = """
+import victim_unstoppable
+
+
+def test_the_stoppable_patch_is_still_undone():
+  assert victim_unstoppable.TARGET == 'original'
 """
 
 _SWAPPED_LEAK_SUITE = """
@@ -258,6 +305,42 @@ def test_guard_undoes_the_leak_so_later_tests_are_clean(pytester: Pytester):
   assert 'test_a_leak.py::test_leaks_two_nested_patches' in output
   assert '2 mock patch(es) still installed' in output
   assert 'addCleanup(patcher.stop)' in output
+
+
+def test_guard_reports_and_undoes_a_leaked_patch_dict(pytester: Pytester):
+  """A leaked patch.dict is named and undone though it carries no target."""
+  _write_suite(
+      pytester,
+      _CONFTEST_SOURCE,
+      victim_mixed=_VICTIM_MODULE,
+      test_a_mixed=_MIXED_LEAK_SUITE,
+      test_b_restored=_MIXED_RESTORED_SUITE,
+  )
+
+  result = pytester.runpytest_subprocess()
+
+  result.assert_outcomes(passed=2, errors=1)
+  output = result.stdout.str()
+  assert 'patch.dict(dict)' in output
+  assert 'victim_mixed.TARGET' in output
+
+
+def test_guard_repairs_the_rest_when_one_patcher_cannot_stop(
+    pytester: Pytester,
+):
+  """A patcher that raises on stop must not block the other repairs."""
+  _write_suite(
+      pytester,
+      _CONFTEST_SOURCE,
+      victim_unstoppable=_VICTIM_MODULE,
+      test_a_unstoppable=_UNSTOPPABLE_LEAK_SUITE,
+      test_b_restored=_UNSTOPPABLE_RESTORED_SUITE,
+  )
+
+  result = pytester.runpytest_subprocess()
+
+  result.assert_outcomes(passed=2, errors=1)
+  assert '2 mock patch(es) still installed' in result.stdout.str()
 
 
 def test_guard_detects_a_leak_that_replaces_a_stopped_patch(pytester: Pytester):
