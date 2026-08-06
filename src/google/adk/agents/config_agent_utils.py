@@ -17,6 +17,8 @@ from __future__ import annotations
 import importlib
 import inspect
 import os
+import pathlib
+import sys
 from typing import Any
 from typing import List
 
@@ -107,6 +109,54 @@ def _check_config_for_blocked_keys(node: Any, filename: str) -> None:
       _check_config_for_blocked_keys(item, filename)
 
 
+_ALLOWED_MODULE_PREFIX = "google.adk."
+
+# Top-level packages that own a config loaded in this process, populated by
+# _load_config_from_path. Additive for the process lifetime, so agents sharing
+# an agents_dir can reference each other's packages once both are loaded.
+_allowed_agent_packages: set[str] = set()
+
+
+def _agent_package_for_config(config_path: str) -> str:
+  """Returns the top-level importable package that owns a config file.
+
+  Walks up from the config's directory for as long as the *parent* is a regular
+  package (has ``__init__.py``), so the directory reached is the one
+  ``AgentLoader`` imports by name off ``sys.path``. An agent directory with no
+  ``__init__.py`` is a namespace package and owns itself.
+  """
+  package_dir = pathlib.Path(config_path).resolve().parent
+  while (
+      package_dir.parent != package_dir
+      and (package_dir.parent / "__init__.py").is_file()
+  ):
+    package_dir = package_dir.parent
+  return package_dir.name
+
+
+def _validate_module_reference(fully_qualified_name: str) -> None:
+  """Validates that a code reference points at an allowed module.
+
+  Agent configs may only reference ADK's own surface (``google.adk.*``) or the
+  top-level package that owns a config loaded in this process. Validation runs
+  before any import, so a rejected reference never executes a module body.
+
+  Raises:
+    ValueError: If the reference is outside the allowlist.
+  """
+  if fully_qualified_name.split(".")[0] in _allowed_agent_packages:
+    return
+  if fully_qualified_name.startswith(_ALLOWED_MODULE_PREFIX):
+    return
+  raise ValueError(
+      f"Disallowed module reference: {fully_qualified_name!r}. Agent configs"
+      f" may only reference '{_ALLOWED_MODULE_PREFIX}*' or the agent's own"
+      f" package (allowed: {sorted(_allowed_agent_packages)}). To use another"
+      " library, import it from your agent package and reference your own"
+      " wrapper."
+  )
+
+
 def _load_config_from_path(config_path: str) -> AgentConfig:
   """Load an agent's configuration from a YAML file.
 
@@ -124,6 +174,12 @@ def _load_config_from_path(config_path: str) -> AgentConfig:
   if not os.path.exists(config_path):
     raise FileNotFoundError(f"Config file not found: {config_path}")
 
+  # A directory named after a stdlib module must not authorize that module:
+  # import_module returns the already-cached stdlib one whatever sys.path says.
+  package = _agent_package_for_config(config_path)
+  if package and package not in sys.stdlib_module_names:
+    _allowed_agent_packages.add(package)
+
   with open(config_path, "r", encoding="utf-8") as f:
     config_data = yaml.safe_load(f)
 
@@ -133,95 +189,11 @@ def _load_config_from_path(config_path: str) -> AgentConfig:
   return AgentConfig.model_validate(config_data)
 
 
-_ENFORCE_DENYLIST = True
-
-# Modules that must never be imported via YAML agent configuration.
-# These provide direct access to the operating system, process execution,
-# or dynamic code evaluation and could be abused to achieve arbitrary
-# code execution when referenced in callback, tool, schema, or model
-# code-reference fields.
-_BLOCKED_MODULES = frozenset({
-    # Process / OS execution
-    "os",
-    "posix",  # Unix alias: posix.system is os.system
-    "nt",  # Windows alias: nt.system is os.system
-    "subprocess",
-    "_posixsubprocess",
-    "sys",
-    "builtins",
-    "importlib",
-    "shutil",
-    "signal",
-    "multiprocessing",
-    "threading",
-    # Dynamic code evaluation
-    "code",
-    "codeop",
-    "compileall",
-    "runpy",
-    # Native / unsafe extensions
-    "ctypes",
-    # Network access
-    "socket",
-    "_socket",
-    "http",
-    "urllib",
-    "ftplib",
-    "smtplib",
-    "poplib",
-    "imaplib",
-    "nntplib",
-    "telnetlib",
-    "xmlrpc",
-    "asyncio",
-    # Filesystem / serialisation
-    "tempfile",
-    "pathlib",
-    "shelve",
-    "pickle",
-    "marshal",
-    # Interactive / side-effect modules
-    "webbrowser",
-    "antigravity",
-    "pty",
-    "commands",
-    "pdb",
-    "profile",
-})
-
-
-def _validate_module_reference(fully_qualified_name: str) -> None:
-  """Validate that a module reference does not target a blocked module.
-
-  Args:
-    fully_qualified_name: The fully-qualified Python name to validate
-        (e.g. ``"my_package.my_module.my_func"``).
-
-  Raises:
-    ValueError: If the top-level module is in ``_BLOCKED_MODULES``.
-  """
-  if not _ENFORCE_DENYLIST:
-    return
-  # Extract the top-level package from the fully-qualified name.
-  top_module = fully_qualified_name.split(".")[0]
-  if top_module in _BLOCKED_MODULES:
-    raise ValueError(
-        f"Blocked module reference: {fully_qualified_name!r}. "
-        f"Importing from the '{top_module}' module is not allowed in "
-        "agent configurations because it can execute arbitrary code."
-    )
-
-
-def _set_enforce_denylist(value: bool) -> None:
-  global _ENFORCE_DENYLIST
-  _ENFORCE_DENYLIST = value
-
-
 @experimental(FeatureName.AGENT_CONFIG)
 def resolve_fully_qualified_name(name: str) -> Any:
+  _validate_module_reference(name)
   try:
     module_path, obj_name = name.rsplit(".", 1)
-    _validate_module_reference(name)
     module = importlib.import_module(module_path)
     return getattr(module, obj_name)
   except Exception as e:
