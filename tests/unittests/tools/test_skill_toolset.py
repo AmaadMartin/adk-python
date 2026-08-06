@@ -218,6 +218,36 @@ def test_clone_with_updated_skills(mock_skill1, mock_skill2):
   assert "my_tool" in new_toolset._provided_tools_by_name
 
 
+def test_init_accepts_non_list_sequence_additional_tools(mock_skill1):
+  """SkillToolset accepts any sequence of additional tools, not only a list."""
+  mock_tool = mock.create_autospec(skill_toolset.BaseTool, instance=True)
+  mock_tool.name = "my_tool"
+  mock_toolset = mock.create_autospec(skill_toolset.BaseToolset, instance=True)
+
+  toolset = skill_toolset.SkillToolset(
+      [mock_skill1], additional_tools=(mock_tool, mock_toolset)
+  )
+
+  assert toolset._provided_tools_by_name == {"my_tool": mock_tool}
+  assert toolset._provided_toolsets == [mock_toolset]
+
+
+def test_clone_with_updated_skills_preserves_toolsets(mock_skill1, mock_skill2):
+  """The clone keeps both the provided tools and the provided toolsets."""
+  mock_tool = mock.create_autospec(skill_toolset.BaseTool, instance=True)
+  mock_tool.name = "my_tool"
+  mock_toolset = mock.create_autospec(skill_toolset.BaseToolset, instance=True)
+
+  toolset = skill_toolset.SkillToolset(
+      [mock_skill1], additional_tools=[mock_tool, mock_toolset]
+  )
+
+  new_toolset = toolset.clone_with_updated_skills([mock_skill2])
+
+  assert new_toolset._provided_tools_by_name == {"my_tool": mock_tool}
+  assert new_toolset._provided_toolsets == [mock_toolset]
+
+
 def test_init_accepts_environment(mock_skill1):
   """SkillToolset stores the provided environment."""
   mock_env = mock.create_autospec(BaseEnvironment, instance=True)
