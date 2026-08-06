@@ -19,6 +19,7 @@ from collections.abc import Sequence
 import importlib
 import os
 import pathlib
+import sys
 from types import ModuleType
 
 import pytest
@@ -52,13 +53,14 @@ def _make_source_dir(tmp_path: pathlib.Path) -> pathlib.Path:
   return source_dir
 
 
-def _fake_build_main(
+def _fake_sphinx_run(
     status: int, warning_text: str, recorder: dict[str, str]
 ) -> Callable[[list[str]], int]:
-  """Returns a `build_main` stand-in that records the build it was asked for."""
+  """Returns a `_run_sphinx` stand-in that records the build it was asked for."""
 
   def build(argv: list[str]) -> int:
     source_dir = pathlib.Path(argv[-2])
+    recorder['argv'] = ' '.join(argv)
     recorder['source_dir'] = str(source_dir)
     recorder['output_dir'] = argv[-1]
     recorder['document'] = (source_dir / 'google-adk.rst').read_text(
@@ -226,6 +228,23 @@ def test_find_unexpected_import_failures_ignores_other_warnings() -> None:
   assert build_api_docs.find_unexpected_import_failures(warnings) == []
 
 
+def test_run_sphinx_delegates_to_the_sphinx_entry_point(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  recorded: list[list[str]] = []
+  fake_module = ModuleType('sphinx.cmd.build')
+
+  def build_main(argv: list[str]) -> int:
+    recorded.append(argv)
+    return 7
+
+  fake_module.build_main = build_main
+  monkeypatch.setitem(sys.modules, 'sphinx.cmd.build', fake_module)
+
+  assert build_api_docs._run_sphinx(['-b', 'html']) == 7
+  assert recorded == [['-b', 'html']]
+
+
 def test_default_source_dir_holds_the_checked_in_sphinx_config() -> None:
   source_dir = build_api_docs._default_source_dir()
 
@@ -245,8 +264,8 @@ def test_main_succeeds_when_sphinx_reports_no_unknown_failure(
   recorder: dict[str, str] = {}
   monkeypatch.setattr(
       build_api_docs,
-      'build_main',
-      _fake_build_main(
+      '_run_sphinx',
+      _fake_sphinx_run(
           0,
           "WARNING: autodoc: failed to import module 'integrations."
           "agent_identity' from module 'google.adk'; raised: boom\n",
@@ -258,6 +277,7 @@ def test_main_succeeds_when_sphinx_reports_no_unknown_failure(
   assert build_api_docs.main(['--source-dir', str(source_dir)]) == 0
   assert capsys.readouterr().err == ''
   assert '.. automodule:: pkg_ok.alpha\n' in recorder['document']
+  assert '-T' in recorder['argv'].split()
 
 
 def test_main_builds_outside_the_source_directory(
@@ -267,7 +287,7 @@ def test_main_builds_outside_the_source_directory(
   monkeypatch.setattr(build_api_docs, '_ROOT_PACKAGE', package.__name__)
   recorder: dict[str, str] = {}
   monkeypatch.setattr(
-      build_api_docs, 'build_main', _fake_build_main(0, '', recorder)
+      build_api_docs, '_run_sphinx', _fake_sphinx_run(0, '', recorder)
   )
   source_dir = _make_source_dir(tmp_path)
 
@@ -287,7 +307,7 @@ def test_main_writes_html_to_the_requested_output_dir(
   monkeypatch.setattr(build_api_docs, '_ROOT_PACKAGE', package.__name__)
   recorder: dict[str, str] = {}
   monkeypatch.setattr(
-      build_api_docs, 'build_main', _fake_build_main(0, '', recorder)
+      build_api_docs, '_run_sphinx', _fake_sphinx_run(0, '', recorder)
   )
   source_dir = _make_source_dir(tmp_path)
   output_dir = tmp_path / 'html'
@@ -314,8 +334,8 @@ def test_main_returns_the_sphinx_exit_code(
   recorder: dict[str, str] = {}
   monkeypatch.setattr(
       build_api_docs,
-      'build_main',
-      _fake_build_main(
+      '_run_sphinx',
+      _fake_sphinx_run(
           2,
           "WARNING: autodoc: failed to import module 'agents' from module"
           " 'google.adk'; raised: boom\n",
@@ -338,8 +358,8 @@ def test_main_fails_on_an_unexpected_autodoc_import_failure(
   recorder: dict[str, str] = {}
   monkeypatch.setattr(
       build_api_docs,
-      'build_main',
-      _fake_build_main(
+      '_run_sphinx',
+      _fake_sphinx_run(
           0,
           "WARNING: autodoc: failed to import module 'agents' from module"
           " 'google.adk'; raised: boom\n",

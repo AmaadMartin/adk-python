@@ -44,8 +44,6 @@ import sys
 import tempfile
 from types import ModuleType
 
-from sphinx.cmd.build import build_main
-
 _ROOT_PACKAGE = 'google.adk'
 
 # Package prefixes whose autodoc import failure is known and tracked
@@ -140,6 +138,18 @@ def _is_allowed(module: str) -> bool:
   )
 
 
+def _run_sphinx(argv: list[str]) -> int:
+  """Runs a Sphinx build and returns its exit code.
+
+  Sphinx is imported here rather than at module level so that the helpers
+  above, and the unit tests that cover them, import without the `docs` extra.
+  The unit-test CI job installs only the `test` extra.
+  """
+  from sphinx.cmd.build import build_main
+
+  return build_main(argv)
+
+
 def _default_source_dir() -> str:
   """Returns the checked-in Sphinx source directory."""
   repo_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -175,8 +185,10 @@ def main(argv: list[str]) -> int:
 
     warnings_path = os.path.join(build_dir, 'warnings.txt')
     output_dir = args.output_dir or os.path.join(build_dir, 'html')
-    status = build_main(
-        ['-b', 'html', '-w', warnings_path, source_dir, output_dir]
+    # -T prints the full traceback when the build crashes. Sphinx otherwise
+    # writes it to a temporary file that a CI runner discards.
+    status = _run_sphinx(
+        ['-b', 'html', '-T', '-w', warnings_path, source_dir, output_dir]
     )
     if status != 0:
       return status
