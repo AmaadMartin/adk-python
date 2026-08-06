@@ -46,3 +46,9 @@ html_theme = 'furo'
 
 autoclass_content = 'both'
 autodoc_pydantic_model_show_config_summary = False
+
+# Several ADK models hold fields that pydantic cannot put in a JSON schema,
+# such as httpx.Client. autodoc-pydantic then rebuilds the model in its own
+# module namespace, where the annotations no longer resolve, and the build
+# aborts. The smoke gate therefore renders no JSON schemas.
+autodoc_pydantic_model_show_json = False
