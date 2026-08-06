@@ -14,6 +14,11 @@
 
 name: Constraints Check
 
+# Keep both `paths` lists in sync, and keep this file itself in both. The job
+# diffs uv's output byte-for-byte, so the pinned uv `version:` below has to be
+# bumped together with a regeneration; a pull request touching only this file
+# would otherwise run no check at all, and the mismatched pin would surface
+# later as a failure on someone else's unrelated pull request.
 on:
   push:
     branches: [main]
@@ -21,12 +26,14 @@ on:
       - 'pyproject.toml'
       - 'constraints-*.txt'
       - 'scripts/update_constraints.sh'
+      - '.github/workflows/constraints-check.yml'
   pull_request:
     branches: [main]
     paths:
       - 'pyproject.toml'
       - 'constraints-*.txt'
       - 'scripts/update_constraints.sh'
+      - '.github/workflows/constraints-check.yml'
 
 permissions:
   contents: read
