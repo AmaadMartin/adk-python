@@ -55,8 +55,12 @@ for arg in "$@"; do
   esac
 done
 
+# The two flags name different snapshots to verify against: --check reads the
+# date out of each file, --refresh replaces it with today's. Combined, they
+# report every file as drifted the moment any dependency publishes a release,
+# and no rerun of the generator can clear that.
 if [ "$CHECK_ONLY" = true ] && [ "$REFRESH" = true ]; then
-  echo "❌ --check and --refresh cannot be combined: --check never writes." >&2
+  echo "❌ --check and --refresh cannot be combined: they disagree on which snapshot to verify." >&2
   usage
   exit 2
 fi
@@ -102,7 +106,7 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
     echo "❌ $TARGET_FILE records no snapshot date!"
     echo "   Without an '--exclude-newer YYYY-MM-DD' header there is nothing to verify its pins against."
     echo "   Please regenerate it locally and commit the changes:"
-    echo "   $ ./scripts/update_constraints.sh --refresh"
+    echo "   $ ./scripts/update_constraints.sh"
     EXIT_CODE=1
     continue
   fi

@@ -202,6 +202,10 @@ def test_check_fails_when_the_header_records_no_snapshot_date(
   assert result.returncode == 1
   assert 'constraints-3.12.txt records no snapshot date!' in result.stdout
   assert undated.read_text() == before
+  # The remedy is plain update mode, which dates only the undated file.
+  # Suggesting --refresh would advance the other four files as well.
+  assert '$ ./scripts/update_constraints.sh\n' in result.stdout
+  assert '--refresh' not in result.stdout
   # Resolving an undated file would silently verify the pins against the live
   # index, so the script must not invoke uv for that version at all.
   assert not [c for c in result.uv_calls if '--python-version 3.12 ' in c]
