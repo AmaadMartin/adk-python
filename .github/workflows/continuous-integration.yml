@@ -21,6 +21,7 @@ on:
       - '**.py'
       - '.pre-commit-config.yaml'
       - 'pyproject.toml'
+      - 'src/**/skills/**'
       - 'tests/**'
   pull_request:
     branches: [main, v1]
@@ -28,6 +29,7 @@ on:
       - '**.py'
       - '.pre-commit-config.yaml'
       - 'pyproject.toml'
+      - 'src/**/skills/**'
       - 'tests/**'
 
 permissions:
