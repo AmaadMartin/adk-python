@@ -22,13 +22,13 @@ docs/api-reference/, so CI notices when a dependency bump or a new module
 breaks that build.
 
 The build writes only into a temporary directory. It fails when Sphinx fails,
-or when autodoc cannot import a module that is not in
-`_ALLOWED_IMPORT_FAILURES`. Warnings are not errors here: the docstrings carry
-several hundred reStructuredText warnings that are tracked separately.
+or when autodoc cannot import a module. Warnings are not errors here: the
+docstrings carry several hundred reStructuredText warnings that are tracked
+separately.
 
 Usage:
 
-  python scripts/build_api_docs.py [--source-dir DIR] [--output-dir DIR]
+  python scripts/build_api_docs.py [--source-dir DIR]
 """
 
 from __future__ import annotations
@@ -46,13 +46,6 @@ from types import ModuleType
 
 _ROOT_PACKAGE = 'google.adk'
 
-# Package prefixes whose autodoc import failure is known and tracked
-# elsewhere. It is empty because every discovered module imports under
-# `uv sync --all-extras`. Add a prefix here only for a pre-existing failure
-# you cannot fix, and only with a linked follow-up issue. A submodule of a
-# listed prefix is allowed too.
-_ALLOWED_IMPORT_FAILURES: frozenset[str] = frozenset()
-
 # Emitted by autodoc as, for example:
 #   WARNING: autodoc: failed to import module 'agents' from module
 #   'google.adk'; the following exception was raised: ...
@@ -62,13 +55,9 @@ _IMPORT_FAILURE_RE = re.compile(
     r"(?: from module '(?P<parent>[^']+)')?"
 )
 
-_GENERATED_DOCUMENT = 'google-adk'
-
-_UNEXPECTED_FAILURE_HINT = (
-    'autodoc could not import the modules above. Fix the module, or, if the'
-    ' breakage is pre-existing and out of scope, add it to'
-    ' _ALLOWED_IMPORT_FAILURES in scripts/build_api_docs.py together with a'
-    ' linked follow-up issue.'
+_IMPORT_FAILURE_HINT = (
+    'autodoc could not import the modules above. Fix them so the API'
+    ' reference can document them.'
 )
 
 
@@ -112,30 +101,21 @@ def render_rst(modules: Sequence[str]) -> str:
   return '\n'.join(blocks)
 
 
-def find_unexpected_import_failures(warning_text: str) -> list[str]:
-  """Returns the sorted modules autodoc failed to import unexpectedly.
+def find_import_failures(warning_text: str) -> list[str]:
+  """Returns the sorted modules autodoc failed to import.
 
   Args:
     warning_text: The contents of the Sphinx warnings file.
 
   Returns:
-    Fully-qualified names of the modules that failed to import and are not
-    covered by `_ALLOWED_IMPORT_FAILURES`.
+    Fully-qualified names of the modules that failed to import.
   """
   failures: set[str] = set()
   for match in _IMPORT_FAILURE_RE.finditer(warning_text):
     module = match['module']
     parent = match['parent']
     failures.add(f'{parent}.{module}' if parent else module)
-  return sorted(f for f in failures if not _is_allowed(f))
-
-
-def _is_allowed(module: str) -> bool:
-  """Returns whether the module is covered by the import-failure allowlist."""
-  return any(
-      module == allowed or module.startswith(f'{allowed}.')
-      for allowed in _ALLOWED_IMPORT_FAILURES
-  )
+  return sorted(failures)
 
 
 def _run_sphinx(argv: list[str]) -> int:
@@ -163,28 +143,24 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
       default=_default_source_dir(),
       help='Directory holding the checked-in conf.py and index.rst.',
   )
-  parser.add_argument(
-      '--output-dir',
-      default=None,
-      help='Directory for the generated HTML. Defaults to a temporary one.',
-  )
   return parser.parse_args(argv)
 
 
 def main(argv: list[str]) -> int:
-  """Builds the API reference and reports unexpected autodoc failures."""
+  """Builds the API reference and reports autodoc import failures."""
   args = _parse_args(argv)
   package = importlib.import_module(_ROOT_PACKAGE)
 
   with tempfile.TemporaryDirectory() as build_dir:
     source_dir = os.path.join(build_dir, 'source')
     shutil.copytree(args.source_dir, source_dir)
-    document = os.path.join(source_dir, f'{_GENERATED_DOCUMENT}.rst')
+    # The name must match the toctree entry in docs/api-reference/index.rst.
+    document = os.path.join(source_dir, 'google-adk.rst')
     with open(document, 'w', encoding='utf-8') as f:
       f.write(render_rst(discover_modules(package)))
 
     warnings_path = os.path.join(build_dir, 'warnings.txt')
-    output_dir = args.output_dir or os.path.join(build_dir, 'html')
+    output_dir = os.path.join(build_dir, 'html')
     # -T prints the full traceback when the build crashes. Sphinx otherwise
     # writes it to a temporary file that a CI runner discards.
     status = _run_sphinx(
@@ -193,12 +169,12 @@ def main(argv: list[str]) -> int:
     if status != 0:
       return status
     with open(warnings_path, encoding='utf-8') as f:
-      unexpected = find_unexpected_import_failures(f.read())
+      failures = find_import_failures(f.read())
 
-  if not unexpected:
+  if not failures:
     return 0
-  print('\n'.join(unexpected), file=sys.stderr)
-  print(_UNEXPECTED_FAILURE_HINT, file=sys.stderr)
+  print('\n'.join(failures), file=sys.stderr)
+  print(_IMPORT_FAILURE_HINT, file=sys.stderr)
   return 1
 
 

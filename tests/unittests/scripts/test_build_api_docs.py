@@ -62,7 +62,6 @@ def _fake_sphinx_run(
     source_dir = pathlib.Path(argv[-2])
     recorder['argv'] = ' '.join(argv)
     recorder['source_dir'] = str(source_dir)
-    recorder['output_dir'] = argv[-1]
     recorder['document'] = (source_dir / 'google-adk.rst').read_text(
         encoding='utf-8'
     )
@@ -72,16 +71,6 @@ def _fake_sphinx_run(
     return status
 
   return build
-
-
-@pytest.fixture(name='allowlisted_package')
-def _allowlisted_package(monkeypatch: pytest.MonkeyPatch) -> None:
-  """Puts google.adk.integrations.agent_identity on the allowlist."""
-  monkeypatch.setattr(
-      build_api_docs,
-      '_ALLOWED_IMPORT_FAILURES',
-      frozenset({'google.adk.integrations.agent_identity'}),
-  )
 
 
 def test_discover_modules_returns_sorted_public_submodules(
@@ -164,68 +153,40 @@ def test_render_rst_of_no_modules_is_a_header_only_document() -> None:
   assert document == 'API Reference\n=============\n'
 
 
-def test_find_unexpected_import_failures_of_empty_text() -> None:
-  assert build_api_docs.find_unexpected_import_failures('') == []
+def test_find_import_failures_of_empty_text() -> None:
+  assert build_api_docs.find_import_failures('') == []
 
 
-@pytest.mark.usefixtures('allowlisted_package')
-def test_find_unexpected_import_failures_ignores_allowlisted_module() -> None:
-  warnings = (
-      "WARNING: autodoc: failed to import module 'integrations.agent_identity'"
-      " from module 'google.adk'; the following exception was raised: boom\n"
-  )
-
-  assert build_api_docs.find_unexpected_import_failures(warnings) == []
-
-
-def test_find_unexpected_import_failures_reports_other_module() -> None:
+def test_find_import_failures_reports_the_failed_module() -> None:
   warnings = (
       "WARNING: autodoc: failed to import module 'agents' from module"
       " 'google.adk'; the following exception was raised: boom\n"
   )
 
-  assert build_api_docs.find_unexpected_import_failures(warnings) == [
-      'google.adk.agents'
-  ]
+  assert build_api_docs.find_import_failures(warnings) == ['google.adk.agents']
 
 
-@pytest.mark.usefixtures('allowlisted_package')
-def test_find_unexpected_import_failures_ignores_allowlisted_submodule() -> (
-    None
-):
+def test_find_import_failures_reports_every_module_sorted() -> None:
   warnings = (
-      'WARNING: autodoc: failed to import module'
-      " 'integrations.agent_identity.gcp_auth_provider' from module"
-      " 'google.adk'; the following exception was raised: boom\n"
-  )
-
-  assert build_api_docs.find_unexpected_import_failures(warnings) == []
-
-
-@pytest.mark.usefixtures('allowlisted_package')
-def test_find_unexpected_import_failures_reports_only_unknown_modules() -> None:
-  warnings = (
-      "WARNING: autodoc: failed to import module 'integrations.agent_identity'"
-      " from module 'google.adk'; the following exception was raised: boom\n"
       "WARNING: autodoc: failed to import module 'tools' from module"
       " 'google.adk'; the following exception was raised: boom\n"
       "WARNING: autodoc: failed to import module 'google.adk.plugins'; the"
       ' following exception was raised: boom\n'
   )
 
-  assert build_api_docs.find_unexpected_import_failures(warnings) == [
+  assert build_api_docs.find_import_failures(warnings) == [
       'google.adk.plugins',
       'google.adk.tools',
   ]
 
 
-def test_find_unexpected_import_failures_ignores_other_warnings() -> None:
+def test_find_import_failures_ignores_other_warnings() -> None:
   warnings = (
       'docs/x.rst:12: WARNING: Unexpected indentation.\n'
       "WARNING: autosummary: failed to import module 'google.adk.agents'.\n"
   )
 
-  assert build_api_docs.find_unexpected_import_failures(warnings) == []
+  assert build_api_docs.find_import_failures(warnings) == []
 
 
 def test_run_sphinx_delegates_to_the_sphinx_entry_point(
@@ -253,8 +214,7 @@ def test_default_source_dir_holds_the_checked_in_sphinx_config() -> None:
   assert os.path.isfile(os.path.join(source_dir, 'index.rst'))
 
 
-@pytest.mark.usefixtures('allowlisted_package')
-def test_main_succeeds_when_sphinx_reports_no_unknown_failure(
+def test_main_succeeds_when_sphinx_reports_no_import_failure(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -267,8 +227,7 @@ def test_main_succeeds_when_sphinx_reports_no_unknown_failure(
       '_run_sphinx',
       _fake_sphinx_run(
           0,
-          "WARNING: autodoc: failed to import module 'integrations."
-          "agent_identity' from module 'google.adk'; raised: boom\n",
+          'docs/x.rst:12: WARNING: Unexpected indentation.\n',
           recorder,
       ),
   )
@@ -300,30 +259,6 @@ def test_main_builds_outside_the_source_directory(
   ]
 
 
-def test_main_writes_html_to_the_requested_output_dir(
-    tmp_path: pathlib.Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-  package = _make_package(tmp_path, monkeypatch, 'pkg_out', ('alpha.py',))
-  monkeypatch.setattr(build_api_docs, '_ROOT_PACKAGE', package.__name__)
-  recorder: dict[str, str] = {}
-  monkeypatch.setattr(
-      build_api_docs, '_run_sphinx', _fake_sphinx_run(0, '', recorder)
-  )
-  source_dir = _make_source_dir(tmp_path)
-  output_dir = tmp_path / 'html'
-
-  assert (
-      build_api_docs.main([
-          '--source-dir',
-          str(source_dir),
-          '--output-dir',
-          str(output_dir),
-      ])
-      == 0
-  )
-  assert recorder['output_dir'] == str(output_dir)
-
-
 def test_main_returns_the_sphinx_exit_code(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -348,7 +283,7 @@ def test_main_returns_the_sphinx_exit_code(
   assert capsys.readouterr().err == ''
 
 
-def test_main_fails_on_an_unexpected_autodoc_import_failure(
+def test_main_fails_on_an_autodoc_import_failure(
     tmp_path: pathlib.Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -371,8 +306,4 @@ def test_main_fails_on_an_unexpected_autodoc_import_failure(
   assert build_api_docs.main(['--source-dir', str(source_dir)]) == 1
   stderr = capsys.readouterr().err
   assert 'google.adk.agents' in stderr
-  assert '_ALLOWED_IMPORT_FAILURES' in stderr
-
-
-def test_no_import_failure_is_allowlisted_today() -> None:
-  assert build_api_docs._ALLOWED_IMPORT_FAILURES == frozenset()
+  assert 'Fix them so the API reference can document them.' in stderr
