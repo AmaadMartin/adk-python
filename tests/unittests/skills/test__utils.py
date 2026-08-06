@@ -16,6 +16,7 @@
 
 import builtins
 import io
+import logging
 import sys
 from unittest import mock
 import zipfile
@@ -29,6 +30,9 @@ from google.adk.skills._utils import _load_skill_from_zip_bytes
 from google.adk.skills._utils import _read_skill_properties
 from google.adk.skills._utils import _validate_skill_dir
 import pytest
+
+# Not valid UTF-8 in any position -- a stand-in for a real binary asset.
+_INVALID_UTF8 = b"\xff\xfe\xfd"
 
 
 def test__load_skill_from_dir(tmp_path):
@@ -67,6 +71,80 @@ Test instructions
   assert skill.resources.get_reference("ref1.md") == "ref1 content"
   assert skill.resources.get_asset("asset1.txt") == "asset1 content"
   assert skill.resources.get_script("script1.sh").src == "echo hello"
+
+
+def test__load_skill_from_dir_keeps_binary_resources(tmp_path):
+  """Tests non-UTF-8 references and assets are kept as bytes."""
+  skill_dir = tmp_path / "my-skill"
+  skill_dir.mkdir()
+  (skill_dir / "SKILL.md").write_text(
+      "---\nname: my-skill\ndescription: A skill\n---\nBody"
+  )
+
+  ref_dir = skill_dir / "references"
+  ref_dir.mkdir()
+  (ref_dir / "ref1.md").write_text("ref1 content")
+  (ref_dir / "data.bin").write_bytes(_INVALID_UTF8)
+
+  # Nested, to also cover rglob relative-path handling.
+  assets_dir = skill_dir / "assets" / "img"
+  assets_dir.mkdir(parents=True)
+  (assets_dir.parent / "notes.txt").write_text("notes content")
+  (assets_dir / "logo.png").write_bytes(_INVALID_UTF8)
+
+  skill = _load_skill_from_dir(skill_dir)
+
+  assert skill.resources.get_asset("img/logo.png") == _INVALID_UTF8
+  assert skill.resources.get_asset("notes.txt") == "notes content"
+  assert skill.resources.get_reference("data.bin") == _INVALID_UTF8
+  assert skill.resources.get_reference("ref1.md") == "ref1 content"
+  assert sorted(skill.resources.list_assets()) == ["img/logo.png", "notes.txt"]
+  assert sorted(skill.resources.list_references()) == ["data.bin", "ref1.md"]
+
+
+def test__load_skill_from_dir_drops_binary_scripts(tmp_path, caplog):
+  """Tests non-UTF-8 scripts are dropped with a warning."""
+  skill_dir = tmp_path / "my-skill"
+  skill_dir.mkdir()
+  (skill_dir / "SKILL.md").write_text(
+      "---\nname: my-skill\ndescription: A skill\n---\nBody"
+  )
+
+  scripts_dir = skill_dir / "scripts"
+  scripts_dir.mkdir()
+  (scripts_dir / "good.sh").write_text("echo hello")
+  (scripts_dir / "bad.bin").write_bytes(_INVALID_UTF8)
+
+  with caplog.at_level(logging.WARNING):
+    skill = _load_skill_from_dir(skill_dir)
+
+  assert skill.resources.list_scripts() == ["good.sh"]
+  assert skill.resources.get_script("bad.bin") is None
+  assert skill.resources.get_script("good.sh").src == "echo hello"
+  assert "bad.bin" in caplog.text
+
+
+def test__load_skill_from_dir_translates_crlf_in_text_resources(tmp_path):
+  """Tests CRLF text resources are still newline-translated, not kept raw.
+
+  ``_load_dir`` must keep reading text through ``read_text``. Collapsing it to
+  ``read_bytes().decode("utf-8")`` to share one read with the binary fallback
+  would skip text mode's universal-newline translation and silently hand
+  callers ``\\r\\n``.
+  """
+  skill_dir = tmp_path / "my-skill"
+  skill_dir.mkdir()
+  (skill_dir / "SKILL.md").write_text(
+      "---\nname: my-skill\ndescription: A skill\n---\nBody"
+  )
+
+  ref_dir = skill_dir / "references"
+  ref_dir.mkdir()
+  (ref_dir / "crlf.md").write_bytes(b"line1\r\nline2\r\n")
+
+  skill = _load_skill_from_dir(skill_dir)
+
+  assert skill.resources.get_reference("crlf.md") == "line1\nline2\n"
 
 
 def test_allowed_tools_yaml_key(tmp_path):
@@ -298,6 +376,51 @@ def test__load_skill_from_gcs_dir(mock_client_class):
   assert skill.resources.get_reference("ref1.md") == "ref1 content"
 
 
+@mock.patch("google.cloud.storage.Client")
+def test__load_skill_from_gcs_dir_binary_contract(mock_client_class, caplog):
+  """Tests GCS keeps binary assets as bytes and drops binary scripts."""
+  mock_client = mock.MagicMock()
+  mock_client_class.return_value = mock_client
+  mock_bucket = mock.MagicMock()
+  mock_client.bucket.return_value = mock_bucket
+
+  def mock_blob_side_effect(path):
+    m = mock.MagicMock()
+    m.exists.return_value = path.endswith("SKILL.md")
+    m.download_as_text.return_value = (
+        "---\nname: my-skill\ndescription: Test description\n---\nTest"
+        " instructions"
+    )
+    return m
+
+  mock_bucket.blob.side_effect = mock_blob_side_effect
+
+  def binary_blob(name: str):
+    m = mock.MagicMock()
+    m.name = name
+    m.download_as_text.side_effect = UnicodeDecodeError(
+        "utf-8", _INVALID_UTF8, 0, 1, "invalid start byte"
+    )
+    m.download_as_bytes.return_value = _INVALID_UTF8
+    return m
+
+  def list_blobs_side_effect(prefix: str):
+    if prefix.endswith("assets/"):
+      return [binary_blob(prefix + "logo.png")]
+    if prefix.endswith("scripts/"):
+      return [binary_blob(prefix + "bad.bin")]
+    return []
+
+  mock_bucket.list_blobs.side_effect = list_blobs_side_effect
+
+  with caplog.at_level(logging.WARNING):
+    skill = _load_skill_from_gcs_dir("my-bucket", "skills/my-skill/")
+
+  assert skill.resources.get_asset("logo.png") == _INVALID_UTF8
+  assert skill.resources.list_scripts() == []
+  assert "bad.bin" in caplog.text
+
+
 def test_list_skills_in_dir(tmp_path):
   """Tests listing skills in a directory."""
   skills_dir = tmp_path / "skills"
@@ -366,6 +489,43 @@ def test__load_skill_from_zip_bytes():
   assert skill.instructions == "Body instructions"
   assert skill.resources.get_reference("ref1.md") == "ref1 content"
   assert skill.resources.get_script("script1.sh").src == "echo hello"
+
+
+def test__load_skill_from_zip_bytes_keeps_binary_resources():
+  """Tests non-UTF-8 zip members are kept as bytes."""
+  zip_buffer = io.BytesIO()
+  with zipfile.ZipFile(zip_buffer, "w") as z:
+    z.writestr(
+        "SKILL.md",
+        "---\nname: my-skill\ndescription: A skill\n---\nBody instructions",
+    )
+    z.writestr("references/ref1.md", "ref1 content")
+    z.writestr("assets/logo.png", _INVALID_UTF8)
+
+  skill = _load_skill_from_zip_bytes(zip_buffer.getvalue())
+
+  assert skill.resources.get_asset("logo.png") == _INVALID_UTF8
+  assert skill.resources.get_reference("ref1.md") == "ref1 content"
+
+
+def test__load_skill_from_zip_bytes_drops_binary_scripts(caplog):
+  """Tests non-UTF-8 zipped scripts are dropped with a warning."""
+  zip_buffer = io.BytesIO()
+  with zipfile.ZipFile(zip_buffer, "w") as z:
+    z.writestr(
+        "SKILL.md",
+        "---\nname: my-skill\ndescription: A skill\n---\nBody instructions",
+    )
+    z.writestr("scripts/script1.sh", "echo hello")
+    z.writestr("scripts/bad.bin", _INVALID_UTF8)
+
+  with caplog.at_level(logging.WARNING):
+    skill = _load_skill_from_zip_bytes(zip_buffer.getvalue())
+
+  assert skill.resources.list_scripts() == ["script1.sh"]
+  assert skill.resources.get_script("bad.bin") is None
+  assert skill.resources.get_script("script1.sh").src == "echo hello"
+  assert "bad.bin" in caplog.text
 
 
 def test__list_skills_in_gcs_dir_import_error():

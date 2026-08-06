@@ -40,16 +40,17 @@ _ALLOWED_FRONTMATTER_KEYS = frozenset({
 })
 
 
-def _load_dir(directory: pathlib.Path) -> dict[str, str]:
+def _load_dir(directory: pathlib.Path) -> dict[str, str | bytes]:
   """Recursively load files from a directory into a dictionary.
 
   Args:
     directory: Path to the directory to load.
 
   Returns:
-    Dictionary mapping relative file paths to their string content.
+    Dictionary mapping relative file paths to their content. UTF-8 decodable
+    files are returned as ``str``; other files are returned as raw ``bytes``.
   """
-  files = {}
+  files: dict[str, str | bytes] = {}
   if directory.exists() and directory.is_dir():
     for file_path in directory.rglob("*"):
       if "__pycache__" in file_path.parts:
@@ -57,11 +58,36 @@ def _load_dir(directory: pathlib.Path) -> dict[str, str]:
       if file_path.is_file():
         relative_path = file_path.relative_to(directory)
         try:
+          # read_text, not read_bytes().decode(): text mode applies
+          # universal-newline translation, which callers already rely on.
           files[str(relative_path)] = file_path.read_text(encoding="utf-8")
         except UnicodeDecodeError:
-          # Binary files or non-UTF-8 files are skipped for text content.
-          continue
+          files[str(relative_path)] = file_path.read_bytes()
   return files
+
+
+def _build_scripts(
+    raw_scripts: dict[str, str | bytes],
+) -> dict[str, models.Script]:
+  """Wraps loaded script sources in Script models.
+
+  ``models.Script.src`` is a ``str``: a script whose bytes are not valid UTF-8
+  cannot be executed, so it is dropped with a warning rather than kept as
+  binary content.
+
+  Args:
+    raw_scripts: Mapping of relative script path to its loaded content.
+
+  Returns:
+    Mapping of relative script path to Script, excluding binary entries.
+  """
+  scripts: dict[str, models.Script] = {}
+  for name, src in raw_scripts.items():
+    if isinstance(src, bytes):
+      logging.warning("Skipping non-UTF-8 script '%s'.", name)
+      continue
+    scripts[name] = models.Script(src=src)
+  return scripts
 
 
 def _parse_skill_md_content(content: str) -> tuple[dict, str]:
@@ -162,9 +188,7 @@ def _load_skill_from_dir(skill_dir: Union[str, pathlib.Path]) -> models.Skill:
   references = _load_dir(skill_dir / "references")
   assets = _load_dir(skill_dir / "assets")
   raw_scripts = _load_dir(skill_dir / "scripts")
-  scripts = {
-      name: models.Script(src=content) for name, content in raw_scripts.items()
-  }
+  scripts = _build_scripts(raw_scripts)
 
   resources = models.Resources(
       references=references,
@@ -264,8 +288,8 @@ def _load_skill_from_zip_bytes(zip_bytes: bytes) -> models.Skill:
     frontmatter = models.Frontmatter.model_validate(parsed)
 
     # Helper to load files under a directory prefix inside the zip
-    def _load_zip_dir(prefix: str) -> dict[str, str]:
-      result = {}
+    def _load_zip_dir(prefix: str) -> dict[str, str | bytes]:
+      result: dict[str, str | bytes] = {}
       if not prefix.endswith("/"):
         prefix += "/"
       for info in z.infolist():
@@ -278,19 +302,17 @@ def _load_skill_from_zip_bytes(zip_bytes: bytes) -> models.Skill:
           relative_path = info.filename[len(prefix) :]
           if not relative_path:
             continue
+          raw = z.read(info)
           try:
-            result[relative_path] = z.read(info).decode("utf-8")
+            result[relative_path] = raw.decode("utf-8")
           except UnicodeDecodeError:
-            continue
+            result[relative_path] = raw
       return result
 
     references = _load_zip_dir("references")
     assets = _load_zip_dir("assets")
     raw_scripts = _load_zip_dir("scripts")
-    scripts = {
-        name: models.Script(src=content)
-        for name, content in raw_scripts.items()
-    }
+    scripts = _build_scripts(raw_scripts)
 
     resources = models.Resources(
         references=references,
@@ -566,14 +588,7 @@ def _load_skill_from_gcs_dir(
   assets = _load_files_in_dir("assets")
   raw_scripts = _load_files_in_dir("scripts")
 
-  scripts = {}
-  for name, src in raw_scripts.items():
-    if isinstance(src, bytes):
-      try:
-        src = src.decode("utf-8")
-      except UnicodeDecodeError:
-        continue  # skip binary scripts if any
-    scripts[name] = models.Script(src=src)
+  scripts = _build_scripts(raw_scripts)
 
   resources = models.Resources(
       references=references,
