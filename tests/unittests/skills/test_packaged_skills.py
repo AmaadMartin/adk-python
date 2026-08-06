@@ -68,10 +68,6 @@ def test_packaged_skill_loads(skill_dir: pathlib.Path):
   """Every packaged manifest parses through the public skills loader."""
   skill = load_skill_from_dir(skill_dir)
 
-  # The loader already rejects a name mismatch and an empty description, so
-  # these two restate the contract at the call site rather than extend it.
-  assert skill.name == skill_dir.name
-  assert skill.description
   assert skill.instructions.strip()
 
 
@@ -86,10 +82,7 @@ def test_packaged_skill_reports_no_validator_problems(skill_dir: pathlib.Path):
 @_for_each_packaged_skill
 def test_packaged_skill_references_are_non_empty(skill_dir: pathlib.Path):
   """Every reference document shipped alongside a skill has content."""
-  resources = load_skill_from_dir(skill_dir).resources
+  references = load_skill_from_dir(skill_dir).resources.references
 
-  for name in resources.list_references():
-    content = resources.get_reference(name)
-
-    assert content is not None, f"{skill_dir.name}: {name} is missing"
+  for name, content in references.items():
     assert content.strip(), f"{skill_dir.name}: {name} is empty"
