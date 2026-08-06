@@ -83,14 +83,16 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
 
   echo "Found generation command: $GENERATION_CMD"
 
-  STABLE_FILE="constraints-${ver}.txt.stable.tmp"
   NEW_FILE="constraints-${ver}.txt.new.tmp"
 
-  # Copy the existing constraints to STABLE_FILE if it exists and is not empty
+  # Seed the candidate with the committed pins. uv reads an existing output
+  # file as version *preferences*, which keeps resolutions stable across runs.
+  # Do not pass the committed file via --constraint: uv then records it as a
+  # source in every "# via" annotation, so the regenerated file can never
+  # match the committed one and the check reports a permanent diff.
+  rm -f "$NEW_FILE"
   if [ -s "$TARGET_FILE" ]; then
-    cp "$TARGET_FILE" "$STABLE_FILE"
-  else
-    touch "$STABLE_FILE"
+    cp "$TARGET_FILE" "$NEW_FILE"
   fi
 
   # Modify the GENERATION_CMD to output to NEW_FILE.
@@ -98,27 +100,13 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
   RUN_CMD=$(echo "$RUN_CMD" | sed -E "s/--output-file [^ ]+/--output-file $NEW_FILE/")
   RUN_CMD=$(echo "$RUN_CMD" | sed -E "s/--output-file=[^ ]+/--output-file=$NEW_FILE/")
 
-  # Execute the command, also adding STABLE_FILE as a constraint to stabilize resolution.
-  echo "Running: $RUN_CMD --constraint $STABLE_FILE"
-  if ! eval "$RUN_CMD --constraint $STABLE_FILE"; then
-    if [ "$CHECK_ONLY" = true ]; then
-      echo "❌ Resolution failed with stable constraints for $TARGET_FILE."
-      echo "   This usually happens when a new dependency requirement in pyproject.toml conflicts with existing pinned versions."
-      echo "   To fix this, run the update script locally to resolve conflicts and update constraints:"
-      echo "   $ ./scripts/update_constraints.sh"
-      rm -f "$STABLE_FILE" "$NEW_FILE"
-      EXIT_CODE=1
-      continue
-    else
-      echo "⚠️ Resolution failed with stable constraints. Retrying without constraints to allow upgrades..."
-      echo "Running: $RUN_CMD"
-      if ! eval "$RUN_CMD"; then
-        echo "❌ Resolution failed even without constraints."
-        rm -f "$STABLE_FILE" "$NEW_FILE"
-        EXIT_CODE=1
-        continue
-      fi
-    fi
+  echo "Running: $RUN_CMD"
+  if ! eval "$RUN_CMD"; then
+    echo "❌ Resolution failed for $TARGET_FILE."
+    echo "   A dependency requirement in pyproject.toml cannot be satisfied for Python $ver."
+    rm -f "$NEW_FILE"
+    EXIT_CODE=1
+    continue
   fi
 
   # Reconstruct NEW_FILE to have the clean GENERATION_CMD in its header
@@ -133,19 +121,19 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
   # Compare
   if diff -u "$TARGET_FILE" "$NEW_FILE"; then
     echo "✅ $TARGET_FILE is up-to-date."
-    rm -f "$STABLE_FILE" "$NEW_FILE"
+    rm -f "$NEW_FILE"
   else
     if [ "$CHECK_ONLY" = true ]; then
       echo "❌ $TARGET_FILE is OUT OF DATE!"
       echo "   Please run the update script locally to update it and commit the changes:"
       echo "   $ ./scripts/update_constraints.sh"
-      rm -f "$STABLE_FILE" "$NEW_FILE"
+      rm -f "$NEW_FILE"
       EXIT_CODE=1
     else
       echo "🔄 $TARGET_FILE was OUT OF DATE. Updating it automatically..."
       cp "$NEW_FILE" "$TARGET_FILE"
       echo "✅ $TARGET_FILE has been updated locally."
-      rm -f "$STABLE_FILE" "$NEW_FILE"
+      rm -f "$NEW_FILE"
       EXIT_CODE=1
     fi
   fi
