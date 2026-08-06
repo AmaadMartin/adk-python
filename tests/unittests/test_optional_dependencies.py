@@ -207,7 +207,7 @@ def _fake_rouge_score_raising(error: ImportError) -> types.ModuleType:
   def _raise(name: str) -> NoReturn:
     raise error
 
-  setattr(fake, "__getattr__", _raise)
+  fake.__getattr__ = _raise
   return fake
 
 
@@ -254,8 +254,8 @@ def test_rouge_scorer_shim_reexports_when_import_succeeds():
   fake = types.ModuleType("rouge_score")
   fake_rouge_scorer = types.ModuleType("rouge_score.rouge_scorer")
   fake_tokenizers = types.ModuleType("rouge_score.tokenizers")
-  setattr(fake, "rouge_scorer", fake_rouge_scorer)
-  setattr(fake, "tokenizers", fake_tokenizers)
+  fake.rouge_scorer = fake_rouge_scorer
+  fake.tokenizers = fake_tokenizers
   with mock.patch.dict("sys.modules", {"rouge_score": fake}):
     module = _exec_rouge_scorer_shim()
 
