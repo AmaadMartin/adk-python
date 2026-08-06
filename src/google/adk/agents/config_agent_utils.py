@@ -82,7 +82,7 @@ def _resolve_agent_class(agent_class: str) -> type[BaseAgent]:
   )
 
 
-_BLOCKED_YAML_KEYS = frozenset({"args"})
+_BLOCKED_YAML_KEYS = frozenset({"args", "kwargs"})
 _ENFORCE_YAML_KEY_DENYLIST = False
 
 
@@ -101,6 +101,10 @@ def _check_config_for_blocked_keys(node: Any, filename: str) -> None:
             f"The '{key}' field is not allowed in agent configurations "
             "because it can execute arbitrary code."
         )
+      if key in ("name", "code", "agent_class") and isinstance(value, str):
+        top_module = value.split(".")[0]
+        if top_module in _BLOCKED_MODULES:
+          raise ValueError(f"Blocked module reference: {value!r}")
       _check_config_for_blocked_keys(value, filename)
   elif isinstance(node, list):
     for item in node:

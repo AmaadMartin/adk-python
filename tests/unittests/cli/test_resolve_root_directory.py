@@ -26,6 +26,10 @@ from google.adk.cli.built_in_agents.tools.write_files import write_files
 from google.adk.cli.built_in_agents.utils.resolve_root_directory import resolve_file_path
 import pytest
 
+@pytest.fixture(autouse=True)
+def mock_getcwd(monkeypatch, tmp_path):
+  monkeypatch.setattr(os, "getcwd", lambda: str(tmp_path))
+
 
 def _tool_context(root: Path) -> mock.MagicMock:
   tool_context = mock.MagicMock()
