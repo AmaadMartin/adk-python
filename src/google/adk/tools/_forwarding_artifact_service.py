@@ -31,7 +31,7 @@ if TYPE_CHECKING:
 class ForwardingArtifactService(BaseArtifactService):
   """Artifact service that forwards to the parent tool context."""
 
-  def __init__(self, tool_context: ToolContext):
+  def __init__(self, tool_context: ToolContext[Any]):
     self.tool_context = tool_context
     self._invocation_context = tool_context._invocation_context
 

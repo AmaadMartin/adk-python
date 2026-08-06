@@ -47,7 +47,7 @@ class PreloadMemoryTool(BaseTool):
   async def process_llm_request(
       self,
       *,
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       llm_request: LlmRequest,
   ) -> None:
     user_content = tool_context.user_content

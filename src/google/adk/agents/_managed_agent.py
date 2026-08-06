@@ -210,7 +210,7 @@ class ManagedAgent(BaseAgent):
     return self._api_client
 
   async def canonical_instruction(
-      self, ctx: ReadonlyContext
+      self, ctx: ReadonlyContext[Any]
   ) -> tuple[str, bool]:
     """Resolves ``self.instruction`` for the current context.
 
@@ -249,7 +249,7 @@ class ManagedAgent(BaseAgent):
     # real call uses ``agent=self.agent_id``.
     llm_request = LlmRequest(config=types.GenerateContentConfig())
     llm_request._is_managed_agent = True
-    tool_context = ToolContext(ctx)
+    tool_context = ToolContext[Any](ctx)
     mcp_params: list[ToolParam] = []
 
     for tool in self.tools:
@@ -351,7 +351,7 @@ class ManagedAgent(BaseAgent):
 
   @override
   async def _run_impl(
-      self, *, ctx: Context, node_input: Any
+      self, *, ctx: Context[Any], node_input: Any
   ) -> AsyncGenerator[Event, None]:
     """Runs the ManagedAgent as a node, threading node_input into user_content.
 

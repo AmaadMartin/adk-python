@@ -160,7 +160,7 @@ class AgentEngineSandboxComputer(BaseComputer):
     # Session state for sharing sandbox/tokens across invocations
     self._session_state: dict[str, Any] | None = None
 
-  async def prepare(self, tool_context: "ToolContext") -> None:
+  async def prepare(self, tool_context: "ToolContext[Any]") -> None:
     """Bind session state for sandbox resource sharing."""
     self._session_state = tool_context.state
 

@@ -52,7 +52,7 @@ class BigQueryToolset(BaseToolset):
     )
 
   def _is_tool_selected(
-      self, tool: BaseTool, readonly_context: Optional[ReadonlyContext]
+      self, tool: BaseTool, readonly_context: Optional[ReadonlyContext[Any]]
   ) -> bool:
     if self.tool_filter is None:
       return True
@@ -67,7 +67,7 @@ class BigQueryToolset(BaseToolset):
 
   @override
   async def get_tools(
-      self, readonly_context: Optional[ReadonlyContext] = None
+      self, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> List[BaseTool]:
     """Get tools from the toolset."""
     funcs: list[Callable[..., Any]] = [

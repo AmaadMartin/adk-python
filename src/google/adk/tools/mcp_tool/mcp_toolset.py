@@ -202,7 +202,7 @@ class McpToolset(BaseToolset):
     self._use_mcp_resources = use_mcp_resources
 
   def _get_auth_headers(
-      self, readonly_context: Optional[ReadonlyContext] = None
+      self, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> Optional[Dict[str, str]]:
     """Build authentication headers from exchanged credential.
 
@@ -325,7 +325,7 @@ class McpToolset(BaseToolset):
       self,
       coroutine_func: Callable[[Any], Awaitable[T]],
       error_message: str,
-      readonly_context: Optional[ReadonlyContext] = None,
+      readonly_context: Optional[ReadonlyContext[Any]] = None,
   ) -> T:
     """Creates a session and executes a coroutine with it."""
     headers: Dict[str, str] = {}
@@ -364,7 +364,7 @@ class McpToolset(BaseToolset):
   @retry_on_errors
   async def get_tools(
       self,
-      readonly_context: Optional[ReadonlyContext] = None,
+      readonly_context: Optional[ReadonlyContext[Any]] = None,
   ) -> List[BaseTool]:
     """Return all tools in the toolset based on the provided context.
 
@@ -414,7 +414,7 @@ class McpToolset(BaseToolset):
     return tools
 
   async def read_resource(
-      self, name: str, readonly_context: Optional[ReadonlyContext] = None
+      self, name: str, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> Any:
     """Fetches and returns a list of contents of the named resource.
 
@@ -437,7 +437,7 @@ class McpToolset(BaseToolset):
     return result.contents
 
   async def list_resources(
-      self, readonly_context: Optional[ReadonlyContext] = None
+      self, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> list[str]:
     """Returns a list of resource names available on the MCP server."""
     result: ListResourcesResult = await self._execute_with_session(
@@ -448,7 +448,7 @@ class McpToolset(BaseToolset):
     return [resource.name for resource in result.resources]
 
   async def get_resource_info(
-      self, name: str, readonly_context: Optional[ReadonlyContext] = None
+      self, name: str, readonly_context: Optional[ReadonlyContext[Any]] = None
   ) -> dict[str, Any]:
     """Returns metadata about a specific resource (name, MIME type, etc.)."""
     result: ListResourcesResult = await self._execute_with_session(

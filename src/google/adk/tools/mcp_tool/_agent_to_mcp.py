@@ -15,6 +15,7 @@
 """Expose an ADK agent as an MCP server."""
 
 from __future__ import annotations
+from typing import Any
 
 import base64
 from typing import MutableMapping
@@ -83,7 +84,7 @@ def _part_to_content(part: types.Part) -> Optional[mcp_types.ContentBlock]:
 async def _run_agent(
     runner: Runner,
     request: str,
-    ctx: Optional[Context] = None,
+    ctx: Optional[Context[Any]] = None,
     sessions: Optional[MutableMapping[object, str]] = None,
 ) -> list[mcp_types.ContentBlock]:
   """Runs the agent for one request and returns its final response content.
@@ -184,7 +185,7 @@ def to_mcp_server(
   sessions: MutableMapping[object, str] = weakref.WeakKeyDictionary()
 
   async def call_agent(
-      request: str, ctx: Context
+      request: str, ctx: Context[Any]
   ) -> list[mcp_types.ContentBlock]:
     return await _run_agent(agent_runner, request, ctx, sessions)
 

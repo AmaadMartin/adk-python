@@ -104,7 +104,7 @@ class AgentRegistrySingleMcpToolset(McpToolset):
 
   @override
   async def get_tools(
-      self, readonly_context: ReadonlyContext | None = None
+      self, readonly_context: ReadonlyContext[Any] | None = None
   ) -> List[BaseTool]:
     tools: List[BaseTool] = await super().get_tools(readonly_context)
 
@@ -443,7 +443,7 @@ class AgentRegistry:
         url=endpoint_uri,
     )
 
-    def combined_header_provider(context: ReadonlyContext) -> Dict[str, str]:
+    def combined_header_provider(context: ReadonlyContext[Any]) -> Dict[str, str]:
       headers = {}
       if (
           not auth_scheme

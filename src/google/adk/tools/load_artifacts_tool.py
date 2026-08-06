@@ -242,7 +242,7 @@ web UI)."""),
 
   @override
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any]
   ) -> Any:
     artifact_names: list[str] = args.get('artifact_names', [])
     return {
@@ -255,7 +255,7 @@ web UI)."""),
 
   @override
   async def process_llm_request(
-      self, *, tool_context: ToolContext, llm_request: LlmRequest
+      self, *, tool_context: ToolContext[Any], llm_request: LlmRequest
   ) -> None:
     await super().process_llm_request(
         tool_context=tool_context,
@@ -266,7 +266,7 @@ web UI)."""),
     )
 
   async def _append_artifacts_to_llm_request(
-      self, *, tool_context: ToolContext, llm_request: LlmRequest
+      self, *, tool_context: ToolContext[Any], llm_request: LlmRequest
   ):
     artifact_names = await tool_context.list_artifacts()
     if not artifact_names:

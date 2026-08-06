@@ -372,7 +372,7 @@ class DebugLoggingPlugin(BasePlugin):
 
   @override
   async def before_agent_callback(
-      self, *, agent: BaseAgent, callback_context: CallbackContext
+      self, *, agent: BaseAgent, callback_context: CallbackContext[Any]
   ) -> types.Content | None:
     """Log agent execution start."""
     self._add_entry(
@@ -385,7 +385,7 @@ class DebugLoggingPlugin(BasePlugin):
 
   @override
   async def after_agent_callback(
-      self, *, agent: BaseAgent, callback_context: CallbackContext
+      self, *, agent: BaseAgent, callback_context: CallbackContext[Any]
   ) -> types.Content | None:
     """Log agent execution completion."""
     self._add_entry(
@@ -397,7 +397,7 @@ class DebugLoggingPlugin(BasePlugin):
 
   @override
   async def before_model_callback(
-      self, *, callback_context: CallbackContext, llm_request: LlmRequest
+      self, *, callback_context: CallbackContext[Any], llm_request: LlmRequest
   ) -> LlmResponse | None:
     """Log LLM request before sending to model."""
     request_data: dict[str, Any] = {
@@ -449,7 +449,7 @@ class DebugLoggingPlugin(BasePlugin):
 
   @override
   async def after_model_callback(
-      self, *, callback_context: CallbackContext, llm_response: LlmResponse
+      self, *, callback_context: CallbackContext[Any], llm_response: LlmResponse
   ) -> LlmResponse | None:
     """Log LLM response after receiving from model."""
     response_data: dict[str, Any] = {
@@ -495,7 +495,7 @@ class DebugLoggingPlugin(BasePlugin):
   async def on_model_error_callback(
       self,
       *,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any],
       llm_request: LlmRequest,
       error: Exception,
   ) -> LlmResponse | None:
@@ -516,7 +516,7 @@ class DebugLoggingPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
   ) -> dict[str, Any] | None:
     """Log tool execution start."""
     self._add_entry(
@@ -535,7 +535,7 @@ class DebugLoggingPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       result: dict[str, Any],
   ) -> dict[str, Any] | None:
     """Log tool execution completion."""
@@ -555,7 +555,7 @@ class DebugLoggingPlugin(BasePlugin):
       *,
       tool: BaseTool,
       tool_args: dict[str, Any],
-      tool_context: ToolContext,
+      tool_context: ToolContext[Any],
       error: Exception,
   ) -> dict[str, Any] | None:
     """Log tool error."""

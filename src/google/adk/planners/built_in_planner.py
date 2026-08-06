@@ -13,6 +13,7 @@
 # limitations under the License.
 
 from __future__ import annotations
+from typing import Any
 
 import logging
 from typing import List
@@ -72,7 +73,7 @@ class BuiltInPlanner(BasePlanner):
   @override
   def build_planning_instruction(
       self,
-      readonly_context: ReadonlyContext,
+      readonly_context: ReadonlyContext[Any],
       llm_request: LlmRequest,
   ) -> Optional[str]:
     return
@@ -80,7 +81,7 @@ class BuiltInPlanner(BasePlanner):
   @override
   def process_planning_response(
       self,
-      callback_context: CallbackContext,
+      callback_context: CallbackContext[Any],
       response_parts: List[types.Part],
   ) -> Optional[List[types.Part]]:
     return

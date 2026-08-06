@@ -73,7 +73,7 @@ class WriteFileTool(BaseTool):
 
   @override
   async def run_async(
-      self, *, args: dict[str, Any], tool_context: ToolContext
+      self, *, args: dict[str, Any], tool_context: ToolContext[Any]
   ) -> Any:
     path = args.get('path', '')
     content = args.get('content', '')

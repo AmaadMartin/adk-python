@@ -99,7 +99,7 @@ class _LoopState(DynamicNodeState):
   node_branches: dict[str, str] = field(default_factory=dict)
   """Cached static node branches."""
 
-  pending_tasks: dict[str, asyncio.Task[Context]] = field(default_factory=dict)
+  pending_tasks: dict[str, asyncio.Task[Context[Any]]] = field(default_factory=dict)
   """Running static node tasks."""
 
   replayed_nodes: set[str] = field(default_factory=set)
@@ -216,7 +216,7 @@ class Workflow(BaseNode):
   async def _run_impl(
       self,
       *,
-      ctx: Context,
+      ctx: Context[Any],
       node_input: Any,
   ) -> AsyncGenerator[Any, None]:
     """Orchestration loop: SETUP -> LOOP -> FINALIZE."""
@@ -277,7 +277,7 @@ class Workflow(BaseNode):
 
   # --- LOOP ---
 
-  async def _run_loop(self, loop_state: _LoopState, ctx: Context) -> None:
+  async def _run_loop(self, loop_state: _LoopState, ctx: Context[Any]) -> None:
     """Schedule and execute nodes until no more work."""
     logger.debug("node %s execute loop start.", ctx.node_path)
 
@@ -338,7 +338,7 @@ class Workflow(BaseNode):
         name = self._pop_completed_task(loop_state, task)
 
         node = self._get_static_node_by_name(name)
-        child_ctx: Context = task.result()
+        child_ctx: Context[Any] = task.result()
         if loop_state.sequence_barrier:
           loop_state.sequence_barrier.check_and_advance(
               f"{name}@{child_ctx.run_id}"
@@ -403,7 +403,7 @@ class Workflow(BaseNode):
     return False
 
   async def _schedule_ready_nodes(
-      self, loop_state: _LoopState, ctx: Context
+      self, loop_state: _LoopState, ctx: Context[Any]
   ) -> None:
     """Pop triggers from buffer and schedule ready nodes."""
     if self._has_waiting_task_agent(loop_state):
@@ -471,7 +471,7 @@ class Workflow(BaseNode):
   def _compute_isolation_scope_for_node(
       node: BaseNode,
       trigger: Trigger,
-      parent_ctx: Context | None,
+      parent_ctx: Context[Any] | None,
       run_id: str,
   ) -> str | None:
     """Decide the isolation_scope for a node about to run.
@@ -535,7 +535,7 @@ class Workflow(BaseNode):
   def _start_node_task(
       self,
       loop_state: _LoopState,
-      ctx: Context,
+      ctx: Context[Any],
       node_name: str,
       trigger: Trigger,
   ) -> bool:
@@ -640,7 +640,7 @@ class Workflow(BaseNode):
   # --- Resumability checkpoints ---
 
   async def _emit_node_checkpoint(
-      self, loop_state: _LoopState, ctx: Context
+      self, loop_state: _LoopState, ctx: Context[Any]
   ) -> None:
     """Record a snapshot of node statuses on the resumable event stream.
 
@@ -670,7 +670,7 @@ class Workflow(BaseNode):
     )
 
   async def _maybe_reemit_replayed_output(
-      self, child_ctx: Context, ctx: Context
+      self, child_ctx: Context[Any], ctx: Context[Any]
   ) -> None:
     """Re-surface a fast-forwarded node's output on a resumable stream."""
     ic = ctx._invocation_context
@@ -689,7 +689,7 @@ class Workflow(BaseNode):
         )
     )
 
-  async def _emit_end_of_agent(self, ctx: Context) -> None:
+  async def _emit_end_of_agent(self, ctx: Context[Any]) -> None:
     """Record an end-of-agent marker for resumable sessions."""
     ic = ctx._invocation_context
     if not ic.is_resumable:
@@ -713,8 +713,8 @@ class Workflow(BaseNode):
       loop_state: _LoopState,
       node_name: str,
       node: BaseNode,
-      child_ctx: Context,
-      ctx: Context,
+      child_ctx: Context[Any],
+      ctx: Context[Any],
   ) -> None:
     """Update state and trigger downstream after node completes."""
     node_state = loop_state.nodes[node_name]
@@ -825,7 +825,7 @@ class Workflow(BaseNode):
 
   # --- FINALIZE ---
 
-  def _finalize(self, loop_state: _LoopState, ctx: Context) -> None:
+  def _finalize(self, loop_state: _LoopState, ctx: Context[Any]) -> None:
     """Set interrupt_ids or terminal output on ctx.
 
     If any child interrupted, propagate their interrupt IDs to ctx
@@ -872,7 +872,7 @@ class Workflow(BaseNode):
     raise ValueError(f"Node {name} not found in graph.")
 
   def _pop_completed_task(
-      self, loop_state: _LoopState, task: asyncio.Task[Context]
+      self, loop_state: _LoopState, task: asyncio.Task[Context[Any]]
   ) -> str:
     """Remove a completed task and return its node name."""
     for name, t in loop_state.pending_tasks.items():
