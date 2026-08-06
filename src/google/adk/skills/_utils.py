@@ -19,6 +19,7 @@ from __future__ import annotations
 import io
 import logging
 import pathlib
+import re
 from typing import Dict
 from typing import Union
 import zipfile
@@ -38,6 +39,15 @@ _ALLOWED_FRONTMATTER_KEYS = frozenset({
     "metadata",
     "compatibility",
 })
+
+# A frontmatter delimiter is a line whose entire content is "---" (trailing
+# spaces/tabs allowed). Splitting on the bare substring "---" would truncate
+# any frontmatter value that happens to contain it.
+_FRONTMATTER_OPEN_RE = re.compile(r"---[ \t]*(?:\r?\n|\Z)")
+_FRONTMATTER_BLOCK_RE = re.compile(
+    r"---[ \t]*\r?\n(?P<frontmatter>.*?\r?\n)?---[ \t]*(?:\r?\n|\Z)",
+    re.DOTALL,
+)
 
 
 def _load_dir(directory: pathlib.Path) -> dict[str, str]:
@@ -76,15 +86,17 @@ def _parse_skill_md_content(content: str) -> tuple[dict, str]:
   Raises:
     ValueError: If SKILL.md is invalid.
   """
-  if not content.startswith("---"):
+  if not _FRONTMATTER_OPEN_RE.match(content):
     raise ValueError("SKILL.md must start with YAML frontmatter (---)")
 
-  parts = content.split("---", 2)
-  if len(parts) < 3:
+  match = _FRONTMATTER_BLOCK_RE.match(content)
+  if match is None:
     raise ValueError("SKILL.md frontmatter not properly closed with ---")
 
-  frontmatter_str = parts[1]
-  body = parts[2].strip()
+  # An empty block ("---\n---\n") leaves the group unset; yaml.safe_load("")
+  # returns None, which the mapping check below rejects.
+  frontmatter_str = match.group("frontmatter") or ""
+  body = content[match.end() :].strip()
 
   try:
     parsed = yaml.safe_load(frontmatter_str)
