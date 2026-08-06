@@ -24,6 +24,8 @@ import importlib.util
 import os
 import subprocess
 import sys
+import types
+from typing import NoReturn
 from unittest import mock
 
 import pytest
@@ -165,6 +167,100 @@ def test_vertexai_dependency_shim_raises_clear_importerror():
 
     message = str(exc_info.value)
     assert "//third_party/py/google/cloud/aiplatform" in message
+
+
+# The verbatim text nltk 3.10.1's nltk/inisec.py meta-path finder raises when it
+# blocks a module that resolves under the current working directory.
+_NLTK_CWD_GUARD_ERROR = (
+    "Blocked import of regex from current working directory for security"
+    " reasons. Use '-P' or set PYTHONSAFEPATH to prevent Python from searching"
+    " the current working directory."
+)
+
+
+def _exec_rouge_scorer_shim():
+  """Executes the rouge_score dependency shim under a throwaway module name.
+
+  The shim is executed from its file rather than imported so that the entry for
+  ``google.adk.dependencies.rouge_scorer`` in ``sys.modules`` stays untouched.
+  """
+  module_path = _REPO_ROOT / "src/google/adk/dependencies/rouge_scorer.py"
+  spec = importlib.util.spec_from_file_location(
+      "_test_adk_rouge_scorer_shim", module_path
+  )
+  assert spec is not None
+  assert spec.loader is not None
+  module = importlib.util.module_from_spec(spec)
+  spec.loader.exec_module(module)
+  return module
+
+
+def _fake_rouge_score_raising(error: ImportError) -> types.ModuleType:
+  """Returns a fake ``rouge_score`` module whose attribute access raises.
+
+  ``from rouge_score import rouge_scorer`` falls back to attribute access on the
+  parent module, and the import machinery only converts ``AttributeError`` into
+  ``ImportError`` there, so ``error`` propagates unchanged.
+  """
+  fake = types.ModuleType("rouge_score")
+
+  def _raise(name: str) -> NoReturn:
+    raise error
+
+  setattr(fake, "__getattr__", _raise)
+  return fake
+
+
+def test_rouge_scorer_shim_explains_nltk_cwd_guard():
+  """Verify the shim replaces nltk 3.10.1's CWD guard error with a fix."""
+  error = ImportError(_NLTK_CWD_GUARD_ERROR)
+  with mock.patch.dict(
+      "sys.modules", {"rouge_score": _fake_rouge_score_raising(error)}
+  ):
+    with pytest.raises(ImportError) as exc_info:
+      _exec_rouge_scorer_shim()
+
+  message = str(exc_info.value)
+  assert "nltk" in message
+  assert "3.10.1" in message
+  assert 'pip install --upgrade "nltk!=3.10.1"' in message
+
+
+def test_rouge_scorer_shim_chains_original_nltk_error():
+  """Verify the original nltk error survives as the __cause__."""
+  error = ImportError(_NLTK_CWD_GUARD_ERROR)
+  with mock.patch.dict(
+      "sys.modules", {"rouge_score": _fake_rouge_score_raising(error)}
+  ):
+    with pytest.raises(ImportError) as exc_info:
+      _exec_rouge_scorer_shim()
+
+  assert exc_info.value.__cause__ is error
+
+
+def test_rouge_scorer_shim_reraises_unrelated_import_error():
+  """Verify an import failure that is not the nltk guard propagates as is."""
+  with mock.patch.dict("sys.modules", {"rouge_score": None}):
+    with pytest.raises(ImportError) as exc_info:
+      _exec_rouge_scorer_shim()
+
+  message = str(exc_info.value)
+  assert "nltk" not in message
+  assert exc_info.value.__cause__ is None
+
+
+def test_rouge_scorer_shim_reexports_when_import_succeeds():
+  """Verify the shim re-exports the real rouge_score submodules."""
+  fake = types.ModuleType("rouge_score")
+  fake_rouge_scorer = types.ModuleType("rouge_score.rouge_scorer")
+  fake_tokenizers = types.ModuleType("rouge_score.tokenizers")
+  setattr(fake, "rouge_scorer", fake_rouge_scorer)
+  setattr(fake, "tokenizers", fake_tokenizers)
+  with mock.patch.dict("sys.modules", {"rouge_score": fake}):
+    module = _exec_rouge_scorer_shim()
+
+  assert module.rouge_scorer is fake_rouge_scorer
+  assert module.tokenizers is fake_tokenizers
 
 
 # =============================================================================
