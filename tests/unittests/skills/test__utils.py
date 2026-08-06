@@ -15,7 +15,9 @@
 """Unit tests for skill utilities."""
 
 import builtins
+import compileall
 import io
+import pathlib
 import sys
 from unittest import mock
 import zipfile
@@ -296,6 +298,149 @@ def test__load_skill_from_gcs_dir(mock_client_class):
   assert skill.instructions == "Test instructions"
   # Using dict access for reference
   assert skill.resources.get_reference("ref1.md") == "ref1 content"
+
+
+@mock.patch("google.cloud.storage.Client")
+def test__load_skill_from_gcs_dir_skips_pycache(mock_client_class):
+  """Blobs with a __pycache__ path component are not loaded as resources."""
+
+  mock_client = mock.MagicMock()
+  mock_client_class.return_value = mock_client
+  mock_bucket = mock.MagicMock()
+  mock_client.bucket.return_value = mock_bucket
+
+  def mock_blob_side_effect(path):
+    m = mock.MagicMock()
+    if path.endswith("SKILL.md"):
+      m.exists.return_value = True
+      m.download_as_text.return_value = (
+          "---\nname: my-skill\ndescription: Test description\n---\nTest"
+          " instructions"
+      )
+    else:
+      m.exists.return_value = False
+    return m
+
+  mock_bucket.blob.side_effect = mock_blob_side_effect
+
+  def make_blob(name, content):
+    m = mock.MagicMock()
+    # MagicMock(name=...) sets the repr name, so assign .name afterwards.
+    m.name = name
+    m.download_as_text.return_value = content
+    return m
+
+  def make_bytecode_blob(name):
+    """A .pyc blob: non-UTF-8, so a text download would raise."""
+    m = mock.MagicMock()
+    m.name = name
+    m.download_as_text.side_effect = UnicodeDecodeError(
+        "utf-8", b"\xa7\r\r\n", 0, 1, "invalid start byte"
+    )
+    m.download_as_bytes.return_value = b"\xa7\r\r\n"
+    return m
+
+  good_blob = make_blob("skills/my-skill/references/ref1.md", "ref1 content")
+  # "__pycache__" as a substring of a file name is not a cache directory.
+  lookalike_blob = make_blob(
+      "skills/my-skill/references/my__pycache__notes.md", "notes content"
+  )
+  cache_blob = make_bytecode_blob(
+      "skills/my-skill/references/__pycache__/mod.cpython-311.pyc"
+  )
+  nested_cache_blob = make_bytecode_blob(
+      "skills/my-skill/scripts/sub/__pycache__/x.cpython-311.pyc"
+  )
+  cache_dir_blob = make_blob("skills/my-skill/scripts/__pycache__/", "")
+
+  def list_blobs_side_effect(prefix=None):
+    if prefix.endswith("references/"):
+      return [good_blob, lookalike_blob, cache_blob]
+    if prefix.endswith("scripts/"):
+      return [nested_cache_blob, cache_dir_blob]
+    return []
+
+  mock_bucket.list_blobs.side_effect = list_blobs_side_effect
+
+  skill = _load_skill_from_gcs_dir("my-bucket", "my-skill", "skills")
+
+  assert skill.resources.list_references() == [
+      "ref1.md",
+      "my__pycache__notes.md",
+  ]
+  assert "__pycache__/mod.cpython-311.pyc" not in skill.resources.references
+  assert skill.resources.list_scripts() == []
+
+  # Skipped blobs are never downloaded.
+  for blob in (cache_blob, nested_cache_blob, cache_dir_blob):
+    blob.download_as_text.assert_not_called()
+    blob.download_as_bytes.assert_not_called()
+
+
+class _LocalBlob:
+  """A GCS blob backed by a real local file."""
+
+  def __init__(self, name: str, path: pathlib.Path):
+    self.name = name
+    self._path = path
+
+  def exists(self) -> bool:
+    return self._path.is_file()
+
+  def download_as_text(self) -> str:
+    return self._path.read_text(encoding="utf-8")
+
+  def download_as_bytes(self) -> bytes:
+    return self._path.read_bytes()
+
+
+class _LocalBucket:
+  """A GCS bucket serving the contents of a real local directory tree."""
+
+  def __init__(self, root: pathlib.Path):
+    self._root = root
+
+  def blob(self, name: str) -> _LocalBlob:
+    return _LocalBlob(name, self._root / name)
+
+  def list_blobs(self, prefix: str = "") -> list[_LocalBlob]:
+    blobs = []
+    for path in sorted(self._root.rglob("*")):
+      name = path.relative_to(self._root).as_posix()
+      if path.is_file() and name.startswith(prefix):
+        blobs.append(_LocalBlob(name, path))
+    return blobs
+
+
+@mock.patch("google.cloud.storage.Client")
+def test__load_skill_from_gcs_dir_matches_dir_loader(
+    mock_client_class, tmp_path
+):
+  """A skill tree with real bytecode loads identically from a dir and GCS."""
+
+  skill_dir = tmp_path / "skills" / "my-skill"
+  (skill_dir / "references").mkdir(parents=True)
+  (skill_dir / "scripts").mkdir()
+  (skill_dir / "SKILL.md").write_text(
+      "---\nname: my-skill\ndescription: A skill\n---\nBody"
+  )
+  (skill_dir / "references" / "example.py").write_text("VALUE = 1\n")
+  (skill_dir / "scripts" / "helper.py").write_text("print('hi')\n")
+  compileall.compile_dir(str(skill_dir), quiet=2)
+  assert list(skill_dir.rglob("__pycache__/*.pyc"))
+
+  from_dir = _load_skill_from_dir(skill_dir)
+  mock_client_class.return_value.bucket.return_value = _LocalBucket(tmp_path)
+  from_gcs = _load_skill_from_gcs_dir("my-bucket", "my-skill", "skills")
+
+  assert sorted(from_gcs.resources.list_references()) == ["example.py"]
+  assert sorted(from_gcs.resources.list_scripts()) == ["helper.py"]
+  assert sorted(from_gcs.resources.list_references()) == sorted(
+      from_dir.resources.list_references()
+  )
+  assert sorted(from_gcs.resources.list_scripts()) == sorted(
+      from_dir.resources.list_scripts()
+  )
 
 
 def test_list_skills_in_dir(tmp_path):
