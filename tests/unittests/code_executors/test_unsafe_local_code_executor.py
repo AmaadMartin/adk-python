@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import multiprocessing
 import os
 import signal
@@ -155,6 +156,97 @@ class TestUnsafeLocalCodeExecutor:
 
     assert result.stdout == ""
     assert "Code execution timed out after 1 seconds." in result.stderr
+
+  def test_execute_code_returns_when_the_process_outlives_its_result(
+      self,
+      mock_invocation_context: InvocationContext,
+      monkeypatch: pytest.MonkeyPatch,
+      caplog: pytest.LogCaptureFixture,
+  ):
+    """Code that leaves a thread running still returns its output promptly."""
+    monkeypatch.setattr(
+        unsafe_local_code_executor, "_RESULT_JOIN_GRACE_SECONDS", 0.1
+    )
+    caplog.set_level(logging.WARNING)
+    executor = UnsafeLocalCodeExecutor(timeout_seconds=30)
+    code_input = CodeExecutionInput(code=textwrap.dedent("""
+        import threading
+        import time
+
+        threading.Thread(target=time.sleep, args=(60,)).start()
+        print('done')
+        """))
+
+    started = time.monotonic()
+    result = executor.execute_code(mock_invocation_context, code_input)
+    elapsed = time.monotonic() - started
+
+    assert result.stdout == "done\n"
+    assert result.stderr == ""
+    # The thread sleeps for 60 seconds; waiting on it would blow this bound.
+    assert elapsed < 30
+    assert any("did not exit" in r.getMessage() for r in caplog.records)
+
+  @pytest.mark.skipif(
+      os.name != "posix", reason="Process teardown is checked on POSIX only."
+  )
+  def test_execute_code_reaps_a_process_that_overstays_its_grace(
+      self,
+      mock_invocation_context: InvocationContext,
+      monkeypatch: pytest.MonkeyPatch,
+      tmp_path,
+  ):
+    """An execution that will not finish exiting is killed, not leaked."""
+    monkeypatch.setattr(
+        unsafe_local_code_executor, "_RESULT_JOIN_GRACE_SECONDS", 0.1
+    )
+    pid_file = tmp_path / "execution.pid"
+    executor = UnsafeLocalCodeExecutor(timeout_seconds=30)
+    code_input = CodeExecutionInput(code=textwrap.dedent(f"""
+        import os
+        import threading
+        import time
+
+        with open({str(pid_file)!r}, 'w') as f:
+          f.write(str(os.getpid()))
+        threading.Thread(target=time.sleep, args=(60,)).start()
+        print('done')
+        """))
+
+    result = executor.execute_code(mock_invocation_context, code_input)
+
+    # The execution ran to completion, so it recorded its pid before hanging
+    # around.
+    assert result.stdout == "done\n"
+    execution_pid = _written_pid(pid_file)
+    assert execution_pid is not None
+    try:
+      # `_kill_execution` ends with a join, so the pid of this direct child is
+      # released. A child that was killed but not reaped would still answer
+      # signal 0 as a zombie.
+      with pytest.raises(ProcessLookupError):
+        os.kill(execution_pid, 0)
+    finally:
+      try:
+        os.kill(execution_pid, signal.SIGKILL)
+      except OSError:
+        pass
+
+  def test_execute_code_does_not_report_a_process_that_exits_promptly(
+      self,
+      mock_invocation_context: InvocationContext,
+      caplog: pytest.LogCaptureFixture,
+  ):
+    """A well-behaved execution is not reported as overstaying its grace."""
+    caplog.set_level(logging.WARNING)
+    executor = UnsafeLocalCodeExecutor()
+    code_input = CodeExecutionInput(code='print("hi")')
+
+    result = executor.execute_code(mock_invocation_context, code_input)
+
+    assert result.stdout == "hi\n"
+    assert result.stderr == ""
+    assert not any("did not exit" in r.getMessage() for r in caplog.records)
 
   def test_kill_execution_signals_group_before_killing_it(self, monkeypatch):
     """The group gets SIGTERM and its grace period before SIGKILL."""

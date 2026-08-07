@@ -39,6 +39,13 @@ logger = logging.getLogger('google_adk.' + __name__)
 # escalating to SIGKILL, so that the timeout itself cannot block forever.
 _TERMINATE_GRACE_SECONDS = 5
 
+# How long to wait for the execution process to exit on its own once it has
+# already handed back its result. The result is in hand by then, so this wait
+# is pure cleanup: code that leaves a non-daemon thread running keeps the
+# process alive long after it has answered, and blocking on that indefinitely
+# would hang the caller for a result it already has.
+_RESULT_JOIN_GRACE_SECONDS = 5
+
 
 def _execute_in_process(
     code: str,
@@ -161,7 +168,14 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
     error = ''
     try:
       output, err = result_queue.get(timeout=self.timeout_seconds)
-      process.join()
+      process.join(_RESULT_JOIN_GRACE_SECONDS)
+      if process.is_alive():
+        logger.warning(
+            'Code execution process did not exit within %s seconds of'
+            ' returning its result; terminating it.',
+            _RESULT_JOIN_GRACE_SECONDS,
+        )
+        _kill_execution(process)
       if err:
         error = err
     except queue.Empty:
