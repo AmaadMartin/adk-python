@@ -55,15 +55,19 @@ jobs:
         run: |
           BRANCH="${{ inputs.branch }}"
           if [ "$BRANCH" = "v1" ]; then
-            echo "base_ref=v1" >> $GITHUB_OUTPUT
-            echo "candidate_branch=release/v1-candidate" >> $GITHUB_OUTPUT
-            echo "config_file=.github/release-please-config-v1.json" >> $GITHUB_OUTPUT
-            echo "manifest_file=.github/.release-please-manifest-v1.json" >> $GITHUB_OUTPUT
+            {
+              echo "base_ref=v1"
+              echo "candidate_branch=release/v1-candidate"
+              echo "config_file=.github/release-please-config-v1.json"
+              echo "manifest_file=.github/.release-please-manifest-v1.json"
+            } >> "$GITHUB_OUTPUT"
           else
-            echo "base_ref=main" >> $GITHUB_OUTPUT
-            echo "candidate_branch=release/candidate" >> $GITHUB_OUTPUT
-            echo "config_file=.github/release-please-config.json" >> $GITHUB_OUTPUT
-            echo "manifest_file=.github/.release-please-manifest.json" >> $GITHUB_OUTPUT
+            {
+              echo "base_ref=main"
+              echo "candidate_branch=release/candidate"
+              echo "config_file=.github/release-please-config.json"
+              echo "manifest_file=.github/.release-please-manifest.json"
+            } >> "$GITHUB_OUTPUT"
           fi
 
       # Action: CUT NEW RELEASE

@@ -46,23 +46,24 @@ jobs:
 
           # Check if this version matches the one in the v1 manifest to determine if it's a v1 release
           if [ -f .github/.release-please-manifest-v1.json ] && jq -e --arg v "$VERSION" '.["."] == $v' .github/.release-please-manifest-v1.json &>/dev/null; then
-            echo "is_v1=true" >> $GITHUB_OUTPUT
-            echo "base_branch=v1" >> $GITHUB_OUTPUT
+            echo "is_v1=true" >> "$GITHUB_OUTPUT"
+            echo "base_branch=v1" >> "$GITHUB_OUTPUT"
 
             SEMVER="$VERSION"
-            echo "semver=$SEMVER" >> $GITHUB_OUTPUT
+            echo "semver=$SEMVER" >> "$GITHUB_OUTPUT"
             echo "Semver version (v1): $SEMVER"
 
             # PEP 440 Conversion (e.g., 2.0.0-alpha.1 -> 2.0.0a1)
             PEP440=$(echo "$SEMVER" | sed -E 's/-alpha\./a/; s/-beta\./b/; s/-rc\./rc/')
-            echo "pep440=$PEP440" >> $GITHUB_OUTPUT
+            echo "pep440=$PEP440" >> "$GITHUB_OUTPUT"
             echo "PEP 440 version (v1): $PEP440"
           else
-            echo "is_v1=false" >> $GITHUB_OUTPUT
-            echo "base_branch=main" >> $GITHUB_OUTPUT
-
-            echo "semver=$VERSION" >> $GITHUB_OUTPUT
-            echo "pep440=$VERSION" >> $GITHUB_OUTPUT
+            {
+              echo "is_v1=false"
+              echo "base_branch=main"
+              echo "semver=$VERSION"
+              echo "pep440=$VERSION"
+            } >> "$GITHUB_OUTPUT"
             echo "Semver version (main): $VERSION"
           fi
 
