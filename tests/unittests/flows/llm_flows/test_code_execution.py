@@ -16,6 +16,7 @@
 
 import ast
 import asyncio
+import base64
 import datetime
 import threading
 from typing import Any
@@ -274,6 +275,40 @@ def test_inline_file_preprocessing_only_mutates_user_content():
       request.contents[1].parts[0].text == '\nAvailable file: `data_2_1.csv`\n'
   )
   assert [file.name for file in files] == ['data_2_1.csv']
+
+
+@pytest.mark.parametrize(
+    'payload',
+    [
+        pytest.param(b'test', id='canonical_base64_word'),
+        pytest.param(b'data', id='canonical_base64_word_2'),
+        pytest.param(b'deadbeef', id='canonical_base64_hex_token'),
+        pytest.param(b'aGVsbG8=', id='padded_base64_blob'),
+        pytest.param(b'col1,col2\n1,2\n', id='ordinary_csv'),
+        pytest.param(b'', id='empty'),
+    ],
+)
+def test_inline_file_content_is_always_base64_encoded(payload):
+  """Raw attached bytes are encoded even when they already look like base64."""
+  request = LlmRequest(
+      contents=[
+          types.Content(
+              role='user',
+              parts=[
+                  types.Part(
+                      inline_data=types.Blob(mime_type='text/csv', data=payload)
+                  )
+              ],
+          )
+      ]
+  )
+
+  files = _extract_and_replace_inline_files(CodeExecutorContext({}), request)
+
+  assert files[0].content == base64.b64encode(payload).decode()
+  # The executor decodes File.content the same way the output path does; the
+  # file must survive that round trip byte for byte.
+  assert get_content_as_bytes(files[0].content) == payload
 
 
 @pytest.mark.asyncio
