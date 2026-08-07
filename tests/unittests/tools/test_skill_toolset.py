@@ -22,6 +22,7 @@ from pathlib import PurePosixPath
 import sys
 from unittest import mock
 
+from google.adk.agents.llm_agent import LlmAgent
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.code_executors.base_code_executor import BaseCodeExecutor
 from google.adk.code_executors.code_execution_utils import CodeExecutionResult
@@ -31,8 +32,11 @@ from google.adk.models import llm_request as llm_request_model
 from google.adk.skills import models
 from google.adk.tools import skill_toolset
 from google.adk.tools import tool_context
+from google.adk.tools.tool_confirmation import ToolConfirmation
 from google.genai import types
 import pytest
+
+from .. import testing_utils
 
 
 @pytest.fixture(name="mock_skill1_frontmatter")
@@ -2841,3 +2845,864 @@ async def test_skill_toolset_with_dynamic_tools_filter(
   assert "list_skills" in tool_names
   assert "my_custom_tool" in tool_names
   assert "load_skill" not in tool_names
+
+
+# ── RunSkillInlineScriptTool tests ──
+
+
+def _make_inline_tool_context(
+    agent=None, confirmed=None, invocation_id="test_invocation"
+):
+  """Creates a mock ToolContext with an explicit tool confirmation state.
+
+  `_make_tool_context_with_agent` returns a `MagicMock`, whose
+  `tool_confirmation` attribute is itself a truthy `MagicMock`; leaving it
+  unset would silently satisfy the confirmation gate.
+
+  Args:
+    agent: Optional agent to expose on the invocation context.
+    confirmed: `None` for "no confirmation yet", otherwise the `confirmed`
+      value of the supplied `ToolConfirmation`.
+    invocation_id: The invocation id of the tool context.
+
+  Returns:
+    A mock `ToolContext` with `tool_confirmation` and `actions` set.
+  """
+  ctx = _make_tool_context_with_agent(agent=agent, invocation_id=invocation_id)
+  ctx.tool_confirmation = (
+      None if confirmed is None else ToolConfirmation(confirmed=confirmed)
+  )
+  ctx.actions = mock.MagicMock()
+  return ctx
+
+
+def _make_inline_tool(skills, **kwargs):
+  """Creates a RunSkillInlineScriptTool over a toolset holding `skills`."""
+  toolset = skill_toolset.SkillToolset(skills, **kwargs)
+  return skill_toolset.RunSkillInlineScriptTool(toolset)
+
+
+def _executed_code(executor):
+  """Returns the wrapper code the executor was asked to run."""
+  return executor.execute_code.call_args[0][1].code
+
+
+# ── Registration / wiring ──
+
+
+@pytest.mark.asyncio
+async def test_inline_script_tool_not_registered_by_default(mock_skill1):
+  """Inline script execution is opt-in, so the tool is absent by default."""
+  toolset = skill_toolset.SkillToolset([mock_skill1])
+  tool_names = [t.name for t in await toolset.get_tools()]
+  assert "run_skill_inline_script" not in tool_names
+
+
+@pytest.mark.asyncio
+async def test_inline_script_tool_registered_when_allowed(mock_skill1):
+  """`allow_inline_scripts=True` adds the tool alongside the standard ones."""
+  toolset = skill_toolset.SkillToolset([mock_skill1], allow_inline_scripts=True)
+  tool_names = [t.name for t in await toolset.get_tools()]
+  assert tool_names == [
+      "list_skills",
+      "load_skill",
+      "load_skill_resource",
+      "run_skill_script",
+      "run_skill_inline_script",
+  ]
+
+
+@pytest.mark.asyncio
+async def test_inline_script_tool_registered_alongside_search_tool(
+    mock_skill1,
+):
+  """The registry-only `search_skills` tool is still registered."""
+  registry = mock.create_autospec(skill_toolset.SkillRegistry, instance=True)
+  toolset = skill_toolset.SkillToolset(
+      [mock_skill1], registry=registry, allow_inline_scripts=True
+  )
+  tool_names = [t.name for t in await toolset.get_tools()]
+  assert "run_skill_inline_script" in tool_names
+  assert "search_skills" in tool_names
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("allow_inline_scripts", [True, False])
+async def test_clone_with_updated_skills_propagates_inline_flag(
+    mock_skill1, mock_skill2, allow_inline_scripts
+):
+  """Cloning a toolset preserves the inline-script opt-in."""
+  toolset = skill_toolset.SkillToolset(
+      [mock_skill1], allow_inline_scripts=allow_inline_scripts
+  )
+  clone = toolset.clone_with_updated_skills([mock_skill2])
+  tool_names = [t.name for t in await clone.get_tools()]
+  assert ("run_skill_inline_script" in tool_names) is allow_inline_scripts
+
+
+# ── Declaration ──
+
+
+def test_inline_script_declaration(mock_skill1):
+  """The declaration advertises the required params and the language enum."""
+  tool = _make_inline_tool([mock_skill1])
+  declaration = tool._get_declaration()
+  assert declaration.name == "run_skill_inline_script"
+  schema = declaration.parameters_json_schema
+  assert schema["required"] == ["skill_name", "script_content", "language"]
+  assert schema["properties"]["language"]["enum"] == ["python", "shell"]
+  assert schema["properties"]["args"]["anyOf"] == [
+      {"type": "object"},
+      {"type": "array", "items": {"type": "string"}},
+  ]
+
+
+# ── Argument validation ──
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "args, missing",
+    [
+        (
+            {"script_content": "print(1)", "language": "python"},
+            "skill_name",
+        ),
+        (
+            {
+                "skill_name": "",
+                "script_content": "print(1)",
+                "language": "python",
+            },
+            "skill_name",
+        ),
+        (
+            {"skill_name": "skill1", "language": "python"},
+            "script_content",
+        ),
+        (
+            {
+                "skill_name": "skill1",
+                "script_content": "",
+                "language": "python",
+            },
+            "script_content",
+        ),
+        (
+            {"skill_name": "skill1", "script_content": "print(1)"},
+            "language",
+        ),
+        (
+            {
+                "skill_name": "skill1",
+                "script_content": "print(1)",
+                "language": "",
+            },
+            "language",
+        ),
+    ],
+)
+async def test_inline_script_missing_params(mock_skill1, args, missing):
+  """Each missing or empty required argument is reported by name."""
+  executor = _make_mock_executor()
+  tool = _make_inline_tool([mock_skill1], code_executor=executor)
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(args=args, tool_context=ctx)
+  assert result["error_code"] == "INVALID_ARGUMENTS"
+  assert f"Argument '{missing}' is required." in result["error"]
+  executor.execute_code.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_inline_script_reports_every_missing_param(mock_skill1):
+  """All missing arguments are reported in one response."""
+  tool = _make_inline_tool([mock_skill1], code_executor=_make_mock_executor())
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(args={}, tool_context=ctx)
+  assert result["error"] == (
+      "Argument 'skill_name' is required.\n"
+      "Argument 'script_content' is required.\n"
+      "Argument 'language' is required."
+  )
+
+
+@pytest.mark.asyncio
+async def test_inline_script_rejects_non_container_args(mock_skill1):
+  """`args` must be a dict or a list."""
+  executor = _make_mock_executor()
+  tool = _make_inline_tool([mock_skill1], code_executor=executor)
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "skill1",
+          "script_content": "print(1)",
+          "language": "python",
+          "args": "--flag",
+      },
+      tool_context=ctx,
+  )
+  assert result["error_code"] == "INVALID_ARGUMENTS"
+  assert "got str" in result["error"]
+  executor.execute_code.assert_not_called()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "language", ["javascript", "typescript", "powershell", "cmd"]
+)
+async def test_inline_script_unsupported_language(mock_skill1, language):
+  """adk-js languages without a Python execution path are rejected."""
+  executor = _make_mock_executor()
+  tool = _make_inline_tool([mock_skill1], code_executor=executor)
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "skill1",
+          "script_content": "console.log(1)",
+          "language": language,
+      },
+      tool_context=ctx,
+  )
+  assert result["error_code"] == "UNSUPPORTED_LANGUAGE"
+  assert language in result["error"]
+  assert "python" in result["error"]
+  assert "shell" in result["error"]
+  executor.execute_code.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_inline_script_validation_precedes_registry_fetch(mock_skill1):
+  """Invalid arguments short-circuit before the registry is consulted."""
+  registry = mock.create_autospec(skill_toolset.SkillRegistry, instance=True)
+  registry.get_skill.side_effect = AssertionError("registry must not be hit")
+  tool = _make_inline_tool(
+      [mock_skill1], registry=registry, code_executor=_make_mock_executor()
+  )
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "unknown_skill",
+          "script_content": "print(1)",
+          "language": "javascript",
+      },
+      tool_context=ctx,
+  )
+  assert result["error_code"] == "UNSUPPORTED_LANGUAGE"
+  registry.get_skill.assert_not_called()
+
+
+# ── Resolution failures ──
+
+
+@pytest.mark.asyncio
+async def test_inline_script_skill_not_found(mock_skill1):
+  """An unknown skill name is reported as SKILL_NOT_FOUND."""
+  executor = _make_mock_executor()
+  tool = _make_inline_tool([mock_skill1], code_executor=executor)
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "nonexistent",
+          "script_content": "print(1)",
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  assert result["error_code"] == "SKILL_NOT_FOUND"
+  executor.execute_code.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_inline_script_registry_error(mock_skill1):
+  """A raising registry is reported as REGISTRY_ERROR."""
+  registry = mock.create_autospec(skill_toolset.SkillRegistry, instance=True)
+  registry.get_skill.side_effect = RuntimeError("registry down")
+  tool = _make_inline_tool(
+      [mock_skill1], registry=registry, code_executor=_make_mock_executor()
+  )
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "remote_skill",
+          "script_content": "print(1)",
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  assert result["error_code"] == "REGISTRY_ERROR"
+  assert "registry down" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_inline_script_no_code_executor(mock_skill1):
+  """Executor resolution runs before the confirmation gate."""
+  agent = mock.MagicMock(spec=[])
+  tool = _make_inline_tool([mock_skill1])
+  ctx = _make_inline_tool_context(agent=agent)
+  result = await tool.run_async(
+      args={
+          "skill_name": "skill1",
+          "script_content": "print(1)",
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  assert result["error_code"] == "NO_CODE_EXECUTOR"
+  ctx.request_confirmation.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_inline_script_agent_code_executor_none(mock_skill1):
+  """An agent whose `code_executor` is None yields NO_CODE_EXECUTOR."""
+  agent = mock.MagicMock()
+  agent.code_executor = None
+  tool = _make_inline_tool([mock_skill1])
+  ctx = _make_inline_tool_context(agent=agent)
+  result = await tool.run_async(
+      args={
+          "skill_name": "skill1",
+          "script_content": "print(1)",
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  assert result["error_code"] == "NO_CODE_EXECUTOR"
+
+
+@pytest.mark.asyncio
+async def test_inline_script_ignores_environment(mock_skill1):
+  """Inline scripts have no environment path, unlike `RunSkillScriptTool`."""
+  mock_env = mock.create_autospec(BaseEnvironment, instance=True)
+  agent = mock.MagicMock(spec=[])
+  tool = _make_inline_tool([mock_skill1], environment=mock_env)
+  ctx = _make_inline_tool_context(agent=agent, confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "skill1",
+          "script_content": "print(1)",
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  assert result["error_code"] == "NO_CODE_EXECUTOR"
+  mock_env.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_inline_script_falls_back_to_agent_code_executor(mock_skill1):
+  """Without a toolset executor, the agent's executor runs the script."""
+  agent_executor = _make_mock_executor(stdout="from agent\n")
+  agent = mock.MagicMock()
+  agent.code_executor = agent_executor
+  tool = _make_inline_tool([mock_skill1])
+  ctx = _make_inline_tool_context(agent=agent, confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "skill1",
+          "script_content": "print('from agent')",
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  assert result["status"] == "success"
+  assert result["stdout"] == "from agent\n"
+  agent_executor.execute_code.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_inline_script_prefers_toolset_code_executor(mock_skill1):
+  """The toolset executor wins over the agent's executor."""
+  toolset_executor = _make_mock_executor(stdout="from toolset\n")
+  agent_executor = _make_mock_executor(stdout="from agent\n")
+  agent = mock.MagicMock()
+  agent.code_executor = agent_executor
+  tool = _make_inline_tool([mock_skill1], code_executor=toolset_executor)
+  ctx = _make_inline_tool_context(agent=agent, confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "skill1",
+          "script_content": "print('hi')",
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  assert result["stdout"] == "from toolset\n"
+  agent_executor.execute_code.assert_not_called()
+
+
+# ── Confirmation gate ──
+
+
+@pytest.mark.asyncio
+async def test_inline_script_requests_confirmation(mock_skill1):
+  """The first call requests confirmation and executes nothing."""
+  executor = _make_mock_executor()
+  tool = _make_inline_tool([mock_skill1], code_executor=executor)
+  ctx = _make_inline_tool_context()
+  result = await tool.run_async(
+      args={
+          "skill_name": "skill1",
+          "script_content": "print('needs review')",
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  assert result["error_code"] == "CONFIRMATION_REQUIRED"
+  executor.execute_code.assert_not_called()
+  ctx.request_confirmation.assert_called_once()
+  _, kwargs = ctx.request_confirmation.call_args
+  assert "python" in kwargs["hint"]
+  assert "print('needs review')" in kwargs["hint"]
+  assert "skill1" in kwargs["hint"]
+  assert kwargs["payload"] == {
+      "language": "python",
+      "script_content": "print('needs review')",
+  }
+  assert ctx.actions.skip_summarization is True
+
+
+@pytest.mark.asyncio
+async def test_inline_script_confirmation_rejected(mock_skill1):
+  """A rejected confirmation blocks execution."""
+  executor = _make_mock_executor()
+  tool = _make_inline_tool([mock_skill1], code_executor=executor)
+  ctx = _make_inline_tool_context(confirmed=False)
+  result = await tool.run_async(
+      args={
+          "skill_name": "skill1",
+          "script_content": "print(1)",
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  assert result["error_code"] == "CONFIRMATION_REJECTED"
+  executor.execute_code.assert_not_called()
+  ctx.request_confirmation.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_inline_script_runs_once_confirmed(mock_skill1):
+  """A confirmed call executes without re-requesting confirmation."""
+  executor = _make_mock_executor(stdout="ok\n")
+  tool = _make_inline_tool([mock_skill1], code_executor=executor)
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "skill1",
+          "script_content": "print('ok')",
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  assert result["status"] == "success"
+  assert result["stdout"] == "ok\n"
+  assert result["skill_name"] == "skill1"
+  assert result["file_path"] == "_adk_inline_script.py"
+  ctx.request_confirmation.assert_not_called()
+  executor.execute_code.assert_called_once()
+
+
+# ── Execution ──
+
+
+@pytest.mark.asyncio
+async def test_inline_script_execution_error(mock_skill1):
+  """An executor failure is reported as EXECUTION_ERROR."""
+  executor = mock.create_autospec(BaseCodeExecutor, instance=True)
+  executor.execute_code.side_effect = RuntimeError("boom")
+  tool = _make_inline_tool([mock_skill1], code_executor=executor)
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "skill1",
+          "script_content": "print(1)",
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  assert result["error_code"] == "EXECUTION_ERROR"
+  assert "boom" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_inline_script_materializes_skill_resources(mock_skill1):
+  """The inline body is materialized next to the skill's own resources."""
+  executor = _make_mock_executor(stdout="ok\n")
+  tool = _make_inline_tool([mock_skill1], code_executor=executor)
+  ctx = _make_inline_tool_context(confirmed=True)
+  await tool.run_async(
+      args={
+          "skill_name": "skill1",
+          "script_content": "print('inline body')",
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  code = _executed_code(executor)
+  assert "'scripts/_adk_inline_script.py': \"print('inline body')\"" in code
+  assert "'references/ref1.md': 'ref content 1'" in code
+  assert "'assets/asset1.txt': 'asset content 1'" in code
+  assert "'scripts/run.py'" in code
+  assert (
+      "runpy.run_path('scripts/_adk_inline_script.py', run_name='__main__')"
+      in code
+  )
+
+
+@pytest.mark.asyncio
+async def test_inline_script_overrides_colliding_skill_script(mock_skill1):
+  """The inline body wins over a skill script with the same path."""
+  mock_skill1.resources.list_scripts.return_value = ["_adk_inline_script.py"]
+  mock_skill1.resources.get_script.side_effect = lambda name: models.Script(
+      src="print('bundled')"
+  )
+  executor = _make_mock_executor(stdout="ok\n")
+  tool = _make_inline_tool([mock_skill1], code_executor=executor)
+  ctx = _make_inline_tool_context(confirmed=True)
+  await tool.run_async(
+      args={
+          "skill_name": "skill1",
+          "script_content": "print('inline')",
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  code = _executed_code(executor)
+  assert "print('inline')" in code
+  assert "print('bundled')" not in code
+
+
+@pytest.mark.asyncio
+async def test_inline_script_counts_towards_payload_budget(mock_skill1, caplog):
+  """The inline body is included in the materialized payload size check."""
+  executor = _make_mock_executor(stdout="ok\n")
+  toolset = skill_toolset.SkillToolset([mock_skill1], code_executor=executor)
+  # A budget that exactly fits skill1's own resources, so only the inline body
+  # can push the materialized payload over it.
+  budget = sum(
+      len(content)
+      for content in (
+          "ref content 1",
+          b"fake pdf content",
+          "asset content 1",
+          b"fake image content",
+          "echo setup",
+          "print('hello')",
+          "puts 'hello'",
+      )
+  )
+
+  with mock.patch.object(skill_toolset, "_MAX_SKILL_PAYLOAD_BYTES", budget):
+    with caplog.at_level(logging.WARNING):
+      await skill_toolset.RunSkillScriptTool(toolset).run_async(
+          args={"skill_name": "skill1", "file_path": "run.py"},
+          tool_context=_make_tool_context_with_agent(),
+      )
+      assert "exceeding" not in caplog.text
+
+      await skill_toolset.RunSkillInlineScriptTool(toolset).run_async(
+          args={
+              "skill_name": "skill1",
+              "script_content": "print('over budget')",
+              "language": "python",
+          },
+          tool_context=_make_inline_tool_context(confirmed=True),
+      )
+  assert "exceeding" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_inline_script_shell_language(mock_skill1):
+  """The shell language routes through the bash subprocess path."""
+  executor = _make_mock_executor(stdout="hi\n")
+  tool = _make_inline_tool([mock_skill1], code_executor=executor)
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "skill1",
+          "script_content": "echo hi",
+          "language": "shell",
+      },
+      tool_context=ctx,
+  )
+  assert result["file_path"] == "_adk_inline_script.sh"
+  code = _executed_code(executor)
+  assert "'scripts/_adk_inline_script.sh': 'echo hi'" in code
+  assert "['bash', 'scripts/_adk_inline_script.sh']" in code
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "script_args, expected_argv",
+    [
+        (None, "['scripts/_adk_inline_script.py']"),
+        (
+            {"flag": "v"},
+            "['scripts/_adk_inline_script.py', '--flag', 'v']",
+        ),
+        (
+            ["a", "b"],
+            "['scripts/_adk_inline_script.py', 'a', 'b']",
+        ),
+    ],
+)
+async def test_inline_script_argv(mock_skill1, script_args, expected_argv):
+  """Dict args become long options; list args are passed verbatim."""
+  executor = _make_mock_executor(stdout="ok\n")
+  tool = _make_inline_tool([mock_skill1], code_executor=executor)
+  ctx = _make_inline_tool_context(confirmed=True)
+  args = {
+      "skill_name": "skill1",
+      "script_content": "import sys; print(sys.argv[1:])",
+      "language": "python",
+  }
+  if script_args is not None:
+    args["args"] = script_args
+  await tool.run_async(args=args, tool_context=ctx)
+  assert f"sys.argv = {expected_argv}" in _executed_code(executor)
+
+
+def test_inline_script_detect_error_in_response(mock_skill1):
+  """The telemetry hook maps responses onto error types."""
+  tool = _make_inline_tool([mock_skill1])
+  assert (
+      tool._detect_error_in_response(
+          {"error": "nope", "error_code": "SKILL_NOT_FOUND"}
+      )
+      == "SKILL_NOT_FOUND"
+  )
+  assert tool._detect_error_in_response({"error": "nope"}) == "TOOL_ERROR"
+  assert tool._detect_error_in_response({"status": "success"}) is None
+  assert tool._detect_error_in_response("not a dict") is None
+
+
+# ── Integration tests using real UnsafeLocalCodeExecutor ──
+
+
+@pytest.mark.asyncio
+async def test_integration_inline_python_stdout():
+  """Real executor: an inline Python script's stdout is captured."""
+  skill = _make_skill_with_scripts("test_skill", {})
+  toolset = _make_real_executor_toolset([skill], allow_inline_scripts=True)
+  tool = skill_toolset.RunSkillInlineScriptTool(toolset)
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "test_skill",
+          "script_content": "print('hello inline')",
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  assert "status" in result, f"Result missing status: {result}"
+  assert result["status"] == "success"
+  assert result["stdout"] == "hello inline\n"
+  assert result["stderr"] == ""
+
+
+@pytest.mark.asyncio
+async def test_integration_inline_python_failure_surfaces_stderr():
+  """Real executor: a failing inline Python script reports the error."""
+  skill = _make_skill_with_scripts("test_skill", {})
+  toolset = _make_real_executor_toolset([skill], allow_inline_scripts=True)
+  tool = skill_toolset.RunSkillInlineScriptTool(toolset)
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "test_skill",
+          "script_content": "raise ValueError('inline boom')",
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  assert "status" in result, f"Result missing status: {result}"
+  assert result["status"] == "error"
+  assert "inline boom" in result["stderr"]
+
+
+@pytest.mark.asyncio
+async def test_integration_inline_shell_stdout():
+  """Real executor: an inline shell script's stdout is captured."""
+  skill = _make_skill_with_scripts("test_skill", {})
+  toolset = _make_real_executor_toolset([skill], allow_inline_scripts=True)
+  tool = skill_toolset.RunSkillInlineScriptTool(toolset)
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "test_skill",
+          "script_content": "echo hello shell",
+          "language": "shell",
+      },
+      tool_context=ctx,
+  )
+  assert "status" in result, f"Result missing status: {result}"
+  assert result["status"] == "success"
+  assert result["stdout"] == "hello shell\n"
+
+
+@pytest.mark.asyncio
+async def test_integration_inline_shell_nonzero_exit():
+  """Real executor: an inline shell failure surfaces stderr and exit code."""
+  skill = _make_skill_with_scripts("test_skill", {})
+  toolset = _make_real_executor_toolset([skill], allow_inline_scripts=True)
+  tool = skill_toolset.RunSkillInlineScriptTool(toolset)
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "test_skill",
+          "script_content": ">&2 echo inline failure; exit 2",
+          "language": "shell",
+      },
+      tool_context=ctx,
+  )
+  assert "status" in result, f"Result missing status: {result}"
+  assert result["status"] == "error"
+  assert "inline failure" in result["stderr"]
+  assert "Exit code 2" in result["stderr"]
+
+
+@pytest.mark.asyncio
+async def test_integration_inline_python_uses_skill_resources():
+  """Real executor: the snippet runs inside the skill's materialized tree."""
+  skill = _make_skill_with_scripts(
+      "test_skill",
+      {
+          "helper.py": models.Script(
+              src="def message():\n  return 'hello from helper'"
+          )
+      },
+  )
+  skill.resources.get_reference.side_effect = lambda n: (
+      "data from reference" if n == "data.txt" else None
+  )
+  skill.resources.list_references.return_value = ["data.txt"]
+  toolset = _make_real_executor_toolset([skill], allow_inline_scripts=True)
+  tool = skill_toolset.RunSkillInlineScriptTool(toolset)
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "test_skill",
+          "script_content": (
+              "from helper import message\n"
+              "with open('references/data.txt', encoding='utf-8') as f:\n"
+              "  print(f.read())\n"
+              "print(message())"
+          ),
+          "language": "python",
+      },
+      tool_context=ctx,
+  )
+  assert "status" in result, f"Result missing status: {result}"
+  assert result["status"] == "success"
+  assert result["stdout"] == "data from reference\nhello from helper\n"
+
+
+@pytest.mark.asyncio
+async def test_integration_inline_python_receives_list_args():
+  """Real executor: list args reach the snippet as sys.argv entries."""
+  skill = _make_skill_with_scripts("test_skill", {})
+  toolset = _make_real_executor_toolset([skill], allow_inline_scripts=True)
+  tool = skill_toolset.RunSkillInlineScriptTool(toolset)
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "test_skill",
+          "script_content": "import sys; print(sys.argv[1:])",
+          "language": "python",
+          "args": ["alpha", "beta"],
+      },
+      tool_context=ctx,
+  )
+  assert "status" in result, f"Result missing status: {result}"
+  assert result["status"] == "success"
+  assert result["stdout"] == "['alpha', 'beta']\n"
+
+
+@pytest.mark.asyncio
+async def test_integration_inline_shell_receives_dict_args():
+  """Real executor: dict args reach the snippet as long options."""
+  skill = _make_skill_with_scripts("test_skill", {})
+  toolset = _make_real_executor_toolset([skill], allow_inline_scripts=True)
+  tool = skill_toolset.RunSkillInlineScriptTool(toolset)
+  ctx = _make_inline_tool_context(confirmed=True)
+  result = await tool.run_async(
+      args={
+          "skill_name": "test_skill",
+          "script_content": 'echo "$@"',
+          "language": "shell",
+          "args": {"flag": "value"},
+      },
+      tool_context=ctx,
+  )
+  assert "status" in result, f"Result missing status: {result}"
+  assert result["status"] == "success"
+  assert result["stdout"] == "--flag value\n"
+
+
+@pytest.mark.asyncio
+async def test_integration_inline_script_confirmation_flow_end_to_end():
+  """End to end, with no mocks: real skill, context, confirmation and executor.
+
+  Drives the whole opt-in + confirm + execute flow over real objects: a real
+  `Skill`, a real `LlmAgent` invocation context, the real confirmation
+  plumbing on `ToolContext`, and a real `UnsafeLocalCodeExecutor`.
+  """
+  skill = models.Skill(
+      frontmatter=models.Frontmatter(
+          name="report-skill", description="Summarizes a bundled report."
+      ),
+      instructions="Use the bundled report.",
+      resources=models.Resources(
+          references={"report.txt": "42 widgets"},
+          scripts={"helper.py": models.Script(src="PREFIX = 'total:'")},
+      ),
+  )
+  toolset = skill_toolset.SkillToolset(
+      [skill],
+      code_executor=UnsafeLocalCodeExecutor(timeout_seconds=60),
+      allow_inline_scripts=True,
+  )
+  tools = {t.name: t for t in await toolset.get_tools()}
+  assert "run_skill_inline_script" in tools
+  tool = tools["run_skill_inline_script"]
+
+  agent = LlmAgent(name="skill_agent", model="gemini-2.5-flash")
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content="summarize the report"
+  )
+  script_content = (
+      "from helper import PREFIX\n"
+      "with open('references/report.txt', encoding='utf-8') as f:\n"
+      "  print(PREFIX, f.read())"
+  )
+  args = {
+      "skill_name": "report-skill",
+      "script_content": script_content,
+      "language": "python",
+  }
+
+  unconfirmed_context = tool_context.ToolContext(
+      invocation_context, function_call_id="fc_1"
+  )
+  pending = await tool.run_async(args=args, tool_context=unconfirmed_context)
+
+  assert pending["error_code"] == "CONFIRMATION_REQUIRED"
+  assert unconfirmed_context.actions.skip_summarization is True
+  requested = unconfirmed_context.actions.requested_tool_confirmations["fc_1"]
+  assert script_content in requested.hint
+  assert requested.payload == {
+      "language": "python",
+      "script_content": script_content,
+  }
+
+  confirmed_context = tool_context.ToolContext(
+      invocation_context,
+      function_call_id="fc_1",
+      tool_confirmation=ToolConfirmation(confirmed=True),
+  )
+  result = await tool.run_async(args=args, tool_context=confirmed_context)
+
+  assert "status" in result, f"Result missing status: {result}"
+  assert result["status"] == "success"
+  assert result["stdout"] == "total: 42 widgets\n"
+  assert result["stderr"] == ""
