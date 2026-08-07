@@ -40,8 +40,8 @@ jobs:
     if: github.repository == 'google/adk-python'
     runs-on: ubuntu-latest
     permissions:
+      # Only actions/checkout uses the ambient token; adk-docs issues use the ADK_TRIAGE_AGENT PAT.
       contents: read
-      issues: write
 
     steps:
       - name: Checkout repository

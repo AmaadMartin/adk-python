@@ -31,8 +31,8 @@ jobs:
     if: github.repository == 'google/adk-python'
     runs-on: ubuntu-latest
     permissions:
-      contents: write
-      pull-requests: write
+      # Only actions/checkout uses the ambient token; all writes use the RELEASE_PAT.
+      contents: read
 
     steps:
     - name: Checkout repository

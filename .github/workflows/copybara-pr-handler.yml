@@ -33,10 +33,8 @@ jobs:
   close-imported-pr:
     if: github.repository == 'google/adk-python'
     runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-      issues: write
-      contents: read
+    # No checkout step; the github-script step uses the ADK_TRIAGE_AGENT PAT.
+    permissions: {}
 
     steps:
       - name: Check for Copybara commits and close PRs
