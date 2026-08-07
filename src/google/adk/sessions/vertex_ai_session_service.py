@@ -47,6 +47,41 @@ logger = logging.getLogger('google_adk.' + __name__)
 
 _COMPACTION_CUSTOM_METADATA_KEY = '_compaction'
 _USAGE_METADATA_CUSTOM_METADATA_KEY = '_usage_metadata'
+_EVENT_CUSTOM_METADATA_KEY = '_event'
+
+_EVENT_FIELDS_PERSISTED_ELSEWHERE: set[str] = {
+    # Sent as top-level appendEvent request parameters, or assigned by the
+    # server (`id` comes back in the event resource name).
+    'id',
+    'invocation_id',
+    'author',
+    'timestamp',
+    # Typed fields on AppendAgentEngineSessionEventConfig.
+    'content',
+    'actions',
+    'error_code',
+    'error_message',
+    # Typed fields on EventMetadata.
+    'partial',
+    'turn_complete',
+    'interrupted',
+    'branch',
+    'custom_metadata',
+    'long_running_tool_ids',
+    'grounding_metadata',
+    'input_transcription',
+    'output_transcription',
+    # Existing custom_metadata sidecar.
+    'usage_metadata',
+}
+"""Event fields kept out of the `_event` custom_metadata sidecar.
+
+Every other Event field has to ride in custom_metadata because the Vertex AI
+SDK validates `event_metadata` against a closed model (`extra='forbid'`), so an
+unknown key makes `appendEvent` raise before the request is even sent. Listing
+what is persisted elsewhere, rather than what to persist, means a field added
+to Event or LlmResponse later is carried automatically.
+"""
 
 _SESSION_ID_PATTERN = re.compile(r'^[A-Za-z0-9_-]+$')
 
@@ -434,6 +469,14 @@ class VertexAiSessionService(BaseSessionService):
       metadata_dict['grounding_metadata'] = event.grounding_metadata.model_dump(
           exclude_none=True, mode='json'
       )
+    if event.input_transcription:
+      metadata_dict['input_transcription'] = (
+          event.input_transcription.model_dump(exclude_none=True, mode='json')
+      )
+    if event.output_transcription:
+      metadata_dict['output_transcription'] = (
+          event.output_transcription.model_dump(exclude_none=True, mode='json')
+      )
 
     # ALWAYS write to custom_metadata
     if event.actions and event.actions.compaction:
@@ -453,6 +496,26 @@ class VertexAiSessionService(BaseSessionService):
           metadata_dict,
           key=_USAGE_METADATA_CUSTOM_METADATA_KEY,
           value=usage_dict,
+      )
+    # Event fields the typed channels cannot carry (see
+    # _EVENT_FIELDS_PERSISTED_ELSEWHERE) ride here, so the legacy
+    # representation stays lossless. Written on every append, like the two
+    # sidecars above: `config` is built once and the raw_event fallback below
+    # resends that same dict, so a sidecar added only after the
+    # ValidationError would come too late. `exclude_defaults` keeps untouched
+    # fields (notably the always-present `node_info` default) out of the
+    # payload.
+    extra_event_fields = event.model_dump(
+        exclude_none=True,
+        exclude_defaults=True,
+        mode='json',
+        exclude=_EVENT_FIELDS_PERSISTED_ELSEWHERE,
+    )
+    if extra_event_fields:
+      _set_internal_custom_metadata(
+          metadata_dict,
+          key=_EVENT_CUSTOM_METADATA_KEY,
+          value=extra_event_fields,
       )
 
     config['event_metadata'] = metadata_dict
@@ -592,9 +655,11 @@ def _from_api_event(api_event_obj: vertexai.types.SessionEvent) -> Event:
     # in custom_metadata under the compaction metadata key.
     compaction_data = None
     usage_metadata_data = None
+    extra_event_fields: dict[str, Any] | None = None
     if custom_metadata and (
         _COMPACTION_CUSTOM_METADATA_KEY in custom_metadata
         or _USAGE_METADATA_CUSTOM_METADATA_KEY in custom_metadata
+        or _EVENT_CUSTOM_METADATA_KEY in custom_metadata
     ):
       custom_metadata = dict(custom_metadata)  # avoid mutating the API response
       compaction_data = custom_metadata.pop(
@@ -603,11 +668,20 @@ def _from_api_event(api_event_obj: vertexai.types.SessionEvent) -> Event:
       usage_metadata_data = custom_metadata.pop(
           _USAGE_METADATA_CUSTOM_METADATA_KEY, None
       )
+      extra_event_fields = custom_metadata.pop(_EVENT_CUSTOM_METADATA_KEY, None)
       if not custom_metadata:
         custom_metadata = None
     grounding_metadata = _session_util.decode_model(
         getattr(event_metadata, 'grounding_metadata', None),
         types.GroundingMetadata,
+    )
+    input_transcription = _session_util.decode_model(
+        getattr(event_metadata, 'input_transcription', None),
+        types.Transcription,
+    )
+    output_transcription = _session_util.decode_model(
+        getattr(event_metadata, 'output_transcription', None),
+        types.Transcription,
     )
   else:
     long_running_tool_ids = None
@@ -618,7 +692,10 @@ def _from_api_event(api_event_obj: vertexai.types.SessionEvent) -> Event:
     custom_metadata = None
     compaction_data = None
     usage_metadata_data = None
+    extra_event_fields = None
     grounding_metadata = None
+    input_transcription = None
+    output_transcription = None
 
   if actions:
     actions_dict = actions.model_dump(exclude_none=True, mode='python')
@@ -650,6 +727,15 @@ def _from_api_event(api_event_obj: vertexai.types.SessionEvent) -> Event:
       else datetime.datetime.now(datetime.timezone.utc).timestamp()
   )
 
+  # A sidecar written by a different ADK version could name a field this
+  # version passes explicitly; dropping those avoids a duplicate-kwarg
+  # TypeError and keeps the typed channels authoritative.
+  extra_event_fields = {
+      k: v
+      for k, v in (extra_event_fields or {}).items()
+      if k not in _EVENT_FIELDS_PERSISTED_ELSEWHERE
+  }
+
   return Event(
       id=api_event_obj.name.split('/')[-1],
       invocation_id=api_event_obj.invocation_id,
@@ -667,6 +753,9 @@ def _from_api_event(api_event_obj: vertexai.types.SessionEvent) -> Event:
       branch=branch,
       custom_metadata=custom_metadata,
       grounding_metadata=grounding_metadata,
+      input_transcription=input_transcription,
+      output_transcription=output_transcription,
       long_running_tool_ids=long_running_tool_ids,
       usage_metadata=usage_metadata,
+      **extra_event_fields,
   )
