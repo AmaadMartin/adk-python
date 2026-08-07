@@ -411,14 +411,6 @@ def _redirect_telemetry_to_tmp_path(
       "google.adk.cli.cli_tools_click.read_telemetry_consent",
       lambda: True,
   )
-  # `_is_rate_limited` is a staticmethod, so the replacement re-binds as an
-  # instance method and receives `self`. Returning True makes the
-  # atexit-registered shutdown return before it spawns the reporter process.
-  monkeypatch.setattr(
-      "google.adk.cli._telemetry._metrics_collector"
-      ".MetricsCollector._is_rate_limited",
-      lambda *_: True,
-  )
   temp_queue = tmp_path / "telemetry_queue.jsonl"
   monkeypatch.setattr(
       "google.adk.cli._telemetry._constants.QUEUE_FILE",
