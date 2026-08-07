@@ -626,7 +626,7 @@ def _setup_instrumentation_lib_if_installed():
     from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
 
     GoogleGenAiSdkInstrumentor().instrument()
-  except ImportError:
+  except (ImportError, AttributeError):
     logger.warning(
         "Unable to import GoogleGenAiSdkInstrumentor - some"
         " telemetry will be disabled. Make sure to install google-adk[otel-gcp]"
