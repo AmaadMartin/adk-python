@@ -70,6 +70,17 @@ Run these commands from the project root:
    pytest tests/unittests -n auto
    ```
 
+9. **Run static type checks:**
+
+   ```bash
+   uv run mypy .
+   ```
+
+   > [!NOTE]
+   > A large pre-existing error baseline is expected: the `Mypy Check` CI job
+   > only fails on errors your branch *adds*. mypy analyzes against the
+   > `python_version` set under `[tool.mypy]` in `pyproject.toml`.
+
 ## Key Commands Reference
 
 | Task                                 | Command                                           |
@@ -77,6 +88,7 @@ Run these commands from the project root:
 | Run unit tests (Fast)                | `pytest tests/unittests`                          |
 | Run tests across all Python versions | `tox`                                             |
 | Format codebase                      | `pre-commit run --all-files`                      |
+| Static type check                    | `uv run mypy .`                                   |
 | Run tests in parallel                | `pytest tests/unittests -n auto`                  |
 | Run specific test file               | `pytest tests/unittests/agents/test_llm_agent.py` |
 | Launch web UI                        | `adk web path/to/agents_dir`                      |
