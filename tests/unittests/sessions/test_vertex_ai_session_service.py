@@ -39,6 +39,7 @@ from google.genai import types as genai_types
 from google.genai.errors import ClientError
 import pydantic
 import pytest
+from vertexai import types as vertexai_types
 
 MOCK_SESSION_JSON_1 = {
     'name': (
@@ -1507,6 +1508,353 @@ async def test_append_event_fallback_for_older_sdk(mock_api_client_instance):
 
   assert appended_event.actions.compaction is not None
   assert appended_event.actions.compaction.start_timestamp == 1000.0
+
+
+def _reject_raw_event(mock_client: MockAsyncClient):
+  """Makes the mock reject `raw_event`, as an SDK older than the field does."""
+
+  async def side_effect(name, author, invocation_id, timestamp, config):
+    if 'raw_event' in config:
+
+      class DummyModel(pydantic.BaseModel):
+        a: int
+
+      DummyModel(a='not an int')
+    return await mock_client._append_event(
+        name, author, invocation_id, timestamp, config
+    )
+
+  mock_client.agent_engines.sessions.events.append.side_effect = side_effect
+
+
+def _event_with_every_sidecar_field(**overrides: Any) -> Event:
+  """Builds an Event populating every field the `_event` sidecar carries."""
+  kwargs: dict[str, Any] = dict(
+      invocation_id='sidecar_invocation',
+      author='model',
+      timestamp=1734005535.0,
+      model_version='test_model_version',
+      turn_complete_reason=genai_types.TurnCompleteReason.NEED_MORE_INPUT,
+      finish_reason=genai_types.FinishReason.STOP,
+      live_session_resumption_update=(
+          genai_types.LiveServerSessionResumptionUpdate(
+              new_handle='test_handle',
+              resumable=True,
+              last_consumed_client_message_index=7,
+          )
+      ),
+      live_session_id='test_live_session',
+      go_away=genai_types.LiveServerGoAway(time_left='10s'),
+      voice_activity=genai_types.VoiceActivity(
+          voice_activity_type=genai_types.VoiceActivityType.ACTIVITY_START
+      ),
+      avg_logprobs=0.25,
+      logprobs_result=genai_types.LogprobsResult(
+          chosen_candidates=[
+              genai_types.LogprobsResultCandidate(
+                  log_probability=0.5, token='test_token', token_id=0
+              )
+          ]
+      ),
+      cache_metadata=CacheMetadata(
+          cache_name='test_cache_name',
+          expire_time=1734009999.0,
+          fingerprint='test_fingerprint',
+          invocations_used=1,
+          contents_count=1,
+      ),
+      citation_metadata=genai_types.CitationMetadata(
+          citations=[
+              genai_types.Citation(uri='http://test.com', title='test_title')
+          ]
+      ),
+      interaction_id='test_interaction',
+      environment_id='test_environment',
+      output={'result': 'node_output'},
+      node_path='root/child',
+      isolation_scope='test_scope',
+      input_transcription=genai_types.Transcription(text='test_input'),
+      output_transcription=genai_types.Transcription(text='test_output'),
+  )
+  kwargs.update(overrides)
+  return Event(**kwargs)
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_fallback_preserves_all_event_fields(
+    mock_api_client_instance: MockAsyncClient,
+) -> None:
+  """Every Event field round-trips even when the SDK rejects raw_event."""
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  event_to_append = _event_with_every_sidecar_field()
+  _reject_raw_event(mock_api_client_instance)
+
+  await session_service.append_event(session, event_to_append)
+
+  retrieved_session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  appended_event = retrieved_session.events[-1]
+  # The server assigns the id, so align it before comparing whole events.
+  event_to_append.id = appended_event.id
+  assert appended_event.model_version == 'test_model_version'
+  assert appended_event.finish_reason == genai_types.FinishReason.STOP
+  assert appended_event.output == {'result': 'node_output'}
+  assert appended_event.node_info.path == 'root/child'
+  assert appended_event.isolation_scope == 'test_scope'
+  assert appended_event.input_transcription.text == 'test_input'
+  assert appended_event.output_transcription.text == 'test_output'
+  assert appended_event == event_to_append
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_writes_transcriptions_to_typed_event_metadata(
+    mock_api_client_instance: MockAsyncClient,
+) -> None:
+  """The transcriptions ride the typed channel, not the `_event` sidecar."""
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  event_to_append = Event(
+      invocation_id='transcription_invocation',
+      author='model',
+      timestamp=1734005536.0,
+      input_transcription=genai_types.Transcription(text='heard'),
+      output_transcription=genai_types.Transcription(text='said'),
+  )
+
+  await session_service.append_event(session, event_to_append)
+
+  event_metadata = mock_api_client_instance.event_dict['1'][0][-1][
+      'event_metadata'
+  ]
+  assert event_metadata['input_transcription'] == {'text': 'heard'}
+  assert event_metadata['output_transcription'] == {'text': 'said'}
+  assert event_metadata['custom_metadata'] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_sidecar_restores_event_without_stored_raw_event(
+    mock_api_client_instance: MockAsyncClient,
+) -> None:
+  """The sidecar written on the happy path is what rescues a raw_event-less row.
+
+  The SDK accepting `raw_event` does not prove the row comes back carrying it,
+  and `_from_api_event` falls back to the legacy channel for any row without a
+  usable `raw_event`. That is why the sidecar is written on every append.
+  """
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+
+  await session_service.append_event(session, _event_with_every_sidecar_field())
+
+  appended = mock_api_client_instance.event_dict['1'][0][-1]
+  assert appended['raw_event']
+  sidecar = appended['event_metadata']['custom_metadata']['_event']
+  assert sidecar['model_version'] == 'test_model_version'
+  assert 'input_transcription' not in sidecar
+  assert 'output_transcription' not in sidecar
+
+  del appended['raw_event']
+  retrieved_session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  restored_event = retrieved_session.events[-1]
+  assert restored_event.model_version == 'test_model_version'
+  assert restored_event.node_info.path == 'root/child'
+  assert restored_event.input_transcription.text == 'test_input'
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_event_sidecar_omitted_for_plain_event(
+    mock_api_client_instance: MockAsyncClient,
+) -> None:
+  """An event with no extra fields keeps the payload it has today."""
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  event_to_append = Event(
+      invocation_id='plain_invocation',
+      author='user',
+      timestamp=1734005537.0,
+      content=genai_types.Content(parts=[genai_types.Part(text='hi')]),
+  )
+
+  await session_service.append_event(session, event_to_append)
+
+  event_metadata = mock_api_client_instance.event_dict['1'][0][-1][
+      'event_metadata'
+  ]
+  assert event_metadata['custom_metadata'] is None
+  assert 'input_transcription' not in event_metadata
+  assert 'output_transcription' not in event_metadata
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_fallback_keeps_user_custom_metadata_clean(
+    mock_api_client_instance: MockAsyncClient,
+) -> None:
+  """Internal sidecars never leak into the user's custom_metadata."""
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  event_to_append = _event_with_every_sidecar_field(
+      custom_metadata={'user_key': 'user_value'},
+      usage_metadata=genai_types.GenerateContentResponseUsageMetadata(
+          prompt_token_count=11, total_token_count=22
+      ),
+  )
+  _reject_raw_event(mock_api_client_instance)
+
+  await session_service.append_event(session, event_to_append)
+
+  retrieved_session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  appended_event = retrieved_session.events[-1]
+  assert appended_event.custom_metadata == {'user_key': 'user_value'}
+  assert appended_event.usage_metadata.total_token_count == 22
+  assert appended_event.model_version == 'test_model_version'
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_from_api_event_tolerates_foreign_event_sidecar_keys(
+    mock_api_client_instance: MockAsyncClient,
+) -> None:
+  """A sidecar written by another ADK version must not break get_session."""
+  mock_api_client_instance.event_dict['1'] = (
+      [{
+          'name': (
+              'projects/test-project/locations/test-location/'
+              'reasoningEngines/123/sessions/1/events/321'
+          ),
+          'invocation_id': 'newer_adk',
+          'author': 'model',
+          'timestamp': '2024-12-12T12:12:12.123456Z',
+          'event_metadata': {
+              'branch': 'typed_branch',
+              'custom_metadata': {
+                  '_event': {
+                      'model_version': 'test_model_version',
+                      'field_from_a_newer_adk': 'unknown',
+                      # A key the typed channel above already owns.
+                      'branch': 'sidecar_branch',
+                  },
+              },
+          },
+      }],
+      None,
+  )
+  session_service = mock_vertex_ai_session_service()
+
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+
+  event = session.events[0]
+  assert event.model_version == 'test_model_version'
+  assert event.branch == 'typed_branch'
+  assert event.custom_metadata is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_from_api_event_without_sidecar_leaves_new_fields_unset() -> None:
+  """A row written before this change reads back exactly as it does today."""
+  session_service = mock_vertex_ai_session_service()
+
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='2'
+  )
+
+  event = session.events[0]
+  assert event.model_version is None
+  assert event.input_transcription is None
+  assert event.output_transcription is None
+  assert event.custom_metadata is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_config_matches_vertex_append_event_contract(
+    mock_api_client_instance: MockAsyncClient,
+) -> None:
+  """Both the full and the fallback payload satisfy the SDK request model."""
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  event_to_append = _event_with_every_sidecar_field(
+      content=genai_types.Content(parts=[genai_types.Part(text='hello')]),
+      actions=EventActions(
+          transfer_to_agent='another_agent',
+          state_delta={'new_key': 'new_value'},
+          compaction=EventCompaction(
+              start_timestamp=500.0,
+              end_timestamp=600.0,
+              compacted_content=genai_types.Content(
+                  parts=[genai_types.Part(text='compacted')]
+              ),
+          ),
+      ),
+      error_code='1',
+      error_message='test_error',
+      partial=False,
+      turn_complete=True,
+      interrupted=False,
+      branch='test_branch',
+      custom_metadata={'user_key': 'user_value'},
+      long_running_tool_ids={'tool1'},
+      grounding_metadata=genai_types.GroundingMetadata(
+          web_search_queries=['query']
+      ),
+      usage_metadata=genai_types.GenerateContentResponseUsageMetadata(
+          prompt_token_count=11, total_token_count=22
+      ),
+  )
+  captured_configs: list[dict[str, Any]] = []
+
+  async def side_effect(name, author, invocation_id, timestamp, config):
+    # append_event mutates and resends the same dict, so snapshot it.
+    captured_configs.append(copy.deepcopy(config))
+    if 'raw_event' in config:
+
+      class DummyModel(pydantic.BaseModel):
+        a: int
+
+      DummyModel(a='not an int')
+    return await mock_api_client_instance._append_event(
+        name, author, invocation_id, timestamp, config
+    )
+
+  mock_api_client_instance.agent_engines.sessions.events.append.side_effect = (
+      side_effect
+  )
+
+  await session_service.append_event(session, event_to_append)
+
+  assert len(captured_configs) == 2
+  for captured in captured_configs:
+    try:
+      vertexai_types.AppendAgentEngineSessionEventConfig.model_validate(
+          captured
+      )
+    except pydantic.ValidationError as e:
+      pytest.fail(f'append_event built an invalid config: {e}')
 
 
 def test_extract_short_session_id_short_id():
