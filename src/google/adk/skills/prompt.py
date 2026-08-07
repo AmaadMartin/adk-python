@@ -16,9 +16,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import html
 from typing import Any
-from typing import List
 from typing import Union
 import warnings
 
@@ -26,12 +26,12 @@ from . import models
 
 
 def format_skills_as_xml(
-    skills: List[Union[models.Frontmatter, models.Skill]],
+    skills: Sequence[Union[models.Frontmatter, models.Skill]],
 ) -> str:
   """Formats available skills into a standard XML string.
 
   Args:
-    skills: A list of skill frontmatter or full skill objects.
+    skills: A sequence of skill frontmatter or full skill objects.
 
   Returns:
       XML string with <available_skills> block containing each skill's

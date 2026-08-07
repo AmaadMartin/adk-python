@@ -14,6 +14,10 @@
 
 """Unit tests for prompt."""
 
+from collections.abc import Sequence
+from typing import get_origin
+from typing import get_type_hints
+
 from google.adk.skills import models
 from google.adk.skills import prompt
 import pytest
@@ -47,3 +51,53 @@ class TestPrompt:
     xml = prompt.format_skills_as_xml(skills)
     assert "my-skill" in xml
     assert "desc&lt;ription&gt;" in xml
+
+  def test_format_skills_as_xml_with_skill_objects(self):
+    skills = [
+        models.Skill(
+            frontmatter=models.Frontmatter(name="skill1", description="desc1"),
+            instructions="instructions1",
+        ),
+        models.Skill(
+            frontmatter=models.Frontmatter(name="skill2", description="desc2"),
+            instructions="instructions2",
+        ),
+    ]
+    xml = prompt.format_skills_as_xml(skills)
+
+    assert "<name>\nskill1\n</name>" in xml
+    assert "<description>\ndesc1\n</description>" in xml
+    assert "<name>\nskill2\n</name>" in xml
+    assert "<description>\ndesc2\n</description>" in xml
+    assert "<location>" not in xml
+    assert "instructions1" not in xml
+    assert xml.startswith("<available_skills>")
+    assert xml.endswith("</available_skills>")
+
+  def test_format_skills_as_xml_with_mixed_frontmatter_and_skill(self):
+    skills = [
+        models.Frontmatter(name="skill1", description="desc1"),
+        models.Skill(
+            frontmatter=models.Frontmatter(name="skill2", description="desc2"),
+            instructions="instructions2",
+        ),
+    ]
+    xml = prompt.format_skills_as_xml(skills)
+
+    assert "<name>\nskill1\n</name>" in xml
+    assert "<description>\ndesc1\n</description>" in xml
+    assert "<name>\nskill2\n</name>" in xml
+    assert "<description>\ndesc2\n</description>" in xml
+
+  def test_format_skills_as_xml_accepts_non_list_sequence(self):
+    skills = (
+        models.Frontmatter(name="skill1", description="desc1"),
+        models.Frontmatter(name="skill2", description="desc2"),
+    )
+    assert prompt.format_skills_as_xml(skills) == (
+        prompt.format_skills_as_xml(list(skills))
+    )
+
+  def test_format_skills_as_xml_annotation_is_covariant_sequence(self):
+    hints = get_type_hints(prompt.format_skills_as_xml)
+    assert get_origin(hints["skills"]) is Sequence
