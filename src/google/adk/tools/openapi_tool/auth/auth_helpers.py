@@ -364,8 +364,37 @@ def credential_to_param(
     kwargs = {param.py_name: auth_credential.api_key}
     return param, kwargs
 
-  # TODO: Split handling for OpenIDConnect scheme and native HTTPBearer
-  # Scheme
+  # OAuth2 and OpenID Connect Tokens.
+  elif auth_credential and (
+      auth_scheme.type_ in (AuthSchemeType.oauth2, AuthSchemeType.openIdConnect)
+      or auth_credential.auth_type == AuthCredentialTypes.OPEN_ID_CONNECT
+  ):
+    if (
+        auth_credential.http
+        and auth_credential.http.credentials
+        and auth_credential.http.credentials.token
+    ):
+      is_openid = (
+          auth_scheme.type_ == AuthSchemeType.openIdConnect
+          or auth_credential.auth_type == AuthCredentialTypes.OPEN_ID_CONNECT
+      )
+      description = getattr(auth_scheme, "description", None) or (
+          "OpenID Connect token" if is_openid else "Bearer token"
+      )
+      param = ApiParameter(
+          original_name="Authorization",
+          param_location="header",
+          param_schema=Schema(type="string"),
+          description=description,
+          py_name=INTERNAL_AUTH_PREFIX + "Authorization",
+      )
+      kwargs = {
+          param.py_name: f"Bearer {auth_credential.http.credentials.token}"
+      }
+      return param, kwargs
+    return None, None
+
+  # Native HTTP Bearer Scheme
   elif (
       auth_credential and auth_credential.auth_type == AuthCredentialTypes.HTTP
   ):
@@ -379,7 +408,8 @@ def credential_to_param(
           original_name="Authorization",
           param_location="header",
           param_schema=Schema(type="string"),
-          description=auth_scheme.description or "Bearer token",
+          description=getattr(auth_scheme, "description", None)
+          or "Bearer token",
           py_name=INTERNAL_AUTH_PREFIX + "Authorization",
       )
       kwargs = {
@@ -399,29 +429,6 @@ def credential_to_param(
       raise NotImplementedError("Basic Authentication is not supported.")
     else:
       raise ValueError("Invalid HTTP auth credentials")
-
-  # Service Account tokens, OAuth2 Tokens and OpenID Tokens are now handled as
-  # Bearer tokens.
-  elif (auth_scheme.type_ == AuthSchemeType.oauth2 and auth_credential) or (
-      auth_scheme.type_ == AuthSchemeType.openIdConnect and auth_credential
-  ):
-    if (
-        auth_credential.http
-        and auth_credential.http.credentials
-        and auth_credential.http.credentials.token
-    ):
-      param = ApiParameter(
-          original_name="Authorization",
-          param_location="header",
-          param_schema=Schema(type="string"),
-          description=auth_scheme.description or "Bearer token",
-          py_name=INTERNAL_AUTH_PREFIX + "Authorization",
-      )
-      kwargs = {
-          param.py_name: f"Bearer {auth_credential.http.credentials.token}"
-      }
-      return param, kwargs
-    return None, None
   else:
     raise ValueError("Invalid security scheme and credential combination")
 
