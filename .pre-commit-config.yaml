@@ -64,9 +64,14 @@ repos:
         # This script documents and matches the very patterns it forbids, so
         # it must not scan itself or other dev-only tooling.
         exclude: ^scripts/
+      # Runs in check mode on purpose: pre-commit and CI must never rewrite the
+      # committed pins. Update mode re-derives --exclude-newer from the current
+      # date and exits non-zero whenever it rewrites a file, so it can never
+      # pass in the Pre-commit Linter job. Regenerate the pins deliberately:
+      #   ./scripts/update_constraints.sh
       - id: update-constraints
         name: update-constraints
-        entry: ./scripts/update_constraints.sh
+        entry: ./scripts/update_constraints.sh --check
         language: system
         files: ^(pyproject\.toml|constraints-.*\.txt)$
         pass_filenames: false
