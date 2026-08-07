@@ -14,9 +14,11 @@
 
 import multiprocessing
 import os
+import queue
 import signal
 import textwrap
 import time
+from typing import NoReturn
 from unittest.mock import MagicMock
 
 from google.adk.agents.base_agent import BaseAgent
@@ -27,6 +29,7 @@ from google.adk.code_executors.code_execution_utils import CodeExecutionResult
 from google.adk.code_executors.unsafe_local_code_executor import UnsafeLocalCodeExecutor
 from google.adk.sessions.base_session_service import BaseSessionService
 from google.adk.sessions.session import Session
+import pydantic
 import pytest
 
 
@@ -49,6 +52,23 @@ def _is_alive(pid: int) -> bool:
   return state != "Z"
 
 
+class _NeverReadyQueue:
+  """A result queue that never yields a result, recording each wait asked for."""
+
+  def __init__(self) -> None:
+    self.waits: list[float | None] = []
+
+  def get(self, timeout: float | None = None) -> NoReturn:
+    self.waits.append(timeout)
+    raise queue.Empty
+
+  def close(self) -> None:
+    pass
+
+  def join_thread(self) -> None:
+    pass
+
+
 @pytest.fixture
 def mock_invocation_context() -> InvocationContext:
   """Provides a mock InvocationContext."""
@@ -69,6 +89,43 @@ class TestUnsafeLocalCodeExecutor:
     executor = UnsafeLocalCodeExecutor()
     assert not executor.stateful
     assert not executor.optimize_data_file
+    # The code runs in the agent's own process tree, so the wait for a result
+    # has to be bounded even when the caller says nothing.
+    assert executor.timeout_seconds == 300
+
+  @pytest.mark.parametrize("timeout", [0, -1, None])
+  def test_non_positive_timeout_is_rejected(self, timeout):
+    """0 or None would mean no bound, so they are refused up front."""
+    with pytest.raises(pydantic.ValidationError):
+      UnsafeLocalCodeExecutor(timeout_seconds=timeout)
+
+  def test_default_timeout_bounds_the_wait(
+      self, monkeypatch, mock_invocation_context: InvocationContext
+  ):
+    """With no timeout configured the wait is still finite, and it fires."""
+    result_queue = _NeverReadyQueue()
+    process = MagicMock()
+    # None keeps `_execution_group` from resolving a group for a mock pid.
+    process.pid = None
+    process.is_alive.return_value = False
+    ctx = MagicMock()
+    ctx.Queue.return_value = result_queue
+    ctx.Process.return_value = process
+    monkeypatch.setattr(
+        unsafe_local_code_executor.multiprocessing,
+        "get_context",
+        lambda method: ctx,
+    )
+
+    result = UnsafeLocalCodeExecutor().execute_code(
+        mock_invocation_context, CodeExecutionInput(code="while True: pass")
+    )
+
+    assert result_queue.waits == [300]
+    assert result.stdout == ""
+    assert "Code execution timed out after 300 seconds." in result.stderr
+    # The bound is worth nothing if the runaway worker is left running.
+    process.terminate.assert_called_once()
 
   def test_init_stateful_raises_error(self):
     with pytest.raises(
