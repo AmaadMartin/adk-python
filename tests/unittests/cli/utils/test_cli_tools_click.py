@@ -1948,6 +1948,10 @@ def test_telemetry_cli_commands(monkeypatch: pytest.MonkeyPatch) -> None:
   result = runner.invoke(cli_tools_click.main, ["telemetry"])
   assert result.exit_code in (0, 2)
   assert "Usage:" in result.output
+  assert "Manage telemetry settings." in result.output
+  assert "enable" in result.output
+  assert "disable" in result.output
+  assert "status" in result.output
 
   # Test status subcommand
   result = runner.invoke(cli_tools_click.main, ["telemetry", "status"])
