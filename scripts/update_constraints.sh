@@ -13,24 +13,57 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# Manage constraints.txt: check if up-to-date or automatically update it.
+# Manage the constraints-<ver>.txt pin files: check them, update them, or
+# refresh the snapshot they resolve against.
 #
 # Usage:
-#   ./scripts/update_constraints.sh          # Updates constraints.txt in-place if out of date
-#   ./scripts/update_constraints.sh --check  # Check only, exits with 1 if out of date (for CI)
+#   ./scripts/update_constraints.sh            # Rewrite the files that no longer match
+#                                              # pyproject.toml, reusing the snapshot date
+#                                              # each file already records
+#   ./scripts/update_constraints.sh --check    # Report drift only; never writes (for CI)
+#   ./scripts/update_constraints.sh --refresh  # Advance every snapshot date to 4 days ago,
+#                                              # then rewrite
+#
+# Exit codes: 0 success, 1 drift or resolution failure, 2 usage error.
 
 set -e
 
-# Parse arguments
+usage() {
+  echo "Usage: ./scripts/update_constraints.sh [--check | --refresh]" >&2
+  echo "  --check     Report drift only; never writes constraints-<ver>.txt." >&2
+  echo "  --refresh   Advance every snapshot date to 4 days ago before resolving." >&2
+}
+
+# Parse arguments. An unrecognised flag is a usage error rather than a silent
+# fall-through to update mode: a typo such as --chek would otherwise turn the
+# CI check job into a job that rewrites the files and verifies nothing.
 CHECK_ONLY=false
+REFRESH=false
 for arg in "$@"; do
   case $arg in
     --check)
       CHECK_ONLY=true
-      shift
+      ;;
+    --refresh)
+      REFRESH=true
+      ;;
+    *)
+      echo "❌ Unknown option: $arg" >&2
+      usage
+      exit 2
       ;;
   esac
 done
+
+# The two flags name different snapshots to verify against: --check reads the
+# date out of each file, --refresh replaces it with today's. Combined, they
+# report every file as drifted the moment any dependency publishes a release,
+# and no rerun of the generator can clear that.
+if [ "$CHECK_ONLY" = true ] && [ "$REFRESH" = true ]; then
+  echo "❌ --check and --refresh cannot be combined: they disagree on which snapshot to verify." >&2
+  usage
+  exit 2
+fi
 
 # Ensure uv is in PATH
 export PATH="$HOME/.local/bin:$PATH"
@@ -43,13 +76,12 @@ trap cleanup EXIT
 PYTHON_VERSIONS=("3.10" "3.11" "3.12" "3.13" "3.14")
 EXIT_CODE=0
 
-# Calculate 4 days ago date
-if [ "$CHECK_ONLY" = false ]; then
-  if date -v-4d +%Y-%m-%d >/dev/null 2>&1; then
-    EXCLUDE_NEWER_DATE=$(date -v-4d +%Y-%m-%d)
-  else
-    EXCLUDE_NEWER_DATE=$(date -d "4 days ago" +%Y-%m-%d)
-  fi
+# Calculate 4 days ago date. This is the snapshot a file gets when it is
+# created, or when --refresh advances it.
+if date -v-4d +%Y-%m-%d >/dev/null 2>&1; then
+  TODAY_MINUS_4=$(date -v-4d +%Y-%m-%d)
+else
+  TODAY_MINUS_4=$(date -d "4 days ago" +%Y-%m-%d)
 fi
 
 for ver in "${PYTHON_VERSIONS[@]}"; do
@@ -64,21 +96,34 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
     fi
   fi
 
-  # Default date to what we calculated (for update mode)
-  date_to_use="$EXCLUDE_NEWER_DATE"
-
+  # Read back the snapshot date the file was generated with.
+  recorded_date=""
   if [ -f "$TARGET_FILE" ]; then
-    if [ "$CHECK_ONLY" = true ]; then
-      # In check mode, extract the date used when it was generated
-      date_to_use=$(grep -h "#    uv pip compile" "$TARGET_FILE" | grep -oE -- '--exclude-newer [0-9]{4}-[0-9]{2}-[0-9]{2}' | cut -d' ' -f2 || true)
-    fi
+    recorded_date=$(grep -h "#    uv pip compile" "$TARGET_FILE" | grep -oE -- '--exclude-newer [0-9]{4}-[0-9]{2}-[0-9]{2}' | cut -d' ' -f2 || true)
+  fi
+
+  if [ "$CHECK_ONLY" = true ] && [ -z "$recorded_date" ]; then
+    echo "❌ $TARGET_FILE records no snapshot date!"
+    echo "   Without an '--exclude-newer YYYY-MM-DD' header there is nothing to verify its pins against."
+    echo "   Please regenerate it locally and commit the changes:"
+    echo "   $ ./scripts/update_constraints.sh"
+    EXIT_CODE=1
+    continue
+  fi
+
+  # Reuse the recorded date in every mode. Recomputing it in update mode
+  # rewrites all five files on any day the script runs, which buries a real
+  # dependency change in unrelated churn; --refresh is the one way to advance
+  # the snapshot.
+  if [ "$REFRESH" = true ] || [ -z "$recorded_date" ]; then
+    date_to_use="$TODAY_MINUS_4"
+  else
+    date_to_use="$recorded_date"
   fi
 
   # Construct the command from scratch
   GENERATION_CMD="uv pip compile pyproject.toml --all-extras --python-version $ver"
-  if [ -n "$date_to_use" ]; then
-    GENERATION_CMD="$GENERATION_CMD --exclude-newer $date_to_use"
-  fi
+  GENERATION_CMD="$GENERATION_CMD --exclude-newer $date_to_use"
   GENERATION_CMD="$GENERATION_CMD --index-url https://pypi.org/simple -o $TARGET_FILE"
 
   echo "Found generation command: $GENERATION_CMD"
@@ -146,7 +191,6 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
       cp "$NEW_FILE" "$TARGET_FILE"
       echo "✅ $TARGET_FILE has been updated locally."
       rm -f "$STABLE_FILE" "$NEW_FILE"
-      EXIT_CODE=1
     fi
   fi
 done
