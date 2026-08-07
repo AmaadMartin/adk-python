@@ -43,6 +43,22 @@ trap cleanup EXIT
 PYTHON_VERSIONS=("3.10" "3.11" "3.12" "3.13" "3.14")
 EXIT_CODE=0
 
+# Extras baked into the published constraints files: every extra declared in
+# pyproject.toml except the contributor-only ones (dev, docs, test). These
+# files exist to protect a runtime install
+# ("pip install google-adk -c constraints-<ver>.txt"), so pinning sphinx,
+# pytest or mypy in them is noise.
+# tests/unittests/test_constraints_generation.py fails if this list drifts
+# from pyproject.toml.
+RUNTIME_EXTRAS=(
+  a2a agent-identity all antigravity benchmark community daytona db e2b eval
+  extensions gcp mcp oci otel-gcp slack toolbox tools
+)
+EXTRA_FLAGS=""
+for extra in "${RUNTIME_EXTRAS[@]}"; do
+  EXTRA_FLAGS="$EXTRA_FLAGS --extra $extra"
+done
+
 # Calculate 4 days ago date
 if [ "$CHECK_ONLY" = false ]; then
   if date -v-4d +%Y-%m-%d >/dev/null 2>&1; then
@@ -74,8 +90,10 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
     fi
   fi
 
-  # Construct the command from scratch
-  GENERATION_CMD="uv pip compile pyproject.toml --all-extras --python-version $ver"
+  # Construct the command from scratch. --universal resolves for every
+  # supported platform, so the published file carries the environment markers
+  # that scope a platform-specific pin instead of silently omitting it.
+  GENERATION_CMD="uv pip compile pyproject.toml$EXTRA_FLAGS --universal --python-version $ver"
   if [ -n "$date_to_use" ]; then
     GENERATION_CMD="$GENERATION_CMD --exclude-newer $date_to_use"
   fi

@@ -50,7 +50,10 @@ pip install google-adk
 **Requirements:** Python 3.10+.
 
 For transitive dependency protection, we recommend to install with our companion
-constraints files (for python 3.10 to 3.14).
+constraints files (for python 3.10 to 3.14). The files are resolved for all
+supported platforms and cover the runtime and optional-integration
+dependencies; they do not pin the contributor tooling from the `dev`, `docs`
+and `test` extras.
 
 Choose the constraints file matching your Python version:
 
