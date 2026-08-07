@@ -64,6 +64,12 @@ repos:
         # This script documents and matches the very patterns it forbids, so
         # it must not scan itself or other dev-only tooling.
         exclude: ^scripts/
+      - id: check-workflow-pins
+        name: Check GitHub Actions are pinned to commit SHAs
+        description: Requires every non-local `uses:` reference in .github/workflows to name a full 40-character commit SHA, not a mutable tag or branch.
+        entry: scripts/check_workflow_pins.py
+        language: script
+        files: ^\.github/workflows/.*\.ya?ml$
       - id: update-constraints
         name: update-constraints
         entry: ./scripts/update_constraints.sh
