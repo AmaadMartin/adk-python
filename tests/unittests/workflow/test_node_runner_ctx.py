@@ -656,3 +656,65 @@ async def test_override_isolation_scope_used_in_node_runner():
   ).run()
 
   assert events[0].isolation_scope == 'task:fc-999'
+
+# =========================================================================
+# State Delta Filtering Tests
+# =========================================================================
+
+@pytest.mark.asyncio
+async def test_flush_deltas_filters_temp_keys():
+  """_flush_deltas filters out 'temp:' keys but clears the raw state_delta."""
+
+  class _Node(BaseNode):
+    async def _run_impl(self, *, ctx, node_input):
+      ctx.state['temp:cache'] = 'value1'
+      ctx.state['persistent'] = 'value2'
+      yield Event(output='hello')
+
+  parent_ctx, events = _make_ctx()
+  child_ctx = await NodeRunner(node=_Node(name='n'), parent_ctx=parent_ctx).run()
+
+  assert child_ctx.actions.state_delta == {}
+  assert len(events) == 1
+  event = events[0]
+  assert 'persistent' in event.actions.state_delta
+  assert 'temp:cache' not in event.actions.state_delta
+
+
+@pytest.mark.asyncio
+async def test_flush_output_and_deltas_filters_temp_keys():
+  """_flush_output_and_deltas filters out 'temp:' keys."""
+
+  class _Node(BaseNode):
+    async def _run_impl(self, *, ctx, node_input):
+      ctx.state['temp:cache'] = 'value1'
+      ctx.state['persistent'] = 'value2'
+      ctx.output = 'deferred_hello'
+      yield  # noqa: unreachable
+
+  parent_ctx, events = _make_ctx()
+  child_ctx = await NodeRunner(node=_Node(name='n'), parent_ctx=parent_ctx).run()
+
+  assert child_ctx.actions.state_delta == {}
+  output_events = [e for e in events if e.output is not None]
+  assert len(output_events) == 1
+  event = output_events[0]
+  assert 'persistent' in event.actions.state_delta
+  assert 'temp:cache' not in event.actions.state_delta
+
+
+@pytest.mark.asyncio
+async def test_flush_output_and_deltas_drops_event_if_only_temp_keys():
+  """Drops the deferred event entirely if it would only contain temp keys."""
+
+  class _Node(BaseNode):
+    async def _run_impl(self, *, ctx, node_input):
+      ctx.state['temp:cache'] = 'value1'
+      return
+      yield  # noqa: unreachable
+
+  parent_ctx, events = _make_ctx()
+  child_ctx = await NodeRunner(node=_Node(name='n'), parent_ctx=parent_ctx).run()
+
+  assert child_ctx.actions.state_delta == {}
+  assert len(events) == 0
