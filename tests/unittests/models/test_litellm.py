@@ -261,6 +261,7 @@ class _ModelDumpOnly:
     return self._schema
 
 
+@pytest.mark.asyncio
 async def test_get_completion_inputs_formats_pydantic_schema_for_litellm():
   llm_request = LlmRequest(
       config=types.GenerateContentConfig(response_schema=_StructuredOutput)
@@ -551,6 +552,7 @@ def test_to_litellm_response_format_nested_pydantic_for_gemini_unchanged():
   assert schema == _OuterModel.model_json_schema()
 
 
+@pytest.mark.asyncio
 async def test_get_completion_inputs_uses_openai_format_for_openai_model():
   """Test that _get_completion_inputs produces OpenAI-compatible format."""
   llm_request = LlmRequest(
@@ -571,6 +573,7 @@ async def test_get_completion_inputs_uses_openai_format_for_openai_model():
   )
 
 
+@pytest.mark.asyncio
 async def test_get_completion_inputs_uses_gemini_format_for_gemini_model():
   """Test that _get_completion_inputs produces Gemini-compatible format."""
   llm_request = LlmRequest(
@@ -586,6 +589,7 @@ async def test_get_completion_inputs_uses_gemini_format_for_gemini_model():
   assert "response_schema" in response_format
 
 
+@pytest.mark.asyncio
 async def test_get_completion_inputs_uses_passed_model_for_response_format():
   """Test that _get_completion_inputs uses the passed model parameter for response format.
 
@@ -611,6 +615,7 @@ async def test_get_completion_inputs_uses_passed_model_for_response_format():
   )
 
 
+@pytest.mark.asyncio
 async def test_get_completion_inputs_uses_passed_model_for_gemini_format():
   """Test that _get_completion_inputs uses passed model for Gemini response format.
 

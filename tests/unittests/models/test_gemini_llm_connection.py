@@ -102,6 +102,7 @@ async def test_send_realtime_unsupported_liveClientRealtimeInput(
   mock_gemini_session.send.assert_not_called()
 
 
+@pytest.mark.asyncio
 async def test_send_realtime_audio_uses_audio_channel_for_live_translate(
     mock_gemini_session, test_blob
 ):
@@ -242,6 +243,7 @@ async def test_receive_transcript_finished(
   assert not transcription.text
 
 
+@pytest.mark.asyncio
 async def test_receive_usage_metadata_and_server_content(
     gemini_connection, mock_gemini_session
 ):
@@ -319,6 +321,7 @@ async def test_receive_usage_metadata_and_server_content(
   assert content_response.content == mock_content
 
 
+@pytest.mark.asyncio
 async def test_receive_usage_metadata_remaps_output_tokens(
     gemini_connection, mock_gemini_session
 ):
@@ -380,6 +383,7 @@ async def test_receive_usage_metadata_remaps_output_tokens(
   ]
 
 
+@pytest.mark.asyncio
 async def test_receive_populates_live_session_id(
     gemini_connection, mock_gemini_session
 ):
