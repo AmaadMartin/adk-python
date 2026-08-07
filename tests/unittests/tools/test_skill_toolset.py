@@ -1084,6 +1084,102 @@ async def test_build_wrapper_code_with_unicode(mock_skill1):
   assert unicode_content in code_input.code
 
 
+async def _payload_size_warnings_for_run_py(mock_skill1, caplog):
+  """Runs skill1's `run.py` and returns the payload-size warnings it logged."""
+  executor = _make_mock_executor()
+  toolset = skill_toolset.SkillToolset([mock_skill1], code_executor=executor)
+  tool = skill_toolset.RunSkillScriptTool(toolset)
+  ctx = _make_tool_context_with_agent()
+  with caplog.at_level(logging.WARNING):
+    await tool.run_async(
+        args={"skill_name": "skill1", "file_path": "run.py"},
+        tool_context=ctx,
+    )
+  return [
+      record.getMessage()
+      for record in caplog.records
+      if record.levelno == logging.WARNING
+      and "exceeding" in record.getMessage()
+  ]
+
+
+@pytest.mark.asyncio
+async def test_multibyte_skill_resources_trip_the_payload_size_warning(
+    mock_skill1, caplog, monkeypatch
+):
+  """Multi-byte references are sized in UTF-8 bytes, not code points."""
+  monkeypatch.setattr(skill_toolset, "_MAX_SKILL_PAYLOAD_BYTES", 100)
+  # 50 code points (under the limit) but 150 UTF-8 bytes (over it).
+  reference = "你" * 50
+  script_src = "print('hello')"
+  mock_skill1.resources.list_references.return_value = ["big.md"]
+  mock_skill1.resources.get_reference.side_effect = lambda name: (
+      reference if name == "big.md" else None
+  )
+  mock_skill1.resources.list_assets.return_value = []
+  mock_skill1.resources.list_scripts.return_value = ["run.py"]
+  mock_skill1.resources.get_script.side_effect = lambda name: (
+      models.Script(src=script_src) if name == "run.py" else None
+  )
+
+  warnings = await _payload_size_warnings_for_run_py(mock_skill1, caplog)
+
+  expected_total = len(reference.encode("utf-8")) + len(
+      script_src.encode("utf-8")
+  )
+  assert len(warnings) == 1
+  assert "skill1" in warnings[0]
+  # The exact byte total, so a stale code-point figure fails this test.
+  assert f"total {expected_total} bytes" in warnings[0]
+
+
+@pytest.mark.asyncio
+async def test_ascii_skill_resources_under_the_limit_do_not_warn(
+    mock_skill1, caplog, monkeypatch
+):
+  """An ASCII payload under the limit stays silent (no false positives)."""
+  monkeypatch.setattr(skill_toolset, "_MAX_SKILL_PAYLOAD_BYTES", 100)
+  mock_skill1.resources.list_references.return_value = ["small.md"]
+  mock_skill1.resources.get_reference.side_effect = lambda name: (
+      "a" * 50 if name == "small.md" else None
+  )
+  mock_skill1.resources.list_assets.return_value = []
+  mock_skill1.resources.list_scripts.return_value = ["run.py"]
+  mock_skill1.resources.get_script.side_effect = lambda name: (
+      models.Script(src="print('hello')") if name == "run.py" else None
+  )
+
+  warnings = await _payload_size_warnings_for_run_py(mock_skill1, caplog)
+
+  assert not warnings
+
+
+@pytest.mark.asyncio
+async def test_binary_skill_resources_are_counted_by_byte_length(
+    mock_skill1, caplog, monkeypatch
+):
+  """`bytes` assets stay sized by len(), with no decode attempted on them."""
+  monkeypatch.setattr(skill_toolset, "_MAX_SKILL_PAYLOAD_BYTES", 100)
+  # Not valid UTF-8, so sizing must not try to decode it.
+  asset = b"\xff" * 150
+  script_src = "print('hello')"
+  mock_skill1.resources.list_references.return_value = []
+  mock_skill1.resources.list_assets.return_value = ["blob.bin"]
+  mock_skill1.resources.get_asset.side_effect = lambda name: (
+      asset if name == "blob.bin" else None
+  )
+  mock_skill1.resources.list_scripts.return_value = ["run.py"]
+  mock_skill1.resources.get_script.side_effect = lambda name: (
+      models.Script(src=script_src) if name == "run.py" else None
+  )
+
+  warnings = await _payload_size_warnings_for_run_py(mock_skill1, caplog)
+
+  expected_total = len(asset) + len(script_src.encode("utf-8"))
+  assert len(warnings) == 1
+  assert f"total {expected_total} bytes" in warnings[0]
+
+
 @pytest.mark.asyncio
 async def test_execute_script_with_input_args_python(mock_skill1):
   executor = _make_mock_executor(stdout="done\n")
