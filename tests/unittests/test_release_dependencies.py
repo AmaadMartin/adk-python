@@ -27,6 +27,8 @@ regressions documented in the bare-install audit cannot silently re-emerge:
   objects while deserializing checkpoint data.
 * ``google-genai`` MUST exclude 2.11 and include 2.12.1, whose types module
   defers the optional MCP server stack instead of importing it at Agent startup.
+* Every main dep MUST declare a lower bound, so the Dependency Floors CI job
+  can install the floors the manifest advertises.
 """
 
 from __future__ import annotations
@@ -120,6 +122,14 @@ def _requirement_specifier(
   return None
 
 
+def _declares_lower_bound(requirement: str) -> bool:
+  """Returns whether ``requirement`` constrains how old a release may be."""
+  return any(
+      specifier.operator in ('>=', '>', '==', '~=')
+      for specifier in Requirement(requirement).specifier
+  )
+
+
 def test_main_deps_include_packaging(pyproject: dict) -> None:
   """``packaging`` is imported unguarded by core ADK; it must be a main dep."""
   main_deps = _requirement_names(pyproject['project']['dependencies'])
@@ -129,6 +139,40 @@ def test_main_deps_include_packaging(pyproject: dict) -> None:
       'src/google/adk/cli/cli_deploy.py import it unguarded at module top '
       'level. Without this declaration, `pip install google-adk` is one '
       'transitive resolver change away from breaking on `import google.adk`.'
+  )
+
+
+@pytest.mark.parametrize(
+    ('requirement', 'expected'),
+    [
+        ('aiohttp>=3.13,!=3.14.2', True),
+        ('aiohttp!=3.14.2', False),
+        ('google-auth[pyopenssl]>=2.47', True),
+        ('google-adk-community', False),
+    ],
+)
+def test_declares_lower_bound(requirement: str, expected: bool) -> None:
+  """Both branches of the lower-bound predicate."""
+  assert _declares_lower_bound(requirement) is expected
+
+
+def test_main_deps_all_declare_a_lower_bound(pyproject: dict) -> None:
+  """Every runtime dependency must say how old a release it tolerates.
+
+  A requirement with only an exclusion (``aiohttp!=3.14.2``) is unbounded
+  below: a lowest-version resolution selects the oldest release ever
+  published -- for aiohttp that is the unbuildable 0.1 sdist from 2011 -- and
+  the Dependency Floors CI job cannot exercise it at all.
+  """
+  unbounded = sorted(
+      raw
+      for raw in pyproject['project']['dependencies']
+      if not _declares_lower_bound(raw)
+  )
+  assert not unbounded, (
+      f'These [project] dependencies declare no lower bound: {unbounded}. '
+      'Give each one a `>=` floor; without it `pip install google-adk` under '
+      'a lowest-version resolution selects the oldest release on PyPI.'
   )
 
 
