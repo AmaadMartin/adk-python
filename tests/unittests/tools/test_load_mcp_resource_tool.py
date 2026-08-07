@@ -85,6 +85,7 @@ class TestLoadMcpResourceTool:
     assert "res1" in instructions[0]
     assert "res2" in instructions[0]
 
+  @pytest.mark.asyncio
   async def test_process_llm_request_loads_content_text(self):
     """Test loading text resource content."""
     tool = LoadMcpResourceTool(mcp_toolset=self.mock_mcp_toolset)
