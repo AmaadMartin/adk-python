@@ -1650,7 +1650,10 @@ class BaseLlmFlow(ABC):
     agent = _as_llm_agent(invocation_context)
 
     # Check for conformance test replay mode
-    if config := invocation_context.session.state.get('_adk_replay_config'):
+    state = invocation_context.session.state
+    if config := state.get('temp:_adk_replay_config') or state.get(
+        '_adk_replay_config'
+    ):
       from ...cli.conformance._conformance_test_google_llm import _ConformanceTestGemini
 
       # Models are stateless, so the current replay state is cached in the

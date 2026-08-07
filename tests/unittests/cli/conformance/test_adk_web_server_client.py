@@ -26,6 +26,26 @@ from google.genai import types
 import pytest
 
 
+class MockStreamResponse:
+  """Mock for httpx.Response stream in conformance client tests."""
+
+  def __init__(self, lines: list[str] | None = None):
+    self.lines = lines or [""]
+
+  def raise_for_status(self):
+    pass
+
+  async def aiter_lines(self):
+    for line in self.lines:
+      yield line
+
+  async def __aenter__(self):
+    return self
+
+  async def __aexit__(self, exc_type, exc_val, exc_tb):
+    pass
+
+
 def test_init_default_values():
   client = AdkWebServerClient()
   assert client.base_url == "http://127.0.0.1:8000"
@@ -181,25 +201,12 @@ async def test_run_agent():
       content=types.Content(role="model", parts=[types.Part(text="World")]),
   )
 
-  # Mock streaming response
-  class MockStreamResponse:
-
-    def raise_for_status(self):
-      pass
-
-    async def aiter_lines(self):
-      yield f"data:{json.dumps(event1.model_dump())}"
-      yield "data:"  # Empty line should be ignored
-      yield f"data:{json.dumps(event2.model_dump())}"
-
-    async def __aenter__(self):
-      return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-      pass
-
   def mock_stream(*_args, **_kwargs):
-    return MockStreamResponse()
+    return MockStreamResponse([
+        f"data:{json.dumps(event1.model_dump())}",
+        "data:",  # Empty line should be ignored
+        f"data:{json.dumps(event2.model_dump())}",
+    ])
 
   with patch("httpx.AsyncClient") as mock_client_class:
     mock_client = AsyncMock()
@@ -229,22 +236,8 @@ async def test_run_agent():
 async def test_run_agent_raises_on_streamed_error():
   client = AdkWebServerClient()
 
-  class MockStreamResponse:
-
-    def raise_for_status(self):
-      pass
-
-    async def aiter_lines(self):
-      yield 'data: {"error": "boom"}'
-
-    async def __aenter__(self):
-      return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb):
-      pass
-
   def mock_stream(*_args, **_kwargs):
-    return MockStreamResponse()
+    return MockStreamResponse(['data: {"error": "boom"}'])
 
   with patch("httpx.AsyncClient") as mock_client_class:
     mock_client = AsyncMock()
@@ -363,3 +356,48 @@ async def test_close():
 async def test_context_manager():
   async with AdkWebServerClient() as client:
     assert isinstance(client, AdkWebServerClient)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "mode,expected_key,msg_index",
+    [
+        ("record", "temp:_adk_recordings_config", 0),
+        ("replay", "temp:_adk_replay_config", 1),
+    ],
+)
+async def test_run_agent_modes(mode, expected_key, msg_index):
+  client = AdkWebServerClient()
+
+  with patch("httpx.AsyncClient") as mock_client_class:
+    mock_client = AsyncMock()
+    mock_client.stream = MagicMock(return_value=MockStreamResponse())
+    mock_client_class.return_value = mock_client
+
+    request = RunAgentRequest(
+        app_name="test_app",
+        user_id="test_user",
+        session_id="test_session",
+        new_message=types.Content(
+            role="user", parts=[types.Part(text="Hello")]
+        ),
+    )
+
+    events = []
+    async for event in client.run_agent(
+        request,
+        mode=mode,
+        test_case_dir="/tmp/test_case",
+        user_message_index=msg_index,
+    ):
+      events.append(event)
+
+    assert request.state_delta is not None
+    assert expected_key in request.state_delta
+    assert request.state_delta[expected_key] == {
+        "dir": "/tmp/test_case",
+        "user_message_index": msg_index,
+        "streaming_mode": "none",
+    }
+    old_key = expected_key.replace("temp:", "")
+    assert old_key not in request.state_delta
