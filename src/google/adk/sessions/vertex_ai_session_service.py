@@ -36,7 +36,6 @@ if TYPE_CHECKING:
 from . import _session_util
 from ..events.event import Event
 from ..events.event_actions import EventActions
-from ..events.event_actions import EventCompaction
 from ..utils.vertex_ai_utils import get_express_mode_api_key
 from .base_session_service import BaseSessionService
 from .base_session_service import GetSessionConfig
@@ -47,6 +46,25 @@ logger = logging.getLogger('google_adk.' + __name__)
 
 _COMPACTION_CUSTOM_METADATA_KEY = '_compaction'
 _USAGE_METADATA_CUSTOM_METADATA_KEY = '_usage_metadata'
+_ACTIONS_CUSTOM_METADATA_KEY = '_actions'
+
+_ACTION_FIELDS_PERSISTED_ELSEWHERE = {
+    'skip_summarization',
+    'state_delta',
+    'artifact_delta',
+    'transfer_to_agent',
+    'escalate',
+    'requested_auth_configs',
+    'compaction',
+}
+"""EventActions fields kept out of the `_actions` custom_metadata sidecar.
+
+All but `compaction` are modeled natively by the Agent Engine Sessions API on
+the typed `actions` field; `compaction` has its own metadata key. Every other
+EventActions field has to ride in custom_metadata because the Vertex AI SDK
+validates `actions` against a closed model (`extra='forbid'`), so an unknown
+key makes `appendEvent` raise before the request is even sent.
+"""
 
 _SESSION_ID_PATTERN = re.compile(r'^[A-Za-z0-9_-]+$')
 
@@ -446,6 +464,27 @@ class VertexAiSessionService(BaseSessionService):
           key=_COMPACTION_CUSTOM_METADATA_KEY,
           value=compaction_dict,
       )
+    # Fields the typed `actions` channel cannot carry (see
+    # _ACTION_FIELDS_PERSISTED_ELSEWHERE) ride here, so that the legacy
+    # representation stays lossless for new EventActions fields. Written on
+    # every append, like the two sidecars above: `config` is built once and the
+    # raw_event fallback below resends that same dict, so a sidecar added only
+    # after the ValidationError would come too late.
+    # `exclude_defaults` keeps untouched fields (e.g. the
+    # `requested_tool_confirmations` empty dict) out of the payload while still
+    # persisting a value a caller explicitly set to an empty container.
+    extra_actions = event.actions.model_dump(
+        exclude_none=True,
+        exclude_defaults=True,
+        mode='json',
+        exclude=_ACTION_FIELDS_PERSISTED_ELSEWHERE,
+    )
+    if extra_actions:
+      _set_internal_custom_metadata(
+          metadata_dict,
+          key=_ACTIONS_CUSTOM_METADATA_KEY,
+          value=extra_actions,
+      )
     if event.usage_metadata:
       usage_dict = event.usage_metadata.model_dump(
           exclude_none=True, mode='json'
@@ -593,16 +632,17 @@ def _from_api_event(api_event_obj: vertexai.types.SessionEvent) -> Event:
     # in custom_metadata under the compaction metadata key.
     compaction_data = None
     usage_metadata_data = None
-    if custom_metadata and (
-        _COMPACTION_CUSTOM_METADATA_KEY in custom_metadata
-        or _USAGE_METADATA_CUSTOM_METADATA_KEY in custom_metadata
-    ):
+    extra_actions_data = None
+    if custom_metadata:
       custom_metadata = dict(custom_metadata)  # avoid mutating the API response
       compaction_data = custom_metadata.pop(
           _COMPACTION_CUSTOM_METADATA_KEY, None
       )
       usage_metadata_data = custom_metadata.pop(
           _USAGE_METADATA_CUSTOM_METADATA_KEY, None
+      )
+      extra_actions_data = custom_metadata.pop(
+          _ACTIONS_CUSTOM_METADATA_KEY, None
       )
       if not custom_metadata:
         custom_metadata = None
@@ -619,24 +659,25 @@ def _from_api_event(api_event_obj: vertexai.types.SessionEvent) -> Event:
     custom_metadata = None
     compaction_data = None
     usage_metadata_data = None
+    extra_actions_data = None
     grounding_metadata = None
 
+  actions_payload: dict[str, Any] = {}
   if actions:
     actions_dict = actions.model_dump(exclude_none=True, mode='python')
     rename_map = {'transfer_agent': 'transfer_to_agent'}
-    renamed_actions_dict = {
-        rename_map.get(k, k): v for k, v in actions_dict.items()
-    }
-    if compaction_data:
-      renamed_actions_dict['compaction'] = compaction_data
-    event_actions = EventActions.model_validate(renamed_actions_dict)
-  else:
-    if compaction_data:
-      event_actions = EventActions(
-          compaction=EventCompaction.model_validate(compaction_data)
-      )
-    else:
-      event_actions = EventActions()
+    actions_payload = {rename_map.get(k, k): v for k, v in actions_dict.items()}
+  if extra_actions_data:
+    # Ignore fields this ADK version does not know: EventActions forbids extras,
+    # so a session written by a newer ADK must not make get_session raise.
+    actions_payload.update({
+        k: v
+        for k, v in extra_actions_data.items()
+        if k in EventActions.model_fields
+    })
+  if compaction_data:
+    actions_payload['compaction'] = compaction_data
+  event_actions = EventActions.model_validate(actions_payload)
 
   usage_metadata = None
   if usage_metadata_data:

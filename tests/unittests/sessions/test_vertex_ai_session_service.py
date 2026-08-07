@@ -32,6 +32,7 @@ from google.adk.models.cache_metadata import CacheMetadata
 from google.adk.sessions.base_session_service import GetSessionConfig
 from google.adk.sessions.session import Session
 from google.adk.sessions.vertex_ai_session_service import _extract_short_session_id
+from google.adk.sessions.vertex_ai_session_service import _from_api_event
 from google.adk.sessions.vertex_ai_session_service import _validate_session_id
 from google.adk.sessions.vertex_ai_session_service import VertexAiSessionService
 from google.api_core import exceptions as api_core_exceptions
@@ -39,6 +40,7 @@ from google.genai import types as genai_types
 from google.genai.errors import ClientError
 import pydantic
 import pytest
+import vertexai
 
 MOCK_SESSION_JSON_1 = {
     'name': (
@@ -1507,6 +1509,349 @@ async def test_append_event_fallback_for_older_sdk(mock_api_client_instance):
 
   assert appended_event.actions.compaction is not None
   assert appended_event.actions.compaction.start_timestamp == 1000.0
+
+
+def _rich_actions_event(invocation_id: str) -> Event:
+  """Builds an event whose actions all live outside the API's allowlist."""
+  return Event(
+      invocation_id=invocation_id,
+      author='model',
+      timestamp=1734005539.0,
+      actions=EventActions(
+          rewind_before_invocation_id='inv-3',
+          end_of_agent=True,
+          agent_state={'step': 2},
+          route=['a', 1],
+      ),
+  )
+
+
+def _captured_append_config(
+    mock_api_client_instance: MockAsyncClient,
+) -> dict[str, Any]:
+  """Returns the `config` of the last appended event of session '1'."""
+  captured = mock_api_client_instance.event_dict['1'][0][-1]
+  return {
+      key: value
+      for key, value in captured.items()
+      if key not in ('name', 'invocation_id', 'author', 'timestamp')
+  }
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_preserves_actions_outside_api_allowlist(
+    mock_api_client_instance: MockAsyncClient,
+) -> None:
+  """EventActions the API cannot model survive the raw_event fallback path.
+
+  The Agent Engine Sessions API models only six action fields, so an event
+  whose whole meaning lives in a newer field (a rewind marker, a workflow
+  checkpoint) used to come back as an empty action bag whenever the installed
+  SDK rejected `raw_event`.
+  """
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  assert session is not None
+
+  async def reject_raw_event(name, author, invocation_id, timestamp, config):
+    if 'raw_event' in config:
+      # Trigger a real ValidationError since Pydantic V2 doesn't allow easy
+      # instantiation
+      class DummyModel(pydantic.BaseModel):
+        a: int
+
+      DummyModel(a='not an int')
+    return await mock_api_client_instance._append_event(
+        name, author, invocation_id, timestamp, config
+    )
+
+  mock_api_client_instance.agent_engines.sessions.events.append.side_effect = (
+      reject_raw_event
+  )
+
+  await session_service.append_event(session, _rich_actions_event('inv-rewind'))
+
+  config = _captured_append_config(mock_api_client_instance)
+  assert 'raw_event' not in config
+  # The extra fields must not leak into the typed `actions` payload.
+  assert '_actions' not in config['actions']
+  assert 'rewind_before_invocation_id' not in config['actions']
+
+  retrieved = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  assert retrieved is not None
+  appended_event = retrieved.events[-1]
+  assert appended_event.actions.rewind_before_invocation_id == 'inv-3'
+  assert appended_event.actions.end_of_agent is True
+  assert appended_event.actions.agent_state == {'step': 2}
+  assert appended_event.actions.route == ['a', 1]
+  # The internal sidecar key must not reach the caller.
+  assert appended_event.custom_metadata is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_actions_payload_is_accepted_by_vertex_sdk(
+    mock_api_client_instance: MockAsyncClient,
+) -> None:
+  """The captured payload must validate against the real Vertex AI SDK model.
+
+  `MockAsyncClient` stores `config` verbatim, so a round trip through it would
+  also pass for an implementation that puts the extra fields straight into
+  `config['actions']` -- which the SDK rejects client-side (`extra='forbid'`)
+  before any request is sent.
+  """
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  assert session is not None
+
+  await session_service.append_event(session, _rich_actions_event('inv-sdk'))
+
+  config = _captured_append_config(mock_api_client_instance)
+  validated = vertexai.types.AppendAgentEngineSessionEventConfig.model_validate(
+      config
+  )
+  assert validated.event_metadata.custom_metadata['_actions'] == {
+      'rewind_before_invocation_id': 'inv-3',
+      'end_of_agent': True,
+      'agent_state': {'step': 2},
+      'route': ['a', 1],
+  }
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_wire_names_for_transfer_to_agent(
+    mock_api_client_instance: MockAsyncClient,
+) -> None:
+  """transfer_to_agent stays `transfer_agent` on the wire and is read back."""
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  assert session is not None
+
+  await session_service.append_event(
+      session,
+      Event(
+          invocation_id='inv-transfer',
+          author='model',
+          timestamp=1734005540.0,
+          actions=EventActions(transfer_to_agent='another_agent'),
+      ),
+  )
+
+  config = _captured_append_config(mock_api_client_instance)
+  assert config['actions']['transfer_agent'] == 'another_agent'
+  assert 'transfer_to_agent' not in config['actions']
+
+  retrieved = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  assert retrieved is not None
+  assert retrieved.events[-1].actions.transfer_to_agent == 'another_agent'
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_requested_auth_configs_wire_format_unchanged(
+    mock_api_client_instance: MockAsyncClient,
+) -> None:
+  """requested_auth_configs keeps its camelCase serialization on the wire."""
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  assert session is not None
+
+  await session_service.append_event(
+      session,
+      Event(
+          invocation_id='inv-auth',
+          author='model',
+          timestamp=1734005541.0,
+          actions=EventActions(
+              requested_auth_configs={
+                  'test_auth': AuthConfig(
+                      auth_scheme=auth_schemes.OAuth2(
+                          flows=openapi_models.OAuthFlows(
+                              implicit=openapi_models.OAuthFlowImplicit(
+                                  authorizationUrl='http://test.com/auth',
+                                  scopes={},
+                              )
+                          )
+                      ),
+                  ),
+              },
+          ),
+      ),
+  )
+
+  config = _captured_append_config(mock_api_client_instance)
+  requested_auth_configs = config['actions']['requested_auth_configs']
+  assert 'authScheme' in requested_auth_configs['test_auth']
+  assert 'auth_scheme' not in requested_auth_configs['test_auth']
+  # It is persisted on the typed channel only, never duplicated in the sidecar.
+  assert config['event_metadata']['custom_metadata'] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_without_extra_actions_writes_no_sidecar(
+    mock_api_client_instance: MockAsyncClient,
+) -> None:
+  """Allowlisted-only actions produce exactly today's payload, no sidecar.
+
+  `requested_tool_confirmations` defaults to an empty dict, so an unfiltered
+  dump would give every single event an `_actions` blob.
+  """
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  assert session is not None
+
+  await session_service.append_event(
+      session,
+      Event(
+          invocation_id='inv-plain',
+          author='model',
+          timestamp=1734005542.0,
+          actions=EventActions(transfer_to_agent='a', state_delta={'k': 'v'}),
+      ),
+  )
+
+  config = _captured_append_config(mock_api_client_instance)
+  assert config['event_metadata']['custom_metadata'] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_preserves_explicitly_empty_action_containers(
+    mock_api_client_instance: MockAsyncClient,
+) -> None:
+  """An empty container a caller set explicitly is still persisted.
+
+  Only fields left at their default are dropped from the sidecar, so
+  `agent_state={}` stays distinguishable from an unset `agent_state`.
+  """
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  assert session is not None
+
+  await session_service.append_event(
+      session,
+      Event(
+          invocation_id='inv-empty',
+          author='model',
+          timestamp=1734005543.0,
+          actions=EventActions(agent_state={}, end_of_agent=False),
+      ),
+  )
+
+  config = _captured_append_config(mock_api_client_instance)
+  assert config['event_metadata']['custom_metadata']['_actions'] == {
+      'agent_state': {},
+      'end_of_agent': False,
+  }
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_compaction_not_duplicated_in_actions_sidecar(
+    mock_api_client_instance: MockAsyncClient,
+) -> None:
+  """compaction is persisted once, under its own key, never in `_actions`."""
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  assert session is not None
+
+  await session_service.append_event(
+      session,
+      Event(
+          invocation_id='inv-compaction-only',
+          author='model',
+          timestamp=1734005544.0,
+          actions=EventActions(
+              compaction=EventCompaction(
+                  start_timestamp=1000.0,
+                  end_timestamp=2000.0,
+                  compacted_content=genai_types.Content(
+                      parts=[genai_types.Part(text='compacted summary')]
+                  ),
+              )
+          ),
+      ),
+  )
+
+  config = _captured_append_config(mock_api_client_instance)
+  assert list(config['event_metadata']['custom_metadata']) == ['_compaction']
+
+  retrieved = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  assert retrieved is not None
+  compaction = retrieved.events[-1].actions.compaction
+  assert compaction is not None
+  assert compaction.start_timestamp == 1000.0
+
+
+def test_from_api_event_restores_sidecar_actions_without_raw_event() -> None:
+  """A legacy row with only the sidecar still restores its actions."""
+  api_event = _convert_to_object({
+      'name': (
+          'projects/test-project/locations/test-location/'
+          'reasoningEngines/123/sessions/1/events/9'
+      ),
+      'invocation_id': 'inv-9',
+      'author': 'model',
+      'timestamp': '2024-12-12T12:12:12.123456Z',
+      'event_metadata': {
+          'custom_metadata': {
+              '_actions': {'rewind_before_invocation_id': 'inv-3'},
+              'user_key': 'v',
+          },
+      },
+  })
+
+  event = _from_api_event(api_event)
+
+  assert event.actions.rewind_before_invocation_id == 'inv-3'
+  assert event.custom_metadata == {'user_key': 'v'}
+
+
+def test_from_api_event_ignores_unknown_sidecar_action_fields() -> None:
+  """A sidecar field written by a newer ADK must not break get_session."""
+  api_event = _convert_to_object({
+      'name': (
+          'projects/test-project/locations/test-location/'
+          'reasoningEngines/123/sessions/1/events/10'
+      ),
+      'invocation_id': 'inv-10',
+      'author': 'model',
+      'timestamp': '2024-12-12T12:12:12.123456Z',
+      'event_metadata': {
+          'custom_metadata': {
+              '_actions': {'not_a_real_field': 1, 'end_of_agent': True},
+          },
+      },
+  })
+
+  event = _from_api_event(api_event)
+
+  assert event.actions.end_of_agent is True
+  assert not hasattr(event.actions, 'not_a_real_field')
+  assert event.custom_metadata is None
 
 
 def test_extract_short_session_id_short_id():
