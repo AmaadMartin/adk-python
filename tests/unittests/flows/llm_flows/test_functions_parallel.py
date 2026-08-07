@@ -105,3 +105,39 @@ async def test_parallel_function_calls_with_state_change():
       },
       transfer_to_agent='test_sub_agent',
   )
+
+
+@pytest.mark.asyncio
+async def test_parallel_function_calls_merge_nested_state_values():
+  function_calls = [
+      types.Part.from_function_call(name='set_profile_name', args={}),
+      types.Part.from_function_call(name='set_profile_age', args={}),
+  ]
+
+  responses: list[types.Content] = [
+      function_calls,
+      'response1',
+  ]
+  mock_model = testing_utils.MockModel.create(responses=responses)
+
+  async def set_profile_name(tool_context: ToolContext) -> None:
+    tool_context.state['profile'] = {'name': 'ana'}
+
+  async def set_profile_age(tool_context: ToolContext) -> None:
+    tool_context.state['profile'] = {'age': 42}
+
+  agent = Agent(
+      name='root_agent',
+      model=mock_model,
+      tools=[set_profile_name, set_profile_age],
+  )
+  runner = testing_utils.TestInMemoryRunner(agent)
+  events = await runner.run_async_with_new_session('test')
+
+  # Each parallel tool gets its own state_delta, so the merged response event
+  # must keep both nested keys instead of the last writer's value.
+  response_event = events[1]
+
+  assert response_event.actions.state_delta == {
+      'profile': {'name': 'ana', 'age': 42}
+  }
