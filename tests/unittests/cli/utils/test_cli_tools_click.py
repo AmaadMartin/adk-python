@@ -1981,6 +1981,84 @@ def test_telemetry_cli_commands(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.unmute_click
+def test_telemetry_group_without_subcommand_is_side_effect_free(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """Bare `adk telemetry` prints help without touching stored consent."""
+  consent_store = {"val": None}
+  mock_read = mock.Mock(side_effect=lambda: consent_store["val"])
+  mock_write = mock.Mock(
+      side_effect=lambda val: consent_store.update({"val": val})
+  )
+  monkeypatch.setattr(
+      "google.adk.cli.cli_tools_click.read_telemetry_consent", mock_read
+  )
+  monkeypatch.setattr(
+      "google.adk.cli.cli_tools_click.write_telemetry_consent", mock_write
+  )
+  # Arm the root group's first-run consent prompt, so that the only thing
+  # keeping this invocation free of consent I/O is the telemetry subtree being
+  # excluded from it -- not the runner's non-tty stdin.
+  monkeypatch.setattr(
+      "click.testing._NamedTextIOWrapper.isatty", lambda self: True
+  )
+
+  result = CliRunner().invoke(cli_tools_click.main, ["telemetry"])
+
+  assert result.exit_code == 0
+  # The whole group help, not just a usage line.
+  assert "Usage:" in result.output
+  assert "Manage telemetry settings." in result.output
+  assert "enable" in result.output
+  assert "disable" in result.output
+  assert "status" in result.output
+  assert "Help improve the ADK" not in result.output
+  mock_read.assert_not_called()
+  mock_write.assert_not_called()
+  assert consent_store["val"] is None
+
+
+@pytest.mark.unmute_click
+def test_telemetry_subcommand_does_not_echo_group_help(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """Selecting a subcommand leaves the group callback silent."""
+  monkeypatch.setattr(
+      "google.adk.cli.cli_tools_click.read_telemetry_consent", lambda: None
+  )
+
+  result = CliRunner().invoke(cli_tools_click.main, ["telemetry", "status"])
+
+  assert result.exit_code == 0
+  assert (
+      "Telemetry collection is not configured (defaults to OFF)"
+      in result.output
+  )
+  # The group help belongs to the bare invocation only; echoing it here would
+  # mean the `invoked_subcommand is None` guard had stopped guarding anything.
+  assert "Usage:" not in result.output
+
+
+@pytest.mark.unmute_click
+def test_telemetry_unknown_subcommand_is_usage_error() -> None:
+  """`invoke_without_command=True` must not disable click's usage errors."""
+  result = CliRunner().invoke(cli_tools_click.main, ["telemetry", "bogus"])
+
+  assert result.exit_code == 2
+  assert "No such command" in result.output
+
+
+@pytest.mark.unmute_click
+def test_telemetry_help_flag() -> None:
+  """`adk telemetry --help` stays an exit-0 help request."""
+  result = CliRunner().invoke(cli_tools_click.main, ["telemetry", "--help"])
+
+  assert result.exit_code == 0
+  assert "Usage:" in result.output
+  assert "Manage telemetry settings." in result.output
+
+
+@pytest.mark.unmute_click
 def test_telemetry_first_run_prompt_opt_in(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
