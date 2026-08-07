@@ -435,7 +435,9 @@ def _extract_and_replace_inline_files(
       # Add the inline data as input file to the code executor context.
       file = File(
           name=file_name,
-          content=CodeExecutionUtils.get_encoded_file_content(data).decode(),
+          # `data` is always the raw bytes of the attached file, so the
+          # encoding is known here and must not be inferred from the content.
+          content=base64.b64encode(data).decode(),
           mime_type=mime_type,
       )
       if file_name not in saved_file_names:

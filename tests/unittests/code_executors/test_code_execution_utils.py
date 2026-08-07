@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import base64
 import multiprocessing
 import time
 import traceback
@@ -221,41 +220,6 @@ def test_extract_code_and_truncate_content_multiple_delimiter_pairs():
   assert len(content.parts) == 2
   assert content.parts[0].text == "Here is python code:\n"
   assert content.parts[1].executable_code.code == "y = 2"
-
-
-def test_get_encoded_file_content_encodes_raw_bytes():
-  """Raw binary must come back base64-encoded, not verbatim."""
-  encoded = code_execution_utils.CodeExecutionUtils.get_encoded_file_content(
-      b"\x00\x01\x02"
-  )
-  # base64 of the three bytes 00 01 02 is "AAEC" (no padding needed).
-  assert encoded == b"AAEC"
-
-
-def test_get_encoded_file_content_encodes_payload_with_invalid_padding():
-  """A payload that is not decodable base64 is encoded, not passed through."""
-  encoded = code_execution_utils.CodeExecutionUtils.get_encoded_file_content(
-      b"hello"
-  )
-  assert encoded == b"aGVsbG8="
-
-
-def test_get_encoded_file_content_leaves_already_encoded_bytes_unchanged():
-  """Double-encoding would corrupt the file for the executor that decodes it."""
-  already_encoded = base64.b64encode(b"file,contents\n1,2\n")
-  encoded = code_execution_utils.CodeExecutionUtils.get_encoded_file_content(
-      already_encoded
-  )
-  assert encoded == already_encoded
-  assert base64.b64decode(encoded) == b"file,contents\n1,2\n"
-
-
-def test_get_encoded_file_content_is_idempotent():
-  once = code_execution_utils.CodeExecutionUtils.get_encoded_file_content(
-      b"\x00\x01\x02"
-  )
-  twice = code_execution_utils.CodeExecutionUtils.get_encoded_file_content(once)
-  assert twice == once
 
 
 def test_build_executable_code_part_carries_code_and_python_language():

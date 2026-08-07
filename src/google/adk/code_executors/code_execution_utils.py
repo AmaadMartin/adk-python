@@ -16,8 +16,6 @@
 
 from __future__ import annotations
 
-import base64
-import binascii
 import copy
 import dataclasses
 
@@ -35,7 +33,7 @@ class File:
 
   content: str | bytes
   """
-  The base64-encoded bytes of the file content or the original bytes of the file content.
+  A str is the base64 encoding of the file bytes; bytes are the raw file bytes.
   """
 
   mime_type: str = 'text/plain'
@@ -86,25 +84,6 @@ class CodeExecutionResult:
 
 class CodeExecutionUtils:
   """Utility functions for code execution."""
-
-  @staticmethod
-  def get_encoded_file_content(data: bytes) -> bytes:
-    """Gets the file content as a base64-encoded bytes.
-
-    Args:
-      data: The file content bytes.
-
-    Returns:
-      The file content as a base64-encoded bytes.
-    """
-
-    def _is_base64_encoded(data: bytes) -> bool:
-      try:
-        return base64.b64encode(base64.b64decode(data)) == data
-      except binascii.Error:
-        return False
-
-    return data if _is_base64_encoded(data) else base64.b64encode(data)
 
   @staticmethod
   def extract_code_and_truncate_content(
