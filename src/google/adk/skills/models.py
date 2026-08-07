@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 import re
 from typing import Any
 from typing import Optional
@@ -157,8 +158,8 @@ class Resources(BaseModel):
       scripts: Executable scripts that can be run via bash.
   """
 
-  references: dict[str, str | bytes] = {}
-  assets: dict[str, str | bytes] = {}
+  references: Mapping[str, str | bytes] = {}
+  assets: Mapping[str, str | bytes] = {}
   scripts: dict[str, Script] = {}
 
   def get_reference(self, reference_id: str) -> Optional[str | bytes]:
