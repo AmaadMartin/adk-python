@@ -1447,7 +1447,27 @@ def _build_function_response_content(
 
 
 def deep_merge_dicts(d1: dict[str, Any], d2: dict[str, Any]) -> dict[str, Any]:
-  """Recursively merges d2 into d1."""
+  """Recursively merges d2 into d1, in place.
+
+  A key that holds a dict on both sides is merged recursively. Every other
+  collision is last-writer-wins, so the value from d2 replaces the value in
+  d1. Lists are replaced, not concatenated. A scalar in d2 overwrites a dict
+  in d1, and a dict in d2 overwrites a scalar in d1.
+
+  A caller that needs to accumulate a list must do that itself.
+  `merge_parallel_function_response_events` does it for `render_ui_widgets`:
+  it removes that field from each event before the merge, extends one list,
+  and writes the aggregate back afterwards.
+
+  Args:
+    d1: The dict to merge into. This function mutates it.
+    d2: The dict to merge from. This function does not mutate it, but it
+      inserts its values by reference, so the result can share nested objects
+      with d2.
+
+  Returns:
+    d1. The return value is the same object, not a copy.
+  """
   for key, value in d2.items():
     if key in d1 and isinstance(d1[key], dict) and isinstance(value, dict):
       d1[key] = deep_merge_dicts(d1[key], value)
