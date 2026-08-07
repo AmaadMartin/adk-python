@@ -148,3 +148,117 @@ class TestEditFileTool:
     assert result["status"] == "ok"
     data = await env.read_file("test.txt")
     assert data == b"replaced\nline2"
+
+  @pytest.mark.asyncio
+  async def test_edit_file_rejects_empty_path(self, env: LocalEnvironment):
+    """An empty `path` is rejected before any file access."""
+    # Arrange
+    tool = EditFileTool(env)
+
+    args = {"path": "", "old_string": "a", "new_string": "b"}
+
+    # Act
+    result = await tool.run_async(args=args, tool_context=None)
+
+    # Assert
+    assert result == {"status": "error", "error": "`path` is required."}
+
+  @pytest.mark.asyncio
+  async def test_edit_file_rejects_empty_old_string(
+      self, env: LocalEnvironment
+  ):
+    """An empty `old_string` is rejected and the file is left untouched."""
+    # Arrange
+    tool = EditFileTool(env)
+    await env.write_file("test.txt", "line1\nline2")
+
+    args = {"path": "test.txt", "old_string": "", "new_string": "replaced"}
+
+    # Act
+    result = await tool.run_async(args=args, tool_context=None)
+
+    # Assert
+    assert result == {
+        "status": "error",
+        "error": (
+            "`old_string` cannot be empty. To create a new file, use the"
+            " WriteFile tool."
+        ),
+    }
+    data = await env.read_file("test.txt")
+    assert data == b"line1\nline2"
+
+  @pytest.mark.asyncio
+  async def test_edit_file_missing_file_returns_error(
+      self, env: LocalEnvironment
+  ):
+    """Editing a file that does not exist reports it by path."""
+    # Arrange
+    tool = EditFileTool(env)
+
+    args = {
+        "path": "missing.txt",
+        "old_string": "line1",
+        "new_string": "replaced",
+    }
+
+    # Act
+    result = await tool.run_async(args=args, tool_context=None)
+
+    # Assert
+    assert result == {
+        "status": "error",
+        "error": "File not found: missing.txt",
+    }
+
+  @pytest.mark.asyncio
+  async def test_edit_file_old_string_not_found_returns_error(
+      self, env: LocalEnvironment
+  ):
+    """An absent `old_string` is an error and writes nothing."""
+    # Arrange
+    tool = EditFileTool(env)
+    await env.write_file("test.txt", "line1\nline2")
+
+    args = {
+        "path": "test.txt",
+        "old_string": "nonexistent",
+        "new_string": "replaced",
+    }
+
+    # Act
+    result = await tool.run_async(args=args, tool_context=None)
+
+    # Assert
+    assert result == {
+        "status": "error",
+        "error": (
+            "`old_string` not found in file. Read the file first to verify"
+            " contents."
+        ),
+    }
+    data = await env.read_file("test.txt")
+    assert data == b"line1\nline2"
+
+  @pytest.mark.asyncio
+  async def test_edit_file_treats_new_string_as_literal_text(
+      self, env: LocalEnvironment
+  ):
+    """Backslash escapes in `new_string` are written literally, not expanded."""
+    # Arrange
+    tool = EditFileTool(env)
+    await env.write_file("test.txt", "before TOKEN after")
+
+    args = {
+        "path": "test.txt",
+        "old_string": "TOKEN",
+        "new_string": r"\1 and \g<0> and \\",
+    }
+
+    # Act
+    result = await tool.run_async(args=args, tool_context=None)
+
+    # Assert
+    assert result["status"] == "ok"
+    data = await env.read_file("test.txt")
+    assert data == rb"before \1 and \g<0> and \\ after"

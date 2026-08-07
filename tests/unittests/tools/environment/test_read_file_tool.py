@@ -194,3 +194,106 @@ class TestReadFileTool:
         'status': 'error',
         'error': '`end_line` must be an integer if provided.',
     }
+
+  @pytest.mark.asyncio
+  async def test_read_file_rejects_empty_path(self, env: LocalEnvironment):
+    """An empty or absent `path` is rejected before any file access."""
+    tool = ReadFileTool(env)
+
+    res_empty = await tool.run_async(args={'path': ''}, tool_context=None)
+    res_missing = await tool.run_async(args={}, tool_context=None)
+
+    assert res_empty == {'status': 'error', 'error': '`path` is required.'}
+    assert res_missing == {'status': 'error', 'error': '`path` is required.'}
+
+  @pytest.mark.asyncio
+  async def test_read_file_start_line_beyond_eof_returns_error(
+      self, env: LocalEnvironment
+  ):
+    """A `start_line` past the last line reports the file length."""
+    await env.write_file('sample.txt', 'line1\nline2\n')
+
+    tool = ReadFileTool(env)
+    result = await tool.run_async(
+        args={'path': 'sample.txt', 'start_line': 5},
+        tool_context=None,
+    )
+
+    assert result == {
+        'status': 'error',
+        'error': '`start_line` 5 exceeds file length (2 lines).',
+        'total_lines': 2,
+    }
+
+  @pytest.mark.asyncio
+  async def test_read_file_start_line_after_end_line_returns_error(
+      self, env: LocalEnvironment
+  ):
+    """An inverted line range is rejected even though both bounds exist."""
+    await env.write_file('sample.txt', 'line1\nline2\nline3\n')
+
+    tool = ReadFileTool(env)
+    result = await tool.run_async(
+        args={'path': 'sample.txt', 'start_line': 3, 'end_line': 1},
+        tool_context=None,
+    )
+
+    assert result == {
+        'status': 'error',
+        'error': '`start_line` (3) is after `end_line` (1).',
+        'total_lines': 3,
+    }
+
+  @pytest.mark.asyncio
+  async def test_read_file_without_line_range_omits_total_lines(
+      self, env: LocalEnvironment
+  ):
+    """A whole-file read reports no `total_lines`, since nothing was cut."""
+    await env.write_file('sample.txt', 'line1\nline2\n')
+
+    tool = ReadFileTool(env)
+    result = await tool.run_async(
+        args={'path': 'sample.txt'},
+        tool_context=None,
+    )
+
+    assert result == {
+        'status': 'ok',
+        'content': '     1\tline1\n     2\tline2\n',
+    }
+
+  @pytest.mark.asyncio
+  async def test_read_file_truncates_content_over_max_output_chars(
+      self, env: LocalEnvironment
+  ):
+    """Content longer than `max_output_chars` is cut and annotated."""
+    await env.write_file('sample.txt', 'a' * 50)
+
+    tool = ReadFileTool(env, max_output_chars=10)
+    result = await tool.run_async(
+        args={'path': 'sample.txt'},
+        tool_context=None,
+    )
+
+    # The numbered text is '     1\t' + 'a' * 50, i.e. 57 characters.
+    assert result == {
+        'status': 'ok',
+        'content': '     1\taaa\n... (truncated, 57 total chars)',
+    }
+
+  @pytest.mark.asyncio
+  async def test_read_file_path_escaping_working_dir_returns_error(
+      self, env: LocalEnvironment
+  ):
+    """A traversal path is contained and surfaced as an error result."""
+    tool = ReadFileTool(env)
+
+    result = await tool.run_async(
+        args={'path': '../escape.txt'},
+        tool_context=None,
+    )
+
+    assert result == {
+        'status': 'error',
+        'error': 'Path escapes working directory: ../escape.txt',
+    }
