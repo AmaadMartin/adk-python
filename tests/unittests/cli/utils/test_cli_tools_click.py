@@ -395,6 +395,96 @@ def test_cli_telemetry_records_error_after_startup_on_non_interrupt(
     assert source["command_run"]["exception_type"] == "RuntimeError"
 
 
+def _redirect_telemetry_to_tmp_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> Path:
+  """Opts telemetry in and redirects its storage under `tmp_path`.
+
+  Args:
+    tmp_path: The per-test temporary directory.
+    monkeypatch: The pytest monkeypatch fixture.
+
+  Returns:
+    The path the metrics queue is written to.
+  """
+  monkeypatch.setattr(
+      "google.adk.cli.cli_tools_click.read_telemetry_consent",
+      lambda: True,
+  )
+  temp_queue = tmp_path / "telemetry_queue.jsonl"
+  monkeypatch.setattr(
+      "google.adk.cli._telemetry._constants.QUEUE_FILE",
+      str(temp_queue),
+  )
+  monkeypatch.setattr(
+      "google.adk.cli._telemetry._constants.TELEMETRY_SESSIONS_DIR",
+      str(tmp_path / "telemetry_sessions"),
+  )
+  return temp_queue
+
+
+def _read_only_command_run(queue_file: Path) -> Dict[str, Any]:
+  """Returns the `command_run` payload of the single queued telemetry event."""
+  assert queue_file.exists()
+  lines = queue_file.read_text(encoding="utf-8").splitlines()
+  assert len(lines) == 1
+  return json.loads(json.loads(lines[0])["source_extension_json"])[
+      "command_run"
+  ]
+
+
+def test_cli_telemetry_records_real_exit_code_on_missing_argument(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """A missing required argument is recorded as exit code 2, not a crash."""
+  temp_queue = _redirect_telemetry_to_tmp_path(tmp_path, monkeypatch)
+
+  @click.command("dummy_needs_arg", cls=cli_tools_click.HelpfulCommand)
+  @click.argument("agent")
+  def dummy_needs_arg_cmd(agent):
+    del agent
+
+  @click.group(cls=cli_tools_click.TelemetryGroup)
+  def test_group():
+    pass
+
+  test_group.add_command(dummy_needs_arg_cmd)
+
+  result = CliRunner().invoke(test_group, ["dummy_needs_arg"])
+
+  assert result.exit_code == 2
+  command_run = _read_only_command_run(temp_queue)
+  assert command_run["command"] == "dummy_needs_arg"
+  assert command_run["exit_code"] == 2
+  assert "exception_type" not in command_run
+
+
+def test_cli_telemetry_records_zero_exit_code_on_deliberate_ctx_exit(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """A command that calls `ctx.exit(0)` is recorded as a clean exit."""
+  temp_queue = _redirect_telemetry_to_tmp_path(tmp_path, monkeypatch)
+
+  @click.command("dummy_clean_exit")
+  @click.pass_context
+  def dummy_clean_exit_cmd(ctx):
+    ctx.exit(0)
+
+  @click.group(cls=cli_tools_click.TelemetryGroup)
+  def test_group():
+    pass
+
+  test_group.add_command(dummy_clean_exit_cmd)
+
+  result = CliRunner().invoke(test_group, ["dummy_clean_exit"])
+
+  assert result.exit_code == 0
+  command_run = _read_only_command_run(temp_queue)
+  assert command_run["command"] == "dummy_clean_exit"
+  assert command_run["exit_code"] == 0
+  assert "exception_type" not in command_run
+
+
 # cli run
 @pytest.mark.parametrize(
     "cli_args,expected_session_uri,expected_artifact_uri,expected_memory_uri",

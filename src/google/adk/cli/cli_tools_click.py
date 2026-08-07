@@ -292,6 +292,12 @@ class TelemetryGroup(click.Group):
           e.code if isinstance(e.code, int) else (0 if e.code is None else 1)
       )
       raise
+    except click.exceptions.Exit as e:
+      # click.Context.exit() raises Exit, a RuntimeError subclass, so without
+      # this arm a deliberate exit falls through to the broad handler below and
+      # is recorded as a crash with exit code 1.
+      exit_code = e.exit_code
+      raise
     except BaseException as e:
       if isinstance(e, KeyboardInterrupt) and ctx.meta.get("server_started"):
         exit_code = 0
