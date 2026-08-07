@@ -1808,6 +1808,7 @@ async def test_streaming_tool_without_scheduling_emits_function_response():
   assert function_response.scheduling is None
 
 
+@pytest.mark.asyncio
 async def test_non_blocking_tool_handled_asynchronously():
   """Tests that a NON_BLOCKING tool returns None inline and pushes to live request queue."""
   import asyncio
@@ -1860,6 +1861,7 @@ async def test_non_blocking_tool_handled_asynchronously():
   assert task_key not in invocation_context.active_non_blocking_tool_tasks
 
 
+@pytest.mark.asyncio
 async def test_non_blocking_tool_exception_handling_and_cleanup():
   """Tests that an exception in a NON_BLOCKING tool is logged and cleaned up."""
   import asyncio
@@ -1903,6 +1905,7 @@ async def test_non_blocking_tool_exception_handling_and_cleanup():
   assert task_key not in invocation_context.active_non_blocking_tool_tasks
 
 
+@pytest.mark.asyncio
 async def test_parallel_non_blocking_tools():
   """Tests that multiple NON_BLOCKING tools execute in parallel and clean up independently."""
   import asyncio
