@@ -40,6 +40,10 @@ _MAX_ZIP_UNCOMPRESSED_BYTES = 32 * 1024 * 1024
 _ZIP_READ_CHUNK_BYTES = 64 * 1024
 
 _ALLOWED_FRONTMATTER_KEYS = frozenset({
+    # Fields defined by the Agent Skills specification.
+    # https://agentskills.io/specification
+    # ``allowed_tools`` is ADK's snake_case spelling of ``allowed-tools``;
+    # ``Frontmatter`` accepts both.
     "name",
     "description",
     "license",
@@ -47,6 +51,24 @@ _ALLOWED_FRONTMATTER_KEYS = frozenset({
     "allowed_tools",
     "metadata",
     "compatibility",
+    # Client-side directives harnesses read from the same frontmatter block.
+    # ADK takes no action on them, but a skill carrying them is well-formed
+    # and must not be reported as a problem. Snapshot of the fields
+    # documented at https://code.claude.com/docs/en/skills
+    "agent",
+    "argument-hint",
+    "arguments",
+    "background",
+    "context",
+    "disable-model-invocation",
+    "disallowed-tools",
+    "effort",
+    "hooks",
+    "model",
+    "paths",
+    "shell",
+    "user-invocable",
+    "when_to_use",
 })
 
 

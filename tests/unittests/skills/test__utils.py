@@ -186,6 +186,57 @@ Body
   assert any("Unknown frontmatter" in p for p in problems)
 
 
+def test_validate_skill_dir_allows_client_directives(tmp_path):
+  """Tests validate_skill_dir accepts every documented client directive."""
+  skill_dir = tmp_path / "deploy"
+  skill_dir.mkdir()
+
+  skill_md = """---
+name: deploy
+description: Deploy the application to production.
+agent: Explore
+argument-hint: "[issue-number]"
+arguments: "issue branch"
+background: false
+context: fork
+disable-model-invocation: true
+disallowed-tools: AskUserQuestion
+effort: high
+hooks: {}
+model: inherit
+paths: "src/**"
+shell: bash
+user-invocable: false
+when_to_use: When the user asks to deploy.
+---
+Deploy the app.
+"""
+  (skill_dir / "SKILL.md").write_text(skill_md)
+
+  assert _validate_skill_dir(skill_dir) == []
+
+
+def test_validate_skill_dir_flags_typo_alongside_client_directive(tmp_path):
+  """Tests validate_skill_dir still flags typos next to a client directive."""
+  skill_dir = tmp_path / "deploy"
+  skill_dir.mkdir()
+
+  skill_md = """---
+name: deploy
+description: Deploy the application to production.
+disable-model-invocation: true
+licence: MIT
+---
+Deploy the app.
+"""
+  (skill_dir / "SKILL.md").write_text(skill_md)
+
+  problems = _validate_skill_dir(skill_dir)
+  assert len(problems) == 1
+  assert "licence" in problems[0]
+  assert "disable-model-invocation" not in problems[0]
+
+
 def test__read_skill_properties(tmp_path):
   """Tests read_skill_properties basic usage."""
   skill_dir = tmp_path / "my-skill"
