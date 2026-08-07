@@ -22,6 +22,7 @@ on:
       - '.pre-commit-config.yaml'
       - 'pyproject.toml'
       - 'tests/**'
+      - '.github/workflows/continuous-integration.yml'
   pull_request:
     branches: [main, v1]
     paths:
@@ -29,6 +30,7 @@ on:
       - '.pre-commit-config.yaml'
       - 'pyproject.toml'
       - 'tests/**'
+      - '.github/workflows/continuous-integration.yml'
 
 permissions:
   contents: read
@@ -91,7 +93,9 @@ jobs:
 
           # Run mypy, filter for errors only, remove line numbers, and sort
           # We ignore exit code (|| true) because we expect errors on baseline
-          uv run mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > baseline_errors.txt || true
+          # --no-incremental: cache replay can re-render an unchanged error
+          # differently, making it look new to the comm below. Both passes use it.
+          uv run mypy --no-incremental . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > baseline_errors.txt || true
           echo "Found $(wc -l < baseline_errors.txt) errors on $TARGET_BRANCH."
 
       - name: Check PR Branch
@@ -104,7 +108,7 @@ jobs:
           uv sync --all-extras
 
           # Run mypy on PR code, apply same processing
-          uv run mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > pr_errors.txt || true
+          uv run mypy --no-incremental . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > pr_errors.txt || true
           echo "Found $(wc -l < pr_errors.txt) errors on PR branch."
 
       - name: Compare and Fail on New Errors
