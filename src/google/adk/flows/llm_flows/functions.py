@@ -1447,7 +1447,23 @@ def _build_function_response_content(
 
 
 def deep_merge_dicts(d1: dict[str, Any], d2: dict[str, Any]) -> dict[str, Any]:
-  """Recursively merges d2 into d1."""
+  """Recursively merges d2 into d1, in place.
+
+  A key that holds a dict on both sides is merged recursively. Every other
+  collision is last-writer-wins, so the value from d2 replaces the value in
+  d1. Lists are replaced, not concatenated.
+
+  A caller that needs to accumulate a list must do that itself.
+
+  Args:
+    d1: The dict to merge into.
+    d2: The dict to merge from. This function inserts its values by
+      reference, so d1 aliases the nested dicts of d2. A later merge into d1
+      can therefore mutate d2.
+
+  Returns:
+    d1. The return value is the same object, not a copy.
+  """
   for key, value in d2.items():
     if key in d1 and isinstance(d1[key], dict) and isinstance(value, dict):
       d1[key] = deep_merge_dicts(d1[key], value)
@@ -1479,6 +1495,8 @@ def merge_parallel_function_response_events(
   for event in function_response_events:
     if event.actions:
       actions_dict = event.actions.model_dump(exclude_none=True, by_alias=True)
+      # deep_merge_dicts replaces lists, so remove this field before the merge
+      # and accumulate it here. The aggregate is written back after the loop.
       ui_widgets = actions_dict.pop(
           'renderUiWidgets', None
       ) or actions_dict.pop('render_ui_widgets', None)
