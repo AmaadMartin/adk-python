@@ -14,5 +14,25 @@
 
 from __future__ import annotations
 
-from rouge_score import rouge_scorer as rouge_scorer
-from rouge_score import tokenizers as tokenizers
+try:
+  from rouge_score import rouge_scorer as rouge_scorer
+  from rouge_score import tokenizers as tokenizers
+except ImportError as e:
+  # nltk 3.10.1 shipped nltk/inisec.py, a meta-path finder that blocks any
+  # import whose file resolves under the current working directory, which
+  # site-packages does whenever the venv lives inside the project. pyproject
+  # already excludes 3.10.1 and nltk reverted the hook in 3.10.2
+  # (nltk/nltk#3732), so this only fires in an environment that was assembled
+  # without honouring that constraint.
+  if 'from current working directory for security reasons' not in str(e):
+    raise
+  raise ImportError(
+      'Failed to import rouge_score because nltk 3.10.1 blocked one of its'
+      ' imports. nltk 3.10.1 refuses to import any module whose file is'
+      ' located under the current working directory, and site-packages is'
+      ' under it whenever the virtual environment lives inside the project'
+      " (a '.venv/' directory in the project root). Upgrade nltk to a release"
+      ' without that import hook: pip install --upgrade "nltk!=3.10.1". The -P'
+      ' and PYTHONSAFEPATH remedies named in the nltk error do not help,'
+      ' because nltk checks where the file lives, not what is on sys.path.'
+  ) from e
