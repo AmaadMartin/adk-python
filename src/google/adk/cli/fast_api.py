@@ -49,6 +49,7 @@ from ..runners import Runner
 from ..telemetry._agent_engine import get_propagated_context
 from ..telemetry._agent_engine import maybe_install_request_metrics_middleware
 from ..telemetry._agent_engine import TopSpanProcessor
+from .api_server import _build_allowed_hosts
 from .api_server import ApiServer
 from .cli_deploy import _AGENT_ENGINE_CLASS_METHODS
 from .dev_server import DevServer
@@ -155,7 +156,13 @@ def get_fast_api_app(
     a2a: Whether to enable Agent-to-Agent (A2A) protocol support.
     task_store_uri: URI for the A2A task store. Uses in-memory task store if
       None. Only used when ``a2a=True``.
-    host: Host address for the server (defaults to 127.0.0.1).
+    host: Host address for the server (defaults to 127.0.0.1). Together with
+      `port` this defines the static allowlist of `Host` header values the
+      server accepts; requests naming any other host are rejected with 403.
+      Wildcard binds ('0.0.0.0', '::') disable that check because no public
+      hostname can be inferred from them. Use `allow_origins` to reach the
+      server through a tunnel, port-forward or reverse proxy that presents a
+      different hostname.
     port: Port number for the server (defaults to 8000).
     url_prefix: Optional prefix for all URL routes.
     trace_to_cloud: Whether to export traces to Google Cloud Trace.
@@ -364,10 +371,19 @@ def get_fast_api_app(
 
     lifespan = _a2a_lifespan
 
+  allowed_hosts = _build_allowed_hosts(host, port)
+  if allowed_hosts is None and not allow_origins:
+    logger.warning(
+        "Server is bound to the wildcard address %r, so its public hostname"
+        " cannot be inferred and Host header validation is disabled. Pass"
+        " --allow_origins to declare the origins allowed to reach it.",
+        host,
+    )
   app = adk_web_server.get_fast_api_app(
       lifespan=lifespan,
       allow_origins=allow_origins,
       otel_to_cloud=otel_to_cloud,
+      allowed_hosts=allowed_hosts,
       **extra_fast_api_args,
   )
 

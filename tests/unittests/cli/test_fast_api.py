@@ -815,7 +815,9 @@ def builder_test_client(
         host="127.0.0.1",
         port=8000,
     )
-    return TestClient(app)
+    # The app derives its Host allowlist from host/port, so the client has to
+    # address it the way the server was configured.
+    return TestClient(app, base_url="http://127.0.0.1:8000")
 
 
 @pytest.fixture
@@ -2566,7 +2568,7 @@ def test_builder_save_rejects_cross_origin_post(builder_test_client, tmp_path):
 def test_builder_save_allows_same_origin_post(builder_test_client, tmp_path):
   response = builder_test_client.post(
       "/dev/apps/app/builder/save?tmp=true",
-      headers={"origin": "http://testserver"},
+      headers={"origin": "http://127.0.0.1:8000"},
       files=[(
           "files",
           ("app/root_agent.yaml", b"name: app\n", "application/x-yaml"),
@@ -3327,7 +3329,7 @@ def test_single_agent_mode_detection(
         host="127.0.0.1",
         port=8000,
     )
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://127.0.0.1:8000")
 
     response = client.get("/list-apps")
     assert response.status_code == 200
@@ -3406,7 +3408,7 @@ def test_single_agent_mode_sets_default_app(
         host="127.0.0.1",
         port=8000,
     )
-    client = TestClient(app)
+    client = TestClient(app, base_url="http://127.0.0.1:8000")
 
     # Accessing /users/{user_id}/sessions/{session_id} should work because of rewrite
     response = client.get("/users/test_user/sessions/test_session")
