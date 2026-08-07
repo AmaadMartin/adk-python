@@ -58,12 +58,17 @@ class TestAgentEngineSandboxCodeExecutor:
 
   def test_init_with_agent_engine_overrides_throws_error(self):
     """Tests that class attributes can be overridden at instantiation."""
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError) as excinfo:
       AgentEngineSandboxCodeExecutor(
           agent_engine_resource_name=(
               "projects/123/locations/us-central1/reason/456"
           ),
       )
+    assert (
+        "resource name projects/123/locations/us-central1/reason/456 is not"
+        " valid."
+        in str(excinfo.value)
+    )
 
   @patch("vertexai.Client")
   def test_execute_code_success(
