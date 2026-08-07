@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+minimum_pre_commit_version: 4.4.0
 exclude: ^(src/google/adk/cli/browser/|src/google/adk/v1/|v1_tests/)
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
@@ -47,19 +48,19 @@ repos:
           bash -c 'if command -v addlicense >/dev/null 2>&1;
           then addlicense -c "Google LLC" -l apache "$@";
           else echo "Warning: addlicense not installed, skipping"; fi' --
-        language: system
+        language: unsupported
         files: \.(py|sh)$
       - id: check-new-py-prefix
         name: Check new Python files have _ prefix and unit guide
         description: Enforces private-by-default policy and unit guide requirements for new Python files.
         entry: scripts/check_new_py_files.sh
-        language: script
+        language: unsupported_script
         files: ^src/google/adk/.*\.py$
         pass_filenames: false
       - id: compliance-checks
         name: ADK Compliance Checks
         entry: scripts/compliance_checks.py
-        language: script
+        language: unsupported_script
         files: \.py$
         # This script documents and matches the very patterns it forbids, so
         # it must not scan itself or other dev-only tooling.
@@ -67,7 +68,7 @@ repos:
       - id: update-constraints
         name: update-constraints
         entry: ./scripts/update_constraints.sh
-        language: system
+        language: unsupported
         files: ^(pyproject\.toml|constraints-.*\.txt)$
         pass_filenames: false
   - repo: https://github.com/executablebooks/mdformat

@@ -122,7 +122,7 @@ optional-dependencies.dev = [
   "mdformat==0.7.22",
   "mdformat-gfm",
   "mypy>=1.15",
-  "pre-commit>=4",
+  "pre-commit>=4.4",
   "pre-commit-hooks==4.6",
   "pyink==25.12",
   "pylint>=2.6",
