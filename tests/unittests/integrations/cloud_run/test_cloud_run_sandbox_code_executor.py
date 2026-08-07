@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import subprocess
 import sys
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -23,6 +24,7 @@ from google.adk.code_executors.code_execution_utils import CodeExecutionResult
 from google.adk.integrations.cloud_run import CloudRunSandboxCodeExecutor
 from google.adk.sessions.base_session_service import BaseSessionService
 from google.adk.sessions.session import Session
+import pydantic
 import pytest
 
 
@@ -48,6 +50,15 @@ class TestCloudRunSandboxCodeExecutor:
     assert not executor.optimize_data_file
     assert executor.sandbox_bin == "/usr/local/gcp/bin/sandbox"
     assert not executor.allow_egress
+
+  def test_default_timeout_seconds(self):
+    assert CloudRunSandboxCodeExecutor().timeout_seconds == 300
+
+  @pytest.mark.parametrize("timeout", [0, -1, None])
+  def test_non_positive_timeout_is_rejected(self, timeout):
+    """A timeout of 0, a negative value, or None would mean no bound at all."""
+    with pytest.raises(pydantic.ValidationError):
+      CloudRunSandboxCodeExecutor(timeout_seconds=timeout)
 
   def test_init_stateful_raises_error(self):
     with pytest.raises(
@@ -93,7 +104,7 @@ class TestCloudRunSandboxCodeExecutor:
         input='print("hello world")',
         capture_output=True,
         text=True,
-        timeout=None,
+        timeout=300,
         check=False,
     )
 
@@ -148,8 +159,6 @@ class TestCloudRunSandboxCodeExecutor:
   def test_execute_code_timeout(
       self, mock_run, mock_invocation_context: InvocationContext
   ):
-    import subprocess
-
     mock_run.side_effect = subprocess.TimeoutExpired(
         cmd=["sandbox", "do", "python3"],
         timeout=5,
@@ -163,6 +172,27 @@ class TestCloudRunSandboxCodeExecutor:
 
     assert result.stdout == "partial stdout"
     assert result.stderr == "partial stderr"
+
+  @patch("subprocess.run")
+  def test_execute_code_timeout_with_default_timeout(
+      self, mock_run, mock_invocation_context: InvocationContext
+  ):
+    """The default bound reaches subprocess.run and names itself on timeout."""
+    mock_run.side_effect = subprocess.TimeoutExpired(
+        cmd=["sandbox", "do", "python3"],
+        timeout=300,
+        output="",
+        stderr="",
+    )
+
+    executor = CloudRunSandboxCodeExecutor()
+    code_input = CodeExecutionInput(code="while True: pass")
+    result = executor.execute_code(mock_invocation_context, code_input)
+
+    assert result.stdout == ""
+    assert result.stderr == "Code execution timed out after 300 seconds."
+    assert result.output_files == []
+    assert mock_run.call_args.kwargs["timeout"] == 300
 
   @patch("subprocess.run")
   def test_execute_code_binary_not_found(
