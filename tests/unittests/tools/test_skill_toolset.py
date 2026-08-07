@@ -17,8 +17,11 @@ import asyncio
 import collections
 import json
 import logging
+import os
 from pathlib import Path
 from pathlib import PurePosixPath
+import shlex
+import subprocess
 import sys
 from unittest import mock
 
@@ -1703,15 +1706,127 @@ def _make_skill_with_scripts(
 
 def _make_real_executor_toolset(skills, **kwargs):
   """Creates a SkillToolset with a real UnsafeLocalCodeExecutor."""
-
-  if sys.executable is None:
-    sys.executable = "/usr/bin/python3"
-
   executor = UnsafeLocalCodeExecutor(timeout_seconds=60)
   return skill_toolset.SkillToolset(skills, code_executor=executor, **kwargs)
 
 
+# ── Interpreter guard for the real executor ──
+
+_INTERPRETER_PROBE_TIMEOUT_SECONDS = 30
+# The executor's spawned child imports the ADK package to reach the worker
+# function, so an interpreter without the package cannot run these tests.
+_INTERPRETER_PROBE_CODE = "import google.adk"
+
+
+def _can_be_reinvoked(interpreter: str | None) -> bool:
+  """Returns whether `interpreter` runs the code the executor's child needs."""
+  if not interpreter:
+    return False
+  try:
+    completed = subprocess.run(
+        [interpreter, "-c", _INTERPRETER_PROBE_CODE],
+        capture_output=True,
+        timeout=_INTERPRETER_PROBE_TIMEOUT_SECONDS,
+        check=False,
+    )
+  except (OSError, subprocess.SubprocessError):
+    return False
+  return completed.returncode == 0
+
+
+# `multiprocessing` spawns the executor's child with this interpreter, so a
+# runner that ships a self-contained test binary cannot run these tests.
+_NEEDS_REAL_INTERPRETER = pytest.mark.skipif(
+    not _can_be_reinvoked(sys.executable),
+    reason="This interpreter cannot be re-invoked to run a skill script.",
+)
+
+
+def test_can_be_reinvoked_accepts_the_running_interpreter():
+  """The probe re-invokes a real interpreter and accepts it."""
+  assert _can_be_reinvoked(sys.executable)
+
+
+def test_can_be_reinvoked_rejects_a_missing_program():
+  """A path that is not a program is rejected, not raised."""
+  assert not _can_be_reinvoked("/definitely/not/a/real/python")
+
+
+@pytest.mark.parametrize("interpreter", [None, ""])
+def test_can_be_reinvoked_rejects_an_unset_interpreter(interpreter):
+  """A self-contained test binary leaves `sys.executable` unset."""
+  assert not _can_be_reinvoked(interpreter)
+
+
+@pytest.mark.skipif(
+    os.name != "posix", reason="The stub programs below need a shebang."
+)
+def test_can_be_reinvoked_rejects_a_program_that_cannot_execute_code(tmp_path):
+  """Starting and reporting a version is not enough; the code must run."""
+  stub = tmp_path / "version_only_python"
+  stub.write_text(
+      '#!/bin/sh\ncase "$1" in\n  --version) exit 0 ;;\n  *) exit 1 ;;\nesac\n'
+  )
+  stub.chmod(0o755)
+  assert not _can_be_reinvoked(str(stub))
+
+
+@pytest.mark.skipif(
+    os.name != "posix", reason="The stub programs below need a shebang."
+)
+def test_can_be_reinvoked_rejects_an_interpreter_without_the_adk_package(
+    tmp_path,
+):
+  """An interpreter that cannot import ADK cannot run the executor's child."""
+  stub = tmp_path / "python_without_site_packages"
+  # -S drops site-packages, so this interpreter runs code but has no ADK.
+  stub.write_text(f'#!/bin/sh\nexec {shlex.quote(sys.executable)} -S "$@"\n')
+  stub.chmod(0o755)
+  assert (
+      subprocess.run(  # The stub itself is a working interpreter.
+          [str(stub), "-c", "import sys; sys.exit(0)"],
+          capture_output=True,
+          timeout=_INTERPRETER_PROBE_TIMEOUT_SECONDS,
+          check=False,
+      ).returncode
+      == 0
+  )
+  assert not _can_be_reinvoked(str(stub))
+
+
+def test_can_be_reinvoked_rejects_an_interpreter_that_exits_non_zero(
+    monkeypatch,
+):
+  """A candidate that runs but exits non-zero is rejected."""
+  monkeypatch.setattr(
+      subprocess,
+      "run",
+      lambda cmd, **kwargs: subprocess.CompletedProcess(cmd, 1),
+  )
+  assert not _can_be_reinvoked("python3")
+
+
+def test_can_be_reinvoked_rejects_an_interpreter_that_hangs(monkeypatch):
+  """A candidate that exceeds the probe timeout is rejected."""
+
+  def hang(cmd, **kwargs):
+    raise subprocess.TimeoutExpired(cmd=cmd, timeout=kwargs["timeout"])
+
+  monkeypatch.setattr(subprocess, "run", hang)
+  assert not _can_be_reinvoked("python3")
+
+
+def test_make_real_executor_toolset_leaves_sys_executable_alone(monkeypatch):
+  """The toolset helper rebinds no process-global, not even an unset one."""
+  script = models.Script(src="print('hello world')")
+  skill = _make_skill_with_script("test_skill", "hello.py", script)
+  monkeypatch.setattr(sys, "executable", None)
+  _make_real_executor_toolset([skill])
+  assert sys.executable is None
+
+
 @pytest.mark.asyncio
+@_NEEDS_REAL_INTERPRETER
 async def test_integration_python_stdout():
   """Real executor: Python script stdout is captured."""
   script = models.Script(src="print('hello world')")
@@ -1733,6 +1848,7 @@ async def test_integration_python_stdout():
 
 
 @pytest.mark.asyncio
+@_NEEDS_REAL_INTERPRETER
 async def test_integration_python_unicode_materialization():
   """Real executor: Python script with unicode resources."""
   script = models.Script(
@@ -1762,6 +1878,7 @@ async def test_integration_python_unicode_materialization():
 
 
 @pytest.mark.asyncio
+@_NEEDS_REAL_INTERPRETER
 async def test_integration_python_imports_sibling_script_module():
   """Real executor: Python scripts can import helpers from scripts/."""
   skill = _make_skill_with_scripts(
@@ -1792,6 +1909,7 @@ async def test_integration_python_imports_sibling_script_module():
 
 
 @pytest.mark.asyncio
+@_NEEDS_REAL_INTERPRETER
 async def test_integration_python_sys_exit_zero():
   """Real executor: sys.exit(0) is treated as success."""
   script = models.Script(src="import sys; sys.exit(0)")
@@ -1811,6 +1929,7 @@ async def test_integration_python_sys_exit_zero():
 
 
 @pytest.mark.asyncio
+@_NEEDS_REAL_INTERPRETER
 async def test_integration_shell_stdout_and_stderr():
   """Real executor: shell script preserves both stdout and stderr."""
   script = models.Script(src="echo output; echo warning >&2")
@@ -1832,6 +1951,7 @@ async def test_integration_shell_stdout_and_stderr():
 
 
 @pytest.mark.asyncio
+@_NEEDS_REAL_INTERPRETER
 async def test_integration_shell_stderr_only():
   """Real executor: shell script with only stderr reports error."""
   script = models.Script(src="echo failure >&2")
@@ -2021,6 +2141,7 @@ async def test_execute_script_input_files_packaged(mock_skill1):
 
 
 @pytest.mark.asyncio
+@_NEEDS_REAL_INTERPRETER
 async def test_integration_shell_nonzero_exit():
   """Real executor: shell script with non-zero exit via JSON envelope."""
   script = models.Script(src="exit 42")
