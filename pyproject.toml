@@ -131,6 +131,12 @@ optional-dependencies.dev = [
   "tox>=4.23.2",
   "tox-uv>=1.33.2",
 ]
+# Consumed by the public adk-docs API-reference generator
+# (google/adk-docs -> tools/python-api-docs/generate.sh), which installs
+# google-adk with every extra except dev/test/benchmark/community and builds
+# Sphinx with its own conf.py. Keep this group in sync with the extensions
+# that generator enables; furo is the theme it renders with. Exercised in CI
+# by the docs-build job (scripts/build_api_docs.py).
 optional-dependencies.docs = [
   "autodoc-pydantic",
   "furo",
@@ -138,7 +144,6 @@ optional-dependencies.docs = [
   "sphinx<9",
   "sphinx-autodoc-typehints",
   "sphinx-click",
-  "sphinx-rtd-theme",
 ]
 optional-dependencies.e2b = [
   "e2b>=2,<3", # For E2BEnvironment remote sandbox.
