@@ -32,7 +32,7 @@ The model should continue conversing and generating audio/transcription response
 agent in **live mode** with an `llm_audio` user simulator (each user turn is
 synthesized to audio and streamed to the live agent).
 
-1. Install the eval extra: `uv pip install -e ".[eval]"`.
+1. Install the eval extra: `uv sync --all-extras` (which includes `eval`).
 1. Add a `.env` in this directory with Vertex AI credentials (see
    `live_bidi_streaming_single_agent/.env`). The project needs access to both
    the Live API and Gemini TTS models.

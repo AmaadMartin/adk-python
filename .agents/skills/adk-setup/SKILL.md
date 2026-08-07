@@ -42,6 +42,10 @@ Run these commands from the project root:
    uv sync --all-extras
    ```
 
+   The only supported install path: it installs exactly the versions in the committed `uv.lock`, which is what CI uses. Never install a development environment with `uv pip install -e .` or `pip install -e .` — `CONTRIBUTING.md` explains how they silently break `mypy`.
+
+   Verify an existing environment with `uv sync --all-extras --check`, always passing the extras it was installed with. After editing any dependency table, run `uv lock` and commit `uv.lock` in the same change; CI syncs with `--locked` and fails on a stale lock.
+
 5. **Install development tools:**
 
    ```bash
@@ -74,6 +78,7 @@ Run these commands from the project root:
 
 | Task                                 | Command                                           |
 | :----------------------------------- | :------------------------------------------------ |
+| Check the env matches `uv.lock`      | `uv sync --all-extras --check`                    |
 | Run unit tests (Fast)                | `pytest tests/unittests`                          |
 | Run tests across all Python versions | `tox`                                             |
 | Format codebase                      | `pre-commit run --all-files`                      |
