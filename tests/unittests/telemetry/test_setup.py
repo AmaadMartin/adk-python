@@ -12,23 +12,41 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from unittest import mock
 
 from google.adk.telemetry.setup import maybe_set_otel_providers
 import pytest
 
+_OTLP_ENDPOINT_ENV_VARS = (
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+)
 
-@pytest.fixture
-def mock_os_environ():
-  initial_env = os.environ.copy()
-  with mock.patch.dict(os.environ, initial_env, clear=False) as m:
-    yield m
+
+def _set_otlp_env(
+    monkeypatch: pytest.MonkeyPatch, env_vars: dict[str, str]
+) -> None:
+  """Pins the full OTLP endpoint contract: unset every var, then set env_vars.
+
+  Each case must declare the complete OTLP state it exercises. Starting from a
+  known-empty state keeps the case hermetic regardless of what the host
+  environment exports: `maybe_set_otel_providers` enables a signal when the
+  generic endpoint *or* the per-signal endpoint is set, so an ambient
+  `OTEL_EXPORTER_OTLP_ENDPOINT` would otherwise flip every negative
+  expectation.
+  """
+  for name in _OTLP_ENDPOINT_ENV_VARS:
+    monkeypatch.delenv(name, raising=False)
+  for name, value in env_vars.items():
+    monkeypatch.setenv(name, value)
 
 
 @pytest.mark.parametrize(
     "env_vars, should_setup_trace, should_setup_metrics, should_setup_logs",
     [
+        ({}, False, False, False),
         (
             {"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "some-endpoint"},
             True,
@@ -71,15 +89,13 @@ def test_maybe_set_otel_providers(
     should_setup_metrics: bool,
     should_setup_logs: bool,
     monkeypatch: pytest.MonkeyPatch,
-    mock_os_environ,  # pylint: disable=unused-argument,redefined-outer-name
 ):
   """
   Test initializing correct providers in setup_otel
   when providing OTel env variables.
   """
   # Arrange.
-  for k, v in env_vars.items():
-    monkeypatch.setenv(k, v)
+  _set_otlp_env(monkeypatch, env_vars)
   trace_provider_mock = mock.MagicMock()
   monkeypatch.setattr(
       "opentelemetry.trace.set_tracer_provider",
