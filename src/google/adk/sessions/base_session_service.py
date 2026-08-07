@@ -45,7 +45,14 @@ class GetSessionConfig(BaseModel):
 class ListSessionsResponse(BaseModel):
   """The response of listing sessions.
 
-  The events and states are not set within each Session object.
+  Each returned Session carries state but no events:
+
+  - ``events`` is always empty. Call ``get_session`` to load the event
+    history for a specific session.
+  - ``state`` is the same merged view ``get_session`` returns: the session's
+    own state, plus app-scoped entries under the ``app:`` prefix and
+    user-scoped entries under the ``user:`` prefix, for services that keep
+    separate app and user state stores.
   """
 
   sessions: list[Session] = Field(default_factory=list)

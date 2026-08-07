@@ -568,6 +568,59 @@ async def test_list_sessions_all_users(session_service):
 
 
 @pytest.mark.asyncio
+async def test_list_sessions_returns_merged_state_without_events(
+    session_service,
+):
+  """Pins the ListSessionsResponse contract: merged state, empty events."""
+  app_name = 'my_app'
+  user_id = 'u1'
+  session = await session_service.create_session(
+      app_name=app_name,
+      user_id=user_id,
+      session_id='s1',
+      state={'app:tier': 'gold', 'user:locale': 'en-US', 'topic': 'weather'},
+  )
+  # Store a real event, so an empty listed `events` is a meaningful assertion.
+  await session_service.append_event(
+      session=session,
+      event=Event(
+          invocation_id='inv1',
+          author='user',
+          actions=EventActions(state_delta={'turns': 1}),
+      ),
+  )
+  expected_state = {
+      'topic': 'weather',
+      'turns': 1,
+      'app:tier': 'gold',
+      'user:locale': 'en-US',
+  }
+
+  listed = (
+      await session_service.list_sessions(app_name=app_name, user_id=user_id)
+  ).sessions
+  assert len(listed) == 1
+  assert listed[0].events == []
+  assert listed[0].state == expected_state
+
+  # The listed state is the same merged view get_session returns; only the
+  # events differ.
+  got = await session_service.get_session(
+      app_name=app_name, user_id=user_id, session_id='s1'
+  )
+  assert listed[0].state == got.state
+  assert got.events != []
+
+  # Listing across all users takes a different branch in every implementation.
+  listed_all = (
+      await session_service.list_sessions(app_name=app_name, user_id=None)
+  ).sessions
+  assert len(listed_all) == 1
+  assert listed_all[0].events == []
+  assert listed_all[0].state == expected_state
+
+
+@pytest.mark.asyncio
 async def test_app_state_is_shared_by_all_users_of_app(session_service):
   app_name = 'my_app'
   # User 1 creates a session, establishing app:k1

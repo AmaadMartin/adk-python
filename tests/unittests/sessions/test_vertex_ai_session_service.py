@@ -930,6 +930,22 @@ async def test_list_sessions():
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures('mock_get_api_client')
+async def test_list_sessions_returns_remote_state_without_events():
+  """Vertex AI has no app/user stores: state is whatever the remote returns."""
+  session_service = mock_vertex_ai_session_service()
+
+  sessions = await session_service.list_sessions(app_name='123', user_id='user')
+
+  # Session 1 declares session_state remotely; session 2 declares none, so the
+  # fallback yields an empty dict rather than None.
+  assert sessions.sessions[0].state == {'key': {'value': 'test_value'}}
+  assert sessions.sessions[1].state == {}
+  assert sessions.sessions[0].events == []
+  assert sessions.sessions[1].events == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
 async def test_list_sessions_with_pagination():
   session_service = mock_vertex_ai_session_service()
   sessions = await session_service.list_sessions(
