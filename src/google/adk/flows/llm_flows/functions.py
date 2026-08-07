@@ -1451,19 +1451,15 @@ def deep_merge_dicts(d1: dict[str, Any], d2: dict[str, Any]) -> dict[str, Any]:
 
   A key that holds a dict on both sides is merged recursively. Every other
   collision is last-writer-wins, so the value from d2 replaces the value in
-  d1. Lists are replaced, not concatenated. A scalar in d2 overwrites a dict
-  in d1, and a dict in d2 overwrites a scalar in d1.
+  d1. Lists are replaced, not concatenated.
 
   A caller that needs to accumulate a list must do that itself.
-  `merge_parallel_function_response_events` does it for `render_ui_widgets`:
-  it removes that field from each event before the merge, extends one list,
-  and writes the aggregate back afterwards.
 
   Args:
-    d1: The dict to merge into. This function mutates it.
-    d2: The dict to merge from. This function does not mutate it, but it
-      inserts its values by reference, so the result can share nested objects
-      with d2.
+    d1: The dict to merge into.
+    d2: The dict to merge from. This function inserts its values by
+      reference, so d1 aliases the nested dicts of d2. A later merge into d1
+      can therefore mutate d2.
 
   Returns:
     d1. The return value is the same object, not a copy.
@@ -1499,6 +1495,8 @@ def merge_parallel_function_response_events(
   for event in function_response_events:
     if event.actions:
       actions_dict = event.actions.model_dump(exclude_none=True, by_alias=True)
+      # deep_merge_dicts replaces lists, so remove this field before the merge
+      # and accumulate it here. The aggregate is written back after the loop.
       ui_widgets = actions_dict.pop(
           'renderUiWidgets', None
       ) or actions_dict.pop('render_ui_widgets', None)
