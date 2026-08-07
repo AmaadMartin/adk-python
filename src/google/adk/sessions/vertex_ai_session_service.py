@@ -500,11 +500,9 @@ class VertexAiSessionService(BaseSessionService):
     # Event fields the typed channels cannot carry (see
     # _EVENT_FIELDS_PERSISTED_ELSEWHERE) ride here, so the legacy
     # representation stays lossless. Written on every append, like the two
-    # sidecars above: `config` is built once and the raw_event fallback below
-    # resends that same dict, so a sidecar added only after the
-    # ValidationError would come too late. `exclude_defaults` keeps untouched
-    # fields (notably the always-present `node_info` default) out of the
-    # payload.
+    # sidecars above, because _from_api_event reads this channel for any row
+    # that comes back without a usable raw_event. `exclude_defaults` drops the
+    # always-present `node_info` default, so a plain event writes no sidecar.
     extra_event_fields = event.model_dump(
         exclude_none=True,
         exclude_defaults=True,

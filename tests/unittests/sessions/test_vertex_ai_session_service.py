@@ -1641,10 +1641,15 @@ async def test_append_event_writes_transcriptions_to_typed_event_metadata(
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures('mock_get_api_client')
-async def test_append_event_writes_event_sidecar_even_when_raw_event_accepted(
+async def test_append_event_sidecar_restores_event_without_stored_raw_event(
     mock_api_client_instance: MockAsyncClient,
 ) -> None:
-  """The sidecar is written on every append, not only on the fallback."""
+  """The sidecar written on the happy path is what rescues a raw_event-less row.
+
+  The SDK accepting `raw_event` does not prove the row comes back carrying it,
+  and `_from_api_event` falls back to the legacy channel for any row without a
+  usable `raw_event`. That is why the sidecar is written on every append.
+  """
   session_service = mock_vertex_ai_session_service()
   session = await session_service.get_session(
       app_name='123', user_id='user', session_id='1'
@@ -1658,6 +1663,15 @@ async def test_append_event_writes_event_sidecar_even_when_raw_event_accepted(
   assert sidecar['model_version'] == 'test_model_version'
   assert 'input_transcription' not in sidecar
   assert 'output_transcription' not in sidecar
+
+  del appended['raw_event']
+  retrieved_session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  restored_event = retrieved_session.events[-1]
+  assert restored_event.model_version == 'test_model_version'
+  assert restored_event.node_info.path == 'root/child'
+  assert restored_event.input_transcription.text == 'test_input'
 
 
 @pytest.mark.asyncio
