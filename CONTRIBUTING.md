@@ -213,6 +213,18 @@ part before or alongside your code PR.
 
    _(Note: `uv` will automatically download any Python interpreters you are missing!)_
 
+1. **Static type checking (mypy):**
+
+   CI type-checks pull requests that touch Python code or project
+   configuration with `mypy`, comparing against a baseline built from the base
+   branch so that only errors your change introduces fail the build. The
+   repository carries a backlog of pre-existing errors, so ignore those and
+   check the files you touched:
+
+   ```shell
+   uv run mypy .
+   ```
+
 1. **Auto-format the code:**
 
    If you installed the git hooks in Step 3, this happens automatically on commit. To run it manually across all files:
