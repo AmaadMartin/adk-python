@@ -89,9 +89,33 @@ jobs:
           source .venv/bin/activate
           uv sync --all-extras
 
-          # Run mypy, filter for errors only, remove line numbers, and sort
-          # We ignore exit code (|| true) because we expect errors on baseline
-          uv run mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > baseline_errors.txt || true
+          # mypy exits 0 when clean, 1 when it reports type errors (expected on
+          # the baseline) and >= 2 on a fatal, usage or internal error; an OOM
+          # kill surfaces as 128+signum. Read that status from an un-piped run:
+          # a pipeline reports its LAST command's status (sort, always 0), so
+          # piping mypy into grep makes a mypy that died look like a clean run.
+          MYPY_STATUS=0
+          uv run mypy . > mypy_baseline_raw.txt || MYPY_STATUS=$?
+          if [ "$MYPY_STATUS" -gt 1 ]; then
+            echo "::error::mypy failed to run on $TARGET_BRANCH (exit $MYPY_STATUS); the baseline is not trustworthy."
+            # mypy dumps the diagnostics it had accumulated to stdout before
+            # bailing out; its stderr is unredirected and already in the log.
+            tail -n 50 mypy_baseline_raw.txt
+            exit 1
+          fi
+
+          # Filter for errors only, remove line numbers, and sort. Do NOT add
+          # 'set -o pipefail' here: grep exits 1 on a clean tree, which would
+          # then fail the job.
+          grep "error:" mypy_baseline_raw.txt | sed 's/:\([0-9]\+\):/::/g' | sort > baseline_errors.txt
+
+          # mypy only exits 1 when it emitted a non-note message, so an empty
+          # error list means the output was not mypy's (e.g. uv failed first).
+          if [ "$MYPY_STATUS" -eq 1 ] && [ ! -s baseline_errors.txt ]; then
+            echo "::error::mypy exited 1 (errors reported) on $TARGET_BRANCH but no 'error:' lines were captured."
+            exit 1
+          fi
+
           echo "Found $(wc -l < baseline_errors.txt) errors on $TARGET_BRANCH."
 
       - name: Check PR Branch
@@ -103,12 +127,40 @@ jobs:
           source .venv/bin/activate
           uv sync --all-extras
 
-          # Run mypy on PR code, apply same processing
-          uv run mypy . | grep "error:" | sed 's/:\([0-9]\+\):/::/g' | sort > pr_errors.txt || true
+          # Same capture-then-filter treatment as the Generate Baseline step,
+          # which explains each guard.
+          MYPY_STATUS=0
+          uv run mypy . > mypy_pr_raw.txt || MYPY_STATUS=$?
+          if [ "$MYPY_STATUS" -gt 1 ]; then
+            echo "::error::mypy failed to run on the PR branch (exit $MYPY_STATUS); type checking did not complete."
+            tail -n 50 mypy_pr_raw.txt
+            exit 1
+          fi
+
+          grep "error:" mypy_pr_raw.txt | sed 's/:\([0-9]\+\):/::/g' | sort > pr_errors.txt
+
+          if [ "$MYPY_STATUS" -eq 1 ] && [ ! -s pr_errors.txt ]; then
+            echo "::error::mypy exited 1 (errors reported) on the PR branch but no 'error:' lines were captured."
+            exit 1
+          fi
+
           echo "Found $(wc -l < pr_errors.txt) errors on PR branch."
 
       - name: Compare and Fail on New Errors
         run: |
+          # The last fail-open signature, and the one no exit-status check can
+          # catch: mypy exits 0 with "Success" when the PR narrows what gets
+          # checked. Generate Baseline cherry-picks pyproject.toml alone, so a
+          # config that outranks it in mypy's precedence order -- a PR-added
+          # mypy.ini or setup.cfg -- silences the PR run only and leaves the
+          # baseline full. That is likelier than a PR fixing every error.
+          # Trade-off: misfires on a PR that genuinely clears the baseline;
+          # once the baseline reaches zero the guard is vacuous.
+          if [ -s baseline_errors.txt ] && [ ! -s pr_errors.txt ]; then
+            echo "::error::mypy reported 0 errors on the PR branch but $(wc -l < baseline_errors.txt) on the base branch. The PR run did not check the same tree -- look for a mypy.ini/setup.cfg or a source move that narrows what mypy sees."
+            exit 1
+          fi
+
           # 'comm -13' suppresses unique lines in file1 (baseline) and common lines,
           # leaving only lines unique to file2 (PR) -> The new errors.
           comm -13 baseline_errors.txt pr_errors.txt > new_errors.txt
