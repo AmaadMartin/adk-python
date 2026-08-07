@@ -55,7 +55,7 @@ def _make_json_serializable(obj: Any) -> Any:
   return to_jsonable_python(obj, serialize_unknown=True)
 
 
-class EventCompaction(BaseModel):  # type: ignore[misc]
+class EventCompaction(BaseModel):
   """The compaction of the events."""
 
   model_config = ConfigDict(
@@ -75,7 +75,7 @@ class EventCompaction(BaseModel):  # type: ignore[misc]
   """The compacted content of the events."""
 
 
-class EventActions(BaseModel):  # type: ignore[misc]
+class EventActions(BaseModel):
   """Represents the actions attached to an event."""
 
   model_config = ConfigDict(
@@ -94,7 +94,7 @@ class EventActions(BaseModel):  # type: ignore[misc]
   state_delta: dict[str, Any] = Field(default_factory=dict)
   """Indicates that the event is updating the state with the given delta."""
 
-  @field_serializer('state_delta', mode='wrap')  # type: ignore[misc, untyped-decorator]
+  @field_serializer('state_delta', mode='wrap')
   def _serialize_state_delta(
       self, value: dict[str, object], handler: SerializerFunctionWrapHandler
   ) -> dict[str, Any]:
@@ -167,7 +167,7 @@ class EventActions(BaseModel):  # type: ignore[misc]
   """The agent state at the current event, used for checkpoint and resume. This
   should only be set by ADK workflow."""
 
-  @field_serializer('agent_state', mode='wrap')  # type: ignore[misc, untyped-decorator]
+  @field_serializer('agent_state', mode='wrap')
   def _serialize_agent_state(
       self,
       value: Optional[dict[str, Any]],
