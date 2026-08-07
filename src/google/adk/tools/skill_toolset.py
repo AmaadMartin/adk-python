@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import asyncio
 import collections
+from collections.abc import Sequence
 import json
 import logging
 import mimetypes
@@ -1153,7 +1154,7 @@ class SkillToolset(BaseToolset):
       environment: BaseEnvironment | None = None,
       skills_folder: Path | str | None = None,
       script_timeout: int = _DEFAULT_SCRIPT_TIMEOUT,
-      additional_tools: list[ToolUnion] | None = None,
+      additional_tools: Sequence[ToolUnion] | None = None,
       tool_name_prefix: str | None = None,
       tool_filter: ToolPredicate | list[str] | None = None,
   ):
@@ -1170,8 +1171,9 @@ class SkillToolset(BaseToolset):
       script_timeout: Timeout in seconds for shell script execution via
         subprocess.run. Defaults to 300 seconds. Does not apply to Python
         scripts executed via exec().
-      additional_tools: Optional list of `BaseTool` or `BaseToolset` instances
-        to be made available to the agent when certain skills are activated.
+      additional_tools: Optional sequence of callables, `BaseTool`, or
+        `BaseToolset` instances to be made available to the agent when certain
+        skills are activated.
       tool_name_prefix: Optional prefix to prepend to tool names.
       tool_filter: Optional filter to select specific tools.
     """
