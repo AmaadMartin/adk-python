@@ -824,9 +824,9 @@ def adk_services_options(*, default_use_local_storage: bool = True):
 @feature_options()
 @adk_services_options(default_use_local_storage=True)
 @_logging_options()
+# No type=bool here: click 8.2.0 then ignores the flag (pallets/click#2894).
 @click.option(
     "--save_session",
-    type=bool,
     is_flag=True,
     show_default=True,
     default=False,
@@ -2544,9 +2544,9 @@ def cli_migrate_session(
     help=" NOTE: This flag is deprecated and will be removed in the future.",
     callback=_deprecate_trace_to_cloud,
 )
+# No type=bool here: click 8.2.0 then ignores the flag (pallets/click#2894).
 @click.option(
     "--otel_to_cloud",
-    type=bool,
     is_flag=True,
     show_default=True,
     default=None,
