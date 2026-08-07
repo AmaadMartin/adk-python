@@ -18,33 +18,36 @@ from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
+from google.adk.agents import mcp_instruction_provider
 from google.adk.agents.mcp_instruction_provider import McpInstructionProvider
 from google.adk.agents.readonly_context import ReadonlyContext
 import pytest
+
+_REAL_MCP_SESSION_MANAGER = mcp_instruction_provider.MCPSessionManager
 
 
 class TestMcpInstructionProvider:
   """Unit tests for McpInstructionProvider."""
 
-  def setup_method(self):
-    """Sets up the test environment."""
+  @pytest.fixture(autouse=True)
+  def _setup_provider(self):
+    """Sets up the test environment and undoes the patch after each test."""
     self.connection_params = {"host": "localhost", "port": 8000}
     self.prompt_name = "test_prompt"
-    self.mock_mcp_session_manager_cls = patch(
-        "google.adk.agents.mcp_instruction_provider.MCPSessionManager"
-    ).start()
-    self.mock_mcp_session_manager = (
-        self.mock_mcp_session_manager_cls.return_value
-    )
-    self.mock_session = MagicMock()
-    self.mock_session.list_prompts = AsyncMock()
-    self.mock_session.get_prompt = AsyncMock()
-    self.mock_mcp_session_manager.create_session = AsyncMock(
-        return_value=self.mock_session
-    )
-    self.provider = McpInstructionProvider(
-        self.connection_params, self.prompt_name
-    )
+    with patch.object(
+        mcp_instruction_provider, "MCPSessionManager"
+    ) as mock_mcp_session_manager_cls:
+      self.mock_mcp_session_manager = mock_mcp_session_manager_cls.return_value
+      self.mock_session = MagicMock()
+      self.mock_session.list_prompts = AsyncMock()
+      self.mock_session.get_prompt = AsyncMock()
+      self.mock_mcp_session_manager.create_session = AsyncMock(
+          return_value=self.mock_session
+      )
+      self.provider = McpInstructionProvider(
+          self.connection_params, self.prompt_name
+      )
+      yield
 
   @pytest.mark.asyncio
   async def test_call_success_no_args(self):
@@ -189,3 +192,8 @@ class TestMcpInstructionProvider:
     self.mock_session.get_prompt.assert_called_once_with(
         self.prompt_name, arguments={}
     )
+
+
+def test_mcp_session_manager_patch_is_not_leaked():
+  """Ensures the class-level patch is undone once the test class finishes."""
+  assert mcp_instruction_provider.MCPSessionManager is _REAL_MCP_SESSION_MANAGER
