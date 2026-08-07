@@ -63,6 +63,20 @@ class CloudRunSandboxCodeExecutor(BaseCodeExecutor):
   allow_egress: bool = False
   """Whether to allow egress for the sandbox."""
 
+  # Overrides the BaseCodeExecutor attribute: unlike the base default of None,
+  # the timeout here is always finite and must be positive (0 or None would
+  # mean no bound at all).
+  timeout_seconds: int = Field(default=300, gt=0)
+  """The wall-clock timeout in seconds for a single sandbox execution.
+
+  Without a bound, model-generated code that never terminates (an infinite
+  loop, a blocking read) would hold the caller forever, since
+  ``subprocess.run`` with no timeout waits for the child to exit. Defaults to
+  300, matching ``ContainerCodeExecutor`` and ``GkeCodeExecutor``. Raise it for
+  a computation that legitimately runs longer rather than removing the bound;
+  ``None`` is rejected, unlike on the base class.
+  """
+
   # Overrides the BaseCodeExecutor attribute: this executor cannot be stateful.
   stateful: bool = Field(default=False, frozen=True, exclude=True)
 
@@ -107,8 +121,6 @@ class CloudRunSandboxCodeExecutor(BaseCodeExecutor):
 
     logger.debug('Running sandbox command: %s', ' '.join(cmd))
 
-    timeout = self.timeout_seconds if self.timeout_seconds is not None else None
-
     try:
       # Run the command and capture output, writing the code to stdin
       result = subprocess.run(
@@ -116,7 +128,7 @@ class CloudRunSandboxCodeExecutor(BaseCodeExecutor):
           input=code_execution_input.code,
           capture_output=True,
           text=True,
-          timeout=timeout,
+          timeout=self.timeout_seconds,
           check=False,
       )
 
