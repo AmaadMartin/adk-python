@@ -27,8 +27,8 @@ import warnings
 def is_env_enabled(env_var_name: str, default: str = '0') -> bool:
   """Check if an environment variable is enabled.
 
-  An environment variable is considered enabled if its value (case-insensitive)
-  is 'true' or '1'.
+  An environment variable is considered enabled if its value, ignoring
+  surrounding whitespace and case, is 'true' or '1'.
 
   Args:
     env_var_name: The name of the environment variable to check.
@@ -47,6 +47,10 @@ def is_env_enabled(env_var_name: str, default: str = '0') -> bool:
     >>> is_env_enabled('MY_FLAG')
     True
 
+    >>> os.environ['MY_FLAG'] = ' true '
+    >>> is_env_enabled('MY_FLAG')
+    True
+
     >>> os.environ['MY_FLAG'] = 'false'
     >>> is_env_enabled('MY_FLAG')
     False
@@ -57,7 +61,7 @@ def is_env_enabled(env_var_name: str, default: str = '0') -> bool:
     >>> is_env_enabled('NONEXISTENT_FLAG', default='1')
     True
   """
-  return os.environ.get(env_var_name, default).lower() in ['true', '1']
+  return os.environ.get(env_var_name, default).strip().lower() in ['true', '1']
 
 
 def is_enterprise_mode_enabled() -> bool:
