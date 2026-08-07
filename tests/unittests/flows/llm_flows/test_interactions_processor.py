@@ -83,6 +83,37 @@ class TestInteractionsRequestProcessor:
     result = processor._find_previous_interaction_id(invocation_context)
     assert result is None
 
+  def test_find_previous_interaction_id_skips_agent_event_without_interaction_id(
+      self,
+  ):
+    """Test that an agent event without an interaction_id is skipped."""
+    processor = interactions_processor.InteractionsRequestProcessor()
+    events = [
+        Event(
+            invocation_id="inv1",
+            author="user",
+            content=types.UserContent("Hello"),
+        ),
+        Event(
+            invocation_id="inv2",
+            author="test_agent",
+            content=types.ModelContent("First response"),
+            interaction_id="interaction_first",
+        ),
+        Event(
+            invocation_id="inv3",
+            author="test_agent",
+            content=types.ModelContent("Follow-up without interaction_id"),
+        ),
+    ]
+    invocation_context = MagicMock()
+    invocation_context.session.events = events
+    invocation_context.branch = None
+    invocation_context.agent.name = "test_agent"
+
+    result = processor._find_previous_interaction_id(invocation_context)
+    assert result == "interaction_first"
+
   def test_find_previous_interaction_id_from_model_event(self):
     """Test that interaction_id is returned from model event."""
     processor = interactions_processor.InteractionsRequestProcessor()
