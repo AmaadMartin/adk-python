@@ -35,6 +35,9 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   analyze-new-release-for-adk-docs-updates:
     if: github.repository == 'google/adk-python'

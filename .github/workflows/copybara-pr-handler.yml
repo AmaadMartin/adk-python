@@ -29,6 +29,9 @@ on:
         required: false
         type: string
 
+permissions:
+  contents: read
+
 jobs:
   close-imported-pr:
     if: github.repository == 'google/adk-python'

@@ -36,6 +36,9 @@ on:
         default: '10'
         type: 'string'
 
+permissions:
+  contents: read
+
 # Never let two runs triage the same PR at once (e.g. rapid pushes); the
 # scheduled backfill still runs under its own group.
 concurrency:
