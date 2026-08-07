@@ -91,14 +91,13 @@ class _Recorder(BaseModel):
 
 # Fixtures
 @pytest.fixture(autouse=True)
-def _mute_click(request, monkeypatch: pytest.MonkeyPatch) -> None:
-  """Suppress click output during tests."""
-  # Allow tests to opt-out of muting by using the 'unmute_click' marker
+def _mute_click(
+    request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """Overrides conftest: keeps secho live for tests asserting on error text."""
   if "unmute_click" in request.keywords:
     return
   monkeypatch.setattr(click, "echo", lambda *a, **k: None)
-  # Keep secho for error messages
-  # monkeypatch.setattr(click, "secho", lambda *a, **k: None)
 
 
 # validate_exclusive

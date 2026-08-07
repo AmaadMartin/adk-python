@@ -25,6 +25,10 @@ from google.adk.evaluation.eval_result import EvalCaseResult
 from google.adk.evaluation.eval_rubrics import RubricScore
 from google.adk.evaluation.evaluator import EvalStatus
 from google.genai import types as genai_types
+import pytest
+
+# Every test here asserts on click.echo output captured by capsys.
+pytestmark = pytest.mark.unmute_click
 
 
 def test_pretty_print_eval_result_with_empty_criterion_rubrics(capsys):
