@@ -909,7 +909,8 @@ def to_agent_engine(
       Google Cloud.
     api_key (str): Optional. The API key to use for Express Mode. If not
       provided, the API key from the GOOGLE_API_KEY environment variable will be
-      used. It will only be used if GOOGLE_GENAI_USE_ENTERPRISE is true.
+      used. It will only be used if GOOGLE_GENAI_USE_ENTERPRISE is true. (It
+      will override GOOGLE_API_KEY in the .env file if it exists.)
     adk_app_object (str): Deprecated. This argument is no longer required or
       used.
     agent_engine_id (str): Optional. The ID of the Agent Runtime instance to
@@ -1136,9 +1137,8 @@ def to_agent_engine(
             ' explicitly passed and takes precedence',
             fg='yellow',
         )
-      else:
-        env_vars['GOOGLE_GENAI_USE_ENTERPRISE'] = '1'
-        env_vars['GOOGLE_API_KEY'] = api_key
+      env_vars['GOOGLE_GENAI_USE_ENTERPRISE'] = '1'
+      env_vars['GOOGLE_API_KEY'] = api_key
     elif not project:
       if 'GOOGLE_API_KEY' in env_vars:
         api_key = env_vars['GOOGLE_API_KEY']
