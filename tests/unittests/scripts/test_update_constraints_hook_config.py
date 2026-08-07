@@ -67,9 +67,9 @@ def _update_constraints_hook() -> dict[str, object]:
       for hook in repo['hooks']
       if hook['id'] == 'update-constraints'
   ]
-  assert len(hooks) == 1, (
-      f'Expected exactly one update-constraints hook, found {len(hooks)}.'
-  )
+  assert (
+      len(hooks) == 1
+  ), f'Expected exactly one update-constraints hook, found {len(hooks)}.'
   return hooks[0]
 
 
