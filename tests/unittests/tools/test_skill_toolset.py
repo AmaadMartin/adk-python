@@ -993,6 +993,29 @@ async def test_execute_script_agent_code_executor_none(mock_skill1):
 
 
 @pytest.mark.asyncio
+async def test_execute_script_agent_is_none(mock_skill1):
+  """No toolset code executor and no agent on the invocation context.
+
+  This passes before and after the `agent is not None` guard, because the
+  guard is behaviour-preserving. It pins the third arm of the fallback so a
+  later edit cannot dereference a missing agent.
+  """
+  toolset = skill_toolset.SkillToolset([mock_skill1])
+  tool = skill_toolset.RunSkillScriptTool(toolset)
+  # The helper substitutes a MagicMock for a falsy agent, so the agent has to
+  # be cleared after it returns.
+  ctx = _make_tool_context_with_agent()
+  ctx._invocation_context.agent = None
+
+  result = await tool.run_async(
+      args={"skill_name": "skill1", "file_path": "setup.sh"},
+      tool_context=ctx,
+  )
+
+  assert result["error_code"] == "NO_CODE_EXECUTOR"
+
+
+@pytest.mark.asyncio
 async def test_execute_script_unsupported_type(mock_skill1):
   executor = _make_mock_executor()
   toolset = skill_toolset.SkillToolset([mock_skill1], code_executor=executor)
@@ -2519,6 +2542,27 @@ async def test_search_skills_tool_run_async(
   mock_registry.search_skills.assert_called_once_with(query="test")
   # skill1 should be filtered out due to naming conflict with local mock_skill1
   assert result == [{"name": "skill2"}]
+
+
+@pytest.mark.asyncio
+async def test_search_skills_tool_run_async_registry_unset(
+    mock_registry, tool_context_instance
+):
+  """Registry cleared after construction returns a structured REGISTRY_ERROR."""
+  toolset = skill_toolset.SkillToolset(registry=mock_registry)
+  tool = skill_toolset.SearchSkillsTool(toolset)
+
+  # SearchSkillsTool.__init__ rejects a registry-less toolset, so the registry
+  # can only be cleared once the tool exists.
+  toolset._registry = None
+
+  result = await tool.run_async(
+      args={"query": "test"}, tool_context=tool_context_instance
+  )
+
+  assert result["error_code"] == "REGISTRY_ERROR"
+  assert "no skill registry is configured" in result["error"]
+  mock_registry.search_skills.assert_not_called()
 
 
 @pytest.mark.asyncio

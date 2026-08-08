@@ -200,8 +200,14 @@ class SearchSkillsTool(BaseTool):
           "error": "Argument 'query' is required.",
           "error_code": "INVALID_ARGUMENTS",
       }
+    registry = self._toolset._registry
+    if registry is None:
+      return {
+          "error": "Failed to search skills: no skill registry is configured.",
+          "error_code": "REGISTRY_ERROR",
+      }
     try:
-      results = await self._toolset._registry.search_skills(query=query)
+      results = await registry.search_skills(query=query)
       formatted_results = []
       for r in results:
         if r.name in self._toolset._skills:
@@ -1037,7 +1043,7 @@ class RunSkillScriptTool(BaseTool):
     code_executor = self._toolset._code_executor
     if code_executor is None:
       agent = tool_context._invocation_context.agent
-      if hasattr(agent, "code_executor"):
+      if agent is not None and hasattr(agent, "code_executor"):
         code_executor = agent.code_executor
     if code_executor is None:
       return {
