@@ -107,6 +107,39 @@ def is_gemini_model(model_string: Optional[str]) -> bool:
   return re.match(r'^gemini-', model_name) is not None
 
 
+def is_gemini_2_or_above(model_string: Optional[str]) -> bool:
+  """Check if the model is a Gemini model with major version 2 or above.
+
+  The id is normalized with ``extract_model_name`` first, so wrapped forms
+  such as ``projects/.../publishers/google/models/gemini-2.5-flash``,
+  ``apigee/gemini-2.5-flash``, ``models/gemini-2.5-pro`` and
+  ``gemini/gemini-2.5-flash`` are recognized. Unlike
+  ``is_gemini_eap_or_2_or_above`` this does not admit unversioned EAP ids: a
+  parseable major version is required.
+
+  Args:
+    model_string: Either a simple model name or path-based model name.
+
+  Returns:
+    True if it's a Gemini model whose major version is >= 2, False otherwise.
+  """
+  if not model_string:
+    return False
+
+  model_name = extract_model_name(model_string)
+  if not model_name.startswith('gemini-'):
+    return False
+
+  version_string = model_name[len('gemini-') :].split('-', 1)[0]
+  try:
+    parsed_version = Version(version_string)
+  except InvalidVersion:
+    # Covers the empty segment of a bare 'gemini-' too.
+    return False
+
+  return parsed_version.major >= 2
+
+
 @deprecated(
     'ADK no longer distinguishes Gemini versions internally, because Gemini'
     ' 1.x is fully deprecated. Use is_gemini_model instead.'
@@ -152,20 +185,7 @@ def is_gemini_eap_or_2_or_above(model_string: Optional[str]) -> bool:
   if _is_gemini_eap_model(model_string):
     return True
 
-  model_name = extract_model_name(model_string)
-  if not model_name.startswith('gemini-'):
-    return False
-
-  version_string = model_name[len('gemini-') :].split('-', 1)[0]
-  if not version_string:
-    return False
-
-  try:
-    parsed_version = Version(version_string)
-  except InvalidVersion:
-    return False
-
-  return parsed_version.major >= 2
+  return is_gemini_2_or_above(model_string)
 
 
 def _is_gemini_eap_model(model_string: Optional[str]) -> bool:

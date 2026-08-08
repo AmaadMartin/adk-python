@@ -64,6 +64,7 @@ from .telemetry import _instrumentation
 from .telemetry.tracing import tracer
 from .tools.base_toolset import BaseToolset
 from .utils._debug_output import print_event
+from .utils.model_name_utils import is_gemini_2_or_above
 
 if TYPE_CHECKING:
   from .apps.app import App
@@ -2209,7 +2210,7 @@ class Runner:
 
       cfc_agent = cast(LlmAgent, self.agent)
       model_name = cfc_agent.canonical_model.model
-      if not model_name.startswith('gemini-2'):
+      if not is_gemini_2_or_above(model_name):
         raise ValueError(
             f'CFC is not supported for model: {model_name} in agent:'
             f' {cfc_agent.name}'

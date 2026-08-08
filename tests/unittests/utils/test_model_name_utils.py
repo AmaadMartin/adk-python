@@ -19,6 +19,7 @@ from google.adk.utils.model_name_utils import _is_gemini_3_x_live
 from google.adk.utils.model_name_utils import _is_managed_agent
 from google.adk.utils.model_name_utils import extract_model_name
 from google.adk.utils.model_name_utils import is_gemini_1_model
+from google.adk.utils.model_name_utils import is_gemini_2_or_above
 from google.adk.utils.model_name_utils import is_gemini_3_5_live_translate
 from google.adk.utils.model_name_utils import is_gemini_eap_or_2_or_above
 from google.adk.utils.model_name_utils import is_gemini_model
@@ -220,6 +221,66 @@ class TestIsGemini1Model:
     assert is_gemini_1_model('gemini-1') is False  # Missing dot
     assert is_gemini_1_model('gemini-1-pro') is False  # Missing dot
     assert is_gemini_1_model('gemini-1.') is False  # Missing version number
+
+
+class TestIsGemini2OrAbove:
+  """Test the is_gemini_2_or_above function."""
+
+  def test_is_gemini_2_or_above_simple_names(self):
+    """Test major-version detection with simple model names."""
+    assert is_gemini_2_or_above('gemini-2.5-flash') is True
+    assert is_gemini_2_or_above('gemini-2.5-pro') is True
+    assert is_gemini_2_or_above('gemini-2') is True
+    assert is_gemini_2_or_above('gemini-3.0-pro') is True
+    assert is_gemini_2_or_above('gemini-10.0-pro') is True
+    assert is_gemini_2_or_above('gemini-1.5-pro') is False
+    assert is_gemini_2_or_above('gemini-1.0-pro') is False
+
+  def test_is_gemini_2_or_above_wrapped_names(self):
+    """Test that every wrapper form is normalized before the version check."""
+    gemini_2_path = 'projects/265104255505/locations/us-central1/publishers/google/models/gemini-2.5-flash'
+    assert is_gemini_2_or_above(gemini_2_path) is True
+
+    gemini_3_path = 'projects/12345/locations/us-east1/publishers/google/models/gemini-3.0-pro'
+    assert is_gemini_2_or_above(gemini_3_path) is True
+
+    gemini_1_path = 'projects/265104255505/locations/us-central1/publishers/google/models/gemini-1.5-flash'
+    assert is_gemini_2_or_above(gemini_1_path) is False
+
+    assert is_gemini_2_or_above('apigee/gemini-2.5-flash') is True
+    assert is_gemini_2_or_above('apigee/vertex_ai/v1/gemini-2.5-flash') is True
+    assert is_gemini_2_or_above('models/gemini-2.5-pro') is True
+    assert is_gemini_2_or_above('gemini/gemini-2.5-flash') is True
+    assert is_gemini_2_or_above('vertex_ai/gemini-2.5-flash') is True
+
+  def test_is_gemini_2_or_above_rejects_eap_unlike_deprecated_helper(self):
+    """EAP ids carry no version, so this helper rejects them."""
+    assert is_gemini_2_or_above('gemini-flash-early-exp') is False
+    assert is_gemini_2_or_above('gemini-early-exp') is False
+    assert is_gemini_2_or_above('gemini-flash-lite-early-exp') is False
+
+    # The deprecated helper still admits EAP ids after the delegation.
+    assert is_gemini_eap_or_2_or_above('gemini-flash-early-exp') is True
+
+  def test_is_gemini_2_or_above_non_gemini(self):
+    """Test that non-Gemini ids are rejected."""
+    assert is_gemini_2_or_above('claude-3-sonnet') is False
+    assert is_gemini_2_or_above('gpt-4o') is False
+    assert is_gemini_2_or_above('my-gemini-2.5-model') is False
+    assert is_gemini_2_or_above('custom-gemini-2.5-flash') is False
+
+  def test_is_gemini_2_or_above_edge_cases(self):
+    """Test empty, version-less and unparseable ids."""
+    assert is_gemini_2_or_above(None) is False
+    assert is_gemini_2_or_above('') is False
+    assert is_gemini_2_or_above('gemini-') is False
+    assert is_gemini_2_or_above('gemini-one') is False
+    assert is_gemini_2_or_above('gemini-0.9-test') is False
+
+    # Unparseable versions that a literal 'gemini-2' prefix test would accept.
+    assert is_gemini_2_or_above('gemini-2.') is False
+    assert is_gemini_2_or_above('gemini-2x') is False
+    assert is_gemini_2_or_above('gemini-2_0') is False
 
 
 class TestIsGemini2Model:
