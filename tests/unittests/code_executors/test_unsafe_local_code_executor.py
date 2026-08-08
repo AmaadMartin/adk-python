@@ -15,7 +15,6 @@
 import multiprocessing
 import os
 import signal
-import sys
 import textwrap
 import time
 from unittest.mock import MagicMock
@@ -117,9 +116,7 @@ def test_the_wait_keeps_the_reading_it_settled_on(
   """A later reading cannot overturn the one the wait settled on."""
   # The third reading is what a re-read after the wait would have consumed.
   readings = iter([True, False, True])
-  monkeypatch.setattr(
-      sys.modules[__name__], "_is_alive", lambda pid: next(readings)
-  )
+  monkeypatch.setattr(f"{__name__}._is_alive", lambda pid: next(readings))
 
   assert _has_exited(4321, 10)
 
