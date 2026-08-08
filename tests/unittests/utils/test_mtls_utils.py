@@ -144,9 +144,10 @@ class TestMtlsUtils:
           ("https://x.googleapis.com/v1", False),
           ("https://example.com", False),
           ("", False),
-          # A longer host that merely starts with the suffix text must not
-          # match, or the client certificate would go to an attacker's domain.
+          # A longer host that only contains the suffix text must not match, or
+          # the client certificate would go to an attacker's domain.
           ("https://mtls.googleapis.com.evil.example/v1", False),
+          ("https://x.mtls.googleapis.com.evil.example/v1", False),
       ],
   )
   def test_is_mtls_googleapis_endpoint(self, url, expected):
