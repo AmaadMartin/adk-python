@@ -17,10 +17,12 @@
 from __future__ import annotations
 
 import re
+import sys
+import warnings
 
+from google.adk.integrations.bigquery.bigquery_skill import _SKILL_DIR
+from google.adk.integrations.bigquery.bigquery_skill import get_bigquery_skill
 from google.adk.skills._utils import _validate_skill_dir
-from google.adk.tools.bigquery.bigquery_skill import _SKILL_DIR
-from google.adk.tools.bigquery.bigquery_skill import get_bigquery_skill
 from google.adk.tools.skill_toolset import ListSkillsTool
 from google.adk.tools.skill_toolset import LoadSkillResourceTool
 from google.adk.tools.skill_toolset import LoadSkillTool
@@ -114,3 +116,32 @@ def test_skill_frontmatter_has_metadata():
   skill = get_bigquery_skill()
   assert "author" in skill.frontmatter.metadata
   assert "version" in skill.frontmatter.metadata
+
+
+def test_get_bigquery_skill_exported_from_integrations_package():
+  """Verify the package-level export resolves to the module function."""
+  from google.adk.integrations.bigquery import get_bigquery_skill as exported
+
+  assert exported is get_bigquery_skill
+
+
+def test_get_bigquery_skill_exported_from_deprecated_tools_package():
+  """Verify the deprecated package forwards to the same function."""
+  with warnings.catch_warnings():
+    warnings.simplefilter("ignore", DeprecationWarning)
+    from google.adk.tools.bigquery import get_bigquery_skill as forwarded
+
+  assert forwarded is get_bigquery_skill
+
+
+def test_deprecated_bigquery_skill_module_warns_and_forwards():
+  """Verify the shim at the old module path warns and re-exports."""
+  sys.modules.pop("google.adk.tools.bigquery.bigquery_skill", None)
+
+  with pytest.warns(
+      DeprecationWarning,
+      match="google.adk.integrations.bigquery.bigquery_skill",
+  ):
+    from google.adk.tools.bigquery.bigquery_skill import get_bigquery_skill as deprecated
+
+  assert deprecated is get_bigquery_skill
