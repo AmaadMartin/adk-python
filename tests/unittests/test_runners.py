@@ -17,6 +17,7 @@ from contextlib import aclosing
 import importlib
 import logging
 from pathlib import Path
+import re
 import sys
 import textwrap
 from typing import AsyncGenerator
@@ -34,6 +35,7 @@ from google.adk.apps.app import App
 from google.adk.apps.app import ResumabilityConfig
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.cli.utils.agent_loader import AgentLoader
+from google.adk.code_executors import BuiltInCodeExecutor
 from google.adk.errors.session_not_found_error import SessionNotFoundError
 from google.adk.events.event import Event
 from google.adk.plugins.base_plugin import BasePlugin
@@ -44,6 +46,8 @@ from google.adk.sessions.session import Session
 from google.adk.tools.base_toolset import BaseToolset
 from google.genai import types
 import pytest
+
+from . import testing_utils
 
 TEST_APP_ID = "test_app"
 TEST_USER_ID = "test_user"
@@ -1970,6 +1974,90 @@ class TestRunnerInferAgentOrigin:
     assert runner._app_name_alignment_hint is not None
     assert "wrong_name" in runner._app_name_alignment_hint
     assert "actual_name" in runner._app_name_alignment_hint
+
+
+class TestRunnerCfcModelGate:
+  """Tests the CFC model gate in ``Runner._new_invocation_context``."""
+
+  def _new_runner(self, model: str) -> Runner:
+    """Builds a runner over a fresh agent, so executor mutation cannot leak."""
+    agent = LlmAgent(
+        name="cfc_agent",
+        model=testing_utils.MockModel(model=model, responses=[]),
+    )
+    return Runner(
+        app_name="cfc_test",
+        agent=agent,
+        session_service=InMemorySessionService(),
+    )
+
+  def _new_session(self) -> Session:
+    return Session(
+        id=TEST_SESSION_ID,
+        app_name="cfc_test",
+        user_id=TEST_USER_ID,
+        events=[],
+    )
+
+  @pytest.mark.parametrize(
+      "model",
+      [
+          "gemini-2.5-flash",
+          "gemini-3.0-pro",
+          "projects/12345/locations/us-central1/publishers/google/models/gemini-2.5-flash",
+      ],
+  )
+  def test_cfc_accepts_supported_model(self, model: str):
+    runner = self._new_runner(model)
+
+    runner._new_invocation_context(
+        self._new_session(), run_config=RunConfig(support_cfc=True)
+    )
+
+    assert isinstance(runner.agent.code_executor, BuiltInCodeExecutor)
+
+  @pytest.mark.parametrize(
+      "model",
+      [
+          "claude-3-5-sonnet",
+          "gemini-1.5-pro",
+          "gemini-flash-early-exp",
+      ],
+  )
+  def test_cfc_rejects_unsupported_model(self, model: str):
+    runner = self._new_runner(model)
+
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            f"CFC is not supported for model: {model} in agent: cfc_agent"
+        ),
+    ):
+      runner._new_invocation_context(
+          self._new_session(), run_config=RunConfig(support_cfc=True)
+      )
+
+    assert runner.agent.code_executor is None
+
+  def test_no_cfc_skips_model_check(self):
+    runner = self._new_runner("gemini-1.5-pro")
+
+    runner._new_invocation_context(
+        self._new_session(), run_config=RunConfig(support_cfc=False)
+    )
+
+    assert runner.agent.code_executor is None
+
+  def test_cfc_keeps_existing_built_in_executor(self):
+    runner = self._new_runner("gemini-2.5-flash")
+    executor = BuiltInCodeExecutor()
+    runner.agent.code_executor = executor
+
+    runner._new_invocation_context(
+        self._new_session(), run_config=RunConfig(support_cfc=True)
+    )
+
+    assert runner.agent.code_executor is executor
 
 
 @pytest.mark.asyncio
