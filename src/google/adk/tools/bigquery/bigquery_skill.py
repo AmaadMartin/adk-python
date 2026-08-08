@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Pre-packaged BigQuery skill for use with SkillToolset."""
+"""Pre-packaged BigQuery skills for use with SkillToolset."""
 
 from __future__ import annotations
 
@@ -21,7 +21,9 @@ import pathlib
 from ...skills import load_skill_from_dir
 from ...skills import Skill
 
-_SKILL_DIR = pathlib.Path(__file__).parent / "skills" / "bigquery-ai-ml"
+_SKILLS_DIR = pathlib.Path(__file__).parent / "skills"
+_SKILL_DIR = _SKILLS_DIR / "bigquery-ai-ml"
+_GRAPH_SKILL_DIR = _SKILLS_DIR / "bigquery-graph"
 
 
 def get_bigquery_skill() -> Skill:
@@ -41,3 +43,25 @@ def get_bigquery_skill() -> Skill:
     agent = LlmAgent(tools=[bigquery_toolset, toolset])
   """
   return load_skill_from_dir(_SKILL_DIR)
+
+
+def get_bigquery_graph_skill() -> Skill:
+  """Returns the pre-packaged BigQuery property graph skill.
+
+  This skill follows the agentskills.io specification and provides curated
+  instructions for querying BigQuery property graphs with GQL and SQL/PGQ,
+  alongside reference documents on graph schema DDL and semantic graph
+  queries. Use it with SkillToolset alongside BigQueryToolset:
+
+    from google.adk.integrations.bigquery import BigQueryToolset
+    from google.adk.tools.bigquery.bigquery_skill import (
+        get_bigquery_graph_skill,
+    )
+    from google.adk.tools.skill_toolset import SkillToolset
+
+    graph_skill = get_bigquery_graph_skill()
+    toolset = SkillToolset(skills=[graph_skill])
+    bigquery_toolset = BigQueryToolset(...)
+    agent = LlmAgent(tools=[bigquery_toolset, toolset])
+  """
+  return load_skill_from_dir(_GRAPH_SKILL_DIR)
