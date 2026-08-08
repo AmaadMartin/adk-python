@@ -245,3 +245,59 @@ class TestUnsafeLocalCodeExecutor:
         process.kill()
       process.join()
       result_queue.close()
+
+  @pytest.mark.skipif(
+      not hasattr(os, "killpg") or not os.path.isdir("/proc"),
+      reason="Ignoring SIGTERM and reading liveness is POSIX with /proc only.",
+  )
+  def test_execute_code_kills_an_execution_that_ignores_sigterm(
+      self,
+      mock_invocation_context: InvocationContext,
+      tmp_path,
+      monkeypatch,
+  ):
+    """A timed-out execution that ignores SIGTERM is still killed."""
+    pid_file = tmp_path / "worker.pid"
+    # The pid is recorded only after SIGTERM has been made a no-op, so a
+    # recorded pid means the signal the executor sends first cannot be what
+    # ended this process: only the escalation to SIGKILL can have.
+    code = textwrap.dedent(f"""
+        import os
+        import signal
+        import time
+
+        signal.signal(signal.SIGTERM, signal.SIG_IGN)
+        with open({str(pid_file)!r}, 'w') as f:
+          f.write(str(os.getpid()))
+        time.sleep(30)
+        """)
+    monkeypatch.setattr(
+        unsafe_local_code_executor, "_TERMINATE_GRACE_SECONDS", 0.1
+    )
+    # The timeout has to outlast the worker's start-up, or the code never
+    # installs SIG_IGN and the test proves nothing. A spawned worker imports
+    # `google.adk` before it runs a line, which measures at 1.8s idle and 4.0s
+    # on two contended cores, so 10s is the budget with room to spare.
+    executor = UnsafeLocalCodeExecutor(timeout_seconds=10)
+
+    try:
+      started = time.monotonic()
+      result = executor.execute_code(
+          mock_invocation_context, CodeExecutionInput(code=code)
+      )
+      elapsed = time.monotonic() - started
+
+      # The worker sleeps for 30s; waiting on it would blow this bound.
+      assert elapsed < 25
+      assert result.stdout == ""
+      assert "Code execution timed out after 10 seconds." in result.stderr
+      worker_pid = _written_pid(pid_file)
+      if worker_pid is None:
+        pytest.skip("this environment could not start the execution process")
+      # `_kill_execution` reaps the worker on both of its exit paths, so this
+      # holds the moment `execute_code` returns and needs no polling.
+      assert not _is_alive(worker_pid)
+    finally:
+      leftover = _written_pid(pid_file)
+      if leftover is not None and _is_alive(leftover):
+        os.kill(leftover, signal.SIGKILL)
