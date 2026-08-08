@@ -17,6 +17,7 @@ from contextlib import aclosing
 import importlib
 import logging
 from pathlib import Path
+import re
 import sys
 import textwrap
 from typing import AsyncGenerator
@@ -34,6 +35,7 @@ from google.adk.apps.app import App
 from google.adk.apps.app import ResumabilityConfig
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.cli.utils.agent_loader import AgentLoader
+from google.adk.code_executors.built_in_code_executor import BuiltInCodeExecutor
 from google.adk.errors.session_not_found_error import SessionNotFoundError
 from google.adk.events.event import Event
 from google.adk.plugins.base_plugin import BasePlugin
@@ -44,6 +46,8 @@ from google.adk.sessions.session import Session
 from google.adk.tools.base_toolset import BaseToolset
 from google.genai import types
 import pytest
+
+from . import testing_utils
 
 TEST_APP_ID = "test_app"
 TEST_USER_ID = "test_user"
@@ -2262,6 +2266,138 @@ def test_runner_agent_is_a_class_attribute():
   assert "agent" in dir(Runner)
   assert Runner.agent is None
   assert create_autospec(Runner).agent is not None
+
+
+class TestRunnerCfcModelGate:
+  """Pins the CFC model gate of ``Runner._new_invocation_context``.
+
+  The accept path reroutes the invocation to the Live API, which a unit test
+  must not drive, so only the reject path is asserted end to end.
+  """
+
+  def setup_method(self):
+    """Gives every case a fresh session service."""
+    self.session_service = InMemorySessionService()
+
+  def _new_runner(self, agent: BaseAgent) -> Runner:
+    return Runner(
+        app_name=TEST_APP_ID,
+        agent=agent,
+        session_service=self.session_service,
+    )
+
+  def _new_session(self) -> Session:
+    return Session(
+        id=TEST_SESSION_ID,
+        app_name=TEST_APP_ID,
+        user_id=TEST_USER_ID,
+        events=[],
+    )
+
+  @staticmethod
+  def _rejection_pattern(model_name: str) -> str:
+    return re.escape(
+        f"CFC is not supported for model: {model_name} in agent: cfc_agent"
+    )
+
+  @pytest.mark.parametrize(
+      "model_name", ["gemini-flash-early-exp", "gemini-flash-early-exp3"]
+  )
+  def test_cfc_gate_rejects_unversioned_early_access_model_ids(
+      self, model_name: str
+  ):
+    """Early Access ids are rejected, and rejected before any mutation."""
+    agent = LlmAgent(name="cfc_agent", model=model_name)
+    runner = self._new_runner(agent)
+
+    with pytest.raises(ValueError, match=self._rejection_pattern(model_name)):
+      runner._new_invocation_context(
+          self._new_session(), run_config=RunConfig(support_cfc=True)
+      )
+
+    assert agent.code_executor is None
+
+  def test_cfc_gate_rejects_non_gemini_model(self):
+    """A non-Gemini model reaches the gate only as a ``BaseLlm`` instance."""
+    agent = LlmAgent(
+        name="cfc_agent",
+        model=testing_utils.MockModel(responses=[], model="claude-3-5-sonnet"),
+    )
+    runner = self._new_runner(agent)
+
+    with pytest.raises(
+        ValueError, match=self._rejection_pattern("claude-3-5-sonnet")
+    ):
+      runner._new_invocation_context(
+          self._new_session(), run_config=RunConfig(support_cfc=True)
+      )
+
+    assert agent.code_executor is None
+
+  def test_cfc_gate_accepts_gemini_2_and_installs_the_code_executor(self):
+    agent = LlmAgent(name="cfc_agent", model="gemini-2.5-flash")
+    runner = self._new_runner(agent)
+
+    runner._new_invocation_context(
+        self._new_session(), run_config=RunConfig(support_cfc=True)
+    )
+
+    assert isinstance(agent.code_executor, BuiltInCodeExecutor)
+
+  def test_cfc_gate_keeps_an_already_installed_code_executor(self):
+    agent = LlmAgent(name="cfc_agent", model="gemini-2.5-flash")
+    code_executor = BuiltInCodeExecutor()
+    agent.code_executor = code_executor
+    runner = self._new_runner(agent)
+
+    runner._new_invocation_context(
+        self._new_session(), run_config=RunConfig(support_cfc=True)
+    )
+
+    assert agent.code_executor is code_executor
+
+  def test_cfc_gate_is_inert_when_support_cfc_is_false(self):
+    agent = LlmAgent(name="cfc_agent", model="gemini-flash-early-exp")
+    runner = self._new_runner(agent)
+
+    runner._new_invocation_context(self._new_session(), run_config=RunConfig())
+
+    assert agent.code_executor is None
+
+  def test_cfc_gate_is_inert_for_an_agent_without_a_canonical_model(self):
+    agent = MockAgent("root_agent")
+    runner = self._new_runner(agent)
+
+    invocation_context = runner._new_invocation_context(
+        self._new_session(), run_config=RunConfig(support_cfc=True)
+    )
+
+    assert invocation_context.agent is agent
+
+  @pytest.mark.asyncio
+  async def test_cfc_gate_error_surfaces_from_run_async(self):
+    """The rejection reaches a caller of the public entry point."""
+    agent = LlmAgent(name="cfc_agent", model="gemini-flash-early-exp")
+    runner = self._new_runner(agent)
+    await self.session_service.create_session(
+        app_name=TEST_APP_ID, user_id=TEST_USER_ID, session_id=TEST_SESSION_ID
+    )
+
+    agen = runner.run_async(
+        user_id=TEST_USER_ID,
+        session_id=TEST_SESSION_ID,
+        new_message=types.Content(role="user", parts=[types.Part(text="hi")]),
+        run_config=RunConfig(support_cfc=True),
+    )
+
+    with pytest.raises(
+        ValueError, match=self._rejection_pattern("gemini-flash-early-exp")
+    ):
+      async with aclosing(agen) as a:
+        async for _ in a:
+          pass
+
+    assert agent.code_executor is None
 
 
 if __name__ == "__main__":
