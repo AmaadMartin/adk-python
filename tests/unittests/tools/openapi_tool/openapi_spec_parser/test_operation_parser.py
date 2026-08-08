@@ -94,6 +94,24 @@ def test_process_operation_parameters(sample_operation):
   assert parser._params[1].param_location == 'header'
 
 
+def test_process_operation_parameters_unresolved_reference_raises():
+  """An unresolved '$ref' parameter must raise instead of being dropped."""
+  operation = {
+      'operationId': 'test_operation',
+      'parameters': [{'$ref': '#/components/parameters/Foo'}],
+      'responses': {'200': {'description': 'ok'}},
+  }
+
+  with pytest.raises(
+      ValueError,
+      match=(
+          r'Unresolved reference in the parameters of operation'
+          r" 'test_operation': '#/components/parameters/Foo'"
+      ),
+  ):
+    OperationParser(operation)
+
+
 def test_process_request_body(sample_operation):
   """Test _process_request_body method."""
   parser = OperationParser(sample_operation, should_parse=False)
@@ -233,6 +251,24 @@ def test_process_request_body_empty_object():
   parser = OperationParser(operation, should_parse=False)
   parser._process_request_body()
   assert len(parser._params) == 0
+
+
+def test_process_request_body_unresolved_reference_raises():
+  """An unresolved '$ref' request body must raise, not AttributeError."""
+  operation = {
+      'operationId': 'test_operation',
+      'requestBody': {'$ref': '#/components/requestBodies/Foo'},
+      'responses': {'200': {'description': 'ok'}},
+  }
+
+  with pytest.raises(
+      ValueError,
+      match=(
+          r'Unresolved reference in the request body of operation'
+          r" 'test_operation': '#/components/requestBodies/Foo'"
+      ),
+  ):
+    OperationParser(operation)
 
 
 def test_dedupe_param_names(sample_operation):

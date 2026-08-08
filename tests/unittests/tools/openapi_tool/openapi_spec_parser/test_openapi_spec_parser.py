@@ -180,6 +180,64 @@ def test_parse_spec_with_reference(openapi_spec_generator):
   assert op.return_value.type_value.__origin__ is dict
 
 
+def test_parse_spec_with_parameter_and_request_body_references(
+    openapi_spec_generator,
+):
+  """Component parameter and requestBody refs are inlined before parsing."""
+  openapi_spec = {
+      "openapi": "3.1.0",
+      "info": {"title": "API with component refs", "version": "1.0.0"},
+      "paths": {
+          "/things/{thing_id}": {
+              "get": {
+                  "operationId": "getThing",
+                  "parameters": [{"$ref": "#/components/parameters/ThingId"}],
+                  "responses": {"200": {"description": "Success"}},
+              },
+              "post": {
+                  "operationId": "createThing",
+                  "requestBody": {
+                      "$ref": "#/components/requestBodies/ThingBody"
+                  },
+                  "responses": {"200": {"description": "Success"}},
+              },
+          }
+      },
+      "components": {
+          "parameters": {
+              "ThingId": {
+                  "name": "thing_id",
+                  "in": "path",
+                  "required": True,
+                  "schema": {"type": "string"},
+              }
+          },
+          "requestBodies": {
+              "ThingBody": {
+                  "content": {
+                      "application/json": {
+                          "schema": {
+                              "type": "object",
+                              "properties": {"name": {"type": "string"}},
+                          }
+                      }
+                  }
+              }
+          },
+      },
+  }
+
+  parsed_operations = openapi_spec_generator.parse(openapi_spec)
+
+  operations = {op.name: op for op in parsed_operations}
+  assert [p.original_name for p in operations["get_thing"].parameters] == [
+      "thing_id"
+  ]
+  assert [p.original_name for p in operations["create_thing"].parameters] == [
+      "name"
+  ]
+
+
 def test_parse_spec_with_circular_reference(openapi_spec_generator):
   """Test correct handling of circular $ref (important!)."""
   openapi_spec = {
