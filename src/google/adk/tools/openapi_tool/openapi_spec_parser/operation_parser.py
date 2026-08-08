@@ -143,7 +143,8 @@ class OperationParser:
     """Processes the request body from the OpenAPI operation.
 
     Raises:
-      ValueError: If the request body is an unresolved '$ref' reference.
+      ValueError: If the request body, or the schema of its media type, is an
+        unresolved '$ref' reference.
     """
     request_body = self._operation.requestBody
     if not request_body:
@@ -165,10 +166,14 @@ class OperationParser:
 
     # If request body is an object, expand the properties as parameters
     for _, media_type_object in content.items():
-      # media_type_object.schema_ is Schema | Reference | None. The code below
-      # duck-types it (a '$ref' read from a spec validates as a Schema), so it
-      # stays loosely typed instead of being narrowed here.
-      schema: Any = media_type_object.schema_ or {}
+      schema = media_type_object.schema_ or Schema()
+      if isinstance(schema, Reference):
+        raise ValueError(
+            'Unresolved reference in the request body schema of operation'
+            f' {self._operation.operationId!r}: {schema.ref!r}. References'
+            ' must be resolvable within the spec and inlined before the'
+            ' operation is parsed.'
+        )
       description = request_body.description or ''
 
       if schema and schema.type == 'object':
@@ -180,7 +185,6 @@ class OperationParser:
                   original_name=prop_name,
                   param_location='body',
                   param_schema=prop_details,
-                  description=prop_details.description,
                   required=prop_name in required_properties,
                   py_name=self._get_py_name(prop_name),
               )

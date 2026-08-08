@@ -15,6 +15,7 @@
 from fastapi.openapi.models import MediaType
 from fastapi.openapi.models import Operation
 from fastapi.openapi.models import Parameter
+from fastapi.openapi.models import Reference
 from fastapi.openapi.models import RequestBody
 from fastapi.openapi.models import Response
 from fastapi.openapi.models import Schema
@@ -266,6 +267,31 @@ def test_process_request_body_unresolved_reference_raises():
       match=(
           r'Unresolved reference in the request body of operation'
           r" 'test_operation': '#/components/requestBodies/Foo'"
+      ),
+  ):
+    OperationParser(operation)
+
+
+def test_process_request_body_unresolved_schema_reference_raises():
+  """An unresolved '$ref' media type schema must raise, not AttributeError."""
+  operation = Operation(
+      operationId='test_operation',
+      requestBody=RequestBody(
+          content={
+              'application/json': MediaType(
+                  schema=Reference.model_validate(
+                      {'$ref': '#/components/schemas/Foo'}
+                  )
+              )
+          }
+      ),
+  )
+
+  with pytest.raises(
+      ValueError,
+      match=(
+          r'Unresolved reference in the request body schema of operation'
+          r" 'test_operation': '#/components/schemas/Foo'"
       ),
   ):
     OperationParser(operation)
