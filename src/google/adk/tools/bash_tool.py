@@ -102,6 +102,34 @@ def _set_resource_limits(policy: BashToolPolicy) -> None:
     logger.warning("Failed to set resource limits: %s", e)
 
 
+def _execution_result(
+    stdout: Optional[bytes],
+    stderr: Optional[bytes],
+    returncode: Optional[int],
+    error: Optional[str] = None,
+) -> dict[str, Any]:
+  """Builds the result payload for an attempted command execution.
+
+  Args:
+    stdout: Raw bytes captured from the child's stdout, if any.
+    stderr: Raw bytes captured from the child's stderr, if any.
+    returncode: The child's exit status, or None when no process ran.
+    error: A human-readable failure reason, omitted on success.
+
+  Returns:
+    A dict that always carries stdout, stderr and returncode, plus error
+    when the attempt failed.
+  """
+  result: dict[str, Any] = {
+      "stdout": (stdout or b"").decode(errors="replace"),
+      "stderr": (stderr or b"").decode(errors="replace"),
+      "returncode": returncode,
+  }
+  if error is not None:
+    result["error"] = error
+  return result
+
+
 class ExecuteBashTool(BaseTool):
   """Tool to execute a validated bash command within a workspace directory."""
 
@@ -159,7 +187,8 @@ class ExecuteBashTool(BaseTool):
     * A refusal, when the command never ran: `{"error": <str>}` alone.
     * An attempted execution: always `stdout`, `stderr` and `returncode`,
       plus `error` on timeout or failure. `returncode` is the child's exit
-      status, or `None` when no exit status is available.
+      status, or `None` when no exit status is available. `stdout` and
+      `stderr` are decoded text, empty when the child captured nothing.
 
     Args:
       args: Tool arguments. `command` holds the bash command to run.
@@ -214,58 +243,39 @@ class ExecuteBashTool(BaseTool):
         except ProcessLookupError:
           pass
         stdout, stderr = await process.communicate()
-        return {
-            "error": (
+        return _execution_result(
+            stdout,
+            stderr,
+            process.returncode,
+            error=(
                 f"Command timed out after {self._policy.timeout_seconds}"
                 " seconds."
             ),
-            "stdout": (
-                stdout.decode(errors="replace")
-                if stdout
-                else "<no stdout captured>"
-            ),
-            "stderr": (
-                stderr.decode(errors="replace")
-                if stderr
-                else "<no stderr captured>"
-            ),
-            "returncode": process.returncode,
-        }
+        )
       finally:
         try:
           if process.pid:
             os.killpg(process.pid, signal.SIGKILL)
         except ProcessLookupError:
           pass
-      return {
-          "stdout": (
-              stdout.decode(errors="replace")
-              if stdout
-              else "<no stdout captured>"
-          ),
-          "stderr": (
-              stderr.decode(errors="replace")
-              if stderr
-              else "<no stderr captured>"
-          ),
-          "returncode": process.returncode,
-      }
+      return _execution_result(stdout, stderr, process.returncode)
+    except (FileNotFoundError, PermissionError) as e:
+      # create_subprocess_exec raises FileNotFoundError both when the
+      # executable is missing and when the workspace directory does not
+      # exist; e.filename distinguishes the two.
+      if str(e.filename) == str(self._workspace):
+        message = f"Workspace directory is not accessible: {e.filename}"
+      elif isinstance(e, FileNotFoundError):
+        message = f"Command not found: {e.filename}"
+      else:
+        message = f"Permission denied: {e.filename}"
+      logger.warning("ExecuteBashTool could not start the command: %s", e)
+      return _execution_result(stdout, stderr, None, error=message)
     except Exception as e:  # pylint: disable=broad-except
       logger.exception("ExecuteBashTool execution failed")
-
-      stdout_res = (
-          stdout.decode(errors="replace") if stdout else "<no stdout captured>"
+      return _execution_result(
+          stdout, stderr, None, error=f"Execution failed: {e}"
       )
-      stderr_res = (
-          stderr.decode(errors="replace") if stderr else "<no stderr captured>"
-      )
-
-      return {
-          "error": f"Execution failed: {str(e)}",
-          "stdout": stdout_res,
-          "stderr": stderr_res,
-          "returncode": None,
-      }
 
   def _detect_error_in_response(self, response: Any) -> Optional[str]:
     """Telemetry hook: returns an error type if the response indicates an error."""
