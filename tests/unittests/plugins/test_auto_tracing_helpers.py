@@ -257,6 +257,7 @@ def test_build_tracing_wrapper_records_io_under_the_display_name():
   assert span.attributes == {'adk.fn.arg.x': '3', 'adk.fn.return': '4'}
 
 
+@pytest.mark.asyncio
 async def test_build_tracing_wrapper_records_awaited_result():
   span = _FakeSpan()
 

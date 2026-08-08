@@ -111,6 +111,7 @@ async def _make_invocation(
   return invocation_context, contexts
 
 
+@pytest.mark.asyncio
 async def test_before_run_without_replay_config_leaves_plugin_inert(tmp_path):
   """No replay config means the plugin must not intercept anything."""
   plugin = ReplayPlugin()
@@ -131,6 +132,7 @@ async def test_before_run_without_replay_config_leaves_plugin_inert(tmp_path):
   assert tool.live_calls == []
 
 
+@pytest.mark.asyncio
 async def test_before_run_with_partial_replay_config_leaves_plugin_inert(
     tmp_path,
 ):
@@ -152,6 +154,7 @@ async def test_before_run_with_partial_replay_config_leaves_plugin_inert(
   assert tool.live_calls == []
 
 
+@pytest.mark.asyncio
 async def test_before_tool_returns_recorded_response_not_live_result(tmp_path):
   """The recorded response wins over whatever the live tool returns."""
   _write_recordings(tmp_path, [_recording(response={'result': 4})])
@@ -167,6 +170,7 @@ async def test_before_tool_returns_recorded_response_not_live_result(tmp_path):
   assert replayed == {'result': 4}
 
 
+@pytest.mark.asyncio
 async def test_before_tool_still_executes_the_underlying_tool(tmp_path):
   """Replay verifies the tool runs; only its response is substituted."""
   _write_recordings(tmp_path, [_recording(args={'sides': 6})])
@@ -182,6 +186,7 @@ async def test_before_tool_still_executes_the_underlying_tool(tmp_path):
   assert tool.live_calls == [{'sides': 6}]
 
 
+@pytest.mark.asyncio
 async def test_before_run_reads_the_sse_file_in_sse_streaming_mode(tmp_path):
   """streaming_mode selects which recordings file is authoritative."""
   _write_recordings(
@@ -209,6 +214,7 @@ async def test_before_run_reads_the_sse_file_in_sse_streaming_mode(tmp_path):
   assert replayed == {'result': 'streaming'}
 
 
+@pytest.mark.asyncio
 async def test_before_run_reads_the_plain_file_in_non_streaming_mode(tmp_path):
   """The mirror of the sse case, so a swapped file name cannot pass both."""
   _write_recordings(
@@ -236,6 +242,7 @@ async def test_before_run_reads_the_plain_file_in_non_streaming_mode(tmp_path):
   assert replayed == {'result': 'non-streaming'}
 
 
+@pytest.mark.asyncio
 async def test_before_run_unsupported_streaming_mode_raises_value_error(
     tmp_path,
 ):
@@ -250,6 +257,7 @@ async def test_before_run_unsupported_streaming_mode_raises_value_error(
     await plugin.before_run_callback(invocation_context=invocation_context)
 
 
+@pytest.mark.asyncio
 async def test_before_run_missing_recordings_file_raises_config_error(
     tmp_path,
 ):
@@ -261,6 +269,7 @@ async def test_before_run_missing_recordings_file_raises_config_error(
     await plugin.before_run_callback(invocation_context=invocation_context)
 
 
+@pytest.mark.asyncio
 async def test_before_run_unparsable_recordings_raise_config_error(tmp_path):
   """Schema violations surface as ReplayConfigError, not a pydantic error."""
   (tmp_path / _NON_STREAMING_FILE).write_text(
@@ -275,6 +284,7 @@ async def test_before_run_unparsable_recordings_raise_config_error(tmp_path):
     await plugin.before_run_callback(invocation_context=invocation_context)
 
 
+@pytest.mark.asyncio
 async def test_before_tool_without_loaded_state_raises_config_error(tmp_path):
   """Replaying without a preceding before_run is a misuse, not a silent pass."""
   _write_recordings(tmp_path, [_recording()])
@@ -289,6 +299,7 @@ async def test_before_tool_without_loaded_state_raises_config_error(tmp_path):
     )
 
 
+@pytest.mark.asyncio
 async def test_before_tool_tool_name_mismatch_raises_verification_error(
     tmp_path,
 ):
@@ -311,6 +322,7 @@ async def test_before_tool_tool_name_mismatch_raises_verification_error(
   assert 'flip_coin' in message
 
 
+@pytest.mark.asyncio
 async def test_before_tool_args_mismatch_raises_verification_error(tmp_path):
   """The recorded args must match exactly, not just the tool name."""
   _write_recordings(tmp_path, [_recording(args={'sides': 6})])
@@ -330,6 +342,7 @@ async def test_before_tool_args_mismatch_raises_verification_error(tmp_path):
   assert "'sides': 20" in message
 
 
+@pytest.mark.asyncio
 async def test_before_tool_beyond_recorded_calls_raises_verification_error(
     tmp_path,
 ):
@@ -354,6 +367,7 @@ async def test_before_tool_beyond_recorded_calls_raises_verification_error(
   assert 'Expected 1' in message
 
 
+@pytest.mark.asyncio
 async def test_before_tool_advances_a_separate_index_per_agent(tmp_path):
   """Each agent has its own replay index; a sibling's call must not shift it."""
   _write_recordings(
@@ -394,6 +408,7 @@ async def test_before_tool_advances_a_separate_index_per_agent(tmp_path):
   ]
 
 
+@pytest.mark.asyncio
 async def test_before_tool_ignores_recordings_for_other_user_messages(
     tmp_path,
 ):
@@ -432,6 +447,7 @@ async def test_before_tool_ignores_recordings_for_other_user_messages(
     )
 
 
+@pytest.mark.asyncio
 async def test_after_run_discards_the_invocation_state(tmp_path):
   """Cleanup is observable: a later tool call no longer finds replay state."""
   _write_recordings(tmp_path, [_recording(), _recording(call_id='fc-2')])

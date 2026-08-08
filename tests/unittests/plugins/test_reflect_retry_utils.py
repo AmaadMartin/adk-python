@@ -59,6 +59,7 @@ def test_resolve_scope_key_rejects_unknown_scope():
     )
 
 
+@pytest.mark.asyncio
 async def test_tracker_increment_returns_running_count_per_item():
   tracker = _reflect_retry_utils.ScopedFailureTracker()
 
@@ -72,6 +73,7 @@ async def test_tracker_increment_returns_running_count_per_item():
   assert other_tool == 1
 
 
+@pytest.mark.asyncio
 async def test_tracker_keeps_scopes_independent():
   tracker = _reflect_retry_utils.ScopedFailureTracker()
 
@@ -82,6 +84,7 @@ async def test_tracker_keeps_scopes_independent():
   assert await tracker.increment('scope_a', 'tool') == 3
 
 
+@pytest.mark.asyncio
 async def test_tracker_reset_clears_only_the_named_item():
   tracker = _reflect_retry_utils.ScopedFailureTracker()
   await tracker.increment('scope', 'tool_a')
@@ -94,6 +97,7 @@ async def test_tracker_reset_clears_only_the_named_item():
   assert await tracker.increment('scope', 'tool_b') == 3
 
 
+@pytest.mark.asyncio
 async def test_tracker_reset_of_unseen_scope_is_a_noop():
   tracker = _reflect_retry_utils.ScopedFailureTracker()
 

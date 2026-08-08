@@ -612,6 +612,7 @@ _ASYNC_WRAPPERS = [
 ]
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize("async_name, sync_name, args", _ASYNC_WRAPPERS)
 async def test_async_wrapper_runs_blocking_call_off_event_loop(
     monkeypatch, async_name, sync_name, args
@@ -643,6 +644,7 @@ async def test_async_wrapper_runs_blocking_call_off_event_loop(
   assert result == "sentinel-result"
 
 
+@pytest.mark.asyncio
 async def test_async_wrapper_keeps_event_loop_responsive(monkeypatch):
   """The event loop must keep scheduling tasks while a wrapper is in flight.
 
@@ -679,6 +681,7 @@ async def test_async_wrapper_keeps_event_loop_responsive(monkeypatch):
   assert results[0] == "loaded"
 
 
+@pytest.mark.asyncio
 async def test_async_wrappers_run_concurrently(monkeypatch):
   """Independent loads must overlap rather than serialize on the event loop."""
   barrier = threading.Barrier(3, timeout=_BLOCKED_LOOP_TIMEOUT_SEC)
@@ -699,6 +702,7 @@ async def test_async_wrappers_run_concurrently(monkeypatch):
   assert results == ["s0", "s1", "s2"]
 
 
+@pytest.mark.asyncio
 async def test_load_skill_from_dir_async(tmp_path):
   """Tests loading a skill from a directory asynchronously."""
   skill_dir = tmp_path / "test-skill"
@@ -725,12 +729,14 @@ Test instructions
   assert skill.resources.get_reference("ref1.md") == "ref1 content"
 
 
+@pytest.mark.asyncio
 async def test_load_skill_from_dir_async_propagates_errors(tmp_path):
   """Errors raised in the worker thread must surface to the caller."""
   with pytest.raises(FileNotFoundError):
     await _load_skill_from_dir_async(tmp_path / "nonexistent")
 
 
+@pytest.mark.asyncio
 async def test_load_skills_from_dir_async(tmp_path):
   """Tests loading every skill in a directory asynchronously."""
   skills_dir = tmp_path / "skills"
@@ -751,12 +757,14 @@ async def test_load_skills_from_dir_async(tmp_path):
   assert skills[0].instructions == "body skill-a"
 
 
+@pytest.mark.asyncio
 async def test_load_skills_from_dir_async_propagates_errors(tmp_path):
   """Errors raised in the worker thread must surface to the caller."""
   with pytest.raises(FileNotFoundError, match="does not exist"):
     await _load_skills_from_dir_async(tmp_path / "nonexistent")
 
 
+@pytest.mark.asyncio
 async def test_list_skills_in_dir_async(tmp_path):
   """Tests listing skills in a directory asynchronously."""
   skills_dir = tmp_path / "skills"
@@ -776,6 +784,7 @@ async def test_list_skills_in_dir_async(tmp_path):
   assert skills["skill1"].name == "skill1"
 
 
+@pytest.mark.asyncio
 @mock.patch("google.cloud.storage.Client")
 async def test_load_skill_from_gcs_dir_async(mock_client_class):
   """Tests loading a skill from GCS asynchronously."""
@@ -820,6 +829,7 @@ async def test_load_skill_from_gcs_dir_async(mock_client_class):
   mock_bucket.blob.assert_any_call("skills/my-skill/SKILL.md")
 
 
+@pytest.mark.asyncio
 @mock.patch("google.cloud.storage.Client")
 async def test_list_skills_in_gcs_dir_async(mock_client_class):
   """Tests listing skills in GCS asynchronously."""

@@ -57,6 +57,7 @@ def _tool(name: str) -> BaseTool:
   return tool
 
 
+@pytest.mark.asyncio
 async def test_before_model_callback_truncates_long_system_instruction(
     plugin, callback_context, capsys
 ):
@@ -78,6 +79,7 @@ async def test_before_model_callback_truncates_long_system_instruction(
   assert 'Z' not in out
 
 
+@pytest.mark.asyncio
 async def test_before_model_callback_keeps_system_instruction_at_budget(
     plugin, callback_context, capsys
 ):
@@ -94,6 +96,7 @@ async def test_before_model_callback_keeps_system_instruction_at_budget(
   assert f"System Instruction: '{'a' * 200}'" in out
 
 
+@pytest.mark.asyncio
 async def test_before_model_callback_lists_available_tool_names(
     plugin, callback_context, capsys
 ):
@@ -109,6 +112,7 @@ async def test_before_model_callback_lists_available_tool_names(
   assert 'Model: test-model' in out
 
 
+@pytest.mark.asyncio
 async def test_after_model_callback_logs_error_instead_of_content(
     plugin, callback_context, capsys
 ):
@@ -132,6 +136,7 @@ async def test_after_model_callback_logs_error_instead_of_content(
   assert 'Content:' not in out
 
 
+@pytest.mark.asyncio
 async def test_after_model_callback_logs_content_and_token_usage(
     plugin, callback_context, capsys
 ):
@@ -151,6 +156,7 @@ async def test_after_model_callback_logs_content_and_token_usage(
   assert 'Token Usage - Input: 11, Output: 7' in out
 
 
+@pytest.mark.asyncio
 async def test_on_event_callback_summarizes_function_parts(plugin, capsys):
   event = Event(
       author='test-agent',
@@ -173,6 +179,7 @@ async def test_on_event_callback_summarizes_function_parts(plugin, capsys):
   assert "Function Responses: ['do_thing']" in out
 
 
+@pytest.mark.asyncio
 async def test_on_event_callback_renders_absent_content_as_none(plugin, capsys):
   event = Event(author='test-agent', content=None)
 
@@ -182,6 +189,7 @@ async def test_on_event_callback_renders_absent_content_as_none(plugin, capsys):
   assert 'Content: None' in out
 
 
+@pytest.mark.asyncio
 async def test_on_event_callback_truncates_long_text_part(plugin, capsys):
   event = Event(
       author='test-agent',
@@ -195,6 +203,7 @@ async def test_on_event_callback_truncates_long_text_part(plugin, capsys):
   assert 'Z' not in out
 
 
+@pytest.mark.asyncio
 async def test_before_tool_callback_truncates_long_arguments(
     plugin, tool_context, capsys
 ):
