@@ -36,8 +36,6 @@ from google.adk.cli import fast_api as fast_api_module
 from google.adk.cli.fast_api import get_fast_api_app
 from google.adk.errors.input_validation_error import InputValidationError
 from google.adk.errors.session_not_found_error import SessionNotFoundError
-from google.adk.evaluation.eval_case import EvalCase
-from google.adk.evaluation.eval_case import Invocation
 from google.adk.evaluation.eval_result import EvalSetResult
 from google.adk.evaluation.in_memory_eval_sets_manager import InMemoryEvalSetsManager
 from google.adk.events.event import Event
@@ -834,35 +832,6 @@ async def create_test_session(
   )
 
   logger.info(f"Created test session: {session.id}")
-  return test_session_info
-
-
-@pytest_asyncio.fixture
-async def create_test_eval_set(
-    test_app, test_session_info, mock_eval_sets_manager
-):
-  """Create a test eval set using the mocked eval sets manager."""
-  _ = mock_eval_sets_manager.create_eval_set(
-      app_name=test_session_info["app_name"],
-      eval_set_id="test_eval_set_id",
-  )
-  test_eval_case = EvalCase(
-      eval_id="test_eval_case_id",
-      conversation=[
-          Invocation(
-              invocation_id="test_invocation_id",
-              user_content=types.Content(
-                  parts=[types.Part(text="test_user_content")],
-                  role="user",
-              ),
-          )
-      ],
-  )
-  _ = mock_eval_sets_manager.add_eval_case(
-      app_name=test_session_info["app_name"],
-      eval_set_id="test_eval_set_id",
-      eval_case=test_eval_case,
-  )
   return test_session_info
 
 
