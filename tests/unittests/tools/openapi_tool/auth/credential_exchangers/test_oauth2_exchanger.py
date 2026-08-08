@@ -26,7 +26,6 @@ from google.adk.auth.auth_credential import OAuth2Auth
 from google.adk.auth.auth_schemes import AuthSchemeType
 from google.adk.auth.auth_schemes import OpenIdConnectWithConfig
 from google.adk.tools.openapi_tool.auth.credential_exchangers import OAuth2CredentialExchanger
-from google.adk.tools.openapi_tool.auth.credential_exchangers.base_credential_exchanger import AuthCredentialMissingError
 import pytest
 from requests.exceptions import ConnectionError as RequestsConnectionError
 

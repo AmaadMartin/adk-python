@@ -12,13 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from pathlib import Path
 import sys
 import tempfile
 
 from google.adk.cli.utils._nested_agent_loader import NestedAgentLoader
-import pytest
 
 
 class TestNestedAgentLoader:

@@ -20,7 +20,6 @@ from typing import List
 from typing import Optional
 from unittest import mock
 
-from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.llm_agent import Agent
 from google.adk.events.event import Event
 from google.adk.flows.llm_flows.functions import handle_function_calls_async

@@ -20,7 +20,6 @@ from google.adk.artifacts.base_artifact_service import BaseArtifactService
 from google.adk.auth.credential_service.base_credential_service import BaseCredentialService
 from google.adk.cli.adk_web_server import _parse_cors_origins
 from google.adk.cli.adk_web_server import AdkWebServer
-from google.adk.cli.utils.base_agent_loader import BaseAgentLoader
 from google.adk.evaluation.eval_set_results_manager import EvalSetResultsManager
 from google.adk.evaluation.eval_sets_manager import EvalSetsManager
 from google.adk.memory.base_memory_service import BaseMemoryService

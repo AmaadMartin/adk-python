@@ -24,7 +24,6 @@ from typing import Any
 from typing import Dict
 from typing import List
 from typing import Tuple
-from unittest import mock
 
 import click
 from google.adk.agents.base_agent import BaseAgent

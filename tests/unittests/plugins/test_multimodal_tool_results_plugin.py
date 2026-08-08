@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import Mock
 
 from google.adk.agents.base_agent import BaseAgent

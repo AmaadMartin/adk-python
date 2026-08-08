@@ -14,7 +14,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from pathlib import Path
 import sys
@@ -23,7 +22,6 @@ from google.adk.agents import config_agent_utils
 from google.adk.apps.app import App
 from google.adk.cli.agent_test_runner import test_agent_replay as _test_agent_replay
 from google.adk.cli.utils.agent_loader import AgentLoader
-from google.genai import types
 import pytest
 
 CONTRIBUTING_DIR = Path(__file__).parent.parent.parent / "contributing"

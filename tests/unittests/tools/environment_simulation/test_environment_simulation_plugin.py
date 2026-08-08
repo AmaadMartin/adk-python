@@ -14,7 +14,6 @@
 
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
-from unittest.mock import patch
 
 from google.adk.tools.environment_simulation.environment_simulation_plugin import EnvironmentSimulationPlugin
 import pytest

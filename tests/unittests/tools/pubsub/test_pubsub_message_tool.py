@@ -24,7 +24,6 @@ from google.api_core import future
 from google.cloud import pubsub_v1
 from google.cloud.pubsub_v1 import types
 from google.oauth2.credentials import Credentials
-from google.protobuf import timestamp_pb2
 
 
 @mock.patch.dict(os.environ, {}, clear=True)

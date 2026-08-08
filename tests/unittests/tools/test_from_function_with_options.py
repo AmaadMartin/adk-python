@@ -23,7 +23,6 @@ from google.adk.tools import _automatic_function_calling_util
 from google.adk.utils.variant_utils import GoogleLLMVariant
 from google.genai import types
 import pydantic
-import pytest
 
 
 def test_from_function_with_options_no_return_annotation_gemini():

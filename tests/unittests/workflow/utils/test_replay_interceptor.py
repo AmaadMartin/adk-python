@@ -33,7 +33,6 @@ from google.adk.workflow.utils._rehydration_utils import _ChildScanState
 from google.adk.workflow.utils._replay_interceptor import check_interception
 from google.adk.workflow.utils._replay_interceptor import create_mock_context
 from google.adk.workflow.utils._replay_interceptor import InterceptionResult
-import pytest
 
 
 def test_same_turn_completed():

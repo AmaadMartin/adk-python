@@ -19,8 +19,6 @@ from pathlib import Path
 import sys
 from types import ModuleType
 
-import pytest
-
 # verify_md and run are standalone scripts (not a package), so load them by path.
 # The scripts dir lives at the repo root on GitHub but under
 # "open_source_workspace/" in the source tree, so try both layouts.

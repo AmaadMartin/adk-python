@@ -35,12 +35,10 @@ from __future__ import annotations
 import datetime
 import json
 import time
-import uuid
 
 from google.cloud import logging as cloud_logging
 from google.cloud import pubsub_v1
 import pytest
-import requests
 
 # ---------------------------------------------------------------------------
 # Full Eventarc pipeline tests

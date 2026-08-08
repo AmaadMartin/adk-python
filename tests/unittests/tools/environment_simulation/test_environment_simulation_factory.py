@@ -20,7 +20,6 @@ from google.adk.tools.environment_simulation import EnvironmentSimulationFactory
 from google.adk.tools.environment_simulation.environment_simulation_config import EnvironmentSimulationConfig
 from google.adk.tools.environment_simulation.environment_simulation_config import MockStrategy
 from google.adk.tools.environment_simulation.environment_simulation_config import ToolSimulationConfig
-from google.adk.tools.environment_simulation.environment_simulation_plugin import EnvironmentSimulationPlugin
 import pytest
 
 

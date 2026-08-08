@@ -18,7 +18,6 @@ from __future__ import annotations
 
 import asyncio
 import itertools
-import re
 from typing import Optional
 
 from google.adk.agents.llm_agent import Agent

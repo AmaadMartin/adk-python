@@ -14,7 +14,6 @@
 
 """Tests for LlmRequest functionality."""
 
-import asyncio
 import logging
 from typing import Optional
 

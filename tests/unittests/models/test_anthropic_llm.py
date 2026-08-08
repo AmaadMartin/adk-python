@@ -16,7 +16,6 @@ import base64
 import json
 import os
 import re
-import sys
 from unittest import mock
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -38,7 +37,6 @@ from google.adk.models.anthropic_llm import to_google_genai_finish_reason
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
-from google.genai import version as genai_version
 from google.genai.types import Content
 from google.genai.types import Part
 import httpx

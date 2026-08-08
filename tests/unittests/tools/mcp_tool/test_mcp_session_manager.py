@@ -42,7 +42,7 @@ from mcp import StdioServerParameters
 import pytest
 
 try:
-  from google.auth.aio.transport.sessions import AsyncAuthorizedSession
+  from google.auth.aio.transport.sessions import AsyncAuthorizedSession  # noqa: F401
 
   AIO_SUPPORTED = True
 except ImportError:

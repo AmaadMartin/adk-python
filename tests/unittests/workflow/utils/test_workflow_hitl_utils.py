@@ -17,9 +17,7 @@ from __future__ import annotations
 import json
 
 from google.adk.events.event import Event
-from google.adk.events.event import NodeInfo
 from google.adk.events.request_input import RequestInput
-from google.adk.workflow.utils._rehydration_utils import _ChildScanState
 from google.adk.workflow.utils._workflow_hitl_utils import create_auth_request_event
 from google.adk.workflow.utils._workflow_hitl_utils import create_request_input_event
 from google.adk.workflow.utils._workflow_hitl_utils import create_request_input_response
@@ -28,7 +26,6 @@ from google.adk.workflow.utils._workflow_hitl_utils import has_auth_credential
 from google.adk.workflow.utils._workflow_hitl_utils import has_request_input_function_call
 from google.adk.workflow.utils._workflow_hitl_utils import process_auth_resume
 from google.adk.workflow.utils._workflow_hitl_utils import REQUEST_CREDENTIAL_FUNCTION_CALL_NAME
-from google.genai import types
 import pytest
 
 # --- create_request_input_event ---

@@ -16,7 +16,6 @@ from google.adk.tools.spanner.spanner_credentials import SpannerCredentialsConfi
 # Mock the Google OAuth and API dependencies
 import google.auth.credentials
 import google.oauth2.credentials
-import pytest
 
 
 class TestSpannerCredentials:

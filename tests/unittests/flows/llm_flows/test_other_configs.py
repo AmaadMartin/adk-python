@@ -13,8 +13,6 @@
 # limitations under the License.
 
 from google.adk.agents.llm_agent import Agent
-from google.adk.tools.tool_context import ToolContext
-from google.genai.types import Part
 from pydantic import BaseModel
 
 from ... import testing_utils

@@ -12,15 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest.mock import MagicMock
-
 from fastapi.openapi.models import OAuth2
 from fastapi.openapi.models import OAuthFlowAuthorizationCode
 from fastapi.openapi.models import OAuthFlows
 from google.adk.auth.auth_credential import AuthCredential
 from google.adk.auth.auth_credential import AuthCredentialTypes
 from google.adk.auth.auth_credential import OAuth2Auth
-from google.adk.auth.auth_schemes import AuthScheme
 from google.adk.tools.apihub_tool.apihub_toolset import APIHubToolset
 from google.adk.tools.apihub_tool.clients.apihub_client import BaseAPIHubClient
 import pytest

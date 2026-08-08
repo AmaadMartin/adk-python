@@ -15,7 +15,6 @@
 import asyncio
 from typing import Any
 from typing import Callable
-from unittest import mock
 
 from fastapi.openapi.models import HTTPBearer
 from google.adk.agents.live_request_queue import LiveRequestQueue

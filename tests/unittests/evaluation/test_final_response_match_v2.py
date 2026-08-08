@@ -20,8 +20,6 @@ from google.adk.evaluation.eval_case import InvocationEvents
 from google.adk.evaluation.eval_metrics import BaseCriterion
 from google.adk.evaluation.eval_metrics import EvalMetric
 from google.adk.evaluation.eval_metrics import EvalStatus
-from google.adk.evaluation.eval_metrics import JudgeModelOptions
-from google.adk.evaluation.eval_metrics import PrebuiltMetrics
 from google.adk.evaluation.evaluator import PerInvocationResult
 from google.adk.evaluation.final_response_match_v2 import _parse_critique
 from google.adk.evaluation.final_response_match_v2 import FinalResponseMatchV2Evaluator

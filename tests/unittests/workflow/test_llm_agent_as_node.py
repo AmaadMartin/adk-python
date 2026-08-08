@@ -24,20 +24,16 @@ from __future__ import annotations
 from typing import Any
 
 from google.adk.agents.context import Context
-from google.adk.agents.llm.task._task_models import TaskResult
 from google.adk.agents.llm_agent import LlmAgent
 from google.adk.apps.app import App
 from google.adk.apps.app import ResumabilityConfig
 from google.adk.events.event import Event
 from google.adk.events.event_actions import EventActions
-from google.adk.features import FeatureName
-from google.adk.features import override_feature_enabled
 from google.adk.flows.llm_flows.functions import REQUEST_CONFIRMATION_FUNCTION_CALL_NAME
 from google.adk.tools.agent_tool import _TaskAgentTool
 from google.adk.tools.function_tool import FunctionTool
 from google.adk.tools.long_running_tool import LongRunningFunctionTool
 from google.adk.workflow import _llm_agent_wrapper as agent_wrapper
-from google.adk.workflow import START
 from google.adk.workflow._workflow import Workflow
 from google.adk.workflow.utils._workflow_graph_utils import build_node
 from google.genai import types
@@ -402,7 +398,6 @@ async def test_valid_input_schema_accepted(
     request: pytest.FixtureRequest,
 ):
   """Valid dict matching input_schema passes through without error."""
-  from . import testing_utils
 
   agent = _make_agent(mode='task', input_schema=StoryInput)
   wrapper = build_node(agent)

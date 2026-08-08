@@ -21,7 +21,6 @@ sub-agent tool calls.
 
 import copy
 
-from google.adk.agents.base_agent import BaseAgentState
 from google.adk.agents.llm_agent import LlmAgent
 from google.adk.apps.app import App
 from google.adk.apps.app import ResumabilityConfig

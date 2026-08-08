@@ -29,7 +29,6 @@ nested-delegation path are all exercised:
 from __future__ import annotations
 
 from typing import Any
-from typing import AsyncGenerator
 
 from google.adk.agents.context import Context
 from google.adk.agents.llm_agent import LlmAgent

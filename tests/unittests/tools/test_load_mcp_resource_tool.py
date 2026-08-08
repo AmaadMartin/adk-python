@@ -13,10 +13,8 @@
 # limitations under the License.
 
 import base64
-import json
 from unittest.mock import AsyncMock
 from unittest.mock import Mock
-from unittest.mock import patch
 
 from google.adk.models.llm_request import LlmRequest
 from google.adk.tools.load_mcp_resource_tool import LoadMcpResourceTool

@@ -20,8 +20,6 @@ from google.adk.agents.context import Context
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.sessions.session import Session
 from google.adk.tools.bigtable import BigtableCredentialsConfig
-from google.adk.tools.bigtable import metadata_tool
-from google.adk.tools.bigtable import query_tool
 from google.adk.tools.bigtable.bigtable_toolset import BigtableParameterizedViewTool
 from google.adk.tools.bigtable.bigtable_toolset import BigtableToolset
 from google.adk.tools.bigtable.bigtable_toolset import DEFAULT_BIGTABLE_TOOL_NAME_PREFIX

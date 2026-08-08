@@ -116,7 +116,7 @@ async def test_no_yield_leaves_ctx_output_none():
 
     async def _run_impl(self, *, ctx, node_input):
       return
-      yield  # noqa: unreachable
+      yield  # makes _run_impl an async generator
 
   parent_ctx, _ = _make_ctx()
   child_ctx = await NodeRunner(
@@ -137,7 +137,7 @@ async def test_ctx_output_set_directly():
 
     async def _run_impl(self, *, ctx, node_input):
       ctx.output = 'direct'
-      yield  # noqa: unreachable
+      yield  # makes _run_impl an async generator
 
   parent_ctx, events = _make_ctx()
   child_ctx = await NodeRunner(
@@ -159,7 +159,7 @@ async def test_ctx_output_direct_with_state_delta():
     async def _run_impl(self, *, ctx, node_input):
       ctx.state['key'] = 'val'
       ctx.output = 'result'
-      yield  # noqa: unreachable
+      yield  # makes _run_impl an async generator
 
   parent_ctx, events = _make_ctx()
   child_ctx = await NodeRunner(
@@ -205,7 +205,7 @@ async def test_double_output_raises():
     async def _run_impl(self, *, ctx, node_input):
       ctx.output = 'first'
       ctx.output = 'second'
-      yield  # noqa: unreachable
+      yield  # makes _run_impl an async generator
 
   parent_ctx, events = _make_ctx()
   await NodeRunner(node=_Node(name='n'), parent_ctx=parent_ctx).run()
@@ -384,7 +384,7 @@ async def test_delegated_ctx_output_not_emitted():
     async def _run_impl(self, *, ctx, node_input):
       ctx._output_delegated = True
       ctx.output = 'delegated_direct'
-      yield  # noqa: unreachable
+      yield  # makes _run_impl an async generator
 
   parent_ctx, events = _make_ctx()
   child_ctx = await NodeRunner(
@@ -437,7 +437,7 @@ async def test_prior_output_carried_forward():
 
     async def _run_impl(self, *, ctx, node_input):
       return
-      yield  # noqa: unreachable
+      yield  # makes _run_impl an async generator
 
   parent_ctx, _ = _make_ctx()
   child_ctx = await NodeRunner(
@@ -457,7 +457,7 @@ async def test_prior_interrupt_ids_carried_forward():
 
     async def _run_impl(self, *, ctx, node_input):
       return
-      yield  # noqa: unreachable
+      yield  # makes _run_impl an async generator
 
   parent_ctx, _ = _make_ctx()
   child_ctx = await NodeRunner(

@@ -26,7 +26,6 @@ from google.adk.evaluation.llm_as_judge_utils import Label
 from google.adk.evaluation.simulation.per_turn_user_simulator_quality_v1 import _format_conversation_history
 from google.adk.evaluation.simulation.per_turn_user_simulator_quality_v1 import _parse_llm_response
 from google.adk.evaluation.simulation.per_turn_user_simulator_quality_v1 import PerTurnUserSimulatorQualityV1
-from google.adk.evaluation.simulation.user_simulator_personas import UserBehavior
 from google.adk.evaluation.simulation.user_simulator_personas import UserPersona
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types

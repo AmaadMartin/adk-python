@@ -14,9 +14,7 @@
 from __future__ import annotations
 
 from unittest.mock import AsyncMock
-from unittest.mock import MagicMock
 from unittest.mock import Mock
-from unittest.mock import patch
 
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.artifacts.base_artifact_service import ArtifactVersion

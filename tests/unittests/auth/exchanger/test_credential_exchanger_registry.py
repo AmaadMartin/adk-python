@@ -22,7 +22,6 @@ from google.adk.auth.auth_credential import AuthCredentialTypes
 from google.adk.auth.auth_schemes import AuthScheme
 from google.adk.auth.exchanger.base_credential_exchanger import BaseCredentialExchanger
 from google.adk.auth.exchanger.credential_exchanger_registry import CredentialExchangerRegistry
-import pytest
 
 
 class MockCredentialExchanger(BaseCredentialExchanger):

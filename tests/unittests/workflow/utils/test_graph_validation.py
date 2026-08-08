@@ -14,8 +14,6 @@
 
 """Tests for Graph validation utility."""
 
-import logging
-
 from google.adk.workflow import Edge
 from google.adk.workflow import START
 from google.adk.workflow._graph import DEFAULT_ROUTE

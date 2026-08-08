@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import os
-import tempfile
 import warnings
 
 from google.adk.utils.feature_decorator import experimental

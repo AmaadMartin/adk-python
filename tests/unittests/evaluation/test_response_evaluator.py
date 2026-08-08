@@ -18,7 +18,6 @@ from __future__ import annotations
 
 from google.adk.dependencies.vertexai import vertexai
 from google.adk.evaluation.eval_case import Invocation
-from google.adk.evaluation.eval_metrics import PrebuiltMetrics
 from google.adk.evaluation.evaluator import EvalStatus
 from google.adk.evaluation.response_evaluator import ResponseEvaluator
 from google.genai import types as genai_types

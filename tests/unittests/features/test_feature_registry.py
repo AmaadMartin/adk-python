@@ -18,7 +18,6 @@ import os
 import warnings
 
 from google.adk.features._feature_registry import _FEATURE_OVERRIDES
-from google.adk.features._feature_registry import _FEATURE_REGISTRY
 from google.adk.features._feature_registry import _get_feature_config
 from google.adk.features._feature_registry import _register_feature
 from google.adk.features._feature_registry import _WARNED_FEATURES

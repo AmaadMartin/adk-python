@@ -14,7 +14,6 @@
 
 import asyncio
 import contextlib
-from typing import AsyncGenerator
 
 from google.adk.agents.live_request_queue import LiveRequestQueue
 from google.adk.agents.llm_agent import Agent

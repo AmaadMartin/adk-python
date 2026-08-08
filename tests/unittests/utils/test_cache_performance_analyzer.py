@@ -24,7 +24,6 @@ from google.adk.sessions.base_session_service import BaseSessionService
 from google.adk.sessions.session import Session
 from google.adk.utils.cache_performance_analyzer import CachePerformanceAnalyzer
 from google.genai import types
-import pytest
 
 
 class TestCachePerformanceAnalyzer:

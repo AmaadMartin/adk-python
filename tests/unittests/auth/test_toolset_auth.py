@@ -16,7 +16,6 @@
 
 from typing import Optional
 from unittest.mock import AsyncMock
-from unittest.mock import MagicMock
 from unittest.mock import Mock
 from unittest.mock import patch
 
@@ -30,7 +29,6 @@ from google.adk.auth.auth_credential import AuthCredentialTypes
 from google.adk.auth.auth_credential import OAuth2Auth
 from google.adk.auth.auth_preprocessor import TOOLSET_AUTH_CREDENTIAL_ID_PREFIX
 from google.adk.auth.auth_tool import AuthConfig
-from google.adk.auth.auth_tool import AuthToolArguments
 from google.adk.flows.llm_flows.base_llm_flow import _resolve_toolset_auth
 from google.adk.flows.llm_flows.base_llm_flow import TOOLSET_AUTH_CREDENTIAL_ID_PREFIX as FLOW_PREFIX
 from google.adk.flows.llm_flows.functions import build_auth_request_event

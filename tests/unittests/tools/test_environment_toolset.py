@@ -15,7 +15,6 @@
 """Tests for EnvironmentToolset and configurable output limits."""
 
 from pathlib import Path
-from typing import Any
 from typing import Optional
 from unittest import mock
 
@@ -24,7 +23,6 @@ from google.adk.environment._base_environment import ExecutionResult
 from google.adk.tools.environment._environment_toolset import EnvironmentToolset
 from google.adk.tools.tool_context import ToolContext
 import pytest
-import pytest_asyncio
 
 
 class _FakeEnvironment(BaseEnvironment):

@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import asyncio
-from contextlib import AsyncExitStack
 from datetime import timedelta
 import time
 from unittest.mock import AsyncMock
@@ -27,7 +26,6 @@ from google.adk.features._feature_registry import temporary_feature_override
 from google.adk.tools.mcp_tool.session_context import _format_exception
 from google.adk.tools.mcp_tool.session_context import SessionContext
 import httpx
-from mcp import ClientSession
 import pytest
 
 

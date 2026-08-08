@@ -18,10 +18,7 @@ import warnings
 from google.adk.features._feature_decorator import experimental
 from google.adk.features._feature_decorator import stable
 from google.adk.features._feature_decorator import working_in_progress
-from google.adk.features._feature_registry import _FEATURE_REGISTRY
-from google.adk.features._feature_registry import _get_feature_config
 from google.adk.features._feature_registry import _register_feature
-from google.adk.features._feature_registry import _WARNED_FEATURES
 from google.adk.features._feature_registry import FeatureConfig
 from google.adk.features._feature_registry import FeatureStage
 import pytest

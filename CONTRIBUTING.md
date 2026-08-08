@@ -184,8 +184,10 @@ part before or alongside your code PR.
    pre-commit install
    ```
 
-   The pre-commit hooks run `isort`, `pyink`, `addlicense`, and
-   `mdformat` automatically on each commit.
+   The pre-commit hooks run `isort`, `pyink`, `ruff`, `addlicense`, and
+   `mdformat` automatically on each commit. `ruff` runs with `--fix` over
+   `src/` and `tests/`, so it deletes unused imports from the files you
+   commit.
 
 1. **Create virtual environment and install dependencies:**
 
