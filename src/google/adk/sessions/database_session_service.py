@@ -30,23 +30,19 @@ from typing import TypeVar
 
 from google.adk.platform import time as platform_time
 from google.adk.platform import uuid as platform_uuid
-
-try:
-  from sqlalchemy import delete
-  from sqlalchemy import event
-  from sqlalchemy import MetaData
-  from sqlalchemy import select
-  from sqlalchemy.engine import Connection
-  from sqlalchemy.engine import make_url
-  from sqlalchemy.exc import ArgumentError
-  from sqlalchemy.exc import IntegrityError
-  from sqlalchemy.ext.asyncio import async_sessionmaker
-  from sqlalchemy.ext.asyncio import AsyncEngine
-  from sqlalchemy.ext.asyncio import AsyncSession as DatabaseSessionFactory
-  from sqlalchemy.ext.asyncio import create_async_engine
-  from sqlalchemy.pool import StaticPool
-except ImportError:
-  pass
+from sqlalchemy import delete
+from sqlalchemy import event
+from sqlalchemy import MetaData
+from sqlalchemy import select
+from sqlalchemy.engine import Connection
+from sqlalchemy.engine import make_url
+from sqlalchemy.exc import ArgumentError
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine
+from sqlalchemy.ext.asyncio import AsyncSession as DatabaseSessionFactory
+from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import StaticPool
 from typing_extensions import override
 
 from . import _session_util
