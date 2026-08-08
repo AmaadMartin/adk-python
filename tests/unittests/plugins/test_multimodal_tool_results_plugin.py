@@ -26,6 +26,7 @@ from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 import pytest
+import pytest_asyncio
 
 from .. import testing_utils
 
@@ -42,7 +43,7 @@ def mock_tool() -> MockTool:
   return Mock(spec=BaseTool)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def tool_context() -> ToolContext:
   """Create a mock tool context."""
   return ToolContext(

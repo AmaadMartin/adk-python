@@ -63,6 +63,7 @@ class _TokenBodyCapturingOAuth2Session(OAuth2Session):
 class TestOAuth2CredentialExchanger:
   """Test suite for OAuth2CredentialExchanger."""
 
+  @pytest.mark.asyncio
   async def test_exchange_with_existing_token(self):
     """Test exchange method when access token already exists."""
     scheme = OpenIdConnectWithConfig(
@@ -91,6 +92,7 @@ class TestOAuth2CredentialExchanger:
     assert exchange_result.credential.oauth2.access_token == "existing_token"
     assert not exchange_result.was_exchanged
 
+  @pytest.mark.asyncio
   @patch("google.adk.auth.oauth2_credential_util.OAuth2Session")
   async def test_exchange_success(self, mock_oauth2_session):
     """Test successful token exchange."""
@@ -135,6 +137,7 @@ class TestOAuth2CredentialExchanger:
     assert exchange_result.was_exchanged
     mock_client.fetch_token.assert_called_once()
 
+  @pytest.mark.asyncio
   @patch("google.adk.auth.oauth2_credential_util.OAuth2Session")
   async def test_exchange_success_pkce(self, mock_oauth2_session):
     """Test successful token exchange with PKCE."""
@@ -186,6 +189,7 @@ class TestOAuth2CredentialExchanger:
         code_verifier="mock_code_verifier",
     )
 
+  @pytest.mark.asyncio
   async def test_exchange_missing_auth_scheme(self):
     """Test exchange with missing auth_scheme raises ValueError."""
     credential = AuthCredential(
@@ -203,6 +207,7 @@ class TestOAuth2CredentialExchanger:
     except CredentialExchangeError as e:
       assert "auth_scheme is required" in str(e)
 
+  @pytest.mark.asyncio
   @patch("google.adk.auth.oauth2_credential_util.OAuth2Session")
   async def test_exchange_no_session(self, mock_oauth2_session):
     """Test exchange when OAuth2Session cannot be created."""
@@ -234,6 +239,7 @@ class TestOAuth2CredentialExchanger:
     assert exchange_result.credential.oauth2.access_token is None
     assert not exchange_result.was_exchanged
 
+  @pytest.mark.asyncio
   @patch("google.adk.auth.oauth2_credential_util.OAuth2Session")
   async def test_exchange_fetch_token_failure(self, mock_oauth2_session):
     """Test exchange when fetch_token fails."""
@@ -270,6 +276,7 @@ class TestOAuth2CredentialExchanger:
     assert not exchange_result.was_exchanged
     mock_client.fetch_token.assert_called_once()
 
+  @pytest.mark.asyncio
   async def test_exchange_authlib_not_available(self):
     """Test exchange when authlib is not available."""
     scheme = OpenIdConnectWithConfig(
@@ -305,6 +312,7 @@ class TestOAuth2CredentialExchanger:
     assert exchange_result.credential.oauth2.access_token is None
     assert not exchange_result.was_exchanged
 
+  @pytest.mark.asyncio
   @patch("google.adk.auth.oauth2_credential_util.OAuth2Session")
   async def test_exchange_client_credentials_success(self, mock_oauth2_session):
     """Test successful client credentials exchange."""
@@ -348,6 +356,7 @@ class TestOAuth2CredentialExchanger:
         grant_type="client_credentials",
     )
 
+  @pytest.mark.asyncio
   @patch("google.adk.auth.oauth2_credential_util.OAuth2Session")
   async def test_exchange_client_credentials_failure(self, mock_oauth2_session):
     """Test client credentials exchange failure."""
@@ -383,6 +392,7 @@ class TestOAuth2CredentialExchanger:
     assert not exchange_result.was_exchanged
     mock_client.fetch_token.assert_called_once()
 
+  @pytest.mark.asyncio
   @patch("google.adk.auth.oauth2_credential_util.OAuth2Session")
   async def test_exchange_normalize_uri(self, mock_oauth2_session):
     """Test exchange method normalizes auth_response_uri."""
@@ -426,6 +436,7 @@ class TestOAuth2CredentialExchanger:
         grant_type=OAuthGrantType.AUTHORIZATION_CODE,
     )
 
+  @pytest.mark.asyncio
   async def test_exchange_client_secret_post_has_single_client_id(self):
     """Test exchange lets Authlib add client_id only once for body auth."""
     scheme = OpenIdConnectWithConfig(
@@ -471,6 +482,7 @@ class TestOAuth2CredentialExchanger:
     assert request_params["client_id"] == ["test_client_id"]
     assert request_params["client_secret"] == ["test_client_secret"]
 
+  @pytest.mark.asyncio
   async def test_determine_grant_type_client_credentials(self):
     """Test grant type determination for client credentials."""
     flows = OAuthFlows(
@@ -487,6 +499,7 @@ class TestOAuth2CredentialExchanger:
 
     assert grant_type == OAuthGrantType.CLIENT_CREDENTIALS
 
+  @pytest.mark.asyncio
   async def test_determine_grant_type_openid_connect(self):
     """Test grant type determination for OpenID Connect (defaults to auth code)."""
     scheme = OpenIdConnectWithConfig(

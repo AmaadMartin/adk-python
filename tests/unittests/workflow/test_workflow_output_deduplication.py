@@ -42,6 +42,7 @@ def _output_events(events: list[Event]) -> list[Event]:
   return [e for e in events if not _is_checkpoint(e) and e.output is not None]
 
 
+@pytest.mark.asyncio
 async def test_two_level_nesting_deduplicates(
     request,
 ):
@@ -68,6 +69,7 @@ async def test_two_level_nesting_deduplicates(
   assert out_events[0].node_info.path == 'outer@1/inner@1/leaf@1'
 
 
+@pytest.mark.asyncio
 async def test_nested_with_output_schema_validates_at_read_time(
     request,
 ):
@@ -96,6 +98,7 @@ async def test_nested_with_output_schema_validates_at_read_time(
   assert out_events[0].output == 'raw_data'
 
 
+@pytest.mark.asyncio
 async def test_multiple_terminals_in_nested_workflow_raises(
     request,
 ):
@@ -124,6 +127,7 @@ async def test_multiple_terminals_in_nested_workflow_raises(
     await runner.run_async(testing_utils.get_user_content('hi'))
 
 
+@pytest.mark.asyncio
 async def test_non_terminal_output_not_exposed_as_workflow_output(
     request,
 ):

@@ -54,6 +54,7 @@ def _daytona_patch(sandbox: mock.MagicMock):
     yield mock_class
 
 
+@pytest.mark.asyncio
 async def test_initialize_creates_sandbox(daytona_patch, sandbox):
   env = DaytonaEnvironment(image="custom-image", env_vars={"A": "1"})
   assert env.is_initialized is False
@@ -74,6 +75,7 @@ async def test_initialize_creates_sandbox(daytona_patch, sandbox):
   assert env._sandbox is sandbox
 
 
+@pytest.mark.asyncio
 async def test_initialize_creates_sandbox_default(daytona_patch, sandbox):
   env = DaytonaEnvironment(env_vars={"B": "2"})
   await env.initialize()
@@ -92,6 +94,7 @@ async def test_initialize_creates_sandbox_default(daytona_patch, sandbox):
   assert env._sandbox is sandbox
 
 
+@pytest.mark.asyncio
 async def test_initialize_is_idempotent(daytona_patch, sandbox):
   env = DaytonaEnvironment()
   await env.initialize()
@@ -100,6 +103,7 @@ async def test_initialize_is_idempotent(daytona_patch, sandbox):
   client.create.assert_awaited_once()
 
 
+@pytest.mark.asyncio
 async def test_close_deletes_sandbox_and_is_idempotent(daytona_patch, sandbox):
   env = DaytonaEnvironment()
   await env.initialize()
@@ -118,18 +122,21 @@ async def test_close_deletes_sandbox_and_is_idempotent(daytona_patch, sandbox):
   client.close.assert_awaited_once()
 
 
+@pytest.mark.asyncio
 async def test_working_dir_requires_initialize():
   env = DaytonaEnvironment()
   with pytest.raises(RuntimeError):
     _ = env.working_dir
 
 
+@pytest.mark.asyncio
 async def test_execute_before_initialize_raises():
   env = DaytonaEnvironment()
   with pytest.raises(RuntimeError):
     await env.execute("echo hi")
 
 
+@pytest.mark.asyncio
 async def test_execute_success(daytona_patch, sandbox):
   class MockArtifacts:
     stdout = "out"
@@ -152,6 +159,7 @@ async def test_execute_success(daytona_patch, sandbox):
   sandbox.refresh_activity.assert_awaited_once()
 
 
+@pytest.mark.asyncio
 async def test_execute_timeout(daytona_patch, sandbox):
   # Simulate a Daytona timeout error
   sandbox.process.exec.side_effect = DaytonaError("timeout occurred")
@@ -163,6 +171,7 @@ async def test_execute_timeout(daytona_patch, sandbox):
   assert result.timed_out is True
 
 
+@pytest.mark.asyncio
 async def test_read_file_returns_bytes(daytona_patch, sandbox):
   sandbox.fs.download_file.return_value = b"data"
   env = DaytonaEnvironment()
@@ -175,6 +184,7 @@ async def test_read_file_returns_bytes(daytona_patch, sandbox):
   sandbox.refresh_activity.assert_awaited_once()
 
 
+@pytest.mark.asyncio
 async def test_read_file_absolute_path_passthrough(daytona_patch, sandbox):
   sandbox.fs.download_file.return_value = b"x"
   env = DaytonaEnvironment()
@@ -185,6 +195,7 @@ async def test_read_file_absolute_path_passthrough(daytona_patch, sandbox):
   sandbox.fs.download_file.assert_awaited_once_with("/etc/hostname")
 
 
+@pytest.mark.asyncio
 async def test_read_file_missing_raises(daytona_patch, sandbox):
   sandbox.fs.download_file.return_value = None
   env = DaytonaEnvironment()
@@ -194,6 +205,7 @@ async def test_read_file_missing_raises(daytona_patch, sandbox):
     await env.read_file("missing.txt")
 
 
+@pytest.mark.asyncio
 async def test_write_file_resolves_relative_path(daytona_patch, sandbox):
   env = DaytonaEnvironment()
   await env.initialize()
@@ -206,6 +218,7 @@ async def test_write_file_resolves_relative_path(daytona_patch, sandbox):
   )
 
 
+@pytest.mark.asyncio
 async def test_initialize_propagates_api_key_and_url(daytona_patch, sandbox):
   from daytona import DaytonaConfig
 
@@ -220,6 +233,7 @@ async def test_initialize_propagates_api_key_and_url(daytona_patch, sandbox):
   assert config.api_url == "my-url"
 
 
+@pytest.mark.asyncio
 async def test_write_file_creates_parent_directory(daytona_patch, sandbox):
   env = DaytonaEnvironment()
   await env.initialize()
@@ -236,6 +250,7 @@ async def test_write_file_creates_parent_directory(daytona_patch, sandbox):
   )
 
 
+@pytest.mark.asyncio
 async def test_read_file_raises_file_not_found_on_daytona_not_found(
     daytona_patch, sandbox
 ):

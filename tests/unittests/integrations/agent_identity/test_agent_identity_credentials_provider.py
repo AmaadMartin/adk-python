@@ -93,6 +93,7 @@ def test_get_client_uses_rest_transport(mock_client_class):
   assert kwargs.get("transport") == "rest"
 
 
+@pytest.mark.asyncio
 @patch.dict(_agent_identity_credentials_provider.os.environ, clear=True)
 @patch.object(_agent_identity_credentials_provider, "Client")
 async def test_get_auth_credential_reuses_client_on_same_thread(
@@ -119,6 +120,7 @@ async def test_get_auth_credential_reuses_client_on_same_thread(
   assert mock_client_class.call_count == 1
 
 
+@pytest.mark.asyncio
 @patch.dict(_agent_identity_credentials_provider.os.environ, clear=True)
 @patch.object(_agent_identity_credentials_provider, "Client")
 async def test_get_auth_credential_scales_clients_across_concurrent_threads(
@@ -176,6 +178,7 @@ def test_get_client_with_env_var(mock_client_options_class, mock_client_class):
 # ==============================================================================
 
 
+@pytest.mark.asyncio
 async def test_get_auth_credential_raises_error_if_context_is_missing(
     provider, auth_scheme
 ):
@@ -187,6 +190,7 @@ async def test_get_auth_credential_raises_error_if_context_is_missing(
     await provider.get_auth_credential(auth_scheme, context=None)
 
 
+@pytest.mark.asyncio
 async def test_get_auth_credential_raises_error_if_user_id_is_missing(
     provider, auth_scheme
 ):
@@ -200,6 +204,7 @@ async def test_get_auth_credential_raises_error_if_user_id_is_missing(
     await provider.get_auth_credential(auth_scheme, context=context)
 
 
+@pytest.mark.asyncio
 async def test_get_auth_credential_rejects_unsupported_response(
     provider, auth_scheme, context, mock_response
 ):
@@ -208,6 +213,7 @@ async def test_get_auth_credential_rejects_unsupported_response(
     await provider.get_auth_credential(auth_scheme, context=context)
 
 
+@pytest.mark.asyncio
 async def test_get_auth_credential_returns_credential_if_available_immediately(
     mock_client,
     auth_scheme,
@@ -228,6 +234,7 @@ async def test_get_auth_credential_returns_credential_if_available_immediately(
   mock_client.retrieve_credentials.assert_called_once()
 
 
+@pytest.mark.asyncio
 async def test_get_auth_credential_raises_error_if_upstream_returns_empty_header(
     mock_client,
     auth_scheme,
@@ -250,6 +257,7 @@ async def test_get_auth_credential_raises_error_if_upstream_returns_empty_header
     await provider.get_auth_credential(auth_scheme, context)
 
 
+@pytest.mark.asyncio
 async def test_get_auth_credential_raises_error_if_upstream_returns_empty_token(
     mock_client,
     auth_scheme,
@@ -272,6 +280,7 @@ async def test_get_auth_credential_raises_error_if_upstream_returns_empty_token(
     await provider.get_auth_credential(auth_scheme, context)
 
 
+@pytest.mark.asyncio
 async def test_get_auth_credential_returns_credential_if_upstream_returns_custom_header(
     mock_client,
     auth_scheme,
@@ -295,6 +304,7 @@ async def test_get_auth_credential_returns_credential_if_upstream_returns_custom
   }
 
 
+@pytest.mark.asyncio
 async def test_get_auth_credential_raises_error_if_upstream_operation_errors(
     mock_client, auth_scheme, context, provider
 ):
@@ -309,6 +319,7 @@ async def test_get_auth_credential_raises_error_if_upstream_operation_errors(
     await provider.get_auth_credential(auth_scheme, context)
 
 
+@pytest.mark.asyncio
 async def test_get_auth_credential_raises_error_if_upstream_call_fails(
     mock_client, auth_scheme, context, provider
 ):
@@ -327,6 +338,7 @@ async def test_get_auth_credential_raises_error_if_upstream_call_fails(
   assert "API Quota Exhausted" in str(exc_info.value.__cause__)
 
 
+@pytest.mark.asyncio
 @patch.object(_agent_identity_credentials_provider.time, "time")
 async def test_get_auth_credential_raises_error_if_polling_times_out(
     mock_time,
@@ -357,6 +369,7 @@ async def test_get_auth_credential_raises_error_if_polling_times_out(
 # ==============================================================================
 
 
+@pytest.mark.asyncio
 async def test_get_auth_credential_initiates_user_consent(
     mock_client, auth_scheme, context, provider
 ):
@@ -380,6 +393,7 @@ async def test_get_auth_credential_initiates_user_consent(
   assert credential.oauth2.nonce == expected_nonce
 
 
+@pytest.mark.asyncio
 async def test_get_auth_credential_returns_fresh_auth_uri_for_repeated_requests(
     mock_client, auth_scheme, context, provider
 ):
@@ -415,6 +429,7 @@ async def test_get_auth_credential_returns_fresh_auth_uri_for_repeated_requests(
   assert credential2.oauth2.nonce == fresh_nonce
 
 
+@pytest.mark.asyncio
 async def test_get_auth_credential_returns_token_if_consent_was_completed(
     mock_client, auth_scheme, context, provider
 ):
@@ -457,6 +472,7 @@ async def test_get_auth_credential_returns_token_if_consent_was_completed(
   assert auth_credential.http.credentials.token == "test-token"
 
 
+@pytest.mark.asyncio
 async def test_get_auth_credential_raises_error_if_consent_canceled(
     mock_client, auth_scheme, context, provider
 ):

@@ -41,6 +41,7 @@ from google.adk.sessions.vertex_ai_session_service import VertexAiSessionService
 from google.adk.tools.tool_confirmation import ToolConfirmation
 from google.genai import types
 import pytest
+import pytest_asyncio
 from sqlalchemy import delete
 from sqlalchemy import select
 from sqlalchemy import text
@@ -71,7 +72,7 @@ def get_session_service(
   return InMemorySessionService()
 
 
-@pytest.fixture(
+@pytest_asyncio.fixture(
     params=[
         SessionServiceType.IN_MEMORY,
         SessionServiceType.IN_MEMORY_WITH_LIGHT_COPY_ENABLED,

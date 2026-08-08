@@ -50,6 +50,7 @@ from google.api_core.exceptions import InvalidArgument
 from google.genai import types
 from pydantic import BaseModel
 import pytest
+import pytest_asyncio
 
 # Configure logging to help diagnose server startup issues
 logging.basicConfig(
@@ -818,7 +819,7 @@ def builder_test_client(
     return TestClient(app)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def create_test_session(
     test_app, test_session_info, mock_session_service
 ):
@@ -836,7 +837,7 @@ async def create_test_session(
   return test_session_info
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def create_test_eval_set(
     test_app, test_session_info, mock_eval_sets_manager
 ):

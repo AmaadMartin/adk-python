@@ -145,6 +145,7 @@ class TestContextInitialization:
 class TestContextListArtifacts:
   """Test the list_artifacts method in Context."""
 
+  @pytest.mark.asyncio
   async def test_list_artifacts_returns_artifact_keys(
       self, mock_invocation_context, mock_artifact_service
   ):
@@ -161,6 +162,7 @@ class TestContextListArtifacts:
         session_id="test-session-id",
     )
 
+  @pytest.mark.asyncio
   async def test_list_artifacts_raises_value_error_when_service_is_none(
       self, mock_invocation_context
   ):
@@ -177,6 +179,7 @@ class TestContextListArtifacts:
 class TestContextSaveLoadArtifact:
   """Test save_artifact and load_artifact methods in Context."""
 
+  @pytest.mark.asyncio
   async def test_save_artifact(self, mock_invocation_context):
     """Test save_artifact method."""
     artifact_service = AsyncMock()
@@ -199,6 +202,7 @@ class TestContextSaveLoadArtifact:
     assert version == 1
     assert context.actions.artifact_delta["test_file.txt"] == 1
 
+  @pytest.mark.asyncio
   async def test_load_artifact(self, mock_invocation_context):
     """Test load_artifact method."""
     artifact_service = AsyncMock()
@@ -219,6 +223,7 @@ class TestContextSaveLoadArtifact:
     )
     assert result == test_artifact
 
+  @pytest.mark.asyncio
   async def test_load_artifact_with_version(self, mock_invocation_context):
     """Test load_artifact method with specific version."""
     artifact_service = AsyncMock()
@@ -243,6 +248,7 @@ class TestContextSaveLoadArtifact:
 class TestContextCredentialMethods:
   """Test credential methods in Context."""
 
+  @pytest.mark.asyncio
   async def test_save_credential_with_service(
       self, mock_invocation_context, mock_auth_config
   ):
@@ -257,6 +263,7 @@ class TestContextCredentialMethods:
         mock_auth_config, context
     )
 
+  @pytest.mark.asyncio
   async def test_save_credential_no_service(
       self, mock_invocation_context, mock_auth_config
   ):
@@ -270,6 +277,7 @@ class TestContextCredentialMethods:
     ):
       await context.save_credential(mock_auth_config)
 
+  @pytest.mark.asyncio
   async def test_load_credential_with_service(
       self, mock_invocation_context, mock_auth_config, mock_auth_credential
   ):
@@ -286,6 +294,7 @@ class TestContextCredentialMethods:
     )
     assert result == mock_auth_credential
 
+  @pytest.mark.asyncio
   async def test_load_credential_no_service(
       self, mock_invocation_context, mock_auth_config
   ):
@@ -415,6 +424,7 @@ class TestContextRequestConfirmation:
 class TestContextMemoryMethods:
   """Test memory methods in Context."""
 
+  @pytest.mark.asyncio
   async def test_add_session_to_memory_success(self, mock_invocation_context):
     """Test that add_session_to_memory calls the memory service correctly."""
     memory_service = AsyncMock()
@@ -427,6 +437,7 @@ class TestContextMemoryMethods:
         mock_invocation_context.session
     )
 
+  @pytest.mark.asyncio
   async def test_add_session_to_memory_no_service_raises(
       self, mock_invocation_context
   ):
@@ -443,6 +454,7 @@ class TestContextMemoryMethods:
     ):
       await context.add_session_to_memory()
 
+  @pytest.mark.asyncio
   async def test_search_memory_success(self, mock_invocation_context, mocker):
     """Test that search_memory calls the memory service correctly."""
     memory_service = AsyncMock()
@@ -462,6 +474,7 @@ class TestContextMemoryMethods:
     )
     assert result == mock_search_response
 
+  @pytest.mark.asyncio
   async def test_search_memory_no_service_raises(self, mock_invocation_context):
     """Test that search_memory raises ValueError when memory service is None."""
     mock_invocation_context.memory_service = None
@@ -471,6 +484,7 @@ class TestContextMemoryMethods:
     with pytest.raises(ValueError, match="Memory service is not available."):
       await context.search_memory("test query")
 
+  @pytest.mark.asyncio
   async def test_add_events_to_memory_success(self, mock_invocation_context):
     """Test that add_events_to_memory calls the memory service correctly."""
     memory_service = AsyncMock()
@@ -491,6 +505,7 @@ class TestContextMemoryMethods:
         custom_metadata={"ttl": "6000s"},
     )
 
+  @pytest.mark.asyncio
   async def test_add_events_to_memory_no_service_raises(
       self, mock_invocation_context
   ):
@@ -546,6 +561,7 @@ class TestContextMemoryMethods:
         custom_metadata=None,
     )
 
+  @pytest.mark.asyncio
   async def test_add_memory_no_service_raises(self, mock_invocation_context):
     """Test that add_memory raises ValueError when no service."""
     mock_invocation_context.memory_service = None

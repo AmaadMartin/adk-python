@@ -139,6 +139,7 @@ class TestAgentCardBuilder:
     ):
       AgentCardBuilder(agent="not an agent")
 
+  @pytest.mark.asyncio
   @patch("google.adk.a2a.utils.agent_card_builder._build_primary_skills")
   @patch("google.adk.a2a.utils.agent_card_builder._build_sub_agent_skills")
   async def test_build_success(
@@ -185,6 +186,7 @@ class TestAgentCardBuilder:
     if not _compat.IS_A2A_V1:
       assert result.security_schemes is None
 
+  @pytest.mark.asyncio
   @patch("google.adk.a2a.utils.agent_card_builder._build_primary_skills")
   @patch("google.adk.a2a.utils.agent_card_builder._build_sub_agent_skills")
   async def test_build_with_custom_parameters(
@@ -236,6 +238,7 @@ class TestAgentCardBuilder:
     assert result.provider.organization == "ACME"
     assert "test" in result.security_schemes
 
+  @pytest.mark.asyncio
   @patch("google.adk.a2a.utils.agent_card_builder._build_primary_skills")
   @patch("google.adk.a2a.utils.agent_card_builder._build_sub_agent_skills")
   async def test_build_propagates_capabilities_provider_security_schemes(
@@ -278,6 +281,7 @@ class TestAgentCardBuilder:
     # Security schemes propagated on both versions.
     assert "api_key" in result.security_schemes
 
+  @pytest.mark.asyncio
   @patch("google.adk.a2a.utils.agent_card_builder._build_primary_skills")
   @patch("google.adk.a2a.utils.agent_card_builder._build_sub_agent_skills")
   async def test_build_raises_runtime_error_on_failure(
@@ -298,6 +302,7 @@ class TestAgentCardBuilder:
     ):
       await builder.build()
 
+  @pytest.mark.asyncio
   async def test_build_succeeds_for_llm_agent(self):
     """AgentCardBuilder.build succeeds for a standalone LlmAgent.
 
@@ -320,6 +325,7 @@ class TestAgentCardBuilder:
     skill_ids = [skill.id for skill in card.skills]
     assert "writer" in skill_ids
 
+  @pytest.mark.asyncio
   async def test_build_omits_instructions_from_card(self):
     """Instructions stay out of the card, which is served unauthenticated."""
     reviewer = LlmAgent(
@@ -360,6 +366,7 @@ class TestAgentCardBuilder:
     )
     assert primary_skill["description"] == "Writes a short reply."
 
+  @pytest.mark.asyncio
   async def test_build_skips_request_scoped_instruction(self):
     """A static card must not execute an instruction that requires context."""
 
@@ -378,6 +385,7 @@ class TestAgentCardBuilder:
     model_skill = next(skill for skill in card.skills if skill.name == "model")
     assert model_skill.description == "Writes dynamic replies."
 
+  @pytest.mark.asyncio
   async def test_build_succeeds_for_workflow_with_llm_agent_node(self):
     """AgentCardBuilder.build succeeds for a Workflow (no sub_agents)."""
     writer = LlmAgent(
@@ -401,6 +409,7 @@ class TestAgentCardBuilder:
     assert "pipe" in skill_ids  # primary workflow skill
     assert any("writer" in sid for sid in skill_ids)  # child node skill
 
+  @pytest.mark.asyncio
   async def test_build_succeeds_for_workflow_with_output_schema_node(self):
     """AgentCardBuilder.build succeeds for a Workflow whose LlmAgent has output_schema."""
 
@@ -422,6 +431,7 @@ class TestAgentCardBuilder:
     primary_skill = next(s for s in card.skills if s.id == "pipe")
     assert "graph_workflow" in primary_skill.tags
 
+  @pytest.mark.asyncio
   async def test_build_succeeds_for_empty_workflow(self):
     """AgentCardBuilder.build succeeds for a Workflow with no edges."""
     workflow = Workflow(name="empty_wf", description="An empty workflow.")

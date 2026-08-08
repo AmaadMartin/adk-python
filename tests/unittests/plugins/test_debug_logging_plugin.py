@@ -112,6 +112,7 @@ class TestDebugLoggingPluginInitialization:
 class TestDebugLoggingPluginCallbacks:
   """Tests for DebugLoggingPlugin callback methods."""
 
+  @pytest.mark.asyncio
   async def test_before_run_callback_initializes_state(
       self, debug_output_file, mock_invocation_context
   ):
@@ -130,6 +131,7 @@ class TestDebugLoggingPluginCallbacks:
     assert len(state.entries) == 1
     assert state.entries[0].entry_type == "invocation_start"
 
+  @pytest.mark.asyncio
   async def test_on_user_message_callback_logs_message(
       self, debug_output_file, mock_invocation_context
   ):
@@ -158,6 +160,7 @@ class TestDebugLoggingPluginCallbacks:
         "Hello, world!"
     )
 
+  @pytest.mark.asyncio
   async def test_before_model_callback_logs_request(
       self, debug_output_file, mock_invocation_context, mock_callback_context
   ):
@@ -193,6 +196,7 @@ class TestDebugLoggingPluginCallbacks:
         == "You are a helpful assistant."
     )
 
+  @pytest.mark.asyncio
   async def test_after_model_callback_logs_response(
       self, debug_output_file, mock_invocation_context, mock_callback_context
   ):
@@ -221,6 +225,7 @@ class TestDebugLoggingPluginCallbacks:
     assert llm_entries[0].data["turn_complete"] is True
     assert llm_entries[0].data["content"]["role"] == "model"
 
+  @pytest.mark.asyncio
   async def test_before_tool_callback_logs_tool_call(
       self, debug_output_file, mock_invocation_context, mock_tool_context
   ):
@@ -246,6 +251,7 @@ class TestDebugLoggingPluginCallbacks:
     assert tool_entries[0].data["args"]["param1"] == "value1"
     assert tool_entries[0].data["args"]["param2"] == 42
 
+  @pytest.mark.asyncio
   async def test_after_tool_callback_logs_tool_response(
       self, debug_output_file, mock_invocation_context, mock_tool_context
   ):
@@ -274,6 +280,7 @@ class TestDebugLoggingPluginCallbacks:
     assert tool_entries[0].data["tool_name"] == "test_tool"
     assert tool_entries[0].data["result"]["output"] == "success"
 
+  @pytest.mark.asyncio
   async def test_on_event_callback_logs_event(
       self, debug_output_file, mock_invocation_context
   ):
@@ -302,6 +309,7 @@ class TestDebugLoggingPluginCallbacks:
     assert event_entries[0].data["author"] == "test-agent"
     assert event_entries[0].data["event_id"] == event.id
 
+  @pytest.mark.asyncio
   async def test_on_model_error_callback_logs_error(
       self, debug_output_file, mock_invocation_context, mock_callback_context
   ):
@@ -327,6 +335,7 @@ class TestDebugLoggingPluginCallbacks:
     assert error_entries[0].data["error_type"] == "ValueError"
     assert error_entries[0].data["error_message"] == "Test error message"
 
+  @pytest.mark.asyncio
   async def test_on_tool_error_callback_logs_error(
       self, debug_output_file, mock_invocation_context, mock_tool_context
   ):
@@ -359,6 +368,7 @@ class TestDebugLoggingPluginCallbacks:
 class TestDebugLoggingPluginFileOutput:
   """Tests for DebugLoggingPlugin file output."""
 
+  @pytest.mark.asyncio
   async def test_after_run_callback_writes_to_file(
       self, debug_output_file, mock_invocation_context
   ):
@@ -394,6 +404,7 @@ class TestDebugLoggingPluginFileOutput:
         len(data["entries"]) >= 2
     )  # At least invocation_start and user_message
 
+  @pytest.mark.asyncio
   async def test_after_run_callback_includes_session_state(
       self, debug_output_file, mock_invocation_context
   ):
@@ -417,6 +428,7 @@ class TestDebugLoggingPluginFileOutput:
     assert len(session_state_entries) == 1
     assert session_state_entries[0]["data"]["state"]["key1"] == "value1"
 
+  @pytest.mark.asyncio
   async def test_after_run_callback_excludes_session_state_when_disabled(
       self, debug_output_file, mock_invocation_context
   ):
@@ -439,6 +451,7 @@ class TestDebugLoggingPluginFileOutput:
     ]
     assert not session_state_entries
 
+  @pytest.mark.asyncio
   async def test_multiple_invocations_append_to_file(
       self, debug_output_file, mock_session
   ):
@@ -477,6 +490,7 @@ class TestDebugLoggingPluginFileOutput:
     assert documents[0]["invocation_id"] == "invocation-1"
     assert documents[1]["invocation_id"] == "invocation-2"
 
+  @pytest.mark.asyncio
   async def test_after_run_callback_cleans_up_state(
       self, debug_output_file, mock_invocation_context
   ):
@@ -558,6 +572,7 @@ class TestDebugLoggingPluginSerialization:
 class TestDebugLoggingPluginSystemInstructionConfig:
   """Tests for system instruction configuration."""
 
+  @pytest.mark.asyncio
   async def test_system_instruction_included_when_enabled(
       self, debug_output_file, mock_invocation_context, mock_callback_context
   ):
@@ -582,6 +597,7 @@ class TestDebugLoggingPluginSystemInstructionConfig:
         == "Full system instruction text"
     )
 
+  @pytest.mark.asyncio
   async def test_system_instruction_length_only_when_disabled(
       self, debug_output_file, mock_invocation_context, mock_callback_context
   ):

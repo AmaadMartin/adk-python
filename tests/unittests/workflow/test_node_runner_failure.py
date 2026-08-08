@@ -1076,6 +1076,7 @@ async def test_error_event_emitted_on_each_retry(
   ]
 
 
+@pytest.mark.asyncio
 @pytest.mark.skipif(
     sys.version_info < (3, 11), reason='asyncio.timeout requires Python 3.11+'
 )
@@ -1098,6 +1099,7 @@ async def test_node_runner_timeout():
   assert 'timed out' in str(exc_info.value)
 
 
+@pytest.mark.asyncio
 @pytest.mark.skip(
     reason='Timeout is now supported in Python 3.10 via asyncio.wait_for',
 )
