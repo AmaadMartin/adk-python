@@ -50,6 +50,7 @@ from typing_extensions import override
 
 # pylint: disable=g-import-not-at-top
 try:
+  from a2a.types import AgentCard
   from a2a.types import AgentSkill
   from google.adk.a2a import _compat
   from google.adk.agents.remote_a2a_agent import DEFAULT_TIMEOUT
@@ -237,24 +238,14 @@ class AgentRegistry:
     )
     self._mtls_httpx_client: httpx.AsyncClient | None = None
 
-  def _mtls_httpx_client_for(self, urls: List[str]) -> httpx.AsyncClient | None:
-    """Returns a client-certificate-bearing HTTP client for Google mTLS urls.
-
-    Returns None when client certificates are disabled, when any url in `urls`
-    is not a *.mtls.googleapis.com endpoint, or when no default client
-    certificate is available. The client is created once and shared by every
-    agent this registry hands out; `close()` releases it.
-
-    Args:
-      urls: Every url the agent may send RPC traffic to.
-
-    Returns:
-      The shared mTLS HTTP client, or None when no certificate applies.
+  def _mtls_httpx_client_for(self, card: AgentCard) -> httpx.AsyncClient | None:
+    """Returns the shared client-certificate-bearing HTTP client for a card.
 
     Raises:
       RuntimeError: If the default client certificate exists but cannot be
         extracted.
     """
+    urls = _compat.agent_card_rpc_urls(card)
     if self._mtls_certs is None or not urls:
       return None
     # Gate on the resolved urls, not on self._use_mtls: the registered
@@ -275,26 +266,20 @@ class AgentRegistry:
       )
       return None
 
-    timeout = httpx.Timeout(timeout=DEFAULT_TIMEOUT)
-    if passphrase:
-      # httpx types the key password as str, but ssl.load_cert_chain accepts
-      # bytes and MtlsClientCerts reads the passphrase as bytes.
-      self._mtls_httpx_client = httpx.AsyncClient(
-          cert=(cert_path, key_path, passphrase),  # type: ignore[arg-type]
-          timeout=timeout,
-      )
-    else:
-      self._mtls_httpx_client = httpx.AsyncClient(
-          cert=(cert_path, key_path), timeout=timeout
-      )
+    # httpx types the key password as str, but ssl.load_cert_chain accepts
+    # bytes and MtlsClientCerts reads the passphrase as bytes. A None
+    # passphrase means "no password", exactly as the two-tuple form does.
+    self._mtls_httpx_client = httpx.AsyncClient(
+        cert=(cert_path, key_path, passphrase),  # type: ignore[arg-type]
+        timeout=httpx.Timeout(timeout=DEFAULT_TIMEOUT),
+    )
     return self._mtls_httpx_client
 
   async def close(self) -> None:
     """Releases the shared mTLS HTTP client and extracted client certificates."""
-    client = self._mtls_httpx_client
     try:
-      if client is not None:
-        await client.aclose()
+      if self._mtls_httpx_client is not None:
+        await self._mtls_httpx_client.aclose()
     except Exception as e:
       logger.warning("Failed to close the mTLS HTTP client: %s", e)
     finally:
@@ -677,10 +662,7 @@ class AgentRegistry:
           name=name,
           agent_card=agent_card,
           description=agent_card.description,
-          httpx_client=httpx_client
-          or self._mtls_httpx_client_for(
-              _compat.agent_card_rpc_urls(agent_card)
-          ),
+          httpx_client=httpx_client or self._mtls_httpx_client_for(agent_card),
       )
 
     name = self._clean_name(agent_info.get("displayName", agent_name))
@@ -722,8 +704,7 @@ class AgentRegistry:
         name=name,
         agent_card=agent_card,
         description=description,
-        httpx_client=httpx_client
-        or self._mtls_httpx_client_for(_compat.agent_card_rpc_urls(agent_card)),
+        httpx_client=httpx_client or self._mtls_httpx_client_for(agent_card),
     )
 
 

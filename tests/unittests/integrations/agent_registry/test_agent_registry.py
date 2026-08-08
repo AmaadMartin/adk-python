@@ -1062,7 +1062,7 @@ class TestAgentRegistryA2aMtls:
       assert agent._httpx_client is mock_client_cls.return_value
       assert agent._httpx_client_needs_cleanup is False
       mock_client_cls.assert_called_once_with(
-          cert=("/tmp/c.pem", "/tmp/k.pem"),
+          cert=("/tmp/c.pem", "/tmp/k.pem", None),
           timeout=httpx.Timeout(timeout=DEFAULT_TIMEOUT),
       )
 
@@ -1179,7 +1179,7 @@ class TestAgentRegistryA2aMtls:
 
       assert agent._httpx_client is mock_client_cls.return_value
       mock_client_cls.assert_called_once_with(
-          cert=("/tmp/c.pem", "/tmp/k.pem"),
+          cert=("/tmp/c.pem", "/tmp/k.pem", None),
           timeout=httpx.Timeout(timeout=DEFAULT_TIMEOUT),
       )
 
