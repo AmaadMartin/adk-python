@@ -45,8 +45,10 @@ try:
   from sqlalchemy.ext.asyncio import AsyncSession as DatabaseSessionFactory
   from sqlalchemy.ext.asyncio import create_async_engine
   from sqlalchemy.pool import StaticPool
-except ImportError:
-  pass
+except ImportError as e:
+  from ..utils._dependency import missing_extra
+
+  raise missing_extra("sqlalchemy", "db") from e
 from typing_extensions import override
 
 from . import _session_util
