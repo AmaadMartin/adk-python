@@ -2204,6 +2204,10 @@ class Runner:
     run_config = run_config or RunConfig()
     invocation_id = invocation_id or new_invocation_context_id()
 
+    # Accepting here reroutes the invocation to the Live API (see
+    # flows/llm_flows/base_llm_flow.py), so this gate asks a narrower question
+    # than BuiltInCodeExecutor's "is this a Gemini id": unversioned Gemini
+    # Early Access ids stay rejected until CFC is exercised on them.
     if run_config.support_cfc and hasattr(self.agent, 'canonical_model'):
       from .agents.llm_agent import LlmAgent
 
