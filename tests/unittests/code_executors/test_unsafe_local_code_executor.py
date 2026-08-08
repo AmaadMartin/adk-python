@@ -12,9 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import logging
 import multiprocessing
+import multiprocessing.spawn
 import os
 import signal
+import sys
 import textwrap
 import time
 from unittest.mock import MagicMock
@@ -47,6 +50,73 @@ def _is_alive(pid: int) -> bool:
   except OSError:
     return False
   return state != "Z"
+
+
+# Held so the fake context can build a real queue while the module-level
+# `get_context` is patched out.
+_SPAWN_CONTEXT = multiprocessing.get_context("spawn")
+
+
+class _RecordingQueue:
+  """Wraps a real spawn queue, recording the release calls made on it."""
+
+  def __init__(self, calls: list[str]):
+    self._queue = _SPAWN_CONTEXT.Queue()
+    self._calls = calls
+
+  def close(self) -> None:
+    self._calls.append("close")
+    self._queue.close()
+
+  def join_thread(self) -> None:
+    self._calls.append("join_thread")
+    self._queue.join_thread()
+
+
+class _FakeProcess:
+  """Records the lifecycle calls made on a worker that never starts."""
+
+  def __init__(self, start_error: OSError | None):
+    self._start_error = start_error
+    self.calls: list[str] = []
+
+  def start(self) -> None:
+    self.calls.append("start")
+    if self._start_error is not None:
+      raise self._start_error
+
+  def terminate(self) -> None:
+    self.calls.append("terminate")
+
+  def join(self, timeout: float | None = None) -> None:
+    self.calls.append("join")
+
+  def kill(self) -> None:
+    self.calls.append("kill")
+
+
+class _FakeSpawnContext:
+  """A spawn context that fails the way an unusable interpreter makes it fail."""
+
+  def __init__(
+      self,
+      *,
+      queue_error: OSError | None = None,
+      start_error: OSError | None = None,
+  ):
+    self._queue_error = queue_error
+    self.queue_calls: list[str] = []
+    self.process = _FakeProcess(start_error)
+
+  # `Queue` and `Process` are capitalised to mirror the multiprocessing
+  # context API the executor calls.
+  def Queue(self) -> _RecordingQueue:
+    if self._queue_error is not None:
+      raise self._queue_error
+    return _RecordingQueue(self.queue_calls)
+
+  def Process(self, **kwargs: object) -> _FakeProcess:
+    return self.process
 
 
 @pytest.fixture
@@ -245,3 +315,141 @@ class TestUnsafeLocalCodeExecutor:
         process.kill()
       process.join()
       result_queue.close()
+
+  def test_execute_code_reports_the_unusable_interpreter(
+      self,
+      mock_invocation_context: InvocationContext,
+      monkeypatch,
+      tmp_path,
+  ):
+    """The reported bug: a host pointed multiprocessing at a missing binary."""
+    interpreter = tmp_path / "no-such-python"
+    context = _FakeSpawnContext(start_error=BrokenPipeError(32, "Broken pipe"))
+    monkeypatch.setattr(multiprocessing, "get_context", lambda method: context)
+    original = multiprocessing.spawn.get_executable()
+    multiprocessing.set_executable(str(interpreter))
+    try:
+      result = UnsafeLocalCodeExecutor().execute_code(
+          mock_invocation_context, CodeExecutionInput(code='print("hi")')
+      )
+    finally:
+      multiprocessing.set_executable(original)
+
+    assert result.stdout == ""
+    assert result.output_files == []
+    assert str(interpreter) in result.stderr
+    # multiprocessing re-invokes the interpreter it was given, which stops
+    # being `sys.executable` as soon as anything calls `set_executable`.
+    assert sys.executable not in result.stderr
+    assert "no code was executed" in result.stderr
+    assert "ContainerCodeExecutor" in result.stderr
+
+  def test_execute_code_reports_a_missing_interpreter_path(
+      self, mock_invocation_context: InvocationContext
+  ):
+    original = multiprocessing.spawn.get_executable()
+    multiprocessing.set_executable("")
+    try:
+      result = UnsafeLocalCodeExecutor().execute_code(
+          mock_invocation_context, CodeExecutionInput(code='print("hi")')
+      )
+    finally:
+      multiprocessing.set_executable(original)
+
+    assert result.stdout == ""
+    assert result.output_files == []
+    assert "no interpreter path to re-invoke" in result.stderr
+    assert "ContainerCodeExecutor" in result.stderr
+
+  def test_execute_code_reports_a_worker_that_cannot_start(
+      self, mock_invocation_context: InvocationContext, monkeypatch
+  ):
+    context = _FakeSpawnContext(start_error=BrokenPipeError(32, "Broken pipe"))
+    monkeypatch.setattr(multiprocessing, "get_context", lambda method: context)
+
+    result = UnsafeLocalCodeExecutor().execute_code(
+        mock_invocation_context, CodeExecutionInput(code='print("hi")')
+    )
+
+    assert result.stdout == ""
+    assert result.output_files == []
+    assert "BrokenPipeError" in result.stderr
+    assert "Broken pipe" in result.stderr
+    assert os.fsdecode(multiprocessing.spawn.get_executable()) in result.stderr
+    assert "ContainerCodeExecutor" in result.stderr
+
+  def test_execute_code_reports_a_queue_that_cannot_be_created(
+      self, mock_invocation_context: InvocationContext, monkeypatch
+  ):
+    context = _FakeSpawnContext(
+        queue_error=PermissionError(1, "Operation not permitted")
+    )
+    monkeypatch.setattr(multiprocessing, "get_context", lambda method: context)
+
+    result = UnsafeLocalCodeExecutor().execute_code(
+        mock_invocation_context, CodeExecutionInput(code='print("hi")')
+    )
+
+    assert result.stdout == ""
+    assert result.output_files == []
+    assert "PermissionError" in result.stderr
+    assert "Operation not permitted" in result.stderr
+    assert os.fsdecode(multiprocessing.spawn.get_executable()) in result.stderr
+    assert "ContainerCodeExecutor" in result.stderr
+
+  def test_execute_code_releases_the_queue_when_the_worker_cannot_start(
+      self, mock_invocation_context: InvocationContext, monkeypatch
+  ):
+    context = _FakeSpawnContext(start_error=OSError("Cannot allocate memory"))
+    monkeypatch.setattr(multiprocessing, "get_context", lambda method: context)
+
+    UnsafeLocalCodeExecutor().execute_code(
+        mock_invocation_context, CodeExecutionInput(code='print("hi")')
+    )
+
+    assert context.queue_calls == ["close", "join_thread"]
+
+  def test_execute_code_does_not_tear_down_a_worker_that_never_started(
+      self, mock_invocation_context: InvocationContext, monkeypatch
+  ):
+    context = _FakeSpawnContext(start_error=BrokenPipeError(32, "Broken pipe"))
+    monkeypatch.setattr(multiprocessing, "get_context", lambda method: context)
+
+    UnsafeLocalCodeExecutor().execute_code(
+        mock_invocation_context, CodeExecutionInput(code='print("hi")')
+    )
+
+    assert context.process.calls == ["start"]
+
+  def test_execute_code_propagates_a_non_oserror_setup_failure(
+      self, mock_invocation_context: InvocationContext, monkeypatch
+  ):
+    def no_spawn_context(method: str) -> None:
+      raise ValueError("cannot find context for spawn")
+
+    monkeypatch.setattr(multiprocessing, "get_context", no_spawn_context)
+
+    with pytest.raises(ValueError, match="cannot find context"):
+      UnsafeLocalCodeExecutor().execute_code(
+          mock_invocation_context, CodeExecutionInput(code='print("hi")')
+      )
+
+  def test_execute_code_logs_the_launch_failure(
+      self, mock_invocation_context: InvocationContext, monkeypatch, caplog
+  ):
+    context = _FakeSpawnContext(start_error=BrokenPipeError(32, "Broken pipe"))
+    monkeypatch.setattr(multiprocessing, "get_context", lambda method: context)
+    logger_name = unsafe_local_code_executor.logger.name
+
+    with caplog.at_level(logging.ERROR, logger=logger_name):
+      UnsafeLocalCodeExecutor().execute_code(
+          mock_invocation_context, CodeExecutionInput(code='print("hi")')
+      )
+
+    errors = [
+        record
+        for record in caplog.records
+        if record.name == logger_name and record.levelno == logging.ERROR
+    ]
+    assert len(errors) == 1
+    assert errors[0].exc_info is not None

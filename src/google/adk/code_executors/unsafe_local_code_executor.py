@@ -18,6 +18,7 @@ from contextlib import redirect_stdout
 import io
 import logging
 import multiprocessing
+import multiprocessing.spawn
 import os
 import queue
 import re
@@ -38,6 +39,18 @@ logger = logging.getLogger('google_adk.' + __name__)
 # How long to wait for a timed-out execution to exit after SIGTERM before
 # escalating to SIGKILL, so that the timeout itself cannot block forever.
 _TERMINATE_GRACE_SECONDS = 5
+
+# Reported when the worker process cannot be started at all, which says nothing
+# about the code the caller asked to run.
+_WORKER_LAUNCH_FAILURE_MESSAGE = (
+    'UnsafeLocalCodeExecutor could not start the worker process it runs code'
+    ' in, so no code was executed: this is a limitation of the environment,'
+    ' not an error in the code. Running code requires re-invoking the Python'
+    " interpreter at '{interpreter}', which failed ({cause}). Configure a"
+    ' usable interpreter with multiprocessing.set_executable(), or use a code'
+    ' executor that does not spawn a local process, such as'
+    ' ContainerCodeExecutor or VertexAiCodeExecutor.'
+)
 
 
 def _execute_in_process(
@@ -111,6 +124,19 @@ def _kill_execution(process: multiprocessing.process.BaseProcess) -> None:
     process.join()
 
 
+def _worker_launch_failure_result(cause: str) -> CodeExecutionResult:
+  """Builds the result reported when the worker process cannot be started."""
+  # The interpreter multiprocessing re-invokes, which is not `sys.executable`
+  # once anything has called `multiprocessing.set_executable()`.
+  interpreter = multiprocessing.spawn.get_executable()
+  return CodeExecutionResult(
+      stderr=_WORKER_LAUNCH_FAILURE_MESSAGE.format(
+          interpreter=os.fsdecode(interpreter) if interpreter else '<unset>',
+          cause=cause,
+      )
+  )
+
+
 def _prepare_globals(code: str, globals_: dict[str, Any]) -> None:
   """Prepare globals for code execution, injecting __name__ if needed."""
   if re.search(r"if\s+__name__\s*==\s*['\"]__main__['\"]", code):
@@ -118,7 +144,12 @@ def _prepare_globals(code: str, globals_: dict[str, Any]) -> None:
 
 
 class UnsafeLocalCodeExecutor(BaseCodeExecutor):
-  """A code executor that unsafely execute code in the current local context."""
+  """A code executor that unsafely execute code in the current local context.
+
+  Code runs in a `spawn` worker process, so a runtime that cannot re-invoke the
+  Python interpreter to start one gets a report in `stderr` instead of an
+  execution.
+  """
 
   # Overrides the BaseCodeExecutor attribute: this executor cannot be stateful.
   stateful: bool = Field(default=False, frozen=True, exclude=True)
@@ -143,19 +174,53 @@ class UnsafeLocalCodeExecutor(BaseCodeExecutor):
       invocation_context: InvocationContext,
       code_execution_input: CodeExecutionInput,
   ) -> CodeExecutionResult:
+    """Executes the code in a spawned worker process.
+
+    Args:
+      invocation_context: The invocation context of the code execution.
+      code_execution_input: The code execution input.
+
+    Returns:
+      The code execution result. Errors raised by the executed code, execution
+      timeouts, and a worker process that could not be started at all are all
+      reported in `stderr`.
+    """
     logger.debug('Executing code:\n```\n%s\n```', code_execution_input.code)
     # Execute the code.
     globals_: dict[str, Any] = {}
     _prepare_globals(code_execution_input.code, globals_)
 
-    ctx = multiprocessing.get_context('spawn')
-    result_queue: multiprocessing.Queue[tuple[str, str | None]] = ctx.Queue()
-    process = ctx.Process(
-        target=_execute_in_process,
-        args=(code_execution_input.code, globals_, result_queue),
-        daemon=True,
-    )
-    process.start()
+    # An interpreter path that is missing entirely fails inside multiprocessing
+    # with a TypeError rather than an OSError, so it is reported here and the
+    # handler below stays narrow.
+    if not multiprocessing.spawn.get_executable():
+      return _worker_launch_failure_result(
+          'multiprocessing has no interpreter path to re-invoke; see'
+          ' multiprocessing.set_executable'
+      )
+
+    result_queue: multiprocessing.Queue[tuple[str, str | None]] | None = None
+    try:
+      ctx = multiprocessing.get_context('spawn')
+      result_queue = ctx.Queue()
+      process = ctx.Process(
+          target=_execute_in_process,
+          args=(code_execution_input.code, globals_, result_queue),
+          daemon=True,
+      )
+      process.start()
+    except OSError as exc:
+      # Reported rather than raised: `execute_code` is declared to return a
+      # result, and the flow processor that calls it does not catch. The
+      # traceback is logged so operators still get the cause.
+      logger.exception(
+          'UnsafeLocalCodeExecutor could not start its worker process.'
+      )
+      if result_queue is not None:
+        # The queue holds a semaphore and a pipe from the moment it exists.
+        result_queue.close()
+        result_queue.join_thread()
+      return _worker_launch_failure_result(f'{type(exc).__name__}: {exc}')
 
     output = ''
     error = ''
