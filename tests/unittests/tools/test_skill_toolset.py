@@ -993,6 +993,24 @@ async def test_execute_script_agent_code_executor_none(mock_skill1):
 
 
 @pytest.mark.asyncio
+async def test_execute_script_agent_is_none(mock_skill1):
+  """An absent agent reports NO_CODE_EXECUTOR instead of raising."""
+  toolset = skill_toolset.SkillToolset([mock_skill1])
+  tool = skill_toolset.RunSkillScriptTool(toolset)
+  # The helper substitutes a MagicMock for a falsy agent, so the agent has to
+  # be cleared after it returns.
+  ctx = _make_tool_context_with_agent()
+  ctx._invocation_context.agent = None
+
+  result = await tool.run_async(
+      args={"skill_name": "skill1", "file_path": "setup.sh"},
+      tool_context=ctx,
+  )
+
+  assert result["error_code"] == "NO_CODE_EXECUTOR"
+
+
+@pytest.mark.asyncio
 async def test_execute_script_unsupported_type(mock_skill1):
   executor = _make_mock_executor()
   toolset = skill_toolset.SkillToolset([mock_skill1], code_executor=executor)
