@@ -700,9 +700,7 @@ class TestMessageToolPatchHygiene(unittest.TestCase):
     TestMessageTool("test_publish_message_success_text").run(result)
 
     self.assertEqual(result.errors + result.failures, [])
-    # _active_patches is the private registry patch.stopall() drains; reading
-    # it directly is the whole point of this test.
-    self.assertIn(sentinel_patcher, mock._patch._active_patches)
+    self.assertEqual(sentinel_target.value, 2)
 
 
 if __name__ == "__main__":
