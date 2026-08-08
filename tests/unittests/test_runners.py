@@ -35,7 +35,7 @@ from google.adk.apps.app import App
 from google.adk.apps.app import ResumabilityConfig
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.cli.utils.agent_loader import AgentLoader
-from google.adk.code_executors import BuiltInCodeExecutor
+from google.adk.code_executors.built_in_code_executor import BuiltInCodeExecutor
 from google.adk.errors.session_not_found_error import SessionNotFoundError
 from google.adk.events.event import Event
 from google.adk.plugins.base_plugin import BasePlugin
