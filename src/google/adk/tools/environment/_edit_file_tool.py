@@ -104,6 +104,8 @@ class EditFileTool(BaseTool):
       content = data_bytes.decode('utf-8', errors='replace')
     except FileNotFoundError:
       return {'status': 'error', 'error': f'File not found: {path}'}
+    except Exception as e:
+      return {'status': 'error', 'error': str(e)}
 
     # Normalize line breaks in old_string to \n and use regex for flexible matching
     normalized_old = old_string.replace('\r\n', '\n')
@@ -130,7 +132,10 @@ class EditFileTool(BaseTool):
       }
 
     new_content = re.sub(pattern, lambda m: new_string, content, count=1)
-    await self._environment.write_file(path, new_content)
+    try:
+      await self._environment.write_file(path, new_content)
+    except Exception as e:
+      return {'status': 'error', 'error': str(e)}
     return {'status': 'ok', 'message': f'Edited {path}'}
 
   def _detect_error_in_response(self, response: Any) -> Optional[str]:
