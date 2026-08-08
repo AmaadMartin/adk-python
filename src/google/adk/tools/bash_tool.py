@@ -108,18 +108,7 @@ def _execution_result(
     returncode: Optional[int],
     error: Optional[str] = None,
 ) -> dict[str, Any]:
-  """Builds the result payload for an attempted command execution.
-
-  Args:
-    stdout: Raw bytes captured from the child's stdout, if any.
-    stderr: Raw bytes captured from the child's stderr, if any.
-    returncode: The child's exit status, or None when no process ran.
-    error: A human-readable failure reason, omitted on success.
-
-  Returns:
-    A dict that always carries stdout, stderr and returncode, plus error
-    when the attempt failed.
-  """
+  """Builds the result payload for an attempted command execution."""
   result: dict[str, Any] = {
       "stdout": (stdout or b"").decode(errors="replace"),
       "stderr": (stderr or b"").decode(errors="replace"),
