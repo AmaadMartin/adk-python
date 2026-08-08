@@ -28,25 +28,10 @@ import shlex
 import pytest
 import yaml
 
-
-def _find_repo_root() -> Path | None:
-  """Locates the repo root by walking up for the pre-commit config.
-
-  Returns None outside a source checkout, because the repo config files are
-  not shipped in the wheel. The test tree may be symlinked, so the walk avoids
-  ``.resolve()``.
-  """
-  start = Path(__file__).parent
-  for candidate in [start, *start.parents]:
-    if (candidate / '.pre-commit-config.yaml').is_file():
-      return candidate
-  return None
-
-
-_REPO_ROOT = _find_repo_root()
+_REPO_ROOT = Path(__file__).resolve().parents[3]
 
 pytestmark = pytest.mark.skipif(
-    _REPO_ROOT is None,
+    not (_REPO_ROOT / '.pre-commit-config.yaml').is_file(),
     reason='.pre-commit-config.yaml is only available in a source checkout.',
 )
 
@@ -57,7 +42,6 @@ _PYTHON_VERSIONS_PATTERN = re.compile(
 
 def _update_constraints_hook() -> dict[str, object]:
   """Returns the single ``update-constraints`` hook from the config."""
-  assert _REPO_ROOT is not None
   config = yaml.safe_load(
       (_REPO_ROOT / '.pre-commit-config.yaml').read_text(encoding='utf-8')
   )
@@ -85,7 +69,6 @@ def test_update_constraints_hook_runs_in_check_mode() -> None:
 
 
 def test_every_constrained_python_version_has_a_committed_file() -> None:
-  assert _REPO_ROOT is not None
   script = (_REPO_ROOT / 'scripts' / 'update_constraints.sh').read_text(
       encoding='utf-8'
   )
