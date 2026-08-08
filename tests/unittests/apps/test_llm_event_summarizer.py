@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import unittest
 from unittest.mock import AsyncMock
 
 from google.adk.apps.llm_event_summarizer import LlmEventSummarizer
@@ -30,12 +29,10 @@ from google.genai.types import Part
 import pytest
 
 
-@pytest.mark.parametrize(
-    'env_variables', ['GOOGLE_AI', 'VERTEX'], indirect=True
-)
-class TestLlmEventSummarizer(unittest.IsolatedAsyncioTestCase):
+@pytest.mark.usefixtures('env_variables')
+class TestLlmEventSummarizer:
 
-  def setUp(self):
+  def setup_method(self):
     self.mock_llm = AsyncMock(spec=BaseLlm)
     self.mock_llm.model = 'test-model'
     self.compactor = LlmEventSummarizer(llm=self.mock_llm)
@@ -49,6 +46,7 @@ class TestLlmEventSummarizer(unittest.IsolatedAsyncioTestCase):
         content=Content(parts=[Part(text=text)]),
     )
 
+  @pytest.mark.asyncio
   async def test_maybe_compact_events_success(self):
     events = [
         self._create_event(1.0, 'Hello', 'user'),
@@ -70,31 +68,32 @@ class TestLlmEventSummarizer(unittest.IsolatedAsyncioTestCase):
 
     compacted_event = await self.compactor.maybe_summarize_events(events=events)
 
-    self.assertIsNotNone(compacted_event)
-    self.assertEqual(
-        compacted_event.actions.compaction.compacted_content.parts[0].text,
-        'Summary',
+    assert compacted_event is not None
+    assert (
+        compacted_event.actions.compaction.compacted_content.parts[0].text
+        == 'Summary'
     )
-    self.assertEqual(compacted_event.author, 'user')
-    self.assertIsNone(compacted_event.usage_metadata)
-    self.assertIsNotNone(compacted_event.actions)
-    self.assertIsNotNone(compacted_event.actions.compaction)
-    self.assertEqual(compacted_event.actions.compaction.start_timestamp, 1.0)
-    self.assertEqual(compacted_event.actions.compaction.end_timestamp, 2.0)
-    self.assertEqual(
-        compacted_event.actions.compaction.compacted_content.parts[0].text,
-        'Summary',
+    assert compacted_event.author == 'user'
+    assert compacted_event.usage_metadata is None
+    assert compacted_event.actions is not None
+    assert compacted_event.actions.compaction is not None
+    assert compacted_event.actions.compaction.start_timestamp == 1.0
+    assert compacted_event.actions.compaction.end_timestamp == 2.0
+    assert (
+        compacted_event.actions.compaction.compacted_content.parts[0].text
+        == 'Summary'
     )
 
     self.mock_llm.generate_content_async.assert_called_once()
     args, kwargs = self.mock_llm.generate_content_async.call_args
     llm_request = args[0]
-    self.assertIsInstance(llm_request, LlmRequest)
-    self.assertEqual(llm_request.model, 'test-model')
-    self.assertEqual(llm_request.contents[0].role, 'user')
-    self.assertEqual(llm_request.contents[0].parts[0].text, expected_prompt)
-    self.assertFalse(kwargs['stream'])
+    assert isinstance(llm_request, LlmRequest)
+    assert llm_request.model == 'test-model'
+    assert llm_request.contents[0].role == 'user'
+    assert llm_request.contents[0].parts[0].text == expected_prompt
+    assert not kwargs['stream']
 
+  @pytest.mark.asyncio
   async def test_maybe_compact_events_empty_llm_response(self):
     events = [
         self._create_event(1.0, 'Hello', 'user'),
@@ -107,8 +106,9 @@ class TestLlmEventSummarizer(unittest.IsolatedAsyncioTestCase):
     self.mock_llm.generate_content_async.return_value = async_gen()
 
     compacted_event = await self.compactor.maybe_summarize_events(events=events)
-    self.assertIsNone(compacted_event)
+    assert compacted_event is None
 
+  @pytest.mark.asyncio
   async def test_maybe_compact_events_includes_usage_metadata(self):
     events = [
         self._create_event(1.0, 'Hello', 'user'),
@@ -130,14 +130,15 @@ class TestLlmEventSummarizer(unittest.IsolatedAsyncioTestCase):
 
     compacted_event = await self.compactor.maybe_summarize_events(events=events)
 
-    self.assertIsNotNone(compacted_event)
-    self.assertEqual(compacted_event.usage_metadata, usage_metadata)
-    self.assertEqual(compacted_event.usage_metadata.prompt_token_count, 10)
-    self.assertEqual(compacted_event.usage_metadata.candidates_token_count, 5)
+    assert compacted_event is not None
+    assert compacted_event.usage_metadata == usage_metadata
+    assert compacted_event.usage_metadata.prompt_token_count == 10
+    assert compacted_event.usage_metadata.candidates_token_count == 5
 
+  @pytest.mark.asyncio
   async def test_maybe_compact_events_empty_input(self):
     compacted_event = await self.compactor.maybe_summarize_events(events=[])
-    self.assertIsNone(compacted_event)
+    assert compacted_event is None
     self.mock_llm.generate_content_async.assert_not_called()
 
   def test_format_events_for_prompt(self):
@@ -191,7 +192,7 @@ class TestLlmEventSummarizer(unittest.IsolatedAsyncioTestCase):
         " tool({'q': 'x'})\nTool response from tool: {'result': 'done'}"
     )
     formatted_history = self.compactor._format_events_for_prompt(events)
-    self.assertEqual(formatted_history, expected_formatted_history)
+    assert formatted_history == expected_formatted_history
 
   def test_format_events_for_prompt_includes_thoughts(self):
     events = [
@@ -212,7 +213,7 @@ class TestLlmEventSummarizer(unittest.IsolatedAsyncioTestCase):
         ' output.\nmodel: It is sunny.'
     )
     formatted_history = self.compactor._format_events_for_prompt(events)
-    self.assertEqual(formatted_history, expected_formatted_history)
+    assert formatted_history == expected_formatted_history
 
   def test_format_events_for_prompt_skips_compaction_event_thought(self):
     events = [
@@ -237,7 +238,7 @@ class TestLlmEventSummarizer(unittest.IsolatedAsyncioTestCase):
     ]
     expected_formatted_history = 'model: Prior summary.\nuser: New user input'
     formatted_history = self.compactor._format_events_for_prompt(events)
-    self.assertEqual(formatted_history, expected_formatted_history)
+    assert formatted_history == expected_formatted_history
 
   def test_format_events_for_prompt_truncates_large_tool_response(self):
     limit = self.compactor._MAX_TOOL_CONTENT_CHARS
@@ -260,6 +261,6 @@ class TestLlmEventSummarizer(unittest.IsolatedAsyncioTestCase):
         ),
     ]
     formatted_history = self.compactor._format_events_for_prompt(events)
-    self.assertIn('Tool response from search:', formatted_history)
-    self.assertIn('... [truncated', formatted_history)
-    self.assertLess(len(formatted_history), len(large_value))
+    assert 'Tool response from search:' in formatted_history
+    assert '... [truncated' in formatted_history
+    assert len(formatted_history) < len(large_value)

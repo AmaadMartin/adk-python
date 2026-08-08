@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import unittest
 from unittest.mock import AsyncMock
 from unittest.mock import Mock
 
@@ -107,12 +106,10 @@ def span_exporter(monkeypatch: pytest.MonkeyPatch) -> InMemorySpanExporter:
   return span_exporter
 
 
-@pytest.mark.parametrize(
-    'env_variables', ['GOOGLE_AI', 'VERTEX'], indirect=True
-)
-class TestCompaction(unittest.IsolatedAsyncioTestCase):
+@pytest.mark.usefixtures('env_variables')
+class TestCompaction:
 
-  def setUp(self):
+  def setup_method(self):
     self.mock_session_service = AsyncMock(spec=BaseSessionService)
     self.mock_compactor = AsyncMock(spec=LlmEventSummarizer)
 
@@ -226,6 +223,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
           session=session, event=compaction_event
       )
 
+  @pytest.mark.asyncio
   async def test_run_compaction_for_sliding_window_no_events(self):
     app = App(name='test', root_agent=Mock(spec=BaseAgent))
     session = Session(app_name='test', user_id='u1', id='s1', events=[])
@@ -233,6 +231,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     self.mock_compactor.maybe_summarize_events.assert_not_called()
     self.mock_session_service.append_event.assert_not_called()
 
+  @pytest.mark.asyncio
   async def test_sliding_window_yields_event_without_appending(self):
     app = App(
         name='test',
@@ -266,9 +265,10 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
 
     # The compaction event is yielded to the caller (the runner loop), and the
     # function itself never appends -- persistence is the runner's job.
-    self.assertEqual(yielded, [mock_compacted_event])
+    assert yielded == [mock_compacted_event]
     self.mock_session_service.append_event.assert_not_called()
 
+  @pytest.mark.asyncio
   async def test_sliding_window_yields_nothing_when_no_compaction(self):
     app = App(
         name='test',
@@ -296,9 +296,10 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
         )
     ]
 
-    self.assertEqual(yielded, [])
+    assert yielded == []
     self.mock_session_service.append_event.assert_not_called()
 
+  @pytest.mark.asyncio
   async def test_run_compaction_for_sliding_window_not_enough_new_invocations(
       self,
   ):
@@ -325,6 +326,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     self.mock_compactor.maybe_summarize_events.assert_not_called()
     self.mock_session_service.append_event.assert_not_called()
 
+  @pytest.mark.asyncio
   async def test_run_compaction_for_sliding_window_first_compaction(self):
     app = App(
         name='test',
@@ -356,14 +358,17 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     compacted_events_arg = self.mock_compactor.maybe_summarize_events.call_args[
         1
     ]['events']
-    self.assertEqual(
-        [e.invocation_id for e in compacted_events_arg],
-        ['inv1', 'inv2', 'inv3', 'inv4'],
-    )
+    assert [e.invocation_id for e in compacted_events_arg] == [
+        'inv1',
+        'inv2',
+        'inv3',
+        'inv4',
+    ]
     self.mock_session_service.append_event.assert_called_once_with(
         session=session, event=mock_compacted_event
     )
 
+  @pytest.mark.asyncio
   async def test_run_compaction_for_sliding_window_with_overlap(self):
     app = App(
         name='test',
@@ -408,14 +413,17 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     compacted_events_arg = self.mock_compactor.maybe_summarize_events.call_args[
         1
     ]['events']
-    self.assertEqual(
-        [e.invocation_id for e in compacted_events_arg],
-        ['inv2', 'inv3', 'inv4', 'inv5'],
-    )
+    assert [e.invocation_id for e in compacted_events_arg] == [
+        'inv2',
+        'inv3',
+        'inv4',
+        'inv5',
+    ]
     self.mock_session_service.append_event.assert_called_once_with(
         session=session, event=mock_compacted_event
     )
 
+  @pytest.mark.asyncio
   async def test_run_compaction_for_sliding_window_no_compaction_event_returned(
       self,
   ):
@@ -445,20 +453,20 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
         token_threshold=50_000,
         event_retention_size=5,
     )
-    self.assertEqual(config.compaction_interval, 2)
-    self.assertEqual(config.overlap_size, 1)
-    self.assertEqual(config.token_threshold, 50_000)
-    self.assertEqual(config.event_retention_size, 5)
+    assert config.compaction_interval == 2
+    assert config.overlap_size == 1
+    assert config.token_threshold == 50_000
+    assert config.event_retention_size == 5
 
   def test_events_compaction_config_accepts_sliding_window_fields(self):
     config = EventsCompactionConfig(
         compaction_interval=2,
         overlap_size=1,
     )
-    self.assertEqual(config.compaction_interval, 2)
-    self.assertEqual(config.overlap_size, 1)
-    self.assertIsNone(config.token_threshold)
-    self.assertIsNone(config.event_retention_size)
+    assert config.compaction_interval == 2
+    assert config.overlap_size == 1
+    assert config.token_threshold is None
+    assert config.event_retention_size is None
 
   def test_events_compaction_config_rejects_partial_token_fields(
       self,
@@ -496,10 +504,10 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
         token_threshold=160_000,
         event_retention_size=50,
     )
-    self.assertIsNone(config.compaction_interval)
-    self.assertIsNone(config.overlap_size)
-    self.assertEqual(config.token_threshold, 160_000)
-    self.assertEqual(config.event_retention_size, 50)
+    assert config.compaction_interval is None
+    assert config.overlap_size is None
+    assert config.token_threshold == 160_000
+    assert config.event_retention_size == 50
 
   def test_events_compaction_config_rejects_zero_compaction_interval(self):
     with pytest.raises(ValidationError):
@@ -516,7 +524,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     estimated_token_count = compaction_module._latest_prompt_token_count(events)
 
     # Visible text after compaction is: 'S' + ('c' * 20) = 21 chars.
-    self.assertEqual(estimated_token_count, 21 // 4)
+    assert estimated_token_count == 21 // 4
 
   def test_latest_prompt_token_count_fallback_uses_effective_contents(self):
     events = [
@@ -535,8 +543,9 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     estimated_token_count = compaction_module._latest_prompt_token_count(events)
 
     # Thought-only events are filtered by contents processing.
-    self.assertEqual(estimated_token_count, len('visible') // 4)
+    assert estimated_token_count == len('visible') // 4
 
+  @pytest.mark.asyncio
   async def test_run_compaction_for_token_threshold_keeps_retention_events(
       self,
   ):
@@ -576,14 +585,16 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     compacted_events_arg = self.mock_compactor.maybe_summarize_events.call_args[
         1
     ]['events']
-    self.assertEqual(
-        [e.invocation_id for e in compacted_events_arg],
-        ['inv1', 'inv2', 'inv3'],
-    )
+    assert [e.invocation_id for e in compacted_events_arg] == [
+        'inv1',
+        'inv2',
+        'inv3',
+    ]
     self.mock_session_service.append_event.assert_called_once_with(
         session=session, event=mock_compacted_event
     )
 
+  @pytest.mark.asyncio
   async def test_run_compaction_for_token_threshold_keeps_tool_call_pair(
       self,
   ):
@@ -626,14 +637,12 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     compacted_events_arg = self.mock_compactor.maybe_summarize_events.call_args[
         1
     ]['events']
-    self.assertEqual(
-        [e.invocation_id for e in compacted_events_arg],
-        ['inv1'],
-    )
+    assert [e.invocation_id for e in compacted_events_arg] == ['inv1']
     self.mock_session_service.append_event.assert_called_once_with(
         session=session, event=mock_compacted_event
     )
 
+  @pytest.mark.asyncio
   async def test_run_compaction_for_token_threshold_equal_threshold_compacts(
       self,
   ):
@@ -670,14 +679,12 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     compacted_events_arg = self.mock_compactor.maybe_summarize_events.call_args[
         1
     ]['events']
-    self.assertEqual(
-        [e.invocation_id for e in compacted_events_arg],
-        ['inv1'],
-    )
+    assert [e.invocation_id for e in compacted_events_arg] == ['inv1']
     self.mock_session_service.append_event.assert_called_once_with(
         session=session, event=mock_compacted_event
     )
 
+  @pytest.mark.asyncio
   async def test_run_compaction_skip_token_compaction(self):
     app = App(
         name='test',
@@ -710,6 +717,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     self.mock_compactor.maybe_summarize_events.assert_not_called()
     self.mock_session_service.append_event.assert_not_called()
 
+  @pytest.mark.asyncio
   async def test_run_compaction_for_token_threshold_seeds_previous_compaction(
       self,
   ):
@@ -749,19 +757,21 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     compacted_events_arg = self.mock_compactor.maybe_summarize_events.call_args[
         1
     ]['events']
-    self.assertEqual(
-        [e.content.parts[0].text for e in compacted_events_arg],
-        ['Summary 1-2', 'e3', 'e4'],
-    )
-    self.assertEqual(compacted_events_arg[0].timestamp, 1.0)
-    self.assertEqual(
-        [e.invocation_id for e in compacted_events_arg[1:]],
-        ['inv3', 'inv4'],
-    )
+    assert [e.content.parts[0].text for e in compacted_events_arg] == [
+        'Summary 1-2',
+        'e3',
+        'e4',
+    ]
+    assert compacted_events_arg[0].timestamp == 1.0
+    assert [e.invocation_id for e in compacted_events_arg[1:]] == [
+        'inv3',
+        'inv4',
+    ]
     self.mock_session_service.append_event.assert_called_once_with(
         session=session, event=mock_compacted_event
     )
 
+  @pytest.mark.asyncio
   async def test_run_compaction_for_token_threshold_with_zero_retention(
       self,
   ):
@@ -799,14 +809,16 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     compacted_events_arg = self.mock_compactor.maybe_summarize_events.call_args[
         1
     ]['events']
-    self.assertEqual(
-        [e.invocation_id for e in compacted_events_arg],
-        ['inv1', 'inv2', 'inv3'],
-    )
+    assert [e.invocation_id for e in compacted_events_arg] == [
+        'inv1',
+        'inv2',
+        'inv3',
+    ]
     self.mock_session_service.append_event.assert_called_once_with(
         session=session, event=mock_compacted_event
     )
 
+  @pytest.mark.asyncio
   async def test_run_compaction_for_token_threshold_with_retention_and_overlap(
       self,
   ):
@@ -852,16 +864,17 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     compacted_events_arg = self.mock_compactor.maybe_summarize_events.call_args[
         1
     ]['events']
-    self.assertEqual(
-        [e.content.parts[0].text for e in compacted_events_arg],
-        ['Summary 1-3', 'e4'],
-    )
-    self.assertEqual(compacted_events_arg[0].timestamp, 1.0)
-    self.assertEqual(compacted_events_arg[1].invocation_id, 'inv4')
+    assert [e.content.parts[0].text for e in compacted_events_arg] == [
+        'Summary 1-3',
+        'e4',
+    ]
+    assert compacted_events_arg[0].timestamp == 1.0
+    assert compacted_events_arg[1].invocation_id == 'inv4'
     self.mock_session_service.append_event.assert_called_once_with(
         session=session, event=mock_compacted_event
     )
 
+  @pytest.mark.asyncio
   async def test_run_compaction_for_token_threshold_uses_latest_ordered_seed(
       self,
   ):
@@ -911,13 +924,12 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     compacted_events_arg = self.mock_compactor.maybe_summarize_events.call_args[
         1
     ]['events']
-    self.assertEqual(
-        compacted_events_arg[0].content.parts[0].text, 'Summary 1-5'
-    )
-    self.assertEqual(
-        [e.invocation_id for e in compacted_events_arg[1:]],
-        ['inv6', 'inv7', 'inv8'],
-    )
+    assert compacted_events_arg[0].content.parts[0].text == 'Summary 1-5'
+    assert [e.invocation_id for e in compacted_events_arg[1:]] == [
+        'inv6',
+        'inv7',
+        'inv8',
+    ]
     self.mock_session_service.append_event.assert_called_once_with(
         session=session, event=mock_compacted_event
     )
@@ -956,7 +968,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
         'Event 10',
     ]
     actual_texts = [c.parts[0].text for c in result_contents]
-    self.assertEqual(actual_texts, expected_texts)
+    assert actual_texts == expected_texts
     # Verify timestamps are in order
 
   def test_get_contents_subsumed_compaction_is_hidden(self):
@@ -981,7 +993,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
         'Event 9',
     ]
     actual_texts = [c.parts[0].text for c in result_contents]
-    self.assertEqual(actual_texts, expected_texts)
+    assert actual_texts == expected_texts
 
   def test_get_contents_compaction_appended_late_keeps_newer_events(self):
     events = [
@@ -996,7 +1008,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     result_contents = _contents._get_contents(None, events)
     expected_texts = ['Summary 1-3', 'Event 4', 'Event 5']
     actual_texts = [c.parts[0].text for c in result_contents]
-    self.assertEqual(actual_texts, expected_texts)
+    assert actual_texts == expected_texts
 
   def test_get_contents_no_compaction(self):
 
@@ -1009,7 +1021,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     result_contents = _contents._get_contents(None, events)
     expected_texts = ['Event 1', 'Event 2', 'Event 3']
     actual_texts = [c.parts[0].text for c in result_contents]
-    self.assertEqual(actual_texts, expected_texts)
+    assert actual_texts == expected_texts
 
   def test_get_contents_single_compaction_at_start(self):
 
@@ -1023,7 +1035,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     result_contents = _contents._get_contents(None, events)
     expected_texts = ['Summary 1-2', 'Event 3']
     actual_texts = [c.parts[0].text for c in result_contents]
-    self.assertEqual(actual_texts, expected_texts)
+    assert actual_texts == expected_texts
 
   def test_get_contents_single_compaction_in_middle(self):
 
@@ -1040,7 +1052,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     result_contents = _contents._get_contents(None, events)
     expected_texts = ['Summary 1-2', 'Summary 3-4', 'Event 5']
     actual_texts = [c.parts[0].text for c in result_contents]
-    self.assertEqual(actual_texts, expected_texts)
+    assert actual_texts == expected_texts
 
   def test_get_contents_compaction_at_end(self):
 
@@ -1054,7 +1066,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     result_contents = _contents._get_contents(None, events)
     expected_texts = ['Event 1', 'Summary 2-3']
     actual_texts = [c.parts[0].text for c in result_contents]
-    self.assertEqual(actual_texts, expected_texts)
+    assert actual_texts == expected_texts
 
   def test_get_contents_compaction_at_beginning(self):
 
@@ -1067,8 +1079,9 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     result_contents = _contents._get_contents(None, events)
     expected_texts = ['Summary 1-2', 'Event 3', 'Event 4']
     actual_texts = [c.parts[0].text for c in result_contents]
-    self.assertEqual(actual_texts, expected_texts)
+    assert actual_texts == expected_texts
 
+  @pytest.mark.asyncio
   async def test_sliding_window_excludes_pending_function_call_events(self):
     """Sliding-window compaction stops before pending function calls."""
     app = App(
@@ -1101,8 +1114,9 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
         1
     ]['events']
     compacted_inv_ids = [e.invocation_id for e in compacted_events_arg]
-    self.assertEqual(compacted_inv_ids, ['inv1'])
+    assert compacted_inv_ids == ['inv1']
 
+  @pytest.mark.asyncio
   async def test_sliding_window_pending_function_call_remains_in_contents(
       self,
   ):
@@ -1135,17 +1149,15 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     appended_event = self.mock_session_service.append_event.call_args[1][
         'event'
     ]
-    self.assertEqual(appended_event.actions.compaction.start_timestamp, 1.0)
-    self.assertEqual(appended_event.actions.compaction.end_timestamp, 1.0)
+    assert appended_event.actions.compaction.start_timestamp == 1.0
+    assert appended_event.actions.compaction.end_timestamp == 1.0
 
     result_contents = _contents._get_contents(None, events + [appended_event])
-    self.assertEqual(result_contents[0].parts[0].text, 'Summary safe prefix')
-    self.assertEqual(
-        result_contents[1].parts[0].function_call.name,
-        'tool',
-    )
-    self.assertEqual(result_contents[2].parts[0].text, 'e3')
+    assert result_contents[0].parts[0].text == 'Summary safe prefix'
+    assert result_contents[1].parts[0].function_call.name == 'tool'
+    assert result_contents[2].parts[0].text == 'e3'
 
+  @pytest.mark.asyncio
   async def test_token_threshold_excludes_pending_function_call_events(self):
     """Token-threshold compaction stays contiguous before pending calls."""
     app = App(
@@ -1180,8 +1192,9 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
         1
     ]['events']
     compacted_inv_ids = [e.invocation_id for e in compacted_events_arg]
-    self.assertEqual(compacted_inv_ids, ['inv1'])
+    assert compacted_inv_ids == ['inv1']
 
+  @pytest.mark.asyncio
   async def test_token_threshold_pending_function_call_remains_in_contents(
       self,
   ):
@@ -1216,17 +1229,15 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     appended_event = self.mock_session_service.append_event.call_args[1][
         'event'
     ]
-    self.assertEqual(appended_event.actions.compaction.start_timestamp, 1.0)
-    self.assertEqual(appended_event.actions.compaction.end_timestamp, 1.0)
+    assert appended_event.actions.compaction.start_timestamp == 1.0
+    assert appended_event.actions.compaction.end_timestamp == 1.0
 
     result_contents = _contents._get_contents(None, events + [appended_event])
-    self.assertEqual(result_contents[0].parts[0].text, 'Summary safe prefix')
-    self.assertEqual(
-        result_contents[1].parts[0].function_call.name,
-        'tool',
-    )
-    self.assertEqual(result_contents[2].parts[0].text, 'e3')
+    assert result_contents[0].parts[0].text == 'Summary safe prefix'
+    assert result_contents[1].parts[0].function_call.name == 'tool'
+    assert result_contents[2].parts[0].text == 'e3'
 
+  @pytest.mark.asyncio
   async def test_completed_function_call_pair_is_still_compacted(self):
     """Completed function call/response pairs must still be compacted."""
     app = App(
@@ -1261,9 +1272,9 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     ]['events']
     compacted_inv_ids = [e.invocation_id for e in compacted_events_arg]
     # Both the call and response events for inv2 should be compacted.
-    self.assertIn('inv1', compacted_inv_ids)
-    self.assertEqual(compacted_inv_ids.count('inv2'), 2)
-    self.assertIn('inv3', compacted_inv_ids)
+    assert 'inv1' in compacted_inv_ids
+    assert compacted_inv_ids.count('inv2') == 2
+    assert 'inv3' in compacted_inv_ids
 
   def _create_hitl_confirmation_event(
       self,
@@ -1331,6 +1342,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
         ),
     )
 
+  @pytest.mark.asyncio
   async def test_sliding_window_excludes_hitl_confirmation_events(self):
     """Sliding-window compaction stops before tool confirmation events."""
     app = App(
@@ -1367,8 +1379,9 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     # inv2's tool call is still awaiting the final response,
     # so compaction won't summarize it; only the
     # already settled inv1 is compacted.
-    self.assertEqual(compacted_inv_ids, ['inv1'])
+    assert compacted_inv_ids == ['inv1']
 
+  @pytest.mark.asyncio
   async def test_sliding_window_excludes_hitl_auth_events(self):
     """Sliding-window compaction stops before auth credential events."""
     app = App(
@@ -1404,8 +1417,9 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     # inv2's tool call is still awaiting auth approval -- an unfinished
     # call/response pair -- so compaction won't summarize it; only the
     # already settled inv1 is compacted.
-    self.assertEqual(compacted_inv_ids, ['inv1'])
+    assert compacted_inv_ids == ['inv1']
 
+  @pytest.mark.asyncio
   async def test_token_threshold_excludes_hitl_confirmation_events(self):
     """Token-threshold compaction stops before tool confirmation events."""
     app = App(
@@ -1443,8 +1457,9 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     # inv2's tool call is still awaiting confirmation -- an unfinished
     # call/response pair -- so compaction won't summarize it; only the
     # already settled inv1 is compacted.
-    self.assertEqual(compacted_inv_ids, ['inv1'])
+    assert compacted_inv_ids == ['inv1']
 
+  @pytest.mark.asyncio
   async def test_token_threshold_excludes_hitl_auth_events(self):
     """Token-threshold compaction stops before auth credential events."""
     app = App(
@@ -1482,8 +1497,9 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     # inv2's tool call is still awaiting auth approval -- an unfinished
     # call/response pair -- so compaction won't summarize it; only the
     # already settled inv1 is compacted.
-    self.assertEqual(compacted_inv_ids, ['inv1'])
+    assert compacted_inv_ids == ['inv1']
 
+  @pytest.mark.asyncio
   async def test_hitl_event_at_start_blocks_all_compaction(self):
     """If the first candidate event has HITL, nothing is compacted."""
     app = App(
@@ -1508,6 +1524,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     self.mock_compactor.maybe_summarize_events.assert_not_called()
     self.mock_session_service.append_event.assert_not_called()
 
+  @pytest.mark.asyncio
   async def test_events_before_hitl_are_still_compacted(self):
     """Events before the HITL event are compacted normally."""
     app = App(
@@ -1546,8 +1563,9 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     # inv3's tool call is still awaiting confirmation -- an unfinished
     # call/response pair -- so compaction stops before it; the settled inv1
     # and inv2 are compacted.
-    self.assertEqual(compacted_inv_ids, ['inv1', 'inv2'])
+    assert compacted_inv_ids == ['inv1', 'inv2']
 
+  @pytest.mark.asyncio
   async def test_resolved_hitl_confirmation_is_compactable(self):
     """A HITL confirmation followed by a resolved tool response is compactable."""
     app = App(
@@ -1584,10 +1602,9 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     ]['events']
     compacted_inv_ids = [e.invocation_id for e in compacted_events_arg]
     # Resolved HITL doesn't block; all events through inv3 compact together.
-    self.assertEqual(
-        compacted_inv_ids, ['inv1', 'inv2', 'inv2', 'inv2', 'inv3']
-    )
+    assert compacted_inv_ids == ['inv1', 'inv2', 'inv2', 'inv2', 'inv3']
 
+  @pytest.mark.asyncio
   async def test_resolved_hitl_auth_is_compactable(self):
     """A HITL auth request followed by a resolved tool response is compactable."""
     app = App(
@@ -1621,9 +1638,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
         1
     ]['events']
     compacted_inv_ids = [e.invocation_id for e in compacted_events_arg]
-    self.assertEqual(
-        compacted_inv_ids, ['inv1', 'inv2', 'inv2', 'inv2', 'inv3']
-    )
+    assert compacted_inv_ids == ['inv1', 'inv2', 'inv2', 'inv2', 'inv3']
 
   def _create_request_confirmation_call_event(
       self,
@@ -1685,6 +1700,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
         ),
     )
 
+  @pytest.mark.asyncio
   async def test_sliding_window_real_hitl_shape_blocks_compaction(self):
     """Faithful 3-event HITL turn (two ids) that blocks compaction.
 
@@ -1732,8 +1748,9 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     compacted_inv_ids = [e.invocation_id for e in compacted_events_arg]
     # Only inv1 is self-contained: call-1 awaits confirmation and the
     # adk_request_confirmation call (confirm-1) has no response in the window.
-    self.assertEqual(compacted_inv_ids, ['inv1'])
+    assert compacted_inv_ids == ['inv1']
 
+  @pytest.mark.asyncio
   async def test_sliding_window_real_hitl_shape_resolved_is_compactable(self):
     """Faithful resolved HITL turn (both ids closed) compacts fully.
 
@@ -1780,11 +1797,17 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
     ]['events']
     compacted_inv_ids = [e.invocation_id for e in compacted_events_arg]
     # Both call-1 and confirm-1 are resolved, so the full span compacts.
-    self.assertEqual(
-        compacted_inv_ids,
-        ['inv1', 'inv2', 'inv2', 'inv2', 'inv3', 'inv3', 'inv4'],
-    )
+    assert compacted_inv_ids == [
+        'inv1',
+        'inv2',
+        'inv2',
+        'inv2',
+        'inv3',
+        'inv3',
+        'inv4',
+    ]
 
+  @pytest.mark.asyncio
   async def test_sliding_window_stops_compaction_at_open_obligations(
       self,
   ):
@@ -1822,8 +1845,9 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
         1
     ]['events']
     compacted_inv_ids = [e.invocation_id for e in compacted_events_arg]
-    self.assertEqual(compacted_inv_ids, ['inv1'])
+    assert compacted_inv_ids == ['inv1']
 
+  @pytest.mark.asyncio
   async def test_token_threshold_resolved_hitl_outside_window_is_compactable(
       self,
   ):
@@ -1863,7 +1887,7 @@ class TestCompaction(unittest.IsolatedAsyncioTestCase):
         1
     ]['events']
     compacted_inv_ids = [e.invocation_id for e in compacted_events_arg]
-    self.assertEqual(compacted_inv_ids, ['inv1'])
+    assert compacted_inv_ids == ['inv1']
 
 
 @pytest.mark.asyncio
