@@ -17,7 +17,6 @@ from __future__ import annotations
 import importlib
 from typing import TYPE_CHECKING
 
-from ..utils._dependency import missing_extra
 from .base_session_service import BaseSessionService
 from .session import Session
 from .state import State
@@ -39,6 +38,7 @@ __all__ = [
 ]
 
 _LAZY_MEMBERS: dict[str, str] = {
+    'DatabaseSessionService': 'database_session_service',
     'InMemorySessionService': 'in_memory_session_service',
     'VertexAiSessionService': 'vertex_ai_session_service',
 }
@@ -48,12 +48,6 @@ def __getattr__(name: str) -> object:
   if name in _LAZY_MEMBERS:
     module = importlib.import_module(f'{__name__}.{_LAZY_MEMBERS[name]}')
     return vars(module)[name]
-  if name == 'DatabaseSessionService':
-    try:
-      module = importlib.import_module(f'{__name__}.database_session_service')
-    except ImportError as e:
-      raise missing_extra('sqlalchemy', 'db') from e
-    return vars(module)['DatabaseSessionService']
   raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
 
 
