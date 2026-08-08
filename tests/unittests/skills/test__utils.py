@@ -18,7 +18,6 @@ import asyncio
 import builtins
 import io
 import struct
-import sys
 import threading
 import tracemalloc
 from unittest import mock

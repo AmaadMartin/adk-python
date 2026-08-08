@@ -18,7 +18,6 @@ from unittest import mock
 
 from google.adk.events.event import Event
 from google.adk.integrations.firestore.firestore_memory_service import FirestoreMemoryService
-from google.cloud.firestore_v1.base_query import FieldFilter
 from google.genai import types
 import pytest
 

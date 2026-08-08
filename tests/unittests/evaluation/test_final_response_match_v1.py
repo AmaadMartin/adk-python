@@ -18,7 +18,6 @@ import unicodedata
 
 from google.adk.evaluation.eval_case import Invocation
 from google.adk.evaluation.eval_metrics import EvalMetric
-from google.adk.evaluation.eval_metrics import PrebuiltMetrics
 from google.adk.evaluation.evaluator import EvalStatus
 from google.adk.evaluation.final_response_match_v1 import _calculate_rouge_1_scores
 from google.adk.evaluation.final_response_match_v1 import _is_cjk

@@ -28,9 +28,7 @@ from google.adk.evaluation.eval_case import InvocationEvents
 from google.adk.evaluation.evaluator import EvalStatus
 from google.adk.evaluation.vertex_ai_eval_facade import _MultiTurnVertexiAiEvalFacade
 from google.adk.evaluation.vertex_ai_eval_facade import _SingleTurnVertexAiEvalFacade
-from google.adk.evaluation.vertex_ai_eval_facade import _VertexAiEvalFacade
 from google.genai import types as genai_types
-import pandas as pd
 import pytest
 
 vertexai_types = vertexai.types

@@ -18,7 +18,6 @@ from google.adk.events.event import Event
 from google.adk.events.event import NodeInfo
 from google.adk.events.request_input import RequestInput
 from google.adk.workflow._base_node import BaseNode
-from google.adk.workflow.utils._rehydration_utils import _ChildScanState
 from google.adk.workflow.utils._rehydration_utils import _process_rehydrated_output
 from google.adk.workflow.utils._rehydration_utils import _reconstruct_node_states
 from google.adk.workflow.utils._rehydration_utils import _unwrap_response

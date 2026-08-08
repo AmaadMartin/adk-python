@@ -16,7 +16,6 @@ from unittest.mock import Mock
 
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.invocation_context import InvocationContext
-from google.adk.agents.llm_agent import Agent
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.models.llm_request import LlmRequest
 from google.adk.plugins.global_instruction_plugin import GlobalInstructionPlugin

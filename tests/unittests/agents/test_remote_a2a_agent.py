@@ -28,7 +28,6 @@ from a2a.types import AgentCapabilities
 from a2a.types import AgentCard
 from a2a.types import AgentInterface
 from a2a.types import AgentSkill
-from a2a.types import Artifact
 from a2a.types import Message as A2AMessage
 from a2a.types import Task as A2ATask
 from a2a.types import TaskArtifactUpdateEvent

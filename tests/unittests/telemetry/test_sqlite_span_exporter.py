@@ -15,7 +15,6 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 
 from google.adk.telemetry.sqlite_span_exporter import SqliteSpanExporter
 from opentelemetry.sdk.trace import ReadableSpan

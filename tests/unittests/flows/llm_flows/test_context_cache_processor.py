@@ -27,7 +27,6 @@ from google.adk.models.llm_request import LlmRequest
 from google.adk.sessions.base_session_service import BaseSessionService
 from google.adk.sessions.session import Session
 from google.genai import types
-import pytest
 
 
 class TestContextCacheRequestProcessor:

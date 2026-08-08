@@ -25,7 +25,6 @@ import json
 import signal
 from typing import Optional
 from unittest.mock import AsyncMock
-from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -34,8 +33,6 @@ from google.adk.agents.run_config import RunConfig
 from google.adk.cli import fast_api as fast_api_module
 from google.adk.cli.fast_api import get_fast_api_app
 from google.adk.cli.trigger_routes import _is_transient_error
-from google.adk.cli.trigger_routes import TransientError
-from google.adk.cli.trigger_routes import TriggerRouter
 from google.adk.events.event import Event
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService

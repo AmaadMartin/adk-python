@@ -14,7 +14,6 @@
 
 import asyncio
 import base64
-from io import StringIO
 import pickle
 import sys
 from unittest.mock import AsyncMock

@@ -20,11 +20,8 @@ from unittest.mock import patch
 
 from google.adk.integrations.secret_manager.secret_client import SecretManagerClient
 from google.adk.integrations.secret_manager.secret_client import USER_AGENT
-from google.api_core.gapic_v1 import client_info
 from google.oauth2.credentials import Credentials
 import pytest
-
-import google
 
 
 class TestSecretManagerClient:

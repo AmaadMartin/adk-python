@@ -18,7 +18,6 @@ import asyncio
 import json
 import os
 from typing import Any
-from unittest import mock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -1154,7 +1153,6 @@ def test_call_oci_uses_dedicated_serving_mode_from_env_var(
 @patch("oci.config.from_file", return_value={})
 @patch("oci.generative_ai_inference.GenerativeAiInferenceClient")
 def test_explicit_endpoint_id_overrides_env_var(mock_client_cls, _mock_cfg):
-  import oci.generative_ai_inference.models as oci_models
 
   mock_client_instance = MagicMock()
   mock_client_cls.return_value = mock_client_instance

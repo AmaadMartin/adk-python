@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from unittest.mock import MagicMock
-from unittest.mock import patch
 
 from google.adk.tools.google_api_tool.googleapi_to_openapi_converter import GoogleApiToOpenApiConverter
 import pytest

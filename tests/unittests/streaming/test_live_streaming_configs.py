@@ -17,7 +17,6 @@ from google.adk.agents import LiveRequestQueue
 from google.adk.agents.run_config import RunConfig
 from google.adk.models import LlmResponse
 from google.genai import types
-import pytest
 
 from .. import testing_utils
 

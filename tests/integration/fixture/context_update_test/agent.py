@@ -17,7 +17,6 @@ from typing import Union
 
 from google.adk import Agent
 from google.adk.tools.tool_context import ToolContext
-from pydantic import BaseModel
 
 
 def update_fc(

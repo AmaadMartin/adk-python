@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import ntpath
 import os
 from pathlib import Path
 from pathlib import PureWindowsPath
@@ -20,7 +19,6 @@ import re
 import sys
 import tempfile
 from textwrap import dedent
-from unittest import mock
 
 from google.adk.cli.utils import agent_loader as agent_loader_module
 from google.adk.cli.utils._nested_agent_loader import NestedAgentLoader

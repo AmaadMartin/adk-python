@@ -19,7 +19,6 @@ from google.adk.agents.live_request_queue import LiveRequestQueue
 from google.adk.agents.llm_agent import Agent
 from google.adk.agents.run_config import RunConfig
 from google.adk.flows.llm_flows.base_llm_flow import BaseLlmFlow
-from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 import pytest
 

@@ -16,7 +16,6 @@
 
 from google.adk.skills import models
 from google.adk.skills import prompt
-import pytest
 
 
 class TestPrompt:

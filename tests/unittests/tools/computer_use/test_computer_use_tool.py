@@ -490,7 +490,6 @@ class TestComputerUseTool:
       self, mock_computer_function, tool_context
   ):
     """Test run_async with safety decision as a dictionary."""
-    from google.adk.tools.tool_confirmation import ToolConfirmation
 
     # Set up a proper signature for the mock function
     def dummy_func():

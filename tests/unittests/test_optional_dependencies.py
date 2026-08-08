@@ -80,7 +80,8 @@ def test_a2a_remote_agent_config_raises_importerror():
       if mod.startswith("a2a.") or mod.startswith("google.adk.a2a."):
         sys.modules.pop(mod, None)
     with pytest.raises(ImportError) as exc_info:
-      from google.adk.a2a.agent import A2aRemoteAgentConfig
+      # The import is the assertion: it must raise, so it is never used.
+      from google.adk.a2a.agent import A2aRemoteAgentConfig  # noqa: F401
     assert "a2a-sdk" in str(exc_info.value)
 
 

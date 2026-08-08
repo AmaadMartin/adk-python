@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-import re
 from unittest import mock
 
 from google.adk.tools.application_integration_tool.clients import integration_client

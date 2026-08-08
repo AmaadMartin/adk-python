@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import sys
-import warnings
 
 from google.adk.integrations.secret_manager import secret_client
 import pytest

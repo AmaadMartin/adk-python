@@ -14,10 +14,8 @@
 
 """Tests for Graph parser utility."""
 
-from google.adk.workflow import Edge
 from google.adk.workflow import FunctionNode
 from google.adk.workflow import START
-from google.adk.workflow._graph import DEFAULT_ROUTE
 from google.adk.workflow.utils._graph_parser import parse_edge_items
 import pytest
 

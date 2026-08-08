@@ -12,14 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import inspect
 from unittest.mock import AsyncMock
 from unittest.mock import create_autospec
 from unittest.mock import Mock
 from unittest.mock import patch
 
 from google.adk.agents.context import Context
-from google.adk.agents.invocation_context import InvocationContext
 from google.adk.auth.auth_credential import AuthCredential
 from google.adk.auth.auth_credential import AuthCredentialTypes
 from google.adk.auth.auth_credential import HttpAuth
@@ -28,14 +26,11 @@ from google.adk.auth.auth_credential import OAuth2Auth
 from google.adk.auth.auth_credential import ServiceAccount
 from google.adk.features import FeatureName
 from google.adk.features._feature_registry import temporary_feature_override
-from google.adk.sessions.session import Session
 from google.adk.tools.mcp_tool import mcp_tool
-from google.adk.tools.mcp_tool.mcp_session_manager import _http_debug_var
 from google.adk.tools.mcp_tool.mcp_session_manager import MCPSessionManager
 from google.adk.tools.mcp_tool.mcp_tool import MCPTool
 from google.adk.tools.tool_context import ToolContext
 from google.genai.types import FunctionDeclaration
-from google.genai.types import Type
 from mcp.types import CallToolResult
 from mcp.types import TextContent
 import pytest

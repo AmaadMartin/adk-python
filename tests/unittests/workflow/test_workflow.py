@@ -25,7 +25,6 @@ import uuid
 
 from google.adk.agents.context import Context
 from google.adk.events.event import Event
-from google.adk.events.request_input import RequestInput
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from google.adk.workflow._base_node import BaseNode
@@ -33,7 +32,6 @@ from google.adk.workflow._base_node import START
 from google.adk.workflow._join_node import JoinNode
 from google.adk.workflow._workflow import get_common_branch_prefix
 from google.adk.workflow._workflow import Workflow
-from google.adk.workflow.utils._workflow_hitl_utils import create_request_input_response
 from google.genai import types
 from pydantic import ConfigDict
 from pydantic import Field
@@ -1387,7 +1385,6 @@ async def test_use_as_output_function_to_workflow():
 @pytest.mark.asyncio
 async def test_use_as_output_custom_node():
   """Custom BaseNode delegates output via use_as_output."""
-  from google.adk.workflow._function_node import FunctionNode
 
   def func_b() -> str:
     return 'delegated_output'

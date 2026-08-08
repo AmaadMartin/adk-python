@@ -25,9 +25,7 @@ and use_as_output delegation.
 
 import asyncio
 from typing import Any
-from typing import AsyncGenerator
 
-from google.adk.agents.context import Context
 from google.adk.events.event import Event
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService

@@ -21,7 +21,6 @@ from fastapi.openapi.models import OAuth2
 from fastapi.openapi.models import OAuthFlowAuthorizationCode
 from fastapi.openapi.models import OAuthFlowImplicit
 from fastapi.openapi.models import OAuthFlows
-from fastapi.openapi.models import SecurityBase
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.invocation_context import InvocationContext
 from google.adk.agents.llm_agent import Agent

@@ -27,7 +27,6 @@ from google.adk.auth.auth_credential import AuthCredentialTypes
 from google.adk.auth.auth_credential import HttpAuth
 from google.adk.auth.auth_credential import HttpCredentials
 from google.adk.auth.auth_credential import OAuth2Auth
-from google.adk.auth.auth_tool import AuthConfig
 from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
 from mcp import StdioServerParameters
 import pytest

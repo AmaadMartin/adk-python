@@ -31,7 +31,6 @@ Run:
 
 from __future__ import annotations
 
-import base64
 import datetime
 import json
 import time
@@ -39,7 +38,6 @@ import time
 from google.cloud import logging as cloud_logging
 from google.cloud import pubsub_v1
 import pytest
-import requests
 
 # ---------------------------------------------------------------------------
 # Full Pub/Sub pipeline tests

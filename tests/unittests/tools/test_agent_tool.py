@@ -30,7 +30,6 @@ from google.adk.events.event import Event
 from google.adk.features import FeatureName
 from google.adk.features._feature_registry import temporary_feature_override
 from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
-from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.plugins.plugin_manager import PluginManager
@@ -40,7 +39,6 @@ from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from google.adk.tools.agent_tool import AgentTool
 from google.adk.tools.tool_context import ToolContext
 from google.adk.utils._schema_utils import validate_node_data
-from google.adk.utils.variant_utils import GoogleLLMVariant
 from google.genai import types
 from google.genai.types import Part
 from pydantic import BaseModel

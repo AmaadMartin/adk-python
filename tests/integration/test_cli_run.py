@@ -13,7 +13,6 @@
 # limitations under the License.
 
 import json
-import os
 from pathlib import Path
 
 from click.testing import CliRunner

@@ -14,9 +14,7 @@
 
 from enum import Enum
 from functools import partial
-from typing import Any
 from typing import List
-from typing import Optional
 from unittest import mock
 
 from google.adk.agents.callback_context import CallbackContext
@@ -24,7 +22,6 @@ from google.adk.agents.llm_agent import Agent
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
-from pydantic import BaseModel
 import pytest
 
 from .. import testing_utils

@@ -18,7 +18,6 @@ import json
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
-from google.api_core.gapic_v1 import client_info
 from google.oauth2.credentials import Credentials
 import pytest
 

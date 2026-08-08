@@ -16,7 +16,6 @@ import asyncio
 from typing import Any
 
 from google.adk.agents.llm_agent import Agent
-from google.adk.flows.llm_flows import functions
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 import pytest

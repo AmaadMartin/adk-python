@@ -25,7 +25,6 @@ from typing import Optional
 from google.adk.agents.base_agent import BaseAgent
 from google.adk.agents.context import Context
 from google.adk.agents.invocation_context import InvocationContext
-from google.adk.agents.invocation_context import InvocationContext as BaseInvocationContext
 from google.adk.apps.app import ResumabilityConfig
 from google.adk.events.event import Event
 from google.adk.events.request_input import RequestInput

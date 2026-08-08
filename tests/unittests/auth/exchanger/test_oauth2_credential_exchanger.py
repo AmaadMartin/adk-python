@@ -30,7 +30,6 @@ from google.adk.auth.auth_schemes import OpenIdConnectWithConfig
 from google.adk.auth.exchanger import oauth2_credential_exchanger
 from google.adk.auth.exchanger.base_credential_exchanger import CredentialExchangeError
 from google.adk.auth.exchanger.oauth2_credential_exchanger import OAuth2CredentialExchanger
-import pytest
 
 
 class _TokenBodyCapturingOAuth2Session(OAuth2Session):

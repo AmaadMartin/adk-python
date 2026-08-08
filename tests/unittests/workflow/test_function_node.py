@@ -14,7 +14,6 @@
 
 """Testings for the FunctionNode."""
 
-import copy
 from typing import Any
 from typing import AsyncGenerator
 from typing import Generator
@@ -29,11 +28,8 @@ from google.adk.events._node_path_builder import _NodePathBuilder
 from google.adk.events.event import Event
 from google.adk.events.event import Event as AdkEvent
 from google.adk.events.request_input import RequestInput
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
 from google.adk.workflow import FunctionNode
 from google.adk.workflow import START
-from google.adk.workflow._node_status import NodeStatus
 from google.adk.workflow._workflow import Workflow
 from google.adk.workflow.utils._workflow_hitl_utils import create_request_input_response
 from google.adk.workflow.utils._workflow_hitl_utils import get_request_input_interrupt_ids
@@ -42,11 +38,9 @@ from pydantic import BaseModel
 import pytest
 
 from .. import testing_utils
-from .workflow_testing_utils import create_parent_invocation_context
 from .workflow_testing_utils import get_output_events
 from .workflow_testing_utils import get_request_input_events
 from .workflow_testing_utils import simplify_events_with_node
-from .workflow_testing_utils import simplify_events_with_node_and_agent_state
 
 ANY = mock.ANY
 

@@ -16,14 +16,13 @@ from __future__ import annotations
 
 import sys
 from typing import Any
-import unittest
 from unittest import mock
 
 from absl.testing import parameterized
 
 # Mock google.genai and pydantic if not available, before importing google.adk modules
 try:
-  import google.genai
+  import google.genai  # noqa: F401
 except ImportError:
   m = mock.MagicMock()
   m.__path__ = []
@@ -32,7 +31,7 @@ except ImportError:
   sys.modules["google.genai.errors"] = mock.MagicMock()
 
 try:
-  import pydantic
+  import pydantic  # noqa: F401
 except ImportError:
   m_pydantic = mock.MagicMock()
 
@@ -44,7 +43,7 @@ except ImportError:
 
 try:
   import fastapi
-  import fastapi.openapi.models
+  import fastapi.openapi.models  # noqa: F401
 except ImportError:
   m_fastapi = mock.MagicMock()
   m_fastapi.openapi.models = mock.MagicMock()

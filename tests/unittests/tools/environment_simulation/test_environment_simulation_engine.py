@@ -18,7 +18,6 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from google.adk.tools.environment_simulation.environment_simulation_config import EnvironmentSimulationConfig
-from google.adk.tools.environment_simulation.environment_simulation_config import InjectedError
 from google.adk.tools.environment_simulation.environment_simulation_config import InjectionConfig
 from google.adk.tools.environment_simulation.environment_simulation_config import MockStrategy
 from google.adk.tools.environment_simulation.environment_simulation_config import ToolSimulationConfig

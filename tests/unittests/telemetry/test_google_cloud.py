@@ -12,12 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import os
 from typing import Optional
 from unittest import mock
 
 from google.adk.telemetry import _agent_engine
-from google.adk.telemetry import google_cloud
 from google.adk.telemetry._agent_engine import telemetry_user_agent_headers
 from google.adk.telemetry._agent_engine_metric_exporter import MIN_EXPORT_INTERVAL_MS
 from google.adk.telemetry.google_cloud import _DEFAULT_MTLS_TELEMETRY_METRICS_ENDPOINT
@@ -34,7 +32,6 @@ from google.adk.telemetry.google_cloud import get_gcp_resource
 import google.auth.credentials
 from google.auth.transport import mtls
 from google.auth.transport import requests
-from opentelemetry.exporter.otlp.proto.http import trace_exporter
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 import pytest
 
