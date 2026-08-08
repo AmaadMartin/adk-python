@@ -101,17 +101,19 @@ def _has_exited(pid: int, timeout_seconds: float) -> bool:
 )
 def test_only_a_process_that_has_not_exited_counts_as_alive(
     stat: str, expected: bool
-):
+) -> None:
   """A zombie, a reaped process and a vanished entry are all not alive."""
   assert _shows_a_live_process(stat) is expected
 
 
-def test_a_pid_with_no_proc_entry_is_not_alive():
+def test_a_pid_with_no_proc_entry_is_not_alive() -> None:
   """A pid the kernel has no entry for at all is reported as not alive."""
   assert not _is_alive(-1)
 
 
-def test_the_wait_keeps_the_reading_it_settled_on(monkeypatch):
+def test_the_wait_keeps_the_reading_it_settled_on(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
   """A later reading cannot overturn the one the wait settled on."""
   # The third reading is what a re-read after the wait would have consumed.
   readings = iter([True, False, True])
@@ -122,7 +124,7 @@ def test_the_wait_keeps_the_reading_it_settled_on(monkeypatch):
   assert _has_exited(4321, 10)
 
 
-def test_the_wait_gives_up_when_the_process_outlives_the_deadline():
+def test_the_wait_gives_up_when_the_process_outlives_the_deadline() -> None:
   """A process that never exits is reported as still running."""
   assert not _has_exited(os.getpid(), 0)
 
