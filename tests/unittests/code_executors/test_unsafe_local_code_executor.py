@@ -39,14 +39,54 @@ def _written_pid(pid_file) -> int | None:
   return int(recorded) if recorded else None
 
 
+# Linux keeps a /proc entry for a short while after a process is gone: "Z"
+# while it waits to be reaped by its parent, then "X" ("x" on older kernels)
+# once it has been reaped and is being torn down. Neither is a running process.
+_DEAD_STATES = frozenset("ZXx")
+
+
+def _shows_a_live_process(stat: str) -> bool:
+  """Returns whether a /proc/<pid>/stat line describes a running process."""
+  # The state is the field after the final ")": the process name is
+  # parenthesised and may itself contain parentheses.
+  fields = stat.rpartition(")")[2].split()
+  # An entry torn down between opening and reading it comes back empty.
+  return bool(fields) and fields[0] not in _DEAD_STATES
+
+
 def _is_alive(pid: int) -> bool:
-  """Returns whether `pid` is a live (non-zombie) process."""
+  """Returns whether `pid` is a process that has not exited."""
   try:
     with open(f"/proc/{pid}/stat", encoding="utf-8") as stat_file:
-      state = stat_file.read().rsplit(")", 1)[1].split()[0]
+      return _shows_a_live_process(stat_file.read())
   except OSError:
     return False
-  return state != "Z"
+
+
+@pytest.mark.parametrize(
+    "stat,expected",
+    [
+        ("4321 (python3) R 1 4321 4321 0 -1", True),
+        ("4321 (python3) S 1 4321 4321 0 -1", True),
+        ("4321 (python3) D 1 4321 4321 0 -1", True),
+        # A name with parentheses in it must not be mistaken for the state.
+        ("4321 (py (3)) S 1 4321 4321 0 -1", True),
+        ("4321 (py (3)) Z 1 4321 4321 0 -1", False),
+        # Exited, waiting for its parent to reap it.
+        ("4321 (python3) Z 1 4321 4321 0 -1", False),
+        # Reaped, /proc entry not yet torn down.
+        ("4321 (python3) X 0 -1 -1 0 -1", False),
+        # The same state, as older kernels spell it.
+        ("4321 (python3) x 0 -1 -1 0 -1", False),
+        # The entry disappeared between being opened and being read.
+        ("", False),
+    ],
+)
+def test_only_a_process_that_has_not_exited_counts_as_alive(
+    stat: str, expected: bool
+):
+  """A zombie, a reaped process and a vanished entry are all not alive."""
+  assert _shows_a_live_process(stat) is expected
 
 
 @pytest.fixture
@@ -221,20 +261,30 @@ class TestUnsafeLocalCodeExecutor:
       # Waiting for the pid to be written rather than for a fixed duration:
       # the only thing that has to have happened is the fork. The file exists
       # from the moment it is opened, so its content is what is polled for.
-      deadline = time.time() + 30
-      while time.time() < deadline and not _written_pid(pid_file):
+      deadline = time.monotonic() + 30
+      while time.monotonic() < deadline and not _written_pid(pid_file):
         time.sleep(0.05)
       spawned_pid = _written_pid(pid_file)
       if spawned_pid is None:
         pytest.skip("this environment could not start the execution process")
 
+      # A fork that had already died would make the assertion below vacuous.
+      assert _is_alive(spawned_pid), "the code's fork was not running"
+
       unsafe_local_code_executor._kill_execution(process)
 
       assert not process.is_alive()
-      deadline = time.time() + 10
-      while time.time() < deadline and _is_alive(spawned_pid):
+      # The assertion consumes the reading the wait settled on. Re-reading
+      # /proc afterwards samples a different instant, and a process on its way
+      # out moves between states the wait has already accepted as dead.
+      deadline = time.monotonic() + 10
+      spawned_gone = not _is_alive(spawned_pid)
+      while not spawned_gone and time.monotonic() < deadline:
         time.sleep(0.05)
-      assert not _is_alive(spawned_pid)
+        spawned_gone = not _is_alive(spawned_pid)
+      assert (
+          spawned_gone
+      ), f"pid {spawned_pid} outlived the process-group teardown"
     finally:
       if spawned_pid is not None:
         try:
