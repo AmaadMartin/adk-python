@@ -302,6 +302,7 @@ def test_after_tool_callback_modify_tool_response():
   ]
 
 
+@pytest.mark.asyncio
 async def test_on_tool_error_callback_tool_not_found_noop():
   """Test that the on_tool_error_callback is a no-op when the tool is not found."""
   responses = [
@@ -364,6 +365,7 @@ def test_on_tool_error_callback_tool_not_found_modify_tool_response():
   ]
 
 
+@pytest.mark.asyncio
 async def test_on_tool_error_callback_tool_error_noop():
   """Test that the on_tool_error_callback is a no-op when the tool returns an error."""
   responses = [

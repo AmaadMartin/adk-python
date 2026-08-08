@@ -591,6 +591,7 @@ class TestToA2A:
   # Behavioral hosting checks (real Starlette; drive lifespan; assert routes).
   # ---------------------------------------------------------------------------
 
+  @pytest.mark.asyncio
   @patch("google.adk.a2a.utils.agent_to_a2a.A2aAgentExecutor")
   @patch("google.adk.a2a.utils.agent_to_a2a.InMemoryTaskStore")
   @patch("google.adk.a2a.utils.agent_to_a2a.AgentCardBuilder")
@@ -613,6 +614,7 @@ class TestToA2A:
     mock_card_builder.build.assert_called_once()
     _assert_a2a_routes_attached(app)
 
+  @pytest.mark.asyncio
   async def test_to_a2a_rpc_path_mounts_prefixed_routes(self):
     """rpc_path mounts the JSON-RPC and agent-card routes under the prefix."""
     agent = LlmAgent(
@@ -633,6 +635,7 @@ class TestToA2A:
         "/" not in paths
     ), f"root RPC route should not be mounted; got {paths}"
 
+  @pytest.mark.asyncio
   @patch("google.adk.a2a.utils.agent_to_a2a.A2aAgentExecutor")
   @patch("google.adk.a2a.utils.agent_to_a2a.InMemoryTaskStore")
   @patch("google.adk.a2a.utils.agent_to_a2a.AgentCardBuilder")
@@ -653,6 +656,7 @@ class TestToA2A:
       async with app.router.lifespan_context(app):
         pass
 
+  @pytest.mark.asyncio
   @patch("google.adk.a2a.utils.agent_to_a2a.A2aAgentExecutor")
   @patch("google.adk.a2a.utils.agent_to_a2a.InMemoryTaskStore")
   @patch("google.adk.a2a.utils.agent_to_a2a.AgentCardBuilder")
@@ -703,6 +707,7 @@ class TestToA2A:
         "agent_card and rpc_path" in r.message for r in caplog.records
     ), f"expected mismatch warning; got {[r.message for r in caplog.records]}"
 
+  @pytest.mark.asyncio
   @patch("google.adk.a2a.utils.agent_to_a2a.A2aAgentExecutor")
   @patch("google.adk.a2a.utils.agent_to_a2a.InMemoryTaskStore")
   @patch("google.adk.a2a.utils.agent_to_a2a.AgentCardBuilder")
@@ -764,6 +769,7 @@ class TestToA2A:
     with pytest.raises(ValueError, match="Failed to load agent card from"):
       to_a2a(self.mock_agent, agent_card="/invalid/path.json")
 
+  @pytest.mark.asyncio
   async def test_to_a2a_with_lifespan(self):
     """A user lifespan runs alongside A2A setup."""
     from contextlib import asynccontextmanager
@@ -791,6 +797,7 @@ class TestToA2A:
 
     assert shutdown_called
 
+  @pytest.mark.asyncio
   async def test_to_a2a_without_lifespan(self):
     """Without a user lifespan, A2A setup still attaches routes."""
     agent = LlmAgent(
@@ -801,6 +808,7 @@ class TestToA2A:
     async with app.router.lifespan_context(app):
       _assert_a2a_routes_attached(app)
 
+  @pytest.mark.asyncio
   async def test_to_a2a_lifespan_setup_runs_before_user_lifespan(self):
     """A2A setup (routes attached) runs before the user lifespan startup."""
     from contextlib import asynccontextmanager
@@ -825,6 +833,7 @@ class TestToA2A:
 
     assert call_order == ["user_startup", "user_shutdown"]
 
+  @pytest.mark.asyncio
   async def test_to_a2a_does_not_close_caller_runner(self):
     """A Runner supplied by the caller remains caller-owned."""
     runner = Mock(spec=Runner)
@@ -862,6 +871,7 @@ class TestToA2A:
     ):
       to_a2a("not an agent")
 
+  @pytest.mark.asyncio
   async def test_to_a2a_succeeds_for_workflow(self):
     """to_a2a accepts a Workflow and the Starlette lifespan completes."""
     writer = LlmAgent(

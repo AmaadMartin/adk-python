@@ -23,6 +23,7 @@ from google.adk.flows.llm_flows.functions import handle_function_calls_async
 from google.adk.telemetry import tracing
 from google.adk.tools.function_tool import FunctionTool
 from google.genai import types
+import pytest
 
 from ... import testing_utils
 
@@ -56,6 +57,7 @@ async def invoke_tool() -> Optional[Event]:
   )
 
 
+@pytest.mark.asyncio
 async def test_simple_function_with_mocked_tracer(monkeypatch):
   mock_start_as_current_span_func = mock.Mock()
   returned_context_manager_mock = mock.MagicMock()

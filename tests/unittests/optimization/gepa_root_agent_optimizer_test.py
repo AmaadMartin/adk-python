@@ -391,6 +391,7 @@ def test_adapter_propose_new_texts(mock_gepa, mock_adapter):
   }
 
 
+@pytest.mark.asyncio
 async def test_optimize(mocker, mock_gepa, mock_sampler, mock_agent):
   config = GEPARootAgentOptimizerConfig()
   optimizer = GEPARootAgentOptimizer(config)
@@ -427,6 +428,7 @@ async def test_optimize(mocker, mock_gepa, mock_sampler, mock_agent):
   assert result.gepa_result == {"full": "result"}
 
 
+@pytest.mark.asyncio
 async def test_optimize_logs_warning_on_overlapping_ids(
     mocker, mock_gepa, mock_sampler, mock_agent
 ):

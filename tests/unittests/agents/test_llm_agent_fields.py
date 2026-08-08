@@ -177,6 +177,7 @@ def test_canonical_live_model_inherit():
   assert sub_agent.canonical_live_model == parent_agent.canonical_live_model
 
 
+@pytest.mark.asyncio
 async def test_canonical_instruction_str():
   agent = LlmAgent(name='test_agent', instruction='instruction')
   ctx = await _create_readonly_context(agent)
@@ -188,6 +189,7 @@ async def test_canonical_instruction_str():
   assert not bypass_state_injection
 
 
+@pytest.mark.asyncio
 async def test_canonical_instruction():
   def _instruction_provider(ctx: ReadonlyContext) -> str:
     return f'instruction: {ctx.state["state_var"]}'
@@ -204,6 +206,7 @@ async def test_canonical_instruction():
   assert bypass_state_injection
 
 
+@pytest.mark.asyncio
 async def test_async_canonical_instruction():
   async def _instruction_provider(ctx: ReadonlyContext) -> str:
     return f'instruction: {ctx.state["state_var"]}'
@@ -220,6 +223,7 @@ async def test_async_canonical_instruction():
   assert bypass_state_injection
 
 
+@pytest.mark.asyncio
 async def test_canonical_global_instruction_str():
   agent = LlmAgent(name='test_agent', global_instruction='global instruction')
   ctx = await _create_readonly_context(agent)
@@ -231,6 +235,7 @@ async def test_canonical_global_instruction_str():
   assert not bypass_state_injection
 
 
+@pytest.mark.asyncio
 async def test_canonical_global_instruction():
   def _global_instruction_provider(ctx: ReadonlyContext) -> str:
     return f'global instruction: {ctx.state["state_var"]}'
@@ -249,6 +254,7 @@ async def test_canonical_global_instruction():
   assert bypass_state_injection
 
 
+@pytest.mark.asyncio
 async def test_async_canonical_global_instruction():
   async def _global_instruction_provider(ctx: ReadonlyContext) -> str:
     return f'global instruction: {ctx.state["state_var"]}'
@@ -423,6 +429,7 @@ class TestCanonicalTools:
   def _my_tool(sides: int) -> int:
     return sides
 
+  @pytest.mark.asyncio
   async def test_handle_google_search_with_other_tools(self):
     """Test that google_search is wrapped into an agent."""
     agent = LlmAgent(
@@ -442,6 +449,7 @@ class TestCanonicalTools:
     assert tools[1].name == 'google_search_agent'
     assert tools[1].__class__.__name__ == 'GoogleSearchAgentTool'
 
+  @pytest.mark.asyncio
   async def test_handle_google_search_with_other_tools_no_bypass(self):
     """Test that google_search is not wrapped into an agent."""
     agent = LlmAgent(
@@ -461,6 +469,7 @@ class TestCanonicalTools:
     assert tools[1].name == 'google_search'
     assert tools[1].__class__.__name__ == 'GoogleSearchTool'
 
+  @pytest.mark.asyncio
   async def test_handle_google_search_only(self):
     """Test that google_search is not wrapped into an agent."""
     agent = LlmAgent(
@@ -477,6 +486,7 @@ class TestCanonicalTools:
     assert tools[0].name == 'google_search'
     assert tools[0].__class__.__name__ == 'GoogleSearchTool'
 
+  @pytest.mark.asyncio
   async def test_function_tool_only(self):
     """Test that function tool is not affected."""
     agent = LlmAgent(
@@ -493,6 +503,7 @@ class TestCanonicalTools:
     assert tools[0].name == '_my_tool'
     assert tools[0].__class__.__name__ == 'FunctionTool'
 
+  @pytest.mark.asyncio
   @mock.patch(
       'google.auth.default',
       mock.MagicMock(return_value=('credentials', 'project')),
@@ -519,6 +530,7 @@ class TestCanonicalTools:
     assert tools[1].name == 'discovery_engine_search'
     assert tools[1].__class__.__name__ == 'DiscoveryEngineSearchTool'
 
+  @pytest.mark.asyncio
   async def test_handle_vais_with_other_tools_no_bypass(self):
     """Test that VertexAiSearchTool is not replaced."""
     agent = LlmAgent(
@@ -541,6 +553,7 @@ class TestCanonicalTools:
     assert tools[1].name == 'vertex_ai_search'
     assert tools[1].__class__.__name__ == 'VertexAiSearchTool'
 
+  @pytest.mark.asyncio
   async def test_handle_vais_only(self):
     """Test that VertexAiSearchTool is not wrapped into an agent."""
     agent = LlmAgent(
@@ -557,6 +570,7 @@ class TestCanonicalTools:
     assert tools[0].name == 'vertex_ai_search'
     assert tools[0].__class__.__name__ == 'VertexAiSearchTool'
 
+  @pytest.mark.asyncio
   async def test_multiple_tools_resolution(self):
     """Test that multiple tools are resolved correctly."""
 
@@ -578,6 +592,7 @@ class TestCanonicalTools:
     assert tools[0].name == '_tool_1'
     assert tools[1].name == '_tool_2'
 
+  @pytest.mark.asyncio
   async def test_canonical_tools_graceful_degradation_on_toolset_error(self):
     """Test that canonical_tools returns tools from working toolsets when one fails."""
     from google.adk.tools.base_tool import BaseTool
@@ -781,6 +796,7 @@ def test_canonical_live_model_falls_back_to_live_default_through_ancestors():
     LlmAgent.set_default_live_model(original_live_model)
 
 
+@pytest.mark.asyncio
 async def test_canonical_global_instruction_str_warns_deprecated():
   agent = LlmAgent(name='test_agent', global_instruction='global instruction')
   ctx = await _create_readonly_context(agent)
@@ -796,6 +812,7 @@ async def test_canonical_global_instruction_str_warns_deprecated():
   assert not bypass_state_injection
 
 
+@pytest.mark.asyncio
 async def test_canonical_global_instruction_unset_does_not_warn():
   """Agents that never opted into the deprecated field must stay quiet."""
   agent = LlmAgent(name='test_agent')
@@ -854,6 +871,7 @@ class _TwoToolToolset(BaseToolset):
     ]
 
 
+@pytest.mark.asyncio
 async def test_canonical_tools_flattens_toolsets_in_declared_order():
   """Toolsets resolve concurrently but must land in the declared position."""
   agent = LlmAgent(
@@ -873,6 +891,7 @@ async def test_canonical_tools_flattens_toolsets_in_declared_order():
   ]
 
 
+@pytest.mark.asyncio
 async def test_canonical_tools_without_context_passes_none_to_toolset():
   """Callers outside an invocation (e.g. agent cards) pass no context."""
   toolset = _TwoToolToolset()

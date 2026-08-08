@@ -23,12 +23,13 @@ from google.adk.tools.computer_use.base_computer import ComputerState
 from google.adk.tools.computer_use.computer_use_tool import ComputerUseTool
 from google.adk.tools.tool_context import ToolContext
 import pytest
+import pytest_asyncio
 
 
 class TestComputerUseTool:
   """Test cases for ComputerUseTool class."""
 
-  @pytest.fixture
+  @pytest_asyncio.fixture
   async def tool_context(self):
     """Fixture providing a tool context."""
     session_service = InMemorySessionService()

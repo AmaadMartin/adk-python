@@ -190,6 +190,7 @@ def test_openapi_toolset_configure_verify_all(openapi_spec: Dict[str, Any]):
   assert all(tool._ssl_verify == ca_bundle_path for tool in toolset._tools)
 
 
+@pytest.mark.asyncio
 async def test_openapi_toolset_tool_name_prefix(openapi_spec: Dict[str, Any]):
   """Test tool_name_prefix parameter prefixes tool names."""
   prefix = "my_api"

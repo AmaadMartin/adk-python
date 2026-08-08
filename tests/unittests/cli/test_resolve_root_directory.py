@@ -90,6 +90,7 @@ def test_resolve_file_paths_rejects_the_whole_batch_on_one_escape(tmp_path):
     )
 
 
+@pytest.mark.asyncio
 async def test_write_files_blocks_relative_traversal(
     tmp_path, tmp_path_factory
 ):
@@ -104,6 +105,7 @@ async def test_write_files_blocks_relative_traversal(
   assert not (outside / "pwned.txt").exists()
 
 
+@pytest.mark.asyncio
 async def test_write_files_blocks_absolute_outside_root(
     tmp_path, tmp_path_factory
 ):
@@ -118,6 +120,7 @@ async def test_write_files_blocks_absolute_outside_root(
   assert not target.exists()
 
 
+@pytest.mark.asyncio
 async def test_write_files_allows_path_within_root(tmp_path):
   result = await write_files(
       files={"sub/ok.txt": "hello"}, tool_context=_tool_context(tmp_path)
@@ -127,6 +130,7 @@ async def test_write_files_allows_path_within_root(tmp_path):
   assert (tmp_path / "sub" / "ok.txt").read_text() == "hello"
 
 
+@pytest.mark.asyncio
 async def test_read_files_blocks_relative_traversal(tmp_path, tmp_path_factory):
   outside = tmp_path_factory.mktemp("outside")
   secret = outside / "secret.txt"
@@ -144,6 +148,7 @@ async def test_read_files_blocks_relative_traversal(tmp_path, tmp_path_factory):
   )
 
 
+@pytest.mark.asyncio
 async def test_delete_files_blocks_relative_traversal(
     tmp_path, tmp_path_factory
 ):

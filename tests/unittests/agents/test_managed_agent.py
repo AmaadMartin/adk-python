@@ -778,6 +778,7 @@ def test_mode_chat_is_rejected():
     ManagedAgent(name='m', agent_id='a', mode='chat')
 
 
+@pytest.mark.asyncio
 async def test_run_impl_bridges_node_input_to_user_content():
   from google.adk.agents.context import Context
   from google.adk.agents.invocation_context import InvocationContext

@@ -112,6 +112,7 @@ class TestGeminiContextCacheManager:
     assert manager is not None
     assert manager.genai_client == mock_client
 
+  @pytest.mark.asyncio
   async def test_handle_context_caching_no_existing_cache(self):
     """Test handling context caching with no existing cache returns fingerprint-only metadata."""
     llm_request = self.create_llm_request(contents_count=5)
@@ -133,6 +134,7 @@ class TestGeminiContextCacheManager:
     # No cache should be created
     self.manager.genai_client.aio.caches.create.assert_not_called()
 
+  @pytest.mark.asyncio
   async def test_handle_context_caching_valid_existing_cache(self):
     """Test handling context caching with valid existing cache."""
 
@@ -165,6 +167,7 @@ class TestGeminiContextCacheManager:
     # Should not create new cache
     self.manager.genai_client.aio.caches.create.assert_not_called()
 
+  @pytest.mark.asyncio
   async def test_handle_context_caching_invalid_cache_fingerprint_match(self):
     """Test invalid cache with matching fingerprint creates new cache."""
     # Setup mocks
@@ -206,6 +209,7 @@ class TestGeminiContextCacheManager:
     mock_cleanup.assert_called_once_with(existing_cache.cache_name)
     self.manager.genai_client.aio.caches.create.assert_called_once()
 
+  @pytest.mark.asyncio
   async def test_model_change_invalidates_active_cache(self):
     """A cache created for one model is not reused by another model."""
     flash_request = self.create_llm_request(contents_count=0)
@@ -234,6 +238,7 @@ class TestGeminiContextCacheManager:
         name="cachedContents/flash-cache"
     )
 
+  @pytest.mark.asyncio
   async def test_backend_change_invalidates_active_cache(self):
     """A Developer API cache is not reused by a Vertex client."""
     developer_request = self.create_llm_request(contents_count=0)
@@ -268,6 +273,7 @@ class TestGeminiContextCacheManager:
         name="cachedContents/developer-cache"
     )
 
+  @pytest.mark.asyncio
   async def test_create_cache_gates_on_prefix_not_full_prompt(self):
     """Cache creation is gated on the cacheable prefix, not the full prompt.
 
@@ -303,6 +309,7 @@ class TestGeminiContextCacheManager:
     assert result is None
     self.manager.genai_client.aio.caches.create.assert_not_called()
 
+  @pytest.mark.asyncio
   async def test_completed_turn_grows_cacheable_prefix(self):
     """A completed turn becomes part of the next explicit cache."""
     first_user = types.Content(
@@ -344,6 +351,7 @@ class TestGeminiContextCacheManager:
     assert create_config.contents == [first_user, first_model]
     assert next_request.contents == [next_user]
 
+  @pytest.mark.asyncio
   async def test_gemini_25_creates_cache_above_2048_token_minimum(self):
     """Gemini 2.5 creates an explicit cache above its 2,048-token floor."""
     llm_request = self.create_llm_request(contents_count=0)
@@ -365,6 +373,7 @@ class TestGeminiContextCacheManager:
     assert result.cache_name == "cachedContents/gemini-25"
     self.manager.genai_client.aio.caches.create.assert_awaited_once()
 
+  @pytest.mark.asyncio
   async def test_gemini_3_skips_cache_below_4096_token_minimum(self):
     """Gemini 3 skips an explicit cache below its 4,096-token floor."""
     llm_request = self.create_llm_request(contents_count=0)
@@ -382,6 +391,7 @@ class TestGeminiContextCacheManager:
     assert result.cache_name is None
     self.manager.genai_client.aio.caches.create.assert_not_called()
 
+  @pytest.mark.asyncio
   async def test_opaque_model_does_not_apply_guessed_token_minimum(self):
     """Opaque tuned-model IDs let the server enforce the cache floor."""
     llm_request = self.create_llm_request(contents_count=0)
@@ -406,6 +416,7 @@ class TestGeminiContextCacheManager:
     assert result.cache_name == "cachedContents/tuned-model"
     self.manager.genai_client.aio.caches.create.assert_awaited_once()
 
+  @pytest.mark.asyncio
   async def test_handle_context_caching_invalid_cache_fingerprint_mismatch(
       self,
   ):
@@ -441,6 +452,7 @@ class TestGeminiContextCacheManager:
     mock_cleanup.assert_called_once_with(existing_cache.cache_name)
     self.manager.genai_client.aio.caches.create.assert_not_called()
 
+  @pytest.mark.asyncio
   async def test_is_cache_valid_fingerprint_mismatch(self):
     """Test cache validation with fingerprint mismatch."""
     cache_metadata = self.create_cache_metadata()
@@ -455,6 +467,7 @@ class TestGeminiContextCacheManager:
 
     assert result is False
 
+  @pytest.mark.asyncio
   async def test_is_cache_valid_expired_cache(self):
     """Test cache validation with expired cache."""
     cache_metadata = self.create_cache_metadata(expired=True)
@@ -469,6 +482,7 @@ class TestGeminiContextCacheManager:
 
     assert result is False
 
+  @pytest.mark.asyncio
   async def test_is_cache_valid_fingerprint_only_metadata(self):
     """Test cache validation with fingerprint-only metadata (no active cache)."""
     # Create fingerprint-only metadata (cache_name is None)
@@ -484,6 +498,7 @@ class TestGeminiContextCacheManager:
         result is False
     )  # Fingerprint-only metadata is not a valid active cache
 
+  @pytest.mark.asyncio
   async def test_is_cache_valid_cache_intervals_exceeded(self):
     """Test cache validation with max invocations exceeded."""
     cache_metadata = self.create_cache_metadata(
@@ -500,6 +515,7 @@ class TestGeminiContextCacheManager:
 
     assert result is False
 
+  @pytest.mark.asyncio
   async def test_is_cache_valid_all_checks_pass(self):
     """Test cache validation when all checks pass."""
     cache_metadata = self.create_cache_metadata(
@@ -516,6 +532,7 @@ class TestGeminiContextCacheManager:
 
     assert result is True
 
+  @pytest.mark.asyncio
   async def test_cleanup_cache(self):
     """Test cache cleanup functionality."""
     cache_name = "projects/test/locations/us-central1/cachedContents/test123"
@@ -749,6 +766,7 @@ class TestGeminiContextCacheManager:
 
     assert fingerprint_original != fingerprint_changed
 
+  @pytest.mark.asyncio
   async def test_populate_cache_metadata_in_response_no_invocations_increment(
       self,
   ):
@@ -777,6 +795,7 @@ class TestGeminiContextCacheManager:
     assert updated_metadata.expire_time == cache_metadata.expire_time
     assert updated_metadata.created_at == cache_metadata.created_at
 
+  @pytest.mark.asyncio
   async def test_populate_cache_metadata_no_usage_metadata(self):
     """Test populating cache metadata when no usage metadata."""
     llm_response = MagicMock(spec=LlmResponse)
@@ -795,6 +814,7 @@ class TestGeminiContextCacheManager:
     )  # Should preserve original value
     assert updated_metadata.cache_name == cache_metadata.cache_name
 
+  @pytest.mark.asyncio
   async def test_create_new_cache_with_proper_ttl(self):
     """Test that new cache is created with proper TTL."""
     mock_cached_content = AsyncMock()
@@ -867,6 +887,7 @@ class TestGeminiContextCacheManager:
     )
     assert isinstance(fingerprint, str)
 
+  @pytest.mark.asyncio
   async def test_handle_context_caching_requires_configuration(self):
     llm_request = self.create_llm_request()
     llm_request.cache_config = None
@@ -874,6 +895,7 @@ class TestGeminiContextCacheManager:
     with pytest.raises(ValueError, match="cache configuration"):
       await self.manager.handle_context_caching(llm_request)
 
+  @pytest.mark.asyncio
   async def test_handle_context_caching_requires_model(self):
     llm_request = self.create_llm_request()
     llm_request.model = None
@@ -917,6 +939,7 @@ class TestGeminiContextCacheManager:
     llm_request.cacheable_contents_token_count = token_count
     return llm_request
 
+  @pytest.mark.asyncio
   async def test_cache_creation_with_sufficient_token_count(self):
     """Test that fingerprint-only metadata is returned even with sufficient tokens."""
     # With new prefix matching logic, no cache is created without existing metadata
@@ -935,6 +958,7 @@ class TestGeminiContextCacheManager:
     assert result.contents_count == 0
     self.manager.genai_client.aio.caches.create.assert_not_called()
 
+  @pytest.mark.asyncio
   async def test_cache_creation_with_insufficient_token_count(self):
     """Test that fingerprint-only metadata is returned even with insufficient tokens."""
     # Set higher minimum token requirement
@@ -959,6 +983,7 @@ class TestGeminiContextCacheManager:
     assert result.fingerprint == "test_fp"
     self.manager.genai_client.aio.caches.create.assert_not_called()
 
+  @pytest.mark.asyncio
   async def test_cache_creation_without_token_count(self):
     """Test that fingerprint-only metadata is returned even without token count."""
     # Create request without token count (initial request)
@@ -975,6 +1000,7 @@ class TestGeminiContextCacheManager:
     assert result.fingerprint == "test_fp"
     self.manager.genai_client.aio.caches.create.assert_not_called()
 
+  @pytest.mark.asyncio
   async def test_fingerprint_stability_across_growing_contents_within_invocation(
       self,
   ):
@@ -1036,6 +1062,7 @@ class TestGeminiContextCacheManager:
     # Fingerprints over the same prefix must be identical
     assert fp_short == fp_long
 
+  @pytest.mark.asyncio
   async def test_fingerprint_preserved_on_cache_creation_failure(self):
     """When cache creation fails, contents_count is preserved.
 
@@ -1071,6 +1098,7 @@ class TestGeminiContextCacheManager:
     assert result.contents_count == 3
     assert result.fingerprint == "fp_for_3"
 
+  @pytest.mark.asyncio
   async def test_multi_turn_fingerprint_stable_when_below_token_threshold(
       self,
   ):
@@ -1105,6 +1133,7 @@ class TestGeminiContextCacheManager:
     assert len(set(fingerprints_seen)) == 1
     assert contents_counts_seen == [0, 0, 0]
 
+  @pytest.mark.asyncio
   async def test_contents_count_should_remain_stable_after_cache_creation_failure(
       self,
   ):
@@ -1240,6 +1269,7 @@ class TestGeminiContextCacheManager:
     # All contents are before the (empty) last user batch
     assert count_4 == 6
 
+  @pytest.mark.asyncio
   async def test_fingerprint_only_metadata_transitions_to_active_cache(
       self,
   ):
@@ -1303,6 +1333,7 @@ class TestGeminiContextCacheManager:
     create_call = self.manager.genai_client.aio.caches.create.call_args
     assert create_call.kwargs["config"].contents is None
 
+  @pytest.mark.asyncio
   async def test_dynamic_instruction_does_not_break_initial_cache_fingerprint(
       self,
   ):
@@ -1376,6 +1407,7 @@ class TestGeminiContextCacheManager:
     )
     assert create_config.contents == [user_msg, model_tool_call]
 
+  @pytest.mark.asyncio
   async def test_create_cache_uses_server_expire_time(self):
     """The server-reported expiry is authoritative when it is available."""
     server_expire_time = datetime.fromtimestamp(2_000_000_000, tz=timezone.utc)
@@ -1395,6 +1427,7 @@ class TestGeminiContextCacheManager:
 
     assert cache_metadata.expire_time == server_expire_time.timestamp()
 
+  @pytest.mark.asyncio
   async def test_create_http_options_passthrough(self):
     """Test that create_http_options is passed through to cache creation config."""
     mock_cached_content = AsyncMock()
@@ -1431,6 +1464,7 @@ class TestGeminiContextCacheManager:
     assert cache_config.http_options is not None
     assert cache_config.http_options.timeout == 10000
 
+  @pytest.mark.asyncio
   async def test_create_without_http_options(self):
     """Test that cache creation works without create_http_options."""
     mock_cached_content = AsyncMock()
