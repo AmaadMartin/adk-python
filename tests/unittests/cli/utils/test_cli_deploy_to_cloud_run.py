@@ -354,6 +354,45 @@ def test_to_cloud_run_sandbox_conflict(
 
 
 # Label merging tests
+def _deploy_and_record_gcloud_args(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+    extra_gcloud_args: tuple[str, ...] | None,
+) -> list[str]:
+  """Runs to_cloud_run with a stubbed subprocess and returns the gcloud argv."""
+  src_dir = agent_dir(include_requirements=False, include_env=False)
+  run_recorder = _Recorder()
+
+  monkeypatch.setattr(subprocess, "run", run_recorder)
+  monkeypatch.setattr(shutil, "rmtree", lambda _x: None)
+
+  cli_deploy.to_cloud_run(
+      agent_folder=str(src_dir),
+      project="test-project",
+      region="us-central1",
+      service_name="test-service",
+      app_name="test-app",
+      temp_folder=str(tmp_path),
+      port=8080,
+      trace_to_cloud=False,
+      otel_to_cloud=False,
+      with_ui=False,
+      log_level="info",
+      verbosity="info",
+      adk_version="1.0.0",
+      extra_gcloud_args=extra_gcloud_args,
+  )
+
+  assert len(run_recorder.calls) == 1
+  return run_recorder.get_last_call_args()[0]
+
+
+def _labels_value(gcloud_args: list[str]) -> str:
+  """Returns the value of the single --labels flag in the gcloud argv."""
+  return gcloud_args[gcloud_args.index("--labels") + 1]
+
+
 @pytest.mark.parametrize(
     "extra_gcloud_args, expected_labels",
     [
@@ -382,6 +421,32 @@ def test_to_cloud_run_sandbox_conflict(
             ["--timeout=300", "--labels=env=prod", "--max-instances=10"],
             "created-by=adk,env=prod",
         ),
+        # Space-separated spelling, which gcloud also accepts
+        (["--labels", "env=prod"], "created-by=adk,env=prod"),
+        (
+            ["--labels", "env=test,team=myteam"],
+            "created-by=adk,env=test,team=myteam",
+        ),
+        # A --labels token with no usable value contributes nothing
+        (["--labels"], "created-by=adk"),
+        (["--labels="], "created-by=adk"),
+        (["--labels", ""], "created-by=adk"),
+        (["--labels", "--memory=1Gi"], "created-by=adk"),
+        # Both spellings interleaved, in the order the user gave them
+        (
+            ["--labels=env=prod", "--labels", "team=x"],
+            "created-by=adk,env=prod,team=x",
+        ),
+        (
+            ["--labels", "env=prod", "--labels=team=x"],
+            "created-by=adk,env=prod,team=x",
+        ),
+        # Space-separated spelling mixed with other args
+        (
+            ["--memory=1Gi", "--labels", "env=prod", "--cpu=1"],
+            "created-by=adk,env=prod",
+        ),
+        (["--labels=", "--labels=env=prod"], "created-by=adk,env=prod"),
     ],
 )
 def test_cloud_run_label_merging(
@@ -392,36 +457,115 @@ def test_cloud_run_label_merging(
     expected_labels: str,
 ) -> None:
   """Test that user labels are properly merged with the default ADK label."""
-  src_dir = agent_dir(include_requirements=False, include_env=False)
-  run_recorder = _Recorder()
-
-  monkeypatch.setattr(subprocess, "run", run_recorder)
-  monkeypatch.setattr(shutil, "rmtree", lambda _x: None)
-
-  # Execute the function under test
-  cli_deploy.to_cloud_run(
-      agent_folder=str(src_dir),
-      project="test-project",
-      region="us-central1",
-      service_name="test-service",
-      app_name="test-app",
-      temp_folder=str(tmp_path),
-      port=8080,
-      trace_to_cloud=False,
-      otel_to_cloud=False,
-      with_ui=False,
-      log_level="info",
-      verbosity="info",
-      adk_version="1.0.0",
-      extra_gcloud_args=tuple(extra_gcloud_args) if extra_gcloud_args else None,
+  gcloud_args = _deploy_and_record_gcloud_args(
+      monkeypatch,
+      agent_dir,
+      tmp_path,
+      tuple(extra_gcloud_args) if extra_gcloud_args else None,
   )
 
-  # Verify that the gcloud command was called
-  assert len(run_recorder.calls) == 1
-  gcloud_args = run_recorder.get_last_call_args()[0]
+  assert _labels_value(gcloud_args) == expected_labels
 
-  # Find the labels argument
+
+@pytest.mark.parametrize(
+    "extra_gcloud_args",
+    [
+        None,
+        ("--labels=env=prod",),
+        ("--labels", "env=prod"),
+        ("--labels",),
+        ("--labels=",),
+        ("--labels", ""),
+        ("--labels", "--memory=1Gi"),
+        ("--labels=env=prod", "--labels", "team=x"),
+    ],
+)
+def test_cloud_run_label_flag_appears_exactly_once(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+    extra_gcloud_args: tuple[str, ...] | None,
+) -> None:
+  """gcloud keeps only the last --labels, so ADK must emit exactly one."""
+  gcloud_args = _deploy_and_record_gcloud_args(
+      monkeypatch, agent_dir, tmp_path, extra_gcloud_args
+  )
+
+  assert gcloud_args.count("--labels") == 1
+
+
+def test_cloud_run_label_value_leaves_no_stray_operand(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+) -> None:
+  """A consumed label value must not survive as a pass-through arg."""
+  gcloud_args = _deploy_and_record_gcloud_args(
+      monkeypatch, agent_dir, tmp_path, ("--labels", "env=prod")
+  )
+
+  assert _labels_value(gcloud_args) == "created-by=adk,env=prod"
+  assert "env=prod" not in gcloud_args
+
+
+def test_cloud_run_dangling_label_flag_preserves_following_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+) -> None:
+  """A value-less --labels must not swallow the flag that follows it."""
+  gcloud_args = _deploy_and_record_gcloud_args(
+      monkeypatch, agent_dir, tmp_path, ("--labels", "--memory=1Gi")
+  )
+
+  assert _labels_value(gcloud_args) == "created-by=adk"
+  assert "--memory=1Gi" in gcloud_args
+  assert gcloud_args.count("--labels") == 1
+
+
+@pytest.mark.parametrize(
+    "extra_gcloud_args",
+    [("--labels=",), ("--labels", "")],
+)
+def test_cloud_run_label_value_has_no_empty_component(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+    extra_gcloud_args: tuple[str, ...],
+) -> None:
+  """gcloud rejects an empty label component, so it must be dropped."""
+  gcloud_args = _deploy_and_record_gcloud_args(
+      monkeypatch, agent_dir, tmp_path, extra_gcloud_args
+  )
+
+  labels_value = _labels_value(gcloud_args)
+  assert labels_value == "created-by=adk"
+  assert not labels_value.endswith(",")
+  assert ",," not in labels_value
+
+
+def test_cloud_run_passthrough_args_order_preserved(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+) -> None:
+  """Non-label args keep their order and follow the --labels flag."""
+  gcloud_args = _deploy_and_record_gcloud_args(
+      monkeypatch,
+      agent_dir,
+      tmp_path,
+      (
+          "--timeout=300",
+          "--labels",
+          "env=prod",
+          "--max-instances=10",
+          "--labels=team=x",
+      ),
+  )
+
   labels_idx = gcloud_args.index("--labels")
-  actual_labels = gcloud_args[labels_idx + 1]
-
-  assert actual_labels == expected_labels
+  assert _labels_value(gcloud_args) == "created-by=adk,env=prod,team=x"
+  assert gcloud_args[labels_idx + 2 :] == [
+      "--timeout=300",
+      "--max-instances=10",
+  ]
