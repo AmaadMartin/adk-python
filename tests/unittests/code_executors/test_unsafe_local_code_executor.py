@@ -15,6 +15,7 @@
 import multiprocessing
 import os
 import signal
+import sys
 import textwrap
 import time
 from unittest.mock import MagicMock
@@ -63,6 +64,22 @@ def _is_alive(pid: int) -> bool:
     return False
 
 
+def _has_exited(pid: int, timeout_seconds: float) -> bool:
+  """Waits for `pid` to exit, and returns the reading the wait settled on.
+
+  The caller must not read /proc again: that samples a different instant, and
+  a process on its way out moves between states the wait has already accepted
+  as dead. A settled reading is enough, because a process that has exited does
+  not come back.
+  """
+  deadline = time.monotonic() + timeout_seconds
+  exited = not _is_alive(pid)
+  while not exited and time.monotonic() < deadline:
+    time.sleep(0.05)
+    exited = not _is_alive(pid)
+  return exited
+
+
 @pytest.mark.parametrize(
     "stat,expected",
     [
@@ -87,6 +104,27 @@ def test_only_a_process_that_has_not_exited_counts_as_alive(
 ):
   """A zombie, a reaped process and a vanished entry are all not alive."""
   assert _shows_a_live_process(stat) is expected
+
+
+def test_a_pid_with_no_proc_entry_is_not_alive():
+  """A pid the kernel has no entry for at all is reported as not alive."""
+  assert not _is_alive(-1)
+
+
+def test_the_wait_keeps_the_reading_it_settled_on(monkeypatch):
+  """A later reading cannot overturn the one the wait settled on."""
+  # The third reading is what a re-read after the wait would have consumed.
+  readings = iter([True, False, True])
+  monkeypatch.setattr(
+      sys.modules[__name__], "_is_alive", lambda pid: next(readings)
+  )
+
+  assert _has_exited(4321, 10)
+
+
+def test_the_wait_gives_up_when_the_process_outlives_the_deadline():
+  """A process that never exits is reported as still running."""
+  assert not _has_exited(os.getpid(), 0)
 
 
 @pytest.fixture
@@ -274,16 +312,8 @@ class TestUnsafeLocalCodeExecutor:
       unsafe_local_code_executor._kill_execution(process)
 
       assert not process.is_alive()
-      # The assertion consumes the reading the wait settled on. Re-reading
-      # /proc afterwards samples a different instant, and a process on its way
-      # out moves between states the wait has already accepted as dead.
-      deadline = time.monotonic() + 10
-      spawned_gone = not _is_alive(spawned_pid)
-      while not spawned_gone and time.monotonic() < deadline:
-        time.sleep(0.05)
-        spawned_gone = not _is_alive(spawned_pid)
-      assert (
-          spawned_gone
+      assert _has_exited(
+          spawned_pid, 10
       ), f"pid {spawned_pid} outlived the process-group teardown"
     finally:
       if spawned_pid is not None:
