@@ -15,6 +15,7 @@
 from fastapi.openapi.models import MediaType
 from fastapi.openapi.models import Operation
 from fastapi.openapi.models import Parameter
+from fastapi.openapi.models import Reference
 from fastapi.openapi.models import RequestBody
 from fastapi.openapi.models import Response
 from fastapi.openapi.models import Schema
@@ -92,6 +93,24 @@ def test_process_operation_parameters(sample_operation):
   assert parser._params[0].param_location == 'query'
   assert parser._params[1].original_name == 'param2'
   assert parser._params[1].param_location == 'header'
+
+
+def test_process_operation_parameters_unresolved_reference_raises():
+  """An unresolved '$ref' parameter must raise instead of being dropped."""
+  operation = {
+      'operationId': 'test_operation',
+      'parameters': [{'$ref': '#/components/parameters/Foo'}],
+      'responses': {'200': {'description': 'ok'}},
+  }
+
+  with pytest.raises(
+      ValueError,
+      match=(
+          r'Unresolved reference in the parameters of operation'
+          r" 'test_operation': '#/components/parameters/Foo'"
+      ),
+  ):
+    OperationParser(operation)
 
 
 def test_process_request_body(sample_operation):
@@ -233,6 +252,49 @@ def test_process_request_body_empty_object():
   parser = OperationParser(operation, should_parse=False)
   parser._process_request_body()
   assert len(parser._params) == 0
+
+
+def test_process_request_body_unresolved_reference_raises():
+  """An unresolved '$ref' request body must raise, not AttributeError."""
+  operation = {
+      'operationId': 'test_operation',
+      'requestBody': {'$ref': '#/components/requestBodies/Foo'},
+      'responses': {'200': {'description': 'ok'}},
+  }
+
+  with pytest.raises(
+      ValueError,
+      match=(
+          r'Unresolved reference in the request body of operation'
+          r" 'test_operation': '#/components/requestBodies/Foo'"
+      ),
+  ):
+    OperationParser(operation)
+
+
+def test_process_request_body_unresolved_schema_reference_raises():
+  """An unresolved '$ref' media type schema must raise, not AttributeError."""
+  operation = Operation(
+      operationId='test_operation',
+      requestBody=RequestBody(
+          content={
+              'application/json': MediaType(
+                  schema=Reference.model_validate(
+                      {'$ref': '#/components/schemas/Foo'}
+                  )
+              )
+          }
+      ),
+  )
+
+  with pytest.raises(
+      ValueError,
+      match=(
+          r'Unresolved reference in the request body schema of operation'
+          r" 'test_operation': '#/components/schemas/Foo'"
+      ),
+  ):
+    OperationParser(operation)
 
 
 def test_dedupe_param_names(sample_operation):

@@ -25,6 +25,7 @@ from typing import Union
 from fastapi.encoders import jsonable_encoder
 from fastapi.openapi.models import Operation
 from fastapi.openapi.models import Parameter
+from fastapi.openapi.models import Reference
 from fastapi.openapi.models import Schema
 
 from ..._gemini_schema_util import _to_snake_case
@@ -100,36 +101,64 @@ class OperationParser:
     return ''
 
   def _process_operation_parameters(self):
-    """Processes parameters from the OpenAPI operation."""
+    """Processes parameters from the OpenAPI operation.
+
+    Raises:
+      ValueError: If a parameter is an unresolved '$ref' reference.
+    """
     parameters = self._operation.parameters or []
     for param in parameters:
-      if isinstance(param, Parameter):
-        original_name = param.name
-        description = param.description or ''
-        location = param.in_ or ''
-        schema = param.schema_ or {}  # Use schema_ instead of .schema
-        schema.description = (
-            description if not schema.description else schema.description
+      # Operation.parameters is typed list[Parameter | Reference], so anything
+      # that is not a Parameter is an unresolved '$ref'. Dropping it would
+      # silently remove an argument from the generated tool.
+      if isinstance(param, Reference):
+        raise ValueError(
+            'Unresolved reference in the parameters of operation'
+            f' {self._operation.operationId!r}: {param.ref!r}. References'
+            ' must be resolvable within the spec and inlined before the'
+            ' operation is parsed.'
         )
-        # param.required can be None
-        required = param.required if param.required is not None else False
+      original_name = param.name
+      description = param.description or ''
+      location = param.in_ or ''
+      schema = param.schema_ or {}  # Use schema_ instead of .schema
+      schema.description = (
+          description if not schema.description else schema.description
+      )
+      # param.required can be None
+      required = param.required if param.required is not None else False
 
-        self._params.append(
-            ApiParameter(
-                original_name=original_name,
-                param_location=location,
-                param_schema=schema,
-                description=description,
-                required=required,
-                py_name=self._get_py_name(original_name),
-            )
-        )
+      self._params.append(
+          ApiParameter(
+              original_name=original_name,
+              param_location=location,
+              param_schema=schema,
+              description=description,
+              required=required,
+              py_name=self._get_py_name(original_name),
+          )
+      )
 
   def _process_request_body(self):
-    """Processes the request body from the OpenAPI operation."""
+    """Processes the request body from the OpenAPI operation.
+
+    Raises:
+      ValueError: If the request body, or the schema of its media type, is an
+        unresolved '$ref' reference.
+    """
     request_body = self._operation.requestBody
     if not request_body:
       return
+
+    # Operation.requestBody is typed RequestBody | Reference, so a Reference
+    # here is an unresolved '$ref' that has no content to expand.
+    if isinstance(request_body, Reference):
+      raise ValueError(
+          'Unresolved reference in the request body of operation'
+          f' {self._operation.operationId!r}: {request_body.ref!r}.'
+          ' References must be resolvable within the spec and inlined before'
+          ' the operation is parsed.'
+      )
 
     content = request_body.content or {}
     if not content:
@@ -137,7 +166,14 @@ class OperationParser:
 
     # If request body is an object, expand the properties as parameters
     for _, media_type_object in content.items():
-      schema = media_type_object.schema_ or {}
+      schema = media_type_object.schema_ or Schema()
+      if isinstance(schema, Reference):
+        raise ValueError(
+            'Unresolved reference in the request body schema of operation'
+            f' {self._operation.operationId!r}: {schema.ref!r}. References'
+            ' must be resolvable within the spec and inlined before the'
+            ' operation is parsed.'
+        )
       description = request_body.description or ''
 
       if schema and schema.type == 'object':
@@ -149,7 +185,6 @@ class OperationParser:
                   original_name=prop_name,
                   param_location='body',
                   param_schema=prop_details,
-                  description=prop_details.description,
                   required=prop_name in required_properties,
                   py_name=self._get_py_name(prop_name),
               )
