@@ -162,9 +162,10 @@ class SearchSkillsTool(BaseTool):
   """Tool to search for relevant skills in the registry."""
 
   def __init__(self, toolset: "SkillToolset"):
-    if not toolset._registry:
+    registry = toolset._registry
+    if not registry:
       raise ValueError("SearchSkillsTool requires a configured skill registry.")
-    description = toolset._registry.search_tool_description() or (
+    description = registry.search_tool_description() or (
         "Searches for relevant skills in the registry based on a semantic or"
         " keyword query."
     )
@@ -173,6 +174,7 @@ class SearchSkillsTool(BaseTool):
         description=description,
     )
     self._toolset = toolset
+    self._registry = registry
 
   def _get_declaration(self) -> types.FunctionDeclaration | None:
     properties = {
@@ -200,14 +202,8 @@ class SearchSkillsTool(BaseTool):
           "error": "Argument 'query' is required.",
           "error_code": "INVALID_ARGUMENTS",
       }
-    registry = self._toolset._registry
-    if registry is None:
-      return {
-          "error": "Failed to search skills: no skill registry is configured.",
-          "error_code": "REGISTRY_ERROR",
-      }
     try:
-      results = await registry.search_skills(query=query)
+      results = await self._registry.search_skills(query=query)
       formatted_results = []
       for r in results:
         if r.name in self._toolset._skills:
