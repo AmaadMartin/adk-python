@@ -12,13 +12,11 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import json
 import logging
 import multiprocessing
 import multiprocessing.spawn
 import os
 import signal
-import subprocess
 import sys
 import textwrap
 import time
@@ -52,45 +50,6 @@ def _is_alive(pid: int) -> bool:
   except OSError:
     return False
   return state != "Z"
-
-
-# Runs the reported scenario in a child interpreter: the launch failure only
-# surfaces while the multiprocessing resource tracker has not been started yet,
-# and a dead tracker must not be left behind in the pytest worker.
-_UNUSABLE_INTERPRETER_SCRIPT = textwrap.dedent("""
-    import json
-    import multiprocessing
-    import sys
-    from unittest.mock import MagicMock
-
-    from google.adk.agents.base_agent import BaseAgent
-    from google.adk.agents.invocation_context import InvocationContext
-    from google.adk.code_executors.code_execution_utils import CodeExecutionInput
-    from google.adk.code_executors.unsafe_local_code_executor import UnsafeLocalCodeExecutor
-    from google.adk.sessions.base_session_service import BaseSessionService
-    from google.adk.sessions.session import Session
-
-    multiprocessing.set_executable(sys.argv[1])
-    result = UnsafeLocalCodeExecutor().execute_code(
-        InvocationContext(
-            invocation_id="unusable_interpreter",
-            agent=MagicMock(spec=BaseAgent),
-            session=MagicMock(spec=Session),
-            session_service=MagicMock(spec=BaseSessionService),
-        ),
-        CodeExecutionInput(code='print("hello world")'),
-    )
-    print(json.dumps({
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-        "output_file_count": len(result.output_files),
-        "sys_executable": sys.executable,
-    }))
-    """)
-
-# Generous: the child only has to import the package and fail to spawn. It
-# bounds a regression that would otherwise hang the run.
-_CHILD_TIMEOUT_SECONDS = 120
 
 
 # Held so the fake context can build a real queue while the module-level
@@ -357,28 +316,33 @@ class TestUnsafeLocalCodeExecutor:
       process.join()
       result_queue.close()
 
-  def test_execute_code_reports_the_unusable_interpreter(self, tmp_path):
-    """The reported bug, end to end against the real multiprocessing stack."""
+  def test_execute_code_reports_the_unusable_interpreter(
+      self,
+      mock_invocation_context: InvocationContext,
+      monkeypatch,
+      tmp_path,
+  ):
+    """The reported bug: a host pointed multiprocessing at a missing binary."""
     interpreter = tmp_path / "no-such-python"
+    context = _FakeSpawnContext(start_error=BrokenPipeError(32, "Broken pipe"))
+    monkeypatch.setattr(multiprocessing, "get_context", lambda method: context)
+    original = multiprocessing.spawn.get_executable()
+    multiprocessing.set_executable(str(interpreter))
+    try:
+      result = UnsafeLocalCodeExecutor().execute_code(
+          mock_invocation_context, CodeExecutionInput(code='print("hi")')
+      )
+    finally:
+      multiprocessing.set_executable(original)
 
-    completed = subprocess.run(
-        [sys.executable, "-c", _UNUSABLE_INTERPRETER_SCRIPT, str(interpreter)],
-        capture_output=True,
-        text=True,
-        timeout=_CHILD_TIMEOUT_SECONDS,
-        check=False,
-    )
-
-    assert completed.returncode == 0, completed.stderr
-    result = json.loads(completed.stdout)
-    assert result["stdout"] == ""
-    assert result["output_file_count"] == 0
-    assert str(interpreter) in result["stderr"]
-    # The interpreter multiprocessing re-invokes, which stops being
-    # `sys.executable` as soon as anything calls `set_executable`.
-    assert result["sys_executable"] not in result["stderr"]
-    assert "no code was executed" in result["stderr"]
-    assert "ContainerCodeExecutor" in result["stderr"]
+    assert result.stdout == ""
+    assert result.output_files == []
+    assert str(interpreter) in result.stderr
+    # multiprocessing re-invokes the interpreter it was given, which stops
+    # being `sys.executable` as soon as anything calls `set_executable`.
+    assert sys.executable not in result.stderr
+    assert "no code was executed" in result.stderr
+    assert "ContainerCodeExecutor" in result.stderr
 
   def test_execute_code_reports_a_missing_interpreter_path(
       self, mock_invocation_context: InvocationContext
