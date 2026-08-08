@@ -37,6 +37,8 @@ from .utils import _onboarding
 _IS_WINDOWS = os.name == 'nt'
 _GCLOUD_CMD = 'gcloud.cmd' if _IS_WINDOWS else 'gcloud'
 _LOCAL_STORAGE_FLAG_MIN_VERSION: Final[str] = '1.21.0'
+_LABELS_FLAG: Final[str] = '--labels'
+_LABELS_PREFIX: Final[str] = '--labels='
 _AGENT_ENGINE_REQUIREMENT: Final[str] = (
     'google-cloud-aiplatform[adk,agent_engines]'
 )
@@ -463,6 +465,48 @@ def _validate_gcloud_extra_args(
       )
 
 
+def _split_gcloud_labels(
+    extra_gcloud_args: Optional[tuple[str, ...]],
+) -> tuple[list[str], list[str]]:
+  """Separates user-provided --labels values from the other gcloud args.
+
+  Recognizes both spellings gcloud accepts: '--labels=<value>' and the
+  space-separated '--labels <value>'. A '--labels' token with no usable value,
+  because it ends the args or is immediately followed by another flag, is
+  dropped instead of passed through, so it cannot swallow an unrelated flag or
+  leave a dangling flag on the gcloud command line.
+
+  Args:
+    extra_gcloud_args: User-provided extra arguments for gcloud.
+
+  Returns:
+    A (label_values, remaining_args) tuple, both in the original order.
+  """
+  label_values: list[str] = []
+  remaining_args: list[str] = []
+  if not extra_gcloud_args:
+    return label_values, remaining_args
+
+  index = 0
+  while index < len(extra_gcloud_args):
+    arg = extra_gcloud_args[index]
+    if arg.startswith(_LABELS_PREFIX):
+      label_values.append(arg[len(_LABELS_PREFIX) :])
+    elif arg == _LABELS_FLAG:
+      next_arg = (
+          extra_gcloud_args[index + 1]
+          if index + 1 < len(extra_gcloud_args)
+          else None
+      )
+      if next_arg is not None and not next_arg.startswith('-'):
+        label_values.append(next_arg)
+        index += 1
+    else:
+      remaining_args.append(arg)
+    index += 1
+  return label_values, remaining_args
+
+
 def _validate_agent_import(
     agent_src_path: str,
     adk_app_object: str,
@@ -812,24 +856,16 @@ def to_cloud_run(
       gcloud_cmd.append('--sandbox-launcher')
 
     # Handle labels specially - merge user labels with ADK label
-    user_labels = []
-    extra_args_without_labels = []
+    user_labels, extra_args_without_labels = _split_gcloud_labels(
+        extra_gcloud_args
+    )
 
-    if extra_gcloud_args:
-      for arg in extra_gcloud_args:
-        if arg.startswith('--labels='):
-          # Extract user-provided labels
-          user_labels_value = arg[9:]  # Remove '--labels=' prefix
-          user_labels.append(user_labels_value)
-        else:
-          extra_args_without_labels.append(arg)
+    # Combine ADK label with user labels, dropping empty entries (e.g. from a
+    # bare '--labels=') so the joined value has no empty component.
+    all_labels = ['created-by=adk', *user_labels]
+    labels_arg = ','.join(label for label in all_labels if label)
 
-    # Combine ADK label with user labels
-    all_labels = ['created-by=adk']
-    all_labels.extend(user_labels)
-    labels_arg = ','.join(all_labels)
-
-    gcloud_cmd.extend(['--labels', labels_arg])
+    gcloud_cmd.extend([_LABELS_FLAG, labels_arg])
 
     # Add any remaining extra passthrough args
     gcloud_cmd.extend(extra_args_without_labels)
