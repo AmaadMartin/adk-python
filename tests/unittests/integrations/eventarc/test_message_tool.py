@@ -17,6 +17,7 @@
 import base64
 import datetime
 import json
+import types
 import unittest
 from unittest import mock
 import uuid
@@ -29,24 +30,25 @@ import google.oauth2.credentials
 class TestMessageTool(unittest.IsolatedAsyncioTestCase):
 
   def setUp(self):
-    self.mock_client_module = mock.patch.object(
+    client_module_patcher = mock.patch.object(
         message_tool, "eventarc_client", autospec=True
-    ).start()
+    )
+    self.mock_client_module = client_module_patcher.start()
+    self.addCleanup(client_module_patcher.stop)
     self.mock_publisher_client = mock.MagicMock(spec=["publish"])
     self.mock_publisher_client.publish = mock.AsyncMock()
     self.mock_client_module.get_publisher_client = mock.AsyncMock(
         return_value=self.mock_publisher_client
     )
     self.mock_client_module.remove_publisher_client = mock.AsyncMock()
-    self.mock_eventarc_v1 = mock.patch.object(
+    eventarc_v1_patcher = mock.patch.object(
         message_tool, "eventarc_publishing_v1", autospec=True
-    ).start()
+    )
+    self.mock_eventarc_v1 = eventarc_v1_patcher.start()
+    self.addCleanup(eventarc_v1_patcher.stop)
 
     self.settings = config.EventarcToolConfig(project_id="test-project")
     self.credentials = google.oauth2.credentials.Credentials(token="fake")
-
-  def tearDown(self):
-    mock.patch.stopall()
 
   async def test_publish_message_success_text(self):
     res = await message_tool.publish_message(
@@ -675,6 +677,30 @@ class TestMessageTool(unittest.IsolatedAsyncioTestCase):
         "Failed to find a valid RFC 3339 auto-generated time string in the"
         " attributes.",
     )
+
+
+class TestMessageToolPatchHygiene(unittest.TestCase):
+  """Guards the mock cleanup contract of TestMessageTool.
+
+  mock.patch.stopall() drains unittest.mock's process-global registry of
+  started patches, so a test that uses it to clean up also uninstalls patches
+  it did not start -- including the ones pytest-mock installs once per session
+  to enrich mock assertion failure messages. This test fails if that cleanup
+  ever stops being scoped to the patchers TestMessageTool.setUp starts.
+  """
+
+  def test_cleanup_leaves_unrelated_patches_installed(self):
+    # An inert stand-in for a patch some other party started and still needs.
+    sentinel_target = types.SimpleNamespace(value=1)
+    sentinel_patcher = mock.patch.object(sentinel_target, "value", 2)
+    sentinel_patcher.start()
+    self.addCleanup(sentinel_patcher.stop)
+
+    result = unittest.TestResult()
+    TestMessageTool("test_publish_message_success_text").run(result)
+
+    self.assertEqual(result.errors + result.failures, [])
+    self.assertEqual(sentinel_target.value, 2)
 
 
 if __name__ == "__main__":
