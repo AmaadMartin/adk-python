@@ -13,6 +13,8 @@
 # limitations under the License.
 
 
+import contextlib
+import logging
 import os
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -20,6 +22,7 @@ from unittest.mock import patch
 
 from fastapi.openapi.models import OAuth2
 from google.adk.a2a import _compat
+from google.adk.agents.remote_a2a_agent import DEFAULT_TIMEOUT
 from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
 from google.adk.auth.auth_credential import AuthCredential
 from google.adk.auth.auth_credential import OAuth2Auth
@@ -27,6 +30,7 @@ from google.adk.integrations.agent_registry import AgentRegistry
 from google.adk.integrations.agent_registry.agent_registry import _ProtocolType
 from google.adk.integrations.agent_registry.agent_registry import _should_use_mtls_endpoint
 from google.adk.telemetry.tracing import GCP_MCP_SERVER_DESTINATION_ID
+from google.adk.tools.mcp_tool import mcp_session_manager
 from google.adk.tools.mcp_tool.mcp_toolset import McpToolset
 import httpx
 from mcp import ClientSession
@@ -944,3 +948,329 @@ class TestAgentRegistryMtls:
         RuntimeError, match="API request failed: Connection error"
     ):
       registry._make_request("test-path")
+
+
+@contextlib.contextmanager
+def _mtls_registry(
+    *,
+    certs=("/tmp/c.pem", "/tmp/k.pem", None),
+    certs_error=None,
+    use_client_cert=True,
+    mtls_endpoint="auto",
+):
+  """Yields an AgentRegistry with the client-certificate boundary mocked.
+
+  Yields:
+    A (registry, mock_async_client_cls, mock_certs) tuple.
+  """
+  mock_certs = MagicMock()
+  if certs_error is not None:
+    mock_certs.get_certs.side_effect = certs_error
+  else:
+    mock_certs.get_certs.return_value = certs
+  env = {
+      "GOOGLE_API_USE_CLIENT_CERTIFICATE": (
+          "true" if use_client_cert else "false"
+      ),
+      "GOOGLE_API_USE_MTLS_ENDPOINT": mtls_endpoint,
+  }
+  with (
+      patch.dict(os.environ, env),
+      patch("google.auth.default", return_value=(MagicMock(), "test-project")),
+      patch("google.auth.transport.requests.AuthorizedSession"),
+      patch(
+          "google.auth.transport.mtls.has_default_client_cert_source",
+          return_value=True,
+      ),
+      patch(
+          "google.auth.transport.mtls.default_client_cert_source",
+          return_value=lambda: (b"cert", b"key"),
+      ),
+      patch(
+          "google.adk.utils._mtls_utils.MtlsClientCerts",
+          return_value=mock_certs,
+      ),
+      patch(
+          "google.adk.integrations.agent_registry.agent_registry.httpx.AsyncClient"
+      ) as mock_async_client_cls,
+  ):
+    mock_async_client_cls.return_value.aclose = AsyncMock()
+    registry = AgentRegistry(project_id="test-project", location="global")
+    yield registry, mock_async_client_cls, mock_certs
+
+
+def _stub_a2a_agent_response(registry, url):
+  """Makes the registry resolve one A2A agent whose interface url is `url`."""
+  mock_response = MagicMock()
+  mock_response.json.return_value = {
+      "displayName": "TestAgent",
+      "description": "Test Desc",
+      "version": "1.0",
+      "protocols": [{
+          "type": _ProtocolType.A2A_AGENT,
+          "interfaces": [{"url": url, "protocolBinding": "HTTP_JSON"}],
+      }],
+  }
+  mock_response.raise_for_status = MagicMock()
+  registry._session.get.return_value = mock_response
+
+
+def _stub_a2a_card_response(registry, urls):
+  """Makes the registry return a registered agent card advertising `urls`."""
+  content = {
+      "name": "CardName",
+      "description": "CardDesc",
+      "version": "2.0",
+      "capabilities": {"streaming": True},
+      "defaultInputModes": ["text"],
+      "defaultOutputModes": ["text"],
+      "skills": [],
+  }
+  # 1.x lists every RPC endpoint in `supportedInterfaces`; 0.3.x keeps the
+  # first one at the top level and the rest in `additionalInterfaces`.
+  if _compat.IS_A2A_V1:
+    content["supportedInterfaces"] = [
+        {"url": url, "protocolBinding": "JSONRPC"} for url in urls
+    ]
+  else:
+    content["url"] = urls[0] if urls else ""
+    content["additionalInterfaces"] = [
+        {"url": url, "transport": "JSONRPC"} for url in urls[1:]
+    ]
+  mock_response = MagicMock()
+  mock_response.json.return_value = {
+      "name": "projects/p/locations/l/agents/a",
+      "card": {"type": "A2A_AGENT_CARD", "content": content},
+  }
+  mock_response.raise_for_status = MagicMock()
+  registry._session.get.return_value = mock_response
+
+
+class TestAgentRegistryA2aMtls:
+  """The registry attaches its client certificate to Google mTLS A2A agents."""
+
+  def test_a2a_agent_gets_client_cert_when_endpoint_rewritten(self):
+    with _mtls_registry() as (registry, mock_client_cls, _):
+      _stub_a2a_agent_response(registry, "https://my-agent.googleapis.com")
+
+      agent = registry.get_remote_a2a_agent("test-agent")
+
+      assert (
+          _compat.agent_card_url(agent._agent_card)
+          == "https://my-agent.mtls.googleapis.com"
+      )
+      assert agent._httpx_client is mock_client_cls.return_value
+      assert agent._httpx_client_needs_cleanup is False
+      mock_client_cls.assert_called_once_with(
+          cert=("/tmp/c.pem", "/tmp/k.pem"),
+          timeout=httpx.Timeout(timeout=DEFAULT_TIMEOUT),
+      )
+
+  def test_a2a_agent_cert_with_passphrase(self):
+    with _mtls_registry(certs=("/tmp/c.pem", "/tmp/k.pem", b"pw")) as (
+        registry,
+        mock_client_cls,
+        _,
+    ):
+      _stub_a2a_agent_response(registry, "https://my-agent.googleapis.com")
+
+      agent = registry.get_remote_a2a_agent("test-agent")
+
+      assert agent._httpx_client is mock_client_cls.return_value
+      mock_client_cls.assert_called_once_with(
+          cert=("/tmp/c.pem", "/tmp/k.pem", b"pw"),
+          timeout=httpx.Timeout(timeout=DEFAULT_TIMEOUT),
+      )
+
+  def test_a2a_mtls_client_is_shared_across_agents(self):
+    with _mtls_registry() as (registry, mock_client_cls, mock_certs):
+      _stub_a2a_agent_response(registry, "https://my-agent.googleapis.com")
+
+      first = registry.get_remote_a2a_agent("test-agent")
+      second = registry.get_remote_a2a_agent("test-agent")
+
+      assert first._httpx_client is second._httpx_client
+      assert mock_client_cls.call_count == 1
+      assert mock_certs.get_certs.call_count == 1
+
+  def test_a2a_agent_no_cert_for_non_googleapis_endpoint(self):
+    with _mtls_registry() as (registry, mock_client_cls, mock_certs):
+      _stub_a2a_agent_response(registry, "https://my-agent.example.com")
+
+      agent = registry.get_remote_a2a_agent("test-agent")
+
+      assert agent._httpx_client is None
+      mock_client_cls.assert_not_called()
+      mock_certs.get_certs.assert_not_called()
+
+  def test_a2a_agent_no_cert_when_card_lists_a_third_party_interface(self):
+    with _mtls_registry() as (registry, mock_client_cls, _):
+      _stub_a2a_card_response(
+          registry,
+          ["https://carded.mtls.googleapis.com", "https://evil.example.com"],
+      )
+
+      agent = registry.get_remote_a2a_agent("test-agent")
+
+      assert agent._httpx_client is None
+      mock_client_cls.assert_not_called()
+
+  def test_a2a_agent_no_cert_when_card_advertises_no_endpoint(self):
+    with _mtls_registry() as (registry, mock_client_cls, mock_certs):
+      _stub_a2a_card_response(registry, [])
+
+      agent = registry.get_remote_a2a_agent("test-agent")
+
+      assert agent._httpx_client is None
+      mock_client_cls.assert_not_called()
+      mock_certs.get_certs.assert_not_called()
+
+  def test_a2a_agent_no_cert_when_client_certificates_disabled(self):
+    with _mtls_registry(use_client_cert=False) as (
+        registry,
+        mock_client_cls,
+        _,
+    ):
+      _stub_a2a_agent_response(registry, "https://my-agent.googleapis.com")
+
+      agent = registry.get_remote_a2a_agent("test-agent")
+
+      assert (
+          _compat.agent_card_url(agent._agent_card)
+          == "https://my-agent.googleapis.com"
+      )
+      assert agent._httpx_client is None
+      mock_client_cls.assert_not_called()
+
+  def test_a2a_agent_no_cert_when_mtls_endpoint_never(self):
+    with _mtls_registry(mtls_endpoint="never") as (
+        registry,
+        mock_client_cls,
+        _,
+    ):
+      _stub_a2a_agent_response(registry, "https://my-agent.googleapis.com")
+
+      agent = registry.get_remote_a2a_agent("test-agent")
+
+      assert (
+          _compat.agent_card_url(agent._agent_card)
+          == "https://my-agent.googleapis.com"
+      )
+      assert agent._httpx_client is None
+      mock_client_cls.assert_not_called()
+
+  def test_a2a_caller_supplied_client_wins_over_mtls_client(self):
+    custom_client = MagicMock(spec=httpx.AsyncClient)
+    with _mtls_registry() as (registry, mock_client_cls, _):
+      _stub_a2a_agent_response(registry, "https://my-agent.googleapis.com")
+
+      agent = registry.get_remote_a2a_agent(
+          "test-agent", httpx_client=custom_client
+      )
+
+      assert agent._httpx_client is custom_client
+      mock_client_cls.assert_not_called()
+
+  def test_a2a_agent_card_path_gets_client_cert(self):
+    with _mtls_registry() as (registry, mock_client_cls, _):
+      _stub_a2a_card_response(registry, ["https://carded.mtls.googleapis.com"])
+
+      agent = registry.get_remote_a2a_agent("test-agent")
+
+      assert agent._httpx_client is mock_client_cls.return_value
+      mock_client_cls.assert_called_once_with(
+          cert=("/tmp/c.pem", "/tmp/k.pem"),
+          timeout=httpx.Timeout(timeout=DEFAULT_TIMEOUT),
+      )
+
+  def test_a2a_agent_warns_when_no_client_cert_available(self, caplog):
+    with _mtls_registry(certs=(None, None, None)) as (
+        registry,
+        mock_client_cls,
+        _,
+    ):
+      _stub_a2a_agent_response(registry, "https://my-agent.googleapis.com")
+
+      with caplog.at_level(logging.WARNING, logger="google_adk"):
+        agent = registry.get_remote_a2a_agent("test-agent")
+
+      assert agent._httpx_client is None
+      mock_client_cls.assert_not_called()
+      assert "No default client certificate is available" in caplog.text
+      assert "https://my-agent.mtls.googleapis.com" in caplog.text
+
+  def test_a2a_agent_propagates_cert_extraction_failure(self):
+    error = RuntimeError(
+        "Failed to extract default client certificates for mTLS: boom"
+    )
+    with _mtls_registry(certs_error=error) as (registry, _, _certs):
+      _stub_a2a_agent_response(registry, "https://my-agent.googleapis.com")
+
+      with pytest.raises(
+          RuntimeError,
+          match="Failed to extract default client certificates",
+      ):
+        registry.get_remote_a2a_agent("test-agent")
+
+  @pytest.mark.asyncio
+  async def test_close_releases_client_and_certs(self):
+    with _mtls_registry() as (registry, mock_client_cls, mock_certs):
+      _stub_a2a_agent_response(registry, "https://my-agent.googleapis.com")
+      registry.get_remote_a2a_agent("test-agent")
+
+      await registry.close()
+
+      mock_client_cls.return_value.aclose.assert_awaited_once()
+      mock_certs.close.assert_called_once()
+      assert registry._mtls_httpx_client is None
+
+  @pytest.mark.asyncio
+  async def test_close_is_idempotent_and_safe_without_mtls(self):
+    with _mtls_registry(use_client_cert=False) as (registry, _, mock_certs):
+      await registry.close()
+      await registry.close()
+
+      assert registry._mtls_httpx_client is None
+      assert registry._mtls_certs is None
+      mock_certs.close.assert_not_called()
+
+  @pytest.mark.asyncio
+  async def test_close_logs_and_still_releases_when_aclose_raises(self, caplog):
+    with _mtls_registry() as (registry, mock_client_cls, mock_certs):
+      _stub_a2a_agent_response(registry, "https://my-agent.googleapis.com")
+      registry.get_remote_a2a_agent("test-agent")
+      mock_client_cls.return_value.aclose.side_effect = RuntimeError("boom")
+
+      with caplog.at_level(logging.WARNING, logger="google_adk"):
+        await registry.close()
+
+      assert "Failed to close the mTLS HTTP client: boom" in caplog.text
+      mock_certs.close.assert_called_once()
+      assert registry._mtls_httpx_client is None
+
+  def test_get_mcp_toolset_leaves_default_httpx_client_factory(self):
+    # MCPSessionManager._create_client replaces the connection params' factory
+    # whenever it has an mTLS transport, so a factory set here would be dead
+    # code. Certificate attachment for MCP belongs to
+    # MCPSessionManager._get_mtls_transport().
+    with _mtls_registry() as (registry, _, _certs):
+      mock_response = MagicMock()
+      mock_response.json.return_value = {
+          "displayName": "TestPrefix",
+          "interfaces": [{
+              "url": "https://mcp.googleapis.com/v1",
+              "protocolBinding": "JSONRPC",
+          }],
+      }
+      mock_response.raise_for_status = MagicMock()
+      registry._session.get.return_value = mock_response
+
+      toolset = registry.get_mcp_toolset("test-mcp")
+
+      assert (
+          toolset._connection_params.url == "https://mcp.mtls.googleapis.com/v1"
+      )
+      assert (
+          toolset._connection_params.httpx_client_factory
+          is mcp_session_manager.create_mcp_http_client
+      )
