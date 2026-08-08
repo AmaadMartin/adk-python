@@ -137,6 +137,18 @@ class TestValidateCommand:
     )
 
 
+def _timing_out_wait_for(fut, timeout):
+  """Stands in for asyncio.wait_for and always times out.
+
+  The real asyncio.wait_for consumes the awaitable it receives. A stub that
+  only raises leaves the mock_process.communicate() coroutine unawaited, which
+  Python reports as a RuntimeWarning against an unrelated later test.
+  """
+  del timeout  # The stub never waits.
+  fut.close()
+  raise asyncio.TimeoutError
+
+
 class TestExecuteBashTool:
 
   @pytest.mark.asyncio
@@ -239,7 +251,10 @@ class TestExecuteBashTool:
             return_value=mock_process,
         ),
         mock.patch.object(
-            asyncio, "wait_for", autospec=True, side_effect=asyncio.TimeoutError
+            asyncio,
+            "wait_for",
+            autospec=True,
+            side_effect=_timing_out_wait_for,
         ),
         mock.patch("os.killpg") as mock_killpg,
     ):
