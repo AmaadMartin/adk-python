@@ -261,7 +261,7 @@ def _register_builtin_services(registry: ServiceRegistry) -> None:
     return VertexAiSessionService(**params)
 
   def database_session_factory(uri: str, **kwargs: Any) -> BaseSessionService:
-    from ..sessions.database_session_service import DatabaseSessionService
+    from ..sessions import DatabaseSessionService
 
     kwargs_copy = kwargs.copy()
     kwargs_copy.pop("agents_dir", None)

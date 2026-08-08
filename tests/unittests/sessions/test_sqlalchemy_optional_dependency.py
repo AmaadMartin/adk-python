@@ -109,3 +109,31 @@ import google.adk.sessions as sessions
 
 assert sessions.InMemorySessionService
 """)
+
+
+def _assert_cli_session_uri_reports_the_db_extra(uri: str) -> None:
+  """Asserts the CLI names the ``db`` extra for a database session URI."""
+  _run_without_sqlalchemy(f"""
+from google.adk.cli.utils.service_factory import (
+    create_session_service_from_options,
+)
+
+try:
+  create_session_service_from_options(
+      base_dir='.', session_service_uri={uri!r}
+  )
+except ImportError as error:
+  assert 'google-adk[db]' in str(error), error
+else:
+  raise AssertionError('The CLI built a session service without sqlalchemy.')
+""")
+
+
+def test_cli_registered_database_uri_reports_the_db_extra():
+  """A registered database scheme routes through the translating accessor."""
+  _assert_cli_session_uri_reports_the_db_extra('postgresql://user@host/db')
+
+
+def test_cli_unregistered_database_uri_reports_the_db_extra():
+  """The unregistered-scheme fallback routes through the same accessor."""
+  _assert_cli_session_uri_reports_the_db_extra('cockroachdb://user@host/db')
