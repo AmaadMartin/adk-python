@@ -34,6 +34,19 @@ async def _env(tmp_path: Path):
   await environment.close()
 
 
+@pytest_asyncio.fixture(name="nested_env")
+async def _nested_env(tmp_path: Path):
+  """A LocalEnvironment rooted one level below ``tmp_path``.
+
+  Leaves ``tmp_path`` itself outside the working directory, so a test can put
+  a file there and try to reach it with an escaping path.
+  """
+  environment = LocalEnvironment(working_dir=tmp_path / "workspace")
+  await environment.initialize()
+  yield environment
+  await environment.close()
+
+
 class TestEditFileTool:
   """Tests for EditFileTool behavior."""
 
@@ -148,3 +161,143 @@ class TestEditFileTool:
     assert result["status"] == "ok"
     data = await env.read_file("test.txt")
     assert data == b"replaced\nline2"
+
+  @pytest.mark.asyncio
+  async def test_edit_file_rejects_relative_path_escaping_working_dir(
+      self, nested_env: LocalEnvironment, tmp_path: Path
+  ):
+    """A relative path that climbs out of the working dir is a tool error."""
+    # Arrange
+    tool = EditFileTool(nested_env)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret")
+
+    args = {
+        "path": "../outside.txt",
+        "old_string": "secret",
+        "new_string": "leaked",
+    }
+
+    # Act
+    result = await tool.run_async(args=args, tool_context=None)
+
+    # Assert
+    assert result["status"] == "error"
+    assert "escapes working directory" in result["error"]
+    assert outside.read_text() == "secret"
+
+  @pytest.mark.asyncio
+  async def test_edit_file_rejects_absolute_path_outside_working_dir(
+      self, nested_env: LocalEnvironment, tmp_path: Path
+  ):
+    """An absolute path outside the working dir is a tool error."""
+    # Arrange
+    tool = EditFileTool(nested_env)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret")
+
+    args = {
+        "path": str(outside),
+        "old_string": "secret",
+        "new_string": "leaked",
+    }
+
+    # Act
+    result = await tool.run_async(args=args, tool_context=None)
+
+    # Assert
+    assert result["status"] == "error"
+    assert "escapes working directory" in result["error"]
+    assert outside.read_text() == "secret"
+
+  @pytest.mark.asyncio
+  async def test_edit_file_rejects_symlink_pointing_outside_working_dir(
+      self, nested_env: LocalEnvironment, tmp_path: Path
+  ):
+    """A symlink inside the working dir is resolved before the containment check."""
+    # Arrange
+    tool = EditFileTool(nested_env)
+    outside = tmp_path / "outside.txt"
+    outside.write_text("secret")
+    (nested_env.working_dir / "link.txt").symlink_to(outside)
+
+    args = {
+        "path": "link.txt",
+        "old_string": "secret",
+        "new_string": "leaked",
+    }
+
+    # Act
+    result = await tool.run_async(args=args, tool_context=None)
+
+    # Assert
+    assert result["status"] == "error"
+    assert "escapes working directory" in result["error"]
+    assert outside.read_text() == "secret"
+
+  @pytest.mark.asyncio
+  async def test_edit_file_reports_write_failure_as_error(
+      self, env: LocalEnvironment
+  ):
+    """A failing write is reported as a tool error, and the file is untouched."""
+
+    # Arrange
+    class _WriteFailingEnvironment(LocalEnvironment):
+      """Reads normally; every write fails."""
+
+      async def write_file(self, path: str | Path, content: str | bytes):
+        raise OSError("no space left on device")
+
+    await env.write_file("test.txt", "line1\nline2")
+    failing_env = _WriteFailingEnvironment(working_dir=env.working_dir)
+    await failing_env.initialize()
+    tool = EditFileTool(failing_env)
+
+    args = {
+        "path": "test.txt",
+        "old_string": "line1",
+        "new_string": "replaced",
+    }
+
+    # Act
+    result = await tool.run_async(args=args, tool_context=None)
+
+    # Assert
+    assert result == {"status": "error", "error": "no space left on device"}
+    assert await env.read_file("test.txt") == b"line1\nline2"
+    await failing_env.close()
+
+  def test_detect_error_in_response_reports_error_status(self):
+    """An error result is classified as a tool error for telemetry."""
+    # Arrange
+    tool = EditFileTool(LocalEnvironment())
+
+    # Act
+    detected = tool._detect_error_in_response(
+        {"status": "error", "error": "boom"}
+    )
+
+    # Assert
+    assert detected == "TOOL_ERROR"
+
+  def test_detect_error_in_response_ignores_ok_status(self):
+    """A successful result is not classified as a tool error."""
+    # Arrange
+    tool = EditFileTool(LocalEnvironment())
+
+    # Act
+    detected = tool._detect_error_in_response({"status": "ok"})
+
+    # Assert
+    assert detected is None
+
+  def test_detect_error_in_response_ignores_non_dict(self):
+    """A non-dict response is not classified, even if it reads as an error."""
+    # Arrange
+    tool = EditFileTool(LocalEnvironment())
+
+    # Act
+    detected = tool._detect_error_in_response("error")
+
+    # Assert
+    assert detected is None
