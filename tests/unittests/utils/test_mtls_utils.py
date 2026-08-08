@@ -136,6 +136,23 @@ class TestMtlsUtils:
   def test_is_non_mtls_googleapis_endpoint(self, url, expected):
     assert _mtls_utils.is_non_mtls_googleapis_endpoint(url) is expected
 
+  @pytest.mark.parametrize(
+      "url, expected",
+      [
+          ("https://x.mtls.googleapis.com/v1", True),
+          ("https://x.mtls.googleapis.com:443/v1", True),
+          ("https://x.googleapis.com/v1", False),
+          ("https://example.com", False),
+          ("", False),
+          # A longer host that only contains the suffix text must not match, or
+          # the client certificate would go to an attacker's domain.
+          ("https://mtls.googleapis.com.evil.example/v1", False),
+          ("https://x.mtls.googleapis.com.evil.example/v1", False),
+      ],
+  )
+  def test_is_mtls_googleapis_endpoint(self, url, expected):
+    assert _mtls_utils.is_mtls_googleapis_endpoint(url) is expected
+
   @patch.dict("os.environ", {}, clear=True)
   @pytest.mark.parametrize(
       "url, expected",

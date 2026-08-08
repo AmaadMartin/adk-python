@@ -96,6 +96,14 @@ def is_non_mtls_googleapis_endpoint(url: str) -> bool:
   )
 
 
+def is_mtls_googleapis_endpoint(url: str) -> bool:
+  """Returns whether url points at a *.mtls.googleapis.com host."""
+  if not url:
+    return False
+  host = urlsplit(url).hostname or ""
+  return host.endswith(_MTLS_GOOGLEAPIS_SUFFIX)
+
+
 def effective_googleapis_endpoint(url: str) -> str:
   """Rewrites a *.googleapis.com url to its .mtls.googleapis.com variant.
 

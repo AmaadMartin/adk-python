@@ -50,8 +50,10 @@ from typing_extensions import override
 
 # pylint: disable=g-import-not-at-top
 try:
+  from a2a.types import AgentCard
   from a2a.types import AgentSkill
   from google.adk.a2a import _compat
+  from google.adk.agents.remote_a2a_agent import DEFAULT_TIMEOUT
   from google.adk.agents.remote_a2a_agent import RemoteA2aAgent
 except ImportError as e:
   raise ImportError(
@@ -229,6 +231,61 @@ class AgentRegistry:
         if self._use_mtls
         else AGENT_REGISTRY_BASE_URL
     )
+    # Constructing MtlsClientCerts is cheap; get_certs() is not, so it is
+    # deferred until an agent actually resolves to a Google mTLS endpoint.
+    self._mtls_certs: _mtls_utils.MtlsClientCerts | None = (
+        _mtls_utils.MtlsClientCerts() if use_client_cert else None
+    )
+    self._mtls_httpx_client: httpx.AsyncClient | None = None
+
+  def _mtls_httpx_client_for(self, card: AgentCard) -> httpx.AsyncClient | None:
+    """Returns the shared client-certificate-bearing HTTP client for a card.
+
+    Raises:
+      RuntimeError: If the default client certificate exists but cannot be
+        extracted.
+    """
+    urls = _compat.agent_card_rpc_urls(card)
+    if self._mtls_certs is None or not urls:
+      return None
+    # Gate on the resolved urls, not on self._use_mtls: the registered
+    # agent-card path serves urls verbatim, so a process-wide flag would send
+    # the workload certificate to third-party hosts. Every url on the card is
+    # checked because the A2A client factory negotiates which one it dials.
+    if not all(_mtls_utils.is_mtls_googleapis_endpoint(url) for url in urls):
+      return None
+    if self._mtls_httpx_client is not None:
+      return self._mtls_httpx_client
+
+    cert_path, key_path, passphrase = self._mtls_certs.get_certs()
+    if not cert_path or not key_path:
+      logger.warning(
+          "No default client certificate is available; %s will be dialed"
+          " without one and the TLS handshake is expected to fail.",
+          ", ".join(urls),
+      )
+      return None
+
+    # httpx types the key password as str, but ssl.load_cert_chain accepts
+    # bytes and MtlsClientCerts reads the passphrase as bytes. A None
+    # passphrase means "no password", exactly as the two-tuple form does.
+    self._mtls_httpx_client = httpx.AsyncClient(
+        cert=(cert_path, key_path, passphrase),  # type: ignore[arg-type]
+        timeout=httpx.Timeout(timeout=DEFAULT_TIMEOUT),
+    )
+    return self._mtls_httpx_client
+
+  async def close(self) -> None:
+    """Releases the shared mTLS HTTP client and extracted client certificates."""
+    try:
+      if self._mtls_httpx_client is not None:
+        await self._mtls_httpx_client.aclose()
+    except Exception as e:
+      logger.warning("Failed to close the mTLS HTTP client: %s", e)
+    finally:
+      self._mtls_httpx_client = None
+      if self._mtls_certs is not None:
+        self._mtls_certs.close()
 
   def _get_auth_headers(self) -> Dict[str, str]:
     """Refreshes credentials and returns authorization headers."""
@@ -571,7 +628,26 @@ class AgentRegistry:
       *,
       httpx_client: httpx.AsyncClient | None = None,
   ) -> RemoteA2aAgent:
-    """Creates a RemoteA2aAgent instance for a registered A2A Agent."""
+    """Creates a RemoteA2aAgent instance for a registered A2A Agent.
+
+    When client certificates are enabled and the resolved endpoint is a
+    `*.mtls.googleapis.com` host, the returned agent is given a shared HTTP
+    client that presents the workload client certificate. That client belongs
+    to this registry: `agent.cleanup()` does not close it, `close()` does.
+
+    Args:
+      agent_name: Resource name of the registered A2A Agent.
+      httpx_client: Optional HTTP client. When supplied it is used as-is and
+        the registry attaches no client certificate.
+
+    Returns:
+      A RemoteA2aAgent for the registered agent.
+
+    Raises:
+      ValueError: If the agent has no A2A connection URI.
+      RuntimeError: If the default client certificate exists but cannot be
+        extracted.
+    """
     agent_info = self.get_agent_info(agent_name)
 
     # Try to use the full agent card if available
@@ -586,7 +662,7 @@ class AgentRegistry:
           name=name,
           agent_card=agent_card,
           description=agent_card.description,
-          httpx_client=httpx_client,
+          httpx_client=httpx_client or self._mtls_httpx_client_for(agent_card),
       )
 
     name = self._clean_name(agent_info.get("displayName", agent_name))
@@ -628,7 +704,7 @@ class AgentRegistry:
         name=name,
         agent_card=agent_card,
         description=description,
-        httpx_client=httpx_client,
+        httpx_client=httpx_client or self._mtls_httpx_client_for(agent_card),
     )
 
 
