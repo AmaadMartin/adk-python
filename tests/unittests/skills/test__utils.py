@@ -17,6 +17,7 @@
 import asyncio
 import builtins
 import io
+import pathlib
 import struct
 import sys
 import threading
@@ -842,3 +843,127 @@ async def test_list_skills_in_gcs_dir_async(mock_client_class):
   skills = await _list_skills_in_gcs_dir_async("my-bucket", "skills/")
   assert "my-skill" in skills
   assert skills["my-skill"].name == "my-skill"
+
+
+def _write_nested_skill(tmp_path) -> pathlib.Path:
+  """Writes a skill directory whose resources all sit in a subdirectory."""
+  skill_dir = tmp_path / "my-skill"
+  (skill_dir / "scripts" / "sub").mkdir(parents=True)
+  (skill_dir / "references" / "nested").mkdir(parents=True)
+  (skill_dir / "assets" / "nested").mkdir(parents=True)
+
+  (skill_dir / "SKILL.md").write_text(
+      "---\nname: my-skill\ndescription: Test description\n---\nBody\n"
+  )
+  (skill_dir / "scripts" / "sub" / "setup.py").write_text('print("hi")')
+  (skill_dir / "references" / "nested" / "guide.md").write_text("nested guide")
+  (skill_dir / "assets" / "nested" / "template.txt").write_text(
+      "nested template"
+  )
+  return skill_dir
+
+
+class _FakeFile:
+  """A file whose relative path renders with Windows separators."""
+
+  def __init__(self, relative, content):
+    self._relative = relative
+    self._content = content
+    self.parts = relative.parts
+
+  def is_file(self):
+    return True
+
+  def relative_to(self, other):
+    return self._relative
+
+  def read_text(self, encoding="utf-8"):
+    return self._content
+
+
+class _FakeDir:
+  """A directory that yields the given fake files from rglob."""
+
+  def __init__(self, files):
+    self._files = files
+
+  def exists(self):
+    return True
+
+  def is_dir(self):
+    return True
+
+  def rglob(self, pattern):
+    return iter(self._files)
+
+
+def test__load_dir_uses_posix_separators_for_windows_relative_paths():
+  """Tests that a Windows-style relative path keys with forward slashes."""
+  directory = _FakeDir(
+      [_FakeFile(pathlib.PureWindowsPath("sub", "setup.py"), "body")]
+  )
+
+  assert _utils._load_dir(directory) == {"sub/setup.py": "body"}
+
+
+def test__load_skill_from_dir_keys_nested_resources_with_forward_slashes(
+    tmp_path,
+):
+  """Tests that nested directory resources key by their POSIX path."""
+  skill_dir = _write_nested_skill(tmp_path)
+
+  skill = _load_skill_from_dir(skill_dir)
+
+  assert skill.resources.list_scripts() == ["sub/setup.py"]
+  assert skill.resources.get_script("sub/setup.py").src == 'print("hi")'
+  assert skill.resources.get_reference("nested/guide.md") == "nested guide"
+  assert skill.resources.get_asset("nested/template.txt") == "nested template"
+  assert not [
+      key
+      for key in (
+          *skill.resources.references,
+          *skill.resources.assets,
+          *skill.resources.scripts,
+      )
+      if "\\" in key
+  ]
+
+
+def test__load_skill_from_dir_resource_keys_match_the_consumer_prefix_strip(
+    tmp_path,
+):
+  """Tests that a key resolves after the consumer strips the type prefix."""
+  skill_dir = _write_nested_skill(tmp_path)
+  file_path = "scripts/sub/setup.py"
+
+  skill = _load_skill_from_dir(skill_dir)
+
+  assert skill.resources.get_script(file_path[len("scripts/") :]) is not None
+
+
+def test__load_skill_from_dir_and_zip_agree_on_nested_resource_keys(tmp_path):
+  """Tests that the directory and zip loaders key one layout identically."""
+  skill_dir = _write_nested_skill(tmp_path)
+
+  zip_buffer = io.BytesIO()
+  with zipfile.ZipFile(zip_buffer, "w") as zf:
+    zf.writestr(
+        "SKILL.md",
+        "---\nname: my-skill\ndescription: Test description\n---\nBody\n",
+    )
+    zf.writestr("scripts/sub/setup.py", 'print("hi")')
+    zf.writestr("references/nested/guide.md", "nested guide")
+    zf.writestr("assets/nested/template.txt", "nested template")
+
+  dir_skill = _load_skill_from_dir(skill_dir)
+  zip_skill = _load_skill_from_zip_bytes(zip_buffer.getvalue())
+
+  assert sorted(dir_skill.resources.list_scripts()) == sorted(
+      zip_skill.resources.list_scripts()
+  )
+  assert sorted(dir_skill.resources.list_references()) == sorted(
+      zip_skill.resources.list_references()
+  )
+  assert sorted(dir_skill.resources.list_assets()) == sorted(
+      zip_skill.resources.list_assets()
+  )

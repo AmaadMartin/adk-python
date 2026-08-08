@@ -57,7 +57,8 @@ def _load_dir(directory: pathlib.Path) -> dict[str, str]:
     directory: Path to the directory to load.
 
   Returns:
-    Dictionary mapping relative file paths to their string content.
+    Dictionary mapping POSIX-style ('/'-separated) relative file paths to
+    their string content.
   """
   files = {}
   if directory.exists() and directory.is_dir():
@@ -67,7 +68,12 @@ def _load_dir(directory: pathlib.Path) -> dict[str, str]:
       if file_path.is_file():
         relative_path = file_path.relative_to(directory)
         try:
-          files[str(relative_path)] = file_path.read_text(encoding="utf-8")
+          # as_posix(), not str(): str() renders OS-native separators, so a
+          # nested resource would key as 'sub\setup.py' on Windows. The zip
+          # and GCS loaders, and every consumer, use forward slashes.
+          files[relative_path.as_posix()] = file_path.read_text(
+              encoding="utf-8"
+          )
         except UnicodeDecodeError:
           # Binary files or non-UTF-8 files are skipped for text content.
           continue
