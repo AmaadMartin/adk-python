@@ -42,7 +42,6 @@ rewrite tracked files.
 
 from __future__ import annotations
 
-from pathlib import Path
 import re
 
 try:
@@ -51,6 +50,8 @@ except ImportError:
   import tomli as tomllib
 
 import pytest
+
+from .isolated_import_utils import REPO_ROOT as _REPO_ROOT
 
 # The single source of truth for which interpreters get a constraints file.
 _GENERATOR_SCRIPT = 'scripts/update_constraints.sh'
@@ -86,15 +87,11 @@ _PYTHON_VERSIONS_RE = re.compile(
 
 _CLASSIFIER_RE = re.compile(r'^Programming Language :: Python :: (\d+\.\d+)$')
 
-
-def _holds_files_under_test(directory: Path) -> bool:
-  """Reports whether ``directory`` is the root of a full source checkout.
-
-  ``README.md`` beside the generator script identifies the repository root.
-  """
-  return (directory / 'README.md').is_file() and (
-      directory / _GENERATOR_SCRIPT
-  ).is_file()
+if not (_REPO_ROOT / _GENERATOR_SCRIPT).is_file():
+  pytest.skip(
+      'Constraints checks need the source checkout layout.',
+      allow_module_level=True,
+  )
 
 
 def _repo_paths_in(markdown: str) -> tuple[str, ...]:
@@ -110,26 +107,6 @@ def _parse_python_versions(script: str) -> tuple[str, ...]:
     return ()
   return tuple(re.findall(r'\d+\.\d+', match['versions']))
 
-
-_START = Path(__file__).parent
-# The test tree may be symlinked, so the walk avoids ``.resolve()``.
-_REPO_ROOT = next(
-    (
-        candidate
-        for candidate in [_START, *_START.parents]
-        if _holds_files_under_test(candidate)
-    ),
-    _START,
-)
-
-if not _holds_files_under_test(_REPO_ROOT):
-  # The ADK tests also run in trees where the repository-root files are not
-  # exported. There is nothing to guard there, so skip rather than fail.
-  pytest.skip(
-      'Not a full source checkout: no ancestor directory holds README.md '
-      f'beside {_GENERATOR_SCRIPT}.',
-      allow_module_level=True,
-  )
 
 _README_PATH = _REPO_ROOT / 'README.md'
 _README = _README_PATH.read_text(encoding='utf-8')
@@ -154,20 +131,6 @@ def _constraints_lines(version: str) -> list[str]:
   """Returns the lines of the committed constraints file for ``version``."""
   path = _REPO_ROOT / f'constraints-{version}.txt'
   return path.read_text(encoding='utf-8').splitlines()
-
-
-def test_holds_files_under_test_recognises_the_repository_root() -> None:
-  assert _holds_files_under_test(_REPO_ROOT)
-
-
-def test_holds_files_under_test_rejects_an_incomplete_checkout(
-    tmp_path: Path,
-) -> None:
-  assert not _holds_files_under_test(tmp_path)
-
-  (tmp_path / 'README.md').write_text('', encoding='utf-8')
-
-  assert not _holds_files_under_test(tmp_path)
 
 
 def test_repo_paths_in_captures_only_paths_into_this_repository() -> None:
