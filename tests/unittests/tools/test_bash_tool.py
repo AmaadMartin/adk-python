@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+import os
 import signal
 import sys
 from unittest import mock
@@ -214,9 +215,8 @@ class TestExecuteBashTool:
         args={"command": "python3 -c 'import sys; sys.stderr.write(\"err\")'"},
         tool_context=tool_context_confirmed,
     )
-    # A substring check is not enough here: "err" also occurs inside the
-    # "<no stderr captured>" placeholder that the tool returns when the
-    # subprocess never runs.
+    # An equality check, because a substring check would also pass if the
+    # subprocess never ran and the tool reported the failure instead.
     assert "error" not in result
     assert result["stderr"].strip() == "err"
     assert result["returncode"] == 0
@@ -240,11 +240,93 @@ class TestExecuteBashTool:
       )
     # An attempted execution reports the same keys however it ended, so a
     # caller can read result["returncode"] without first testing the key.
+    assert result == {
+        "error": "Command not found: python3",
+        "stdout": "",
+        "stderr": "",
+        "returncode": None,
+    }
+
+  @pytest.mark.asyncio
+  async def test_spawn_failure_permission_denied(
+      self, workspace, tool_context_confirmed
+  ):
+    script = workspace / "noexec.sh"
+    script.write_text("#!/bin/sh\necho hi\n")
+    os.chmod(script, 0o644)
+    tool = bash_tool.ExecuteBashTool(workspace=workspace)
+    result = await tool.run_async(
+        args={"command": str(script)},
+        tool_context=tool_context_confirmed,
+    )
+    assert result == {
+        "error": f"Permission denied: {script}",
+        "stdout": "",
+        "stderr": "",
+        "returncode": None,
+    }
+
+  @pytest.mark.asyncio
+  async def test_spawn_failure_missing_workspace(
+      self, workspace, tool_context_confirmed
+  ):
+    missing = workspace / "gone"
+    tool = bash_tool.ExecuteBashTool(workspace=missing)
+    result = await tool.run_async(
+        args={"command": "echo hi"},
+        tool_context=tool_context_confirmed,
+    )
+    # The executable exists; only the working directory is missing, so the
+    # tool must not report "Command not found: echo".
+    assert result == {
+        "error": f"Workspace directory is not accessible: {missing}",
+        "stdout": "",
+        "stderr": "",
+        "returncode": None,
+    }
+
+  @pytest.mark.asyncio
+  async def test_empty_output_is_empty_strings(
+      self, workspace, tool_context_confirmed
+  ):
+    tool = bash_tool.ExecuteBashTool(workspace=workspace)
+    result = await tool.run_async(
+        args={"command": "python3 -c 'pass'"},
+        tool_context=tool_context_confirmed,
+    )
+    assert result == {"stdout": "", "stderr": "", "returncode": 0}
+    # A placeholder such as "<no stderr captured>" would make this fragment
+    # match output the process never produced.
+    assert "err" not in result["stderr"]
+
+  @pytest.mark.asyncio
+  async def test_unparseable_command_keeps_result_shape(
+      self, workspace, tool_context_confirmed
+  ):
+    tool = bash_tool.ExecuteBashTool(workspace=workspace)
+    result = await tool.run_async(
+        args={"command": 'echo "unbalanced'},
+        tool_context=tool_context_confirmed,
+    )
     assert set(result) == {"error", "stdout", "stderr", "returncode"}
-    assert "Execution failed" in result["error"]
-    assert result["stdout"] == "<no stdout captured>"
-    assert result["stderr"] == "<no stderr captured>"
+    assert result["error"] == "Execution failed: No closing quotation"
     assert result["returncode"] is None
+
+  @pytest.mark.asyncio
+  async def test_undecodable_output_is_replaced(
+      self, workspace, tool_context_confirmed
+  ):
+    tool = bash_tool.ExecuteBashTool(workspace=workspace)
+    result = await tool.run_async(
+        args={
+            "command": (
+                "python3 -c 'import sys; sys.stdout.buffer.write(b\"\\xff\")'"
+            )
+        },
+        tool_context=tool_context_confirmed,
+    )
+    assert result["stdout"] == "\ufffd"
+    assert result["returncode"] == 0
 
   @pytest.mark.asyncio
   async def test_nonzero_returncode(self, workspace, tool_context_confirmed):
