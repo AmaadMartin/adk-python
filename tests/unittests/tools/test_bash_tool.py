@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+import shlex
 import signal
 import sys
 from unittest import mock
@@ -29,6 +30,11 @@ import resource
 from google.adk.tools import bash_tool
 from google.adk.tools import tool_context
 from google.adk.tools.tool_confirmation import ToolConfirmation
+
+# The interpreter running these tests, quoted for the shlex.split that the
+# tool applies to the command string. "python3" would only resolve if that
+# exact name is on PATH.
+_PYTHON = shlex.quote(sys.executable)
 
 
 @pytest.fixture
@@ -186,7 +192,9 @@ class TestExecuteBashTool:
     tool = bash_tool.ExecuteBashTool(workspace=workspace)
     result = await tool.run_async(
         args={
-            "command": "python3 pdf/scripts/extract_form_structure.py test.pdf"
+            "command": (
+                f"{_PYTHON} pdf/scripts/extract_form_structure.py test.pdf"
+            )
         },
         tool_context=tool_context_confirmed,
     )
@@ -211,7 +219,9 @@ class TestExecuteBashTool:
   async def test_captures_stderr(self, workspace, tool_context_confirmed):
     tool = bash_tool.ExecuteBashTool(workspace=workspace)
     result = await tool.run_async(
-        args={"command": "python3 -c 'import sys; sys.stderr.write(\"err\")'"},
+        args={
+            "command": f"{_PYTHON} -c 'import sys; sys.stderr.write(\"err\")'"
+        },
         tool_context=tool_context_confirmed,
     )
     assert "err" in result["stderr"]
@@ -220,7 +230,7 @@ class TestExecuteBashTool:
   async def test_nonzero_returncode(self, workspace, tool_context_confirmed):
     tool = bash_tool.ExecuteBashTool(workspace=workspace)
     result = await tool.run_async(
-        args={"command": "python3 -c 'exit(42)'"},
+        args={"command": f"{_PYTHON} -c 'exit(42)'"},
         tool_context=tool_context_confirmed,
     )
     assert result["returncode"] == 42
@@ -255,7 +265,7 @@ class TestExecuteBashTool:
   async def test_cwd_is_workspace(self, workspace, tool_context_confirmed):
     tool = bash_tool.ExecuteBashTool(workspace=workspace)
     result = await tool.run_async(
-        args={"command": "python3 -c 'import os; print(os.getcwd())'"},
+        args={"command": f"{_PYTHON} -c 'import os; print(os.getcwd())'"},
         tool_context=tool_context_confirmed,
     )
     assert result["stdout"].strip() == str(workspace)
