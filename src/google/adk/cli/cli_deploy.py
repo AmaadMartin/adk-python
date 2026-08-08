@@ -37,7 +37,6 @@ from .utils import _onboarding
 _IS_WINDOWS = os.name == 'nt'
 _GCLOUD_CMD = 'gcloud.cmd' if _IS_WINDOWS else 'gcloud'
 _LOCAL_STORAGE_FLAG_MIN_VERSION: Final[str] = '1.21.0'
-_LABELS_FLAG: Final[str] = '--labels'
 _LABELS_PREFIX: Final[str] = '--labels='
 _AGENT_ENGINE_REQUIREMENT: Final[str] = (
     'google-cloud-aiplatform[adk,agent_engines]'
@@ -482,28 +481,21 @@ def _split_gcloud_labels(
   Returns:
     A (label_values, remaining_args) tuple, both in the original order.
   """
+  args = extra_gcloud_args or ()
   label_values: list[str] = []
   remaining_args: list[str] = []
-  if not extra_gcloud_args:
-    return label_values, remaining_args
-
   index = 0
-  while index < len(extra_gcloud_args):
-    arg = extra_gcloud_args[index]
+  while index < len(args):
+    arg = args[index]
+    index += 1
     if arg.startswith(_LABELS_PREFIX):
-      label_values.append(arg[len(_LABELS_PREFIX) :])
-    elif arg == _LABELS_FLAG:
-      next_arg = (
-          extra_gcloud_args[index + 1]
-          if index + 1 < len(extra_gcloud_args)
-          else None
-      )
-      if next_arg is not None and not next_arg.startswith('-'):
-        label_values.append(next_arg)
+      label_values.append(arg.removeprefix(_LABELS_PREFIX))
+    elif arg == '--labels':
+      if index < len(args) and not args[index].startswith('-'):
+        label_values.append(args[index])
         index += 1
     else:
       remaining_args.append(arg)
-    index += 1
   return label_values, remaining_args
 
 
@@ -862,10 +854,9 @@ def to_cloud_run(
 
     # Combine ADK label with user labels, dropping empty entries (e.g. from a
     # bare '--labels=') so the joined value has no empty component.
-    all_labels = ['created-by=adk', *user_labels]
-    labels_arg = ','.join(label for label in all_labels if label)
+    labels_arg = ','.join(['created-by=adk', *filter(None, user_labels)])
 
-    gcloud_cmd.extend([_LABELS_FLAG, labels_arg])
+    gcloud_cmd.extend(['--labels', labels_arg])
 
     # Add any remaining extra passthrough args
     gcloud_cmd.extend(extra_args_without_labels)
