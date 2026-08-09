@@ -619,17 +619,11 @@ def _setup_telemetry_from_env(
 
 
 def _instrumentation_failure_detail(err: Exception) -> str:
-  """Describes why an optional instrumentor could not be enabled.
+  """Returns the exception detail, with an install hint only for ImportError.
 
-  Args:
-    err: The exception raised while importing or enabling the instrumentor.
-
-  Returns:
-    The exception type and message. An `ImportError` means the optional extra
-    really is missing, so the install hint is appended; anything else means the
-    package is installed but unusable - typically a version-skewed instrumentor
-    raising `AttributeError` out of `instrument()` - and gets no misleading
-    install hint.
+  Any other error - typically a version-skewed instrumentor raising
+  AttributeError out of instrument() - means the extra is installed but
+  unusable, so the install hint would misdirect.
   """
   detail = f"{type(err).__name__}: {err}"
   if isinstance(err, ImportError):
