@@ -17,6 +17,7 @@
 import asyncio
 import builtins
 import io
+import re
 import struct
 import sys
 import threading
@@ -379,6 +380,78 @@ def test__load_skill_from_zip_bytes():
   assert skill.instructions == "Body instructions"
   assert skill.resources.get_reference("ref1.md") == "ref1 content"
   assert skill.resources.get_script("script1.sh").src == "echo hello"
+
+
+_ZIP_SKILL_MD = "---\nname: my-skill\ndescription: A skill\n---\nBody"
+
+
+def _zip_with_member(name: str, content: str = "x") -> bytes:
+  """Builds a minimal skill archive holding one extra member, name verbatim."""
+
+  zip_buffer = io.BytesIO()
+  with zipfile.ZipFile(zip_buffer, "w") as z:
+    z.writestr("SKILL.md", _ZIP_SKILL_MD)
+    z.writestr(name, content)
+  return zip_buffer.getvalue()
+
+
+@pytest.mark.parametrize(
+    "member_name",
+    [
+        # Shapes the old prefix and substring blacklist let through.
+        "..",
+        "scripts/..",
+        "..\\evil.txt",
+        "scripts\\..\\..\\pwned.txt",
+        "\\evil.txt",
+        "C:\\evil.txt",
+        "C:evil.txt",
+        "\\\\srv\\share\\x",
+        # Shapes the old blacklist already caught.
+        "/etc/passwd",
+        "../evil.txt",
+        "references/../../esc.txt",
+    ],
+)
+def test__load_skill_from_zip_bytes_rejects_traversal_entry_names(member_name):
+  """Tests that a rooted name or a '..' component refuses the whole archive."""
+
+  with pytest.raises(
+      ValueError,
+      match=re.escape(f"Dangerous zip entry ignored: {member_name}"),
+  ):
+    _load_skill_from_zip_bytes(_zip_with_member(member_name))
+
+
+def test__load_skill_from_zip_bytes_reports_dangerous_entry_without_skill_md():
+  """Tests that the traversal check runs before the SKILL.md lookup."""
+
+  zip_buffer = io.BytesIO()
+  with zipfile.ZipFile(zip_buffer, "w") as z:
+    z.writestr("../evil.txt", "x")
+
+  with pytest.raises(
+      ValueError, match=re.escape("Dangerous zip entry ignored: ../evil.txt")
+  ):
+    _load_skill_from_zip_bytes(zip_buffer.getvalue())
+
+
+def test__load_skill_from_zip_bytes_accepts_names_containing_dot_dot():
+  """Tests that '..' inside a component, and a colon, stay loadable."""
+
+  zip_buffer = io.BytesIO()
+  with zipfile.ZipFile(zip_buffer, "w") as z:
+    z.writestr("SKILL.md", _ZIP_SKILL_MD)
+    z.writestr("references/..hidden.txt", "hidden ref")
+    z.writestr("references/notes:draft.md", "draft ref")
+    z.writestr("assets/v1..2.bin", "asset bytes")
+    z.writestr("scripts/run..sh", "echo hello")
+
+  skill = _load_skill_from_zip_bytes(zip_buffer.getvalue())
+  assert skill.resources.get_reference("..hidden.txt") == "hidden ref"
+  assert skill.resources.get_reference("notes:draft.md") == "draft ref"
+  assert skill.resources.get_asset("v1..2.bin") == "asset bytes"
+  assert skill.resources.get_script("run..sh").src == "echo hello"
 
 
 def test__load_skill_from_zip_bytes_rejects_oversized_archive():

@@ -270,6 +270,27 @@ def _read_zip_member(
   return b"".join(chunks), budget
 
 
+def _is_dangerous_zip_entry_name(filename: str) -> bool:
+  """Reports whether a zip member name escapes the extraction root.
+
+  This is a shape check on attacker-chosen archive metadata, not a sandbox: it
+  says nothing about symlinks. ``PureWindowsPath`` treats both separators as
+  separators, so it covers POSIX names too, and a bare drive is enough to
+  escape the root because Windows resolves ``C:evil.txt`` against that drive's
+  own working directory.
+
+  Args:
+    filename: The member name exactly as the archive declares it.
+
+  Returns:
+    True if the name is rooted, or if any of its components is ``..``.
+  """
+  windows_name = pathlib.PureWindowsPath(filename)
+  if windows_name.drive or windows_name.root:
+    return True
+  return ".." in filename.replace("\\", "/").split("/")
+
+
 def _load_skill_from_zip_bytes(zip_bytes: bytes) -> models.Skill:
   """Load a complete skill directly from in-memory zip file bytes.
 
@@ -310,13 +331,8 @@ def _load_skill_from_zip_bytes(zip_bytes: bytes) -> models.Skill:
 
     # Security check for zip slip
     for member in z.infolist():
-      filename = member.filename
-      if (
-          filename.startswith("/")
-          or filename.startswith("../")
-          or "/../" in filename
-      ):
-        raise ValueError(f"Dangerous zip entry ignored: {filename}")
+      if _is_dangerous_zip_entry_name(member.filename):
+        raise ValueError(f"Dangerous zip entry ignored: {member.filename}")
 
     # Find SKILL.md or skill.md
     skill_md_content = None
