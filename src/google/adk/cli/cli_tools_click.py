@@ -41,6 +41,7 @@ from .. import version
 from ..agents._streaming_mode import StreamingMode
 from ..features import FeatureName
 from ..features import override_feature_enabled
+from ..utils._dependency import missing_extra
 from ..utils._telemetry_config import read_telemetry_consent
 from ..utils._telemetry_config import write_telemetry_consent
 from ._telemetry._metrics_collector import MetricsCollector
@@ -2469,7 +2470,12 @@ def cli_migrate_session(
   """Migrates a session database to the latest schema version."""
   logs.setup_adk_logger(getattr(logging, log_level.upper()))
   try:
-    from ..sessions.migration import migration_runner
+    try:
+      from ..sessions.migration import migration_runner
+    except ImportError as e:
+      # The migration modules need sqlalchemy, which only ships with the
+      # 'db' extra; say so instead of leaking "No module named sqlalchemy".
+      raise missing_extra("sqlalchemy", "db") from e
 
     migration_runner.upgrade(
         source_db_url,

@@ -2909,3 +2909,37 @@ def test_cli_migrate_session_reports_the_underlying_failure(
   )
 
   assert "Migration failed: destination schema is newer" in result.output
+
+
+@pytest.mark.unmute_click
+def test_cli_migrate_session_points_at_the_db_extra_when_sqlalchemy_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """A base install is told which extra provides the migration stack."""
+  orig_import = builtins.__import__
+
+  def _fake_import(name: str, globals=None, locals=None, fromlist=(), level=0):
+    if name.endswith("sessions.migration") and "migration_runner" in (
+        fromlist or ()
+    ):
+      raise ModuleNotFoundError("No module named 'sqlalchemy'")
+    return orig_import(name, globals, locals, fromlist, level)
+
+  monkeypatch.setattr(builtins, "__import__", _fake_import)
+
+  result = CliRunner().invoke(
+      cli_tools_click.main,
+      [
+          "migrate",
+          "session",
+          "--source_db_url",
+          "sqlite:///source.db",
+          "--dest_db_url",
+          "sqlite:///dest.db",
+      ],
+  )
+
+  assert result.exception is None, repr(result.exception)
+  assert "Migration failed:" in result.output
+  assert "pip install google-adk[db]" in result.output
+  assert "No module named" not in result.output
