@@ -469,8 +469,6 @@ class VertexAiSessionService(BaseSessionService):
     if isinstance(config['raw_event'].get('content'), dict):
       _drop_vertex_unsupported_part_fields(config['raw_event']['content'])
 
-    # Retry without raw_event if client side validation fails for older SDK
-    # versions.
     async with self._get_api_client() as api_client:
 
       async def _do_append(cfg: dict[str, Any]) -> None:
@@ -488,7 +486,13 @@ class VertexAiSessionService(BaseSessionService):
 
       try:
         await _do_append(config)
-      except pydantic.ValidationError:
+      except pydantic.ValidationError as e:
+        # The SDK validates the whole outgoing config against closed models, so
+        # any client-side problem (a malformed content part, an unknown
+        # event_metadata key) surfaces here too. Only downgrade to the legacy
+        # representation when raw_event itself is what the SDK rejected.
+        if not all('raw_event' in detail['loc'] for detail in e.errors()):
+          raise
         logger.warning('Vertex SDK does not support raw_event, falling back.')
         if 'raw_event' in config:
           del config['raw_event']
