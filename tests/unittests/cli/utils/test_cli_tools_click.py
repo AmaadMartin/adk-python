@@ -512,6 +512,45 @@ def test_cli_telemetry_records_dynamically_resolved_command(
   assert command_run["exit_code"] == 0
 
 
+# HelpfulCommand under TelemetryGroup
+@pytest.mark.unmute_click
+def test_cli_run_missing_agent_reports_the_error_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """A missing AGENT prints one help block and one error, not two."""
+  # Default population: consent has never been recorded.
+  monkeypatch.setattr(
+      "google.adk.cli.cli_tools_click.read_telemetry_consent", lambda: None
+  )
+
+  result = CliRunner().invoke(cli_tools_click.main, ["run"])
+
+  assert result.exit_code == 2
+  # TelemetryGroup rebuilds the subcommand context in its finally block to see
+  # which flags were used; that must not re-trigger HelpfulCommand's output.
+  assert result.output.count("Error: Missing required argument: AGENT") == 1
+  assert result.output.count("Usage:") == 1
+
+
+@pytest.mark.unmute_click
+def test_cli_run_missing_agent_reports_the_error_once_with_telemetry_on(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """The error is not duplicated when telemetry consent has been given."""
+  temp_queue = _enable_telemetry_to_tmp_path(tmp_path, monkeypatch)
+
+  result = CliRunner().invoke(cli_tools_click.main, ["run", "--save_session"])
+
+  assert result.exit_code == 2
+  assert result.output.count("Error: Missing required argument: AGENT") == 1
+  assert result.output.count("Usage:") == 1
+  # The reconstruction now succeeds, so the flag the user did pass is recorded
+  # instead of being dropped.
+  (command_run,) = _read_command_runs(temp_queue)
+  assert command_run["command"] == "run"
+  assert command_run["flags"] == ["--save_session"]
+
+
 # cli run
 @pytest.mark.parametrize(
     "cli_args,expected_session_uri,expected_artifact_uri,expected_memory_uri",
