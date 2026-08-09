@@ -308,15 +308,13 @@ def _load_skill_from_zip_bytes(zip_bytes: bytes) -> models.Skill:
       )
     budget = _MAX_ZIP_UNCOMPRESSED_BYTES
 
-    # Security check for zip slip
+    # Security check for zip slip. PureWindowsPath treats both separators as
+    # separators, so this covers POSIX names too; a bare drive ("C:evil.txt")
+    # escapes because Windows resolves it against that drive's own cwd.
     for member in z.infolist():
-      filename = member.filename
-      if (
-          filename.startswith("/")
-          or filename.startswith("../")
-          or "/../" in filename
-      ):
-        raise ValueError(f"Dangerous zip entry ignored: {filename}")
+      entry = pathlib.PureWindowsPath(member.filename)
+      if entry.anchor or ".." in entry.parts:
+        raise ValueError(f"Dangerous zip entry ignored: {member.filename}")
 
     # Find SKILL.md or skill.md
     skill_md_content = None
