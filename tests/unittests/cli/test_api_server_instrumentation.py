@@ -100,6 +100,13 @@ def _warnings(caplog: pytest.LogCaptureFixture) -> list[str]:
   ]
 
 
+def _only_warning(caplog: pytest.LogCaptureFixture) -> str:
+  """Returns the one warning-or-worse message that `caplog` captured."""
+  messages = _warnings(caplog)
+  assert len(messages) == 1, messages
+  return messages[0]
+
+
 @pytest.fixture
 def calls() -> list[str]:
   """Records the name of every instrumentor that took effect, in order."""
@@ -159,8 +166,10 @@ def test_warns_when_genai_instrumentor_missing(
     api_server._setup_instrumentation_lib_if_installed()
 
   assert calls == []
-  assert "Unable to import GoogleGenAiSdkInstrumentor" in caplog.text
-  assert "google-adk[otel-gcp]" in caplog.text
+  message = _only_warning(caplog)
+  assert "Unable to import GoogleGenAiSdkInstrumentor" in message
+  assert "ModuleNotFoundError" in message
+  assert "Make sure to install google-adk[otel-gcp]" in message
 
 
 def test_instruments_httpx_and_grpc_on_agent_engine(
@@ -191,9 +200,15 @@ def test_warns_when_httpx_and_grpc_missing_on_agent_engine(
     api_server._setup_instrumentation_lib_if_installed()
 
   assert calls == [_GENAI_CLASS]
-  assert "without HTTPX instrumentation" in caplog.text
-  assert "without gRPC instrumentation" in caplog.text
-  assert len(_warnings(caplog)) == 2
+  messages = _warnings(caplog)
+  assert len(messages) == 2, messages
+  httpx_message, grpc_message = messages
+  assert "without HTTPX instrumentation" in httpx_message
+  assert "without gRPC instrumentation" in grpc_message
+  for message in messages:
+    assert "ModuleNotFoundError" in message
+    assert "Make sure to install google-adk[otel-gcp]" in message
+    assert "has not been installed" not in message
 
 
 def test_httpx_failure_does_not_block_grpc(
@@ -209,8 +224,12 @@ def test_httpx_failure_does_not_block_grpc(
     api_server._setup_instrumentation_lib_if_installed()
 
   assert calls == [_GENAI_CLASS, _GRPC_CLASS]
-  assert "without HTTPX instrumentation" in caplog.text
-  assert "without gRPC instrumentation" not in caplog.text
+  message = _only_warning(caplog)
+  assert "without HTTPX instrumentation" in message
+  assert "without gRPC instrumentation" not in message
+  assert "ModuleNotFoundError" in message
+  assert "Make sure to install google-adk[otel-gcp]" in message
+  assert "has not been installed" not in message
 
 
 def test_genai_failure_does_not_block_agent_engine_instrumentors(
@@ -238,13 +257,19 @@ def test_httpx_attribute_error_is_tolerated(
     fail_instrumentor: _FailInstrumentor,
 ):
   monkeypatch.setenv(_AGENT_ENGINE_ID_ENV, _AGENT_ENGINE_ID)
-  fail_instrumentor(_HTTPX_MODULE, AttributeError("no attribute 'instrument'"))
+  error = AttributeError(
+      f"'{_HTTPX_CLASS}' object has no attribute 'instrument'"
+  )
+  fail_instrumentor(_HTTPX_MODULE, error)
 
   with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
     api_server._setup_instrumentation_lib_if_installed()
 
   assert calls == [_GENAI_CLASS, _GRPC_CLASS]
-  assert "without HTTPX instrumentation" in caplog.text
+  message = _only_warning(caplog)
+  assert "without HTTPX instrumentation" in message
+  assert f"AttributeError: {error}" in message
+  assert "google-adk[otel-gcp]" not in message
 
 
 def test_grpc_attribute_error_is_tolerated(
@@ -254,10 +279,16 @@ def test_grpc_attribute_error_is_tolerated(
     fail_instrumentor: _FailInstrumentor,
 ):
   monkeypatch.setenv(_AGENT_ENGINE_ID_ENV, _AGENT_ENGINE_ID)
-  fail_instrumentor(_GRPC_MODULE, AttributeError("no attribute 'instrument'"))
+  error = AttributeError(
+      f"'{_GRPC_CLASS}' object has no attribute 'instrument'"
+  )
+  fail_instrumentor(_GRPC_MODULE, error)
 
   with caplog.at_level(logging.WARNING, logger=_LOGGER_NAME):
     api_server._setup_instrumentation_lib_if_installed()
 
   assert calls == [_GENAI_CLASS, _HTTPX_CLASS]
-  assert "without gRPC instrumentation" in caplog.text
+  message = _only_warning(caplog)
+  assert "without gRPC instrumentation" in message
+  assert f"AttributeError: {error}" in message
+  assert "google-adk[otel-gcp]" not in message
