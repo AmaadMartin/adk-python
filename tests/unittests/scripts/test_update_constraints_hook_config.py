@@ -25,15 +25,9 @@ from pathlib import Path
 import re
 import shlex
 
-import pytest
 import yaml
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-
-pytestmark = pytest.mark.skipif(
-    not (_REPO_ROOT / '.pre-commit-config.yaml').is_file(),
-    reason='.pre-commit-config.yaml is only available in a source checkout.',
-)
 
 _PYTHON_VERSIONS_PATTERN = re.compile(
     r'^PYTHON_VERSIONS=\(([^)]*)\)', re.MULTILINE
