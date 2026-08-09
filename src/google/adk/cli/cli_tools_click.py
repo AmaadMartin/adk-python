@@ -339,10 +339,9 @@ class TelemetryGroup(click.Group):
           if cmd_obj is not None and not shows_group_help:
             try:
               # Reconstruct the subcommand context to query parameters.
-              # `resilient_parsing` still records where each parameter came
-              # from, but it skips validation, so a command that is missing a
-              # required argument does not re-enter HelpfulCommand.parse_args
-              # and print the help text and the error a second time.
+              # `resilient_parsing` records each parameter's source but
+              # suppresses MissingParameter, so HelpfulCommand.parse_args
+              # cannot echo the help text and the error a second time.
               sub_ctx = cmd_obj.make_context(
                   command, sub_args, parent=ctx, resilient_parsing=True
               )
