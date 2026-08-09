@@ -515,10 +515,13 @@ def test_cli_telemetry_records_dynamically_resolved_command(
 # HelpfulCommand under TelemetryGroup
 @pytest.mark.unmute_click
 def test_cli_run_missing_agent_reports_the_error_once(
-    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
   """A missing AGENT prints one help block and one error, not two."""
-  # Default population: consent has never been recorded.
+  # Storage stays redirected under `tmp_path` so that the developer's real
+  # telemetry queue can never be written, then consent is put back to the
+  # default population: it has never been recorded.
+  temp_queue = _enable_telemetry_to_tmp_path(tmp_path, monkeypatch)
   monkeypatch.setattr(
       "google.adk.cli.cli_tools_click.read_telemetry_consent", lambda: None
   )
@@ -530,6 +533,7 @@ def test_cli_run_missing_agent_reports_the_error_once(
   # which flags were used; that must not re-trigger HelpfulCommand's output.
   assert result.output.count("Error: Missing required argument: AGENT") == 1
   assert result.output.count("Usage:") == 1
+  assert not temp_queue.exists()
 
 
 @pytest.mark.unmute_click
