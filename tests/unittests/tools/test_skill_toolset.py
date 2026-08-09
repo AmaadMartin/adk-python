@@ -201,6 +201,7 @@ def test_clone_with_updated_skills(mock_skill1, mock_skill2):
       registry=registry,
       code_executor=executor,
       script_timeout=42,
+      max_inline_resource_bytes=1234,
       additional_tools=[mock_tool],
   )
 
@@ -215,6 +216,7 @@ def test_clone_with_updated_skills(mock_skill1, mock_skill2):
   assert new_toolset._registry is registry
   assert new_toolset._code_executor is executor
   assert new_toolset._script_timeout == 42
+  assert new_toolset._max_inline_resource_bytes == 1234
   assert "my_tool" in new_toolset._provided_tools_by_name
 
 
@@ -582,6 +584,219 @@ async def test_load_resource_process_llm_request_binary(
   )
   assert injected_content.parts[1].inline_data.data == fake_content
   assert injected_content.parts[1].inline_data.mime_type == expected_mime
+
+
+# Size of the binary image resource served by the mock_skill1 fixture.
+_IMAGE_SIZE = len(b"fake image content")  # 18
+
+# Spelled out rather than built from _binary_too_large_msg, so a wording drift
+# away from the adk-js message is caught here.
+_IMAGE_DECLINED_AT_10_MSG = (
+    "Binary file detected, but it was not injected into the conversation"
+    " history: it is 18 bytes, which exceeds the 10 byte limit for inline"
+    " skill resources. Do not retry; process the file with a skill script"
+    " instead."
+)
+
+
+def _make_resource_response_request(tool, file_path, status):
+  """Builds an LlmRequest whose last turn holds a load_skill_resource result."""
+  llm_req = mock.create_autospec(llm_request_model.LlmRequest, instance=True)
+  part = types.Part.from_function_response(
+      name=tool.name,
+      response={
+          "skill_name": "skill1",
+          "file_path": file_path,
+          "status": status,
+      },
+  )
+  llm_req.contents = [types.Content(role="model", parts=[part])]
+  return llm_req
+
+
+@pytest.mark.asyncio
+async def test_load_resource_binary_at_limit_returns_detected_status(
+    mock_skill1, tool_context_instance
+):
+  """A resource exactly at the limit is still injected, so the status stands."""
+  toolset = skill_toolset.SkillToolset(
+      [mock_skill1], max_inline_resource_bytes=_IMAGE_SIZE
+  )
+  tool = skill_toolset.LoadSkillResourceTool(toolset)
+
+  result = await tool.run_async(
+      args={"skill_name": "skill1", "file_path": "assets/image.png"},
+      tool_context=tool_context_instance,
+  )
+
+  assert result == {
+      "skill_name": "skill1",
+      "file_path": "assets/image.png",
+      "status": (
+          "Binary file detected. The content has been injected into the"
+          " conversation history for you to analyze."
+      ),
+  }
+
+
+@pytest.mark.asyncio
+async def test_load_resource_binary_at_limit_is_injected(
+    mock_skill1, tool_context_instance
+):
+  """A resource exactly at the limit still enters the request."""
+  toolset = skill_toolset.SkillToolset(
+      [mock_skill1], max_inline_resource_bytes=_IMAGE_SIZE
+  )
+  tool = skill_toolset.LoadSkillResourceTool(toolset)
+  llm_req = _make_resource_response_request(
+      tool,
+      "assets/image.png",
+      "Binary file detected. The content has been injected into the"
+      " conversation history for you to analyze.",
+  )
+
+  await tool.process_llm_request(
+      tool_context=tool_context_instance, llm_request=llm_req
+  )
+
+  assert len(llm_req.contents) == 2
+  injected_part = llm_req.contents[1].parts[1]
+  assert injected_part.inline_data.data == b"fake image content"
+  assert injected_part.inline_data.mime_type == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_load_resource_binary_over_limit_declined(
+    mock_skill1, tool_context_instance
+):
+  """An oversized resource is declined with a status naming size and limit."""
+  toolset = skill_toolset.SkillToolset(
+      [mock_skill1], max_inline_resource_bytes=10
+  )
+  tool = skill_toolset.LoadSkillResourceTool(toolset)
+
+  result = await tool.run_async(
+      args={"skill_name": "skill1", "file_path": "assets/image.png"},
+      tool_context=tool_context_instance,
+  )
+
+  assert result == {
+      "skill_name": "skill1",
+      "file_path": "assets/image.png",
+      "status": _IMAGE_DECLINED_AT_10_MSG,
+  }
+
+
+@pytest.mark.asyncio
+async def test_load_resource_declined_binary_not_injected(
+    mock_skill1, tool_context_instance
+):
+  """The declined status does not trigger the injection path."""
+  toolset = skill_toolset.SkillToolset(
+      [mock_skill1], max_inline_resource_bytes=10
+  )
+  tool = skill_toolset.LoadSkillResourceTool(toolset)
+  llm_req = _make_resource_response_request(
+      tool, "assets/image.png", _IMAGE_DECLINED_AT_10_MSG
+  )
+
+  await tool.process_llm_request(
+      tool_context=tool_context_instance, llm_request=llm_req
+  )
+
+  assert len(llm_req.contents) == 1
+
+
+@pytest.mark.asyncio
+async def test_load_resource_oversized_not_injected_under_lowered_limit(
+    mock_skill1, tool_context_instance
+):
+  """A response recorded under a higher limit is not replayed into a request."""
+  toolset = skill_toolset.SkillToolset(
+      [mock_skill1], max_inline_resource_bytes=10
+  )
+  tool = skill_toolset.LoadSkillResourceTool(toolset)
+  llm_req = _make_resource_response_request(
+      tool,
+      "assets/image.png",
+      "Binary file detected. The content has been injected into the"
+      " conversation history for you to analyze.",
+  )
+
+  await tool.process_llm_request(
+      tool_context=tool_context_instance, llm_request=llm_req
+  )
+
+  assert len(llm_req.contents) == 1
+
+
+@pytest.mark.asyncio
+async def test_load_resource_binary_reference_over_limit_declined(
+    mock_skill1, tool_context_instance
+):
+  """The limit applies to references/, not only to assets/."""
+  toolset = skill_toolset.SkillToolset(
+      [mock_skill1], max_inline_resource_bytes=1
+  )
+  tool = skill_toolset.LoadSkillResourceTool(toolset)
+
+  result = await tool.run_async(
+      args={"skill_name": "skill1", "file_path": "references/doc.pdf"},
+      tool_context=tool_context_instance,
+  )
+
+  assert result == {
+      "skill_name": "skill1",
+      "file_path": "references/doc.pdf",
+      "status": (
+          "Binary file detected, but it was not injected into the conversation"
+          " history: it is 16 bytes, which exceeds the 1 byte limit for inline"
+          " skill resources. Do not retry; process the file with a skill"
+          " script instead."
+      ),
+  }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "file_path, expected_content",
+    [
+        ("references/ref1.md", "ref content 1"),
+        ("assets/asset1.txt", "asset content 1"),
+        ("scripts/setup.sh", "echo setup"),
+    ],
+)
+async def test_load_resource_text_resources_ignore_byte_limit(
+    mock_skill1, tool_context_instance, file_path, expected_content
+):
+  """Text resources are never size-checked, however low the limit is."""
+  toolset = skill_toolset.SkillToolset(
+      [mock_skill1], max_inline_resource_bytes=1
+  )
+  tool = skill_toolset.LoadSkillResourceTool(toolset)
+
+  result = await tool.run_async(
+      args={"skill_name": "skill1", "file_path": file_path},
+      tool_context=tool_context_instance,
+  )
+
+  assert result == {
+      "skill_name": "skill1",
+      "file_path": file_path,
+      "content": expected_content,
+  }
+
+
+def test_default_max_inline_resource_bytes(mock_skill1):
+  """The limit defaults to 5 MiB and honours an explicit value."""
+  assert (
+      skill_toolset.SkillToolset([mock_skill1])._max_inline_resource_bytes
+      == 5 * 1024 * 1024
+  )
+  toolset = skill_toolset.SkillToolset(
+      [mock_skill1], max_inline_resource_bytes=42
+  )
+  assert toolset._max_inline_resource_bytes == 42
 
 
 @pytest.mark.asyncio

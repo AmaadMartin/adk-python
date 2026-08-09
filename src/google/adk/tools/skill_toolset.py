@@ -57,11 +57,30 @@ logger = logging.getLogger("google_adk." + __name__)
 _DEFAULT_SCRIPT_TIMEOUT = 300
 _MAX_SKILL_PAYLOAD_BYTES = 16 * 1024 * 1024  # 16 MB
 
+# Ceiling on the size of a single binary skill resource that
+# `load_skill_resource` inlines into a model request. Distinct from
+# _MAX_SKILL_PAYLOAD_BYTES above, which is a soft warning on a skill's total
+# payload shipped to a code executor. Base64 encoding inflates a payload by
+# roughly a third, and providers cap the total size of a request that carries
+# inline data, so a multi-megabyte asset can push a turn past that cap on its
+# own.
+_DEFAULT_MAX_INLINE_RESOURCE_BYTES = 5 * 1024 * 1024  # 5 MiB
+
 # Message used for the "Content Injection" pattern.
 _BINARY_FILE_DETECTED_MSG = (
     "Binary file detected. The content has been injected into the"
     " conversation history for you to analyze."
 )
+
+
+def _binary_too_large_msg(size_bytes: int, limit_bytes: int) -> str:
+  """Status returned in place of an oversized binary resource."""
+  return (
+      "Binary file detected, but it was not injected into the conversation"
+      f" history: it is {size_bytes} bytes, which exceeds the {limit_bytes}"
+      " byte limit for inline skill resources. Do not retry; process the file"
+      " with a skill script instead."
+  )
 
 
 def _build_skill_system_instruction(
@@ -416,10 +435,15 @@ class LoadSkillResourceTool(BaseTool):
       }
 
     if isinstance(content, bytes):
+      limit = self._toolset._max_inline_resource_bytes
       return {
           "skill_name": skill_name,
           "file_path": file_path,
-          "status": _BINARY_FILE_DETECTED_MSG,
+          "status": (
+              _binary_too_large_msg(len(content), limit)
+              if len(content) > limit
+              else _BINARY_FILE_DETECTED_MSG
+          ),
       }
 
     return {
@@ -487,6 +511,12 @@ class LoadSkillResourceTool(BaseTool):
         content = skill.resources.get_asset(asset_name)
 
       if not isinstance(content, bytes):
+        continue
+
+      # Re-checked here, not just in run_async: this is the only place the
+      # payload actually enters the request, and a recorded function response
+      # can be replayed under a lower limit than the one that produced it.
+      if len(content) > self._toolset._max_inline_resource_bytes:
         continue
 
       # Determine mime type based on extension
@@ -1153,6 +1183,7 @@ class SkillToolset(BaseToolset):
       environment: BaseEnvironment | None = None,
       skills_folder: Path | str | None = None,
       script_timeout: int = _DEFAULT_SCRIPT_TIMEOUT,
+      max_inline_resource_bytes: int = _DEFAULT_MAX_INLINE_RESOURCE_BYTES,
       additional_tools: list[ToolUnion] | None = None,
       tool_name_prefix: str | None = None,
       tool_filter: ToolPredicate | list[str] | None = None,
@@ -1170,6 +1201,12 @@ class SkillToolset(BaseToolset):
       script_timeout: Timeout in seconds for shell script execution via
         subprocess.run. Defaults to 300 seconds. Does not apply to Python
         scripts executed via exec().
+      max_inline_resource_bytes: Maximum size, in bytes, of a binary skill
+        resource that `load_skill_resource` inlines into the conversation as
+        base64. A resource above this size is declined with an explanatory
+        status instead: base64 cannot be truncated without corrupting it, so
+        there is no partial payload worth sending. Set to 0 to never inline
+        binary resources. Defaults to 5 MiB.
       additional_tools: Optional list of `BaseTool` or `BaseToolset` instances
         to be made available to the agent when certain skills are activated.
       tool_name_prefix: Optional prefix to prepend to tool names.
@@ -1206,6 +1243,7 @@ class SkillToolset(BaseToolset):
         )
       self._skills_folder = Path(skills_folder)
     self._script_timeout = script_timeout
+    self._max_inline_resource_bytes = max_inline_resource_bytes
     # Needed for mid-turn reloading of skill tools.
     self._use_invocation_cache = False
     # Cache fetched remote skill definitions per turn to reduce requests to registry
@@ -1393,6 +1431,7 @@ class SkillToolset(BaseToolset):
         environment=self._env,
         skills_folder=self._skills_folder,
         script_timeout=self._script_timeout,
+        max_inline_resource_bytes=self._max_inline_resource_bytes,
         additional_tools=additional_tools,
     )
 
