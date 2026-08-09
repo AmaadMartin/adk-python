@@ -21,6 +21,7 @@ from google.adk.code_executors.gke_code_executor import GkeCodeExecutor
 from kubernetes import client
 from kubernetes import config
 from kubernetes.client.rest import ApiException
+import pydantic
 import pytest
 
 
@@ -129,6 +130,12 @@ class TestGkeCodeExecutor:
         namespace="test-ns",
     )
     assert executor.kubeconfig_path == "/path/to/kubeconfig"
+
+  @pytest.mark.parametrize("timeout", [0, -1, None])
+  def test_non_positive_timeout_is_rejected(self, timeout):
+    """A timeout of 0 or None would mean no bound, so it is refused up front."""
+    with pytest.raises(pydantic.ValidationError):
+      GkeCodeExecutor(timeout_seconds=timeout)
 
   def test_init_sandbox_missing_dependency(self):
     """Tests that init raises ImportError if k8s-agent-sandbox is missing."""

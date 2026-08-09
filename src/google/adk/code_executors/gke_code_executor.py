@@ -20,6 +20,7 @@ import uuid
 
 import kubernetes as k8s
 from kubernetes.watch import Watch
+from pydantic import Field
 from pydantic import field_validator
 from typing_extensions import Literal
 from typing_extensions import override
@@ -92,7 +93,15 @@ class GkeCodeExecutor(BaseCodeExecutor):
 
   namespace: str = "default"
   image: str = "python:3.11-slim"
-  timeout_seconds: int = 300
+  timeout_seconds: int = Field(default=300, gt=0)
+  """Wall-clock bound, in seconds, on waiting for a submitted Job to finish.
+
+  Must be positive: the API server reads `timeoutSeconds=0` as no timeout, so a
+  zero would wait on under the server's own default while the `TimeoutError`
+  raised afterwards reports a `0s` deadline that was never applied. Raise this
+  value for long-running code rather than removing the bound; unlike on the
+  base class, `None` is rejected.
+  """
   executor_type: Literal["job", "sandbox"] = "job"
   cpu_requested: str = "200m"
   mem_requested: str = "256Mi"
