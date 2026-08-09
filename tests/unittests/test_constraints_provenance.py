@@ -115,3 +115,18 @@ def test_every_via_block_lists_at_least_one_source(version: str) -> None:
       'filter in scripts/update_constraints.sh removed the only source of '
       'the block instead of a reference to the stabilization scratch file.'
   )
+
+
+def test_a_via_block_without_a_source_is_reported() -> None:
+  """The detector reports a dangling block, so its guard cannot go vacuous."""
+  lines = [
+      'a2a-sdk==1.1.1',
+      '    # via',
+      'absl-py==2.5.0',
+      '    # via',
+      '    #   rouge-score',
+  ]
+
+  assert _via_blocks_without_a_source(lines) == [
+      "line 2, under 'a2a-sdk==1.1.1'"
+  ]
