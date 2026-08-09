@@ -131,9 +131,9 @@ class TestGkeCodeExecutor:
     )
     assert executor.kubeconfig_path == "/path/to/kubeconfig"
 
-  @pytest.mark.parametrize("timeout", [0, -1])
+  @pytest.mark.parametrize("timeout", [0, -1, None])
   def test_non_positive_timeout_is_rejected(self, timeout):
-    """A timeout of 0 or less is no bound at all, so it is refused up front."""
+    """A timeout of 0 or None would mean no bound, so it is refused up front."""
     with pytest.raises(pydantic.ValidationError):
       GkeCodeExecutor(timeout_seconds=timeout)
 

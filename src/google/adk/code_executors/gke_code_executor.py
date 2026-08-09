@@ -94,17 +94,13 @@ class GkeCodeExecutor(BaseCodeExecutor):
   namespace: str = "default"
   image: str = "python:3.11-slim"
   timeout_seconds: int = Field(default=300, gt=0)
-  """The wall-clock bound, in seconds, on waiting for a submitted Job.
+  """Wall-clock bound, in seconds, on waiting for a submitted Job to finish.
 
-  Passed to the Kubernetes watch in `_watch_job_completion`, which is the only
-  thing that ends the wait for a Job that never finishes: the Job is created
-  with no `active_deadline_seconds`, so nothing else stops it. The bound must
-  be positive. Zero does not mean "wait zero seconds" -- the Kubernetes client
-  sends it as "no timeout supplied", so the watch runs on under the API
-  server's own default and the `TimeoutError` below reports a deadline of `0s`
-  that was never applied; a negative value is meaningless as a deadline. Raise
-  this value for legitimately long-running code rather than removing the
-  bound. Unlike on the base class, `None` is rejected.
+  Must be positive: the API server reads `timeoutSeconds=0` as no timeout, so a
+  zero would wait on under the server's own default while the `TimeoutError`
+  raised afterwards reports a `0s` deadline that was never applied. Raise this
+  value for long-running code rather than removing the bound; unlike on the
+  base class, `None` is rejected.
   """
   executor_type: Literal["job", "sandbox"] = "job"
   cpu_requested: str = "200m"
