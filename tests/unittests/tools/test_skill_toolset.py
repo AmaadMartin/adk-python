@@ -586,9 +586,8 @@ async def test_load_resource_process_llm_request_binary(
   assert injected_content.parts[1].inline_data.mime_type == expected_mime
 
 
-# Sizes of the binary resources served by the mock_skill1 fixture.
+# Size of the binary image resource served by the mock_skill1 fixture.
 _IMAGE_SIZE = len(b"fake image content")  # 18
-_PDF_SIZE = len(b"fake pdf content")  # 16
 
 # Spelled out rather than built from _binary_too_large_msg, so a wording drift
 # away from the adk-js message is caught here.
