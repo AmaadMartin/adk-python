@@ -81,6 +81,11 @@ _LAZY_SERVICE_IMPORTS: dict[str, str] = {
     "LocalEvalSetsManager": "..evaluation.local_eval_sets_manager",
 }
 
+# Directory holding the packaged Angular dev UI assets. Defined at module level
+# so tests can point the server at a temporary directory instead of writing
+# runtime-config.json into the installed package.
+_WEB_ASSETS_DIR = Path(__file__).parent.resolve() / "browser"
+
 
 def __getattr__(name: str):
   """Lazily import defaults so patching in tests keeps working."""
@@ -331,10 +336,8 @@ def get_fast_api_app(
     )
 
   if web:
-    BASE_DIR = Path(__file__).parent.resolve()
-    ANGULAR_DIST_PATH = BASE_DIR / "browser"
     extra_fast_api_args.update(
-        web_assets_dir=ANGULAR_DIST_PATH,
+        web_assets_dir=_WEB_ASSETS_DIR,
     )
 
   # Create the task store early so its engine can be disposed via the
