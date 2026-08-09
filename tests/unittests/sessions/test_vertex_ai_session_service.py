@@ -13,6 +13,7 @@
 # limitations under the License.
 import copy
 import datetime
+import logging
 import re
 import types
 from typing import Any
@@ -39,6 +40,7 @@ from google.genai import types as genai_types
 from google.genai.errors import ClientError
 import pydantic
 import pytest
+from vertexai import types as vertexai_types
 
 MOCK_SESSION_JSON_1 = {
     'name': (
@@ -1459,8 +1461,11 @@ async def test_append_event_with_usage_metadata_and_compaction():
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures('mock_get_api_client')
-async def test_append_event_fallback_for_older_sdk(mock_api_client_instance):
+async def test_append_event_fallback_for_older_sdk(
+    mock_api_client_instance, caplog
+):
   """Tests that append_event falls back to custom_metadata when SDK fails on raw_event."""
+  caplog.set_level(logging.WARNING)
   session_service = mock_vertex_ai_session_service()
   session = await session_service.get_session(
       app_name='123', user_id='user', session_id='1'
@@ -1485,12 +1490,17 @@ async def test_append_event_fallback_for_older_sdk(mock_api_client_instance):
 
   async def side_effect(name, author, invocation_id, timestamp, config):
     if 'raw_event' in config:
-      # Trigger a real ValidationError since Pydantic V2 doesn't allow easy
-      # instantiation
-      class DummyModel(pydantic.BaseModel):
-        a: int
-
-      DummyModel(a='not an int')
+      # What an older vertexai SDK raises: AppendAgentEngineSessionEventConfig
+      # forbids extra fields, so an unknown raw_event key is reported at
+      # ('config', 'raw_event').
+      raise pydantic.ValidationError.from_exception_data(
+          '_AppendAgentEngineSessionEventRequestParameters',
+          [{
+              'type': 'extra_forbidden',
+              'loc': ('config', 'raw_event'),
+              'input': config['raw_event'],
+          }],
+      )
     return await mock_client._append_event(
         name, author, invocation_id, timestamp, config
     )
@@ -1498,6 +1508,9 @@ async def test_append_event_fallback_for_older_sdk(mock_api_client_instance):
   mock_client.agent_engines.sessions.events.append.side_effect = side_effect
 
   await session_service.append_event(session, event_to_append)
+
+  assert mock_client.agent_engines.sessions.events.append.call_count == 2
+  assert 'does not support raw_event' in caplog.text
 
   # Verify that it was written and restored correctly via custom_metadata
   retrieved_session = await session_service.get_session(
@@ -1507,6 +1520,157 @@ async def test_append_event_fallback_for_older_sdk(mock_api_client_instance):
 
   assert appended_event.actions.compaction is not None
   assert appended_event.actions.compaction.start_timestamp == 1000.0
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_reraises_non_raw_event_validation_error(
+    mock_api_client_instance, caplog
+):
+  """Tests that a validation failure unrelated to raw_event propagates."""
+  caplog.set_level(logging.WARNING)
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  assert session is not None
+
+  event_to_append = Event(
+      invocation_id='unrelated_invocation',
+      author='model',
+      timestamp=1734005534.0,
+  )
+  unrelated_error = pydantic.ValidationError.from_exception_data(
+      '_AppendAgentEngineSessionEventRequestParameters',
+      [{
+          'type': 'extra_forbidden',
+          'loc': ('config', 'event_metadata', 'unknown_field'),
+          'input': 'value',
+      }],
+  )
+  append_mock = mock_api_client_instance.agent_engines.sessions.events.append
+  append_mock.side_effect = unrelated_error
+
+  with pytest.raises(
+      pydantic.ValidationError, match='unknown_field'
+  ) as exc_info:
+    await session_service.append_event(session, event_to_append)
+
+  assert exc_info.value is unrelated_error
+  assert append_mock.call_count == 1
+  assert 'does not support raw_event' not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_reraises_when_raw_event_error_is_not_the_only_error(
+    mock_api_client_instance, caplog
+):
+  """Tests that a raw_event failure alongside another one propagates."""
+  caplog.set_level(logging.WARNING)
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  assert session is not None
+
+  event_to_append = Event(
+      invocation_id='mixed_invocation',
+      author='model',
+      timestamp=1734005534.0,
+  )
+  mixed_error = pydantic.ValidationError.from_exception_data(
+      '_AppendAgentEngineSessionEventRequestParameters',
+      [
+          {
+              'type': 'string_type',
+              'loc': ('config', 'content', 'parts', 0, 'text'),
+              'input': 1,
+          },
+          {
+              'type': 'extra_forbidden',
+              'loc': ('config', 'raw_event'),
+              'input': {},
+          },
+      ],
+  )
+  append_mock = mock_api_client_instance.agent_engines.sessions.events.append
+  append_mock.side_effect = mixed_error
+
+  with pytest.raises(pydantic.ValidationError, match='parts') as exc_info:
+    await session_service.append_event(session, event_to_append)
+
+  assert exc_info.value is mixed_error
+  assert append_mock.call_count == 1
+  assert 'does not support raw_event' not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_payload_passes_installed_sdk_validation(
+    mock_api_client_instance, caplog
+):
+  """Tests that the installed SDK accepts the payload, so nothing falls back."""
+  caplog.set_level(logging.WARNING)
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  assert session is not None
+
+  event_to_append = Event(
+      invocation_id='installed_sdk_invocation',
+      author='model',
+      timestamp=1734005534.0,
+      content=genai_types.Content(
+          role='model', parts=[genai_types.Part(text='hello')]
+      ),
+      branch='main',
+      turn_complete=True,
+      long_running_tool_ids={'tool_1'},
+      custom_metadata={'extra': 'info'},
+      usage_metadata=genai_types.GenerateContentResponseUsageMetadata(
+          prompt_token_count=1000,
+          candidates_token_count=250,
+          total_token_count=1250,
+      ),
+      actions=EventActions(
+          compaction=EventCompaction(
+              start_timestamp=500.0,
+              end_timestamp=600.0,
+              compacted_content=genai_types.Content(
+                  parts=[genai_types.Part(text='compacted')]
+              ),
+          )
+      ),
+  )
+
+  mock_client = mock_api_client_instance
+
+  async def side_effect(name, author, invocation_id, timestamp, config):
+    # The installed SDK validates the whole config against a closed model
+    # before any network I/O, so running that model here raises exactly what a
+    # real append() raises.
+    vertexai_types.AppendAgentEngineSessionEventConfig(**config)
+    return await mock_client._append_event(
+        name, author, invocation_id, timestamp, config
+    )
+
+  mock_client.agent_engines.sessions.events.append.side_effect = side_effect
+
+  await session_service.append_event(session, event_to_append)
+
+  assert mock_client.agent_engines.sessions.events.append.call_count == 1
+  assert 'does not support raw_event' not in caplog.text
+
+  retrieved_session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  appended_event = retrieved_session.events[-1]
+  assert appended_event.content == event_to_append.content
+  assert appended_event.branch == 'main'
+  assert appended_event.long_running_tool_ids == {'tool_1'}
+  assert appended_event.custom_metadata == {'extra': 'info'}
 
 
 def test_extract_short_session_id_short_id():
