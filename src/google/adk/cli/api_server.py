@@ -618,6 +618,19 @@ def _setup_telemetry_from_env(
   _setup_instrumentation_lib_if_installed()
 
 
+def _instrumentation_failure_detail(err: Exception) -> str:
+  """Returns the exception detail, with an install hint only for ImportError.
+
+  Any other error - typically a version-skewed instrumentor raising
+  AttributeError out of instrument() - means the extra is installed but
+  unusable, so the install hint would misdirect.
+  """
+  detail = f"{type(err).__name__}: {err}"
+  if isinstance(err, ImportError):
+    return f"{detail}. Make sure to install google-adk[otel-gcp]"
+  return detail
+
+
 def _setup_instrumentation_lib_if_installed():
   # Set instrumentation to enable emitting OTel data from GenAISDK
   # Currently the instrumentation lib is in extras dependencies, make sure to
@@ -626,10 +639,11 @@ def _setup_instrumentation_lib_if_installed():
     from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
 
     GoogleGenAiSdkInstrumentor().instrument()
-  except ImportError:
+  except ImportError as err:
     logger.warning(
-        "Unable to import GoogleGenAiSdkInstrumentor - some"
-        " telemetry will be disabled. Make sure to install google-adk[otel-gcp]"
+        "Unable to import GoogleGenAiSdkInstrumentor - some telemetry will be"
+        " disabled. %s",
+        _instrumentation_failure_detail(err),
     )
   if os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID"):
     # Set up HTTPX and gRPC instrumentation for A2A multi-agent observability.
@@ -637,19 +651,19 @@ def _setup_instrumentation_lib_if_installed():
       from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
 
       HTTPXClientInstrumentor().instrument()
-    except (ImportError, AttributeError):
+    except (ImportError, AttributeError) as err:
       logger.warning(
-          "telemetry enabled but proceeding without HTTPX instrumentation,"
-          " because google-adk[otel-gcp] has not been installed"
+          "telemetry enabled but proceeding without HTTPX instrumentation. %s",
+          _instrumentation_failure_detail(err),
       )
     try:
       from opentelemetry.instrumentation.grpc import GrpcInstrumentorClient
 
       GrpcInstrumentorClient().instrument()
-    except (ImportError, AttributeError):
+    except (ImportError, AttributeError) as err:
       logger.warning(
-          "telemetry enabled but proceeding without gRPC instrumentation,"
-          " because google-adk[otel-gcp] has not been installed"
+          "telemetry enabled but proceeding without gRPC instrumentation. %s",
+          _instrumentation_failure_detail(err),
       )
 
 
