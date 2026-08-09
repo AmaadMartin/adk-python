@@ -328,9 +328,7 @@ class TelemetryGroup(click.Group):
 
           # A group invoked without a subcommand only prints its help: click
           # >= 8.2 raises NoArgsIsHelpError and click 8.1.x calls ctx.exit(),
-          # and neither is a command run. Skip it like --help/-h above. This
-          # is checked before make_context, which on click 8.1.x would echo
-          # the group help a second time.
+          # and neither is a command run. Skip it like --help/-h above.
           shows_group_help = (
               isinstance(cmd_obj, click.Group)
               and cmd_obj.no_args_is_help
@@ -341,7 +339,12 @@ class TelemetryGroup(click.Group):
           if cmd_obj is not None and not shows_group_help:
             try:
               # Reconstruct the subcommand context to query parameters.
-              sub_ctx = cmd_obj.make_context(command, sub_args, parent=ctx)
+              # `resilient_parsing` records each parameter's source but
+              # suppresses MissingParameter, so HelpfulCommand.parse_args
+              # cannot echo the help text and the error a second time.
+              sub_ctx = cmd_obj.make_context(
+                  command, sub_args, parent=ctx, resilient_parsing=True
+              )
             except Exception:  # pylint: disable=broad-except
               pass
 
