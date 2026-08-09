@@ -36,6 +36,7 @@ from typing import Callable
 from typing import List
 from typing import Literal
 from typing import Optional
+from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -93,6 +94,10 @@ from .utils import cleanup
 from .utils import common
 from .utils.base_agent_loader import BaseAgentLoader
 from .utils.shared_value import SharedValue
+
+if TYPE_CHECKING:
+  from ..evaluation.eval_set_results_manager import EvalSetResultsManager
+  from ..evaluation.eval_sets_manager import EvalSetsManager
 
 logger = logging.getLogger("google_adk." + __name__)
 

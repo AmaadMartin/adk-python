@@ -26,6 +26,7 @@ from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
 from pydantic import ValidationError  # noqa: F401
+from typing_extensions import Self
 
 from ...features import experimental
 from ...features import FeatureName
