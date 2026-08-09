@@ -33,13 +33,7 @@ from google.adk.memory.base_memory_service import BaseMemoryService
 from google.adk.sessions.base_session_service import BaseSessionService
 import pytest
 
-_PACKAGED_RUNTIME_CONFIG = (
-    Path(fast_api.__file__).parent
-    / "browser"
-    / "assets"
-    / "config"
-    / "runtime-config.json"
-)
+from .conftest import _PACKAGED_RUNTIME_CONFIG
 
 
 def _make_api_server(agents_dir: Path, **kwargs) -> ApiServer:

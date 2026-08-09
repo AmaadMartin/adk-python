@@ -30,16 +30,9 @@ _PACKAGED_RUNTIME_CONFIG = (
 )
 
 
-def _packaged_runtime_config_bytes() -> bytes | None:
-  """Returns the packaged runtime config, or None if it is not installed."""
-  if not _PACKAGED_RUNTIME_CONFIG.exists():
-    return None
-  return _PACKAGED_RUNTIME_CONFIG.read_bytes()
-
-
 # Snapshot taken once, so every test that rewrites the packaged file fails and
 # not only the first one.
-_ORIGINAL_RUNTIME_CONFIG_BYTES = _packaged_runtime_config_bytes()
+_ORIGINAL_RUNTIME_CONFIG_BYTES = _PACKAGED_RUNTIME_CONFIG.read_bytes()
 
 
 @pytest.fixture(autouse=True)
@@ -61,7 +54,9 @@ def isolated_web_assets_dir(tmp_path_factory, monkeypatch):
 
   yield assets_dir
 
-  assert _packaged_runtime_config_bytes() == _ORIGINAL_RUNTIME_CONFIG_BYTES, (
+  assert (
+      _PACKAGED_RUNTIME_CONFIG.read_bytes() == _ORIGINAL_RUNTIME_CONFIG_BYTES
+  ), (
       f"{_PACKAGED_RUNTIME_CONFIG} was modified by this test. The server must"
       " only write runtime-config.json into a temporary web assets directory."
   )
