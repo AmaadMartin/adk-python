@@ -39,9 +39,13 @@ import pytest
 # not ``.resolve()``, because the test tree may be symlinked.
 _REPO_ROOT = Path(__file__).parent.parent.parent
 
-# The interpreters in the PYTHON_VERSIONS array of
-# scripts/update_constraints.sh, which is what decides how many files exist.
-_PYTHON_VERSIONS = ('3.10', '3.11', '3.12', '3.13', '3.14')
+# Discovered, not listed, so a new interpreter in the PYTHON_VERSIONS array of
+# scripts/update_constraints.sh is guarded as soon as its file is committed.
+_CONSTRAINTS_FILES = sorted(_REPO_ROOT.glob('constraints-*.txt'))
+
+# An empty parametrize list skips silently instead of failing, which would
+# leave both guards below reporting success while checking nothing.
+assert _CONSTRAINTS_FILES, f'No constraints-*.txt file under {_REPO_ROOT}.'
 
 # The suffix of the stabilization copy that scripts/update_constraints.sh
 # feeds to uv. That copy lives only while the script runs.
@@ -51,17 +55,6 @@ _TEMPORARY_CONSTRAINT_SUFFIX = '.stable.tmp'
 # source under it.
 _VIA_HEADER = '# via'
 _VIA_SOURCE_PREFIX = '    #   '
-
-
-def _read_lines(version: str) -> list[str]:
-  """Returns the committed constraints file for ``version``, line by line."""
-  path = _REPO_ROOT / f'constraints-{version}.txt'
-  assert path.is_file(), (
-      f'{path} is missing. README.md tells users to download it, and '
-      'scripts/update_constraints.sh generates one file per interpreter in '
-      'its PYTHON_VERSIONS array.'
-  )
-  return path.read_text(encoding='utf-8').splitlines()
 
 
 def _via_blocks_without_a_source(lines: list[str]) -> list[str]:
@@ -80,17 +73,19 @@ def _via_blocks_without_a_source(lines: list[str]) -> list[str]:
   return offenders
 
 
-@pytest.mark.parametrize('version', _PYTHON_VERSIONS)
-def test_no_temporary_constraint_file_is_referenced(version: str) -> None:
+@pytest.mark.parametrize('path', _CONSTRAINTS_FILES, ids=lambda p: p.name)
+def test_no_temporary_constraint_file_is_referenced(path: Path) -> None:
   """The published file never names the scratch file that generated it."""
+  lines = path.read_text(encoding='utf-8').splitlines()
+
   offenders = [
       (number, line)
-      for number, line in enumerate(_read_lines(version), start=1)
+      for number, line in enumerate(lines, start=1)
       if _TEMPORARY_CONSTRAINT_SUFFIX in line
   ]
 
   assert not offenders, (
-      f'constraints-{version}.txt names a {_TEMPORARY_CONSTRAINT_SUFFIX} '
+      f'{path.name} names a {_TEMPORARY_CONSTRAINT_SUFFIX} '
       f'file on {len(offenders)} line(s), starting at line {offenders[0][0]}: '
       f'{offenders[0][1].strip()!r}. That file exists only while '
       'scripts/update_constraints.sh runs, so the reference is dead for '
@@ -99,18 +94,20 @@ def test_no_temporary_constraint_file_is_referenced(version: str) -> None:
   )
 
 
-@pytest.mark.parametrize('version', _PYTHON_VERSIONS)
-def test_every_via_block_lists_at_least_one_source(version: str) -> None:
+@pytest.mark.parametrize('path', _CONSTRAINTS_FILES, ids=lambda p: p.name)
+def test_every_via_block_lists_at_least_one_source(path: Path) -> None:
   """Dropping the scratch file never empties an annotation block.
 
   A ``--constraint`` file restricts versions; it never pulls a package into
   the resolution. Every pin therefore keeps a real source. This test fails
   loudly if that ever stops holding, instead of publishing a malformed file.
   """
-  offenders = _via_blocks_without_a_source(_read_lines(version))
+  lines = path.read_text(encoding='utf-8').splitlines()
+
+  offenders = _via_blocks_without_a_source(lines)
 
   assert not offenders, (
-      f'constraints-{version}.txt has {len(offenders)} "{_VIA_HEADER}" '
+      f'{path.name} has {len(offenders)} "{_VIA_HEADER}" '
       f'block(s) with no source under them: {offenders}. The provenance '
       'filter in scripts/update_constraints.sh removed the only source of '
       'the block instead of a reference to the stabilization scratch file.'

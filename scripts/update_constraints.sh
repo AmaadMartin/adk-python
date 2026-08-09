@@ -129,9 +129,10 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
     # Drop uv's provenance lines for STABLE_FILE. That file only exists while
     # this script runs -- the cleanup trap deletes it -- so naming it in the
     # committed file is noise for the users who download it per README.md, and
-    # it doubles the diff whenever the pins are refreshed.
+    # it doubles the diff whenever the pins are refreshed. Match STABLE_FILE
+    # itself, so renaming it cannot silently disable the filter.
     tail -n +3 "$NEW_FILE" |
-      sed -E '/^[[:space:]]*#[[:space:]]+-c .*\.stable\.tmp$/d'
+      sed -E "/^[[:space:]]*#[[:space:]]+-c ${STABLE_FILE}\$/d"
   } > "$CLEAN_FILE"
   mv "$CLEAN_FILE" "$NEW_FILE"
 
