@@ -40,6 +40,7 @@ from google.genai import types as genai_types
 from google.genai.errors import ClientError
 import pydantic
 import pytest
+from vertexai import types as vertexai_types
 
 MOCK_SESSION_JSON_1 = {
     'name': (
@@ -1565,7 +1566,7 @@ async def test_append_event_reraises_non_raw_event_validation_error(
 async def test_append_event_reraises_when_raw_event_error_is_not_the_only_error(
     mock_api_client_instance, caplog
 ):
-  """Tests that a raw_event failure reported alongside another one propagates."""
+  """Tests that a raw_event failure alongside another one propagates."""
   caplog.set_level(logging.WARNING)
   session_service = mock_vertex_ai_session_service()
   session = await session_service.get_session(
@@ -1602,6 +1603,74 @@ async def test_append_event_reraises_when_raw_event_error_is_not_the_only_error(
   assert exc_info.value is mixed_error
   assert append_mock.call_count == 1
   assert 'does not support raw_event' not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_append_event_payload_passes_installed_sdk_validation(
+    mock_api_client_instance, caplog
+):
+  """Tests that the installed SDK accepts the payload, so nothing falls back."""
+  caplog.set_level(logging.WARNING)
+  session_service = mock_vertex_ai_session_service()
+  session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  assert session is not None
+
+  event_to_append = Event(
+      invocation_id='installed_sdk_invocation',
+      author='model',
+      timestamp=1734005534.0,
+      content=genai_types.Content(
+          role='model', parts=[genai_types.Part(text='hello')]
+      ),
+      branch='main',
+      turn_complete=True,
+      long_running_tool_ids={'tool_1'},
+      custom_metadata={'extra': 'info'},
+      usage_metadata=genai_types.GenerateContentResponseUsageMetadata(
+          prompt_token_count=1000,
+          candidates_token_count=250,
+          total_token_count=1250,
+      ),
+      actions=EventActions(
+          compaction=EventCompaction(
+              start_timestamp=500.0,
+              end_timestamp=600.0,
+              compacted_content=genai_types.Content(
+                  parts=[genai_types.Part(text='compacted')]
+              ),
+          )
+      ),
+  )
+
+  mock_client = mock_api_client_instance
+
+  async def side_effect(name, author, invocation_id, timestamp, config):
+    # The installed SDK validates the whole config against a closed model
+    # before any network I/O, so running that model here raises exactly what a
+    # real append() raises.
+    vertexai_types.AppendAgentEngineSessionEventConfig(**config)
+    return await mock_client._append_event(
+        name, author, invocation_id, timestamp, config
+    )
+
+  mock_client.agent_engines.sessions.events.append.side_effect = side_effect
+
+  await session_service.append_event(session, event_to_append)
+
+  assert mock_client.agent_engines.sessions.events.append.call_count == 1
+  assert 'does not support raw_event' not in caplog.text
+
+  retrieved_session = await session_service.get_session(
+      app_name='123', user_id='user', session_id='1'
+  )
+  appended_event = retrieved_session.events[-1]
+  assert appended_event.content == event_to_append.content
+  assert appended_event.branch == 'main'
+  assert appended_event.long_running_tool_ids == {'tool_1'}
+  assert appended_event.custom_metadata == {'extra': 'info'}
 
 
 def test_extract_short_session_id_short_id():
