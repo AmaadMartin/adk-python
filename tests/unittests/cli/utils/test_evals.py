@@ -14,6 +14,7 @@
 
 """Tests for utilities in eval."""
 
+import dataclasses
 import os
 from unittest import mock
 
@@ -23,7 +24,11 @@ from google.adk.evaluation.gcs_eval_sets_manager import GcsEvalSetsManager
 from google.adk.events.event import Event
 from google.adk.sessions.session import Session
 from google.genai import types
+import pydantic
 import pytest
+
+from ... import isolated_import_utils
+from ...isolated_import_utils import run_isolated
 
 
 @mock.patch.dict(os.environ, {'GOOGLE_CLOUD_PROJECT': 'test-project'})
@@ -64,6 +69,41 @@ def test_create_gcs_eval_managers_from_uri_success(
 def test_create_gcs_eval_managers_from_uri_failure():
   with pytest.raises(ValueError):
     evals.create_gcs_eval_managers_from_uri('unsupported-uri')
+
+
+@pytest.mark.skipif(
+    not isolated_import_utils.SOURCE_ROOT.is_dir(),
+    reason='Import-loading checks need the source checkout layout.',
+)
+def test_gcs_eval_managers_constructible_on_a_fresh_import():
+  """The container must build in a frame that has no manager class local.
+
+  This runs in a fresh interpreter because calling the factory warms the
+  container up for the rest of the process, which would let the test pass on
+  the unfixed code whenever a sibling test ran first.
+  """
+  result = run_isolated("""
+from google.adk.cli.utils import evals
+
+eval_sets_manager = object()
+eval_set_results_manager = object()
+
+managers = evals.GcsEvalManagers(
+    eval_sets_manager=eval_sets_manager,
+    eval_set_results_manager=eval_set_results_manager,
+)
+
+assert managers.eval_sets_manager is eval_sets_manager
+assert managers.eval_set_results_manager is eval_set_results_manager
+""")
+
+  assert result.returncode == 0, result.stderr
+
+
+def test_gcs_eval_managers_is_not_a_pydantic_model():
+  """A pydantic model here cannot resolve its TYPE_CHECKING-only fields."""
+  assert not issubclass(evals.GcsEvalManagers, pydantic.BaseModel)
+  assert dataclasses.is_dataclass(evals.GcsEvalManagers)
 
 
 def _event(author: str, text: str, invocation_id: str) -> Event:

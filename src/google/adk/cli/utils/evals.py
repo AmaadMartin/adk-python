@@ -14,12 +14,9 @@
 
 from __future__ import annotations
 
+import dataclasses
 import os
 from typing import TYPE_CHECKING
-
-from pydantic import alias_generators
-from pydantic import BaseModel
-from pydantic import ConfigDict
 
 from ...evaluation.eval_case import Invocation
 from ...evaluation.evaluation_generator import EvaluationGenerator
@@ -30,16 +27,17 @@ if TYPE_CHECKING:
   from ...evaluation.gcs_eval_sets_manager import GcsEvalSetsManager
 
 
-class GcsEvalManagers(BaseModel):
-  model_config = ConfigDict(
-      alias_generator=alias_generators.to_camel,
-      populate_by_name=True,
-      arbitrary_types_allowed=True,
-  )
+@dataclasses.dataclass
+class GcsEvalManagers:
+  """The GCS backed eval managers for an eval storage URI.
 
-  eval_sets_manager: 'GcsEvalSetsManager'
+  Not a pydantic model: both field types come from an optional dependency and
+  import only under TYPE_CHECKING, so pydantic could never complete the class.
+  """
 
-  eval_set_results_manager: 'GcsEvalSetResultsManager'
+  eval_sets_manager: GcsEvalSetsManager
+
+  eval_set_results_manager: GcsEvalSetResultsManager
 
 
 def convert_session_to_eval_invocations(session: Session) -> list[Invocation]:
