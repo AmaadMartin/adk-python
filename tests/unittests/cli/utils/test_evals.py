@@ -14,7 +14,11 @@
 
 """Tests for utilities in eval."""
 
+import dataclasses
 import os
+import subprocess
+import sys
+import textwrap
 from unittest import mock
 
 from google.adk.cli.utils import evals
@@ -23,6 +27,7 @@ from google.adk.evaluation.gcs_eval_sets_manager import GcsEvalSetsManager
 from google.adk.events.event import Event
 from google.adk.sessions.session import Session
 from google.genai import types
+import pydantic
 import pytest
 
 
@@ -64,6 +69,73 @@ def test_create_gcs_eval_managers_from_uri_success(
 def test_create_gcs_eval_managers_from_uri_failure():
   with pytest.raises(ValueError):
     evals.create_gcs_eval_managers_from_uri('unsupported-uri')
+
+
+def _run_in_fresh_interpreter(script: str) -> subprocess.CompletedProcess[str]:
+  """Runs a script in a new interpreter, so the import state is pristine.
+
+  The defect under test only appears on a cold import, and calling the factory
+  warms the container up for the rest of the process. An in-process test would
+  therefore pass or fail depending on which sibling test ran first.
+
+  Args:
+      script: The Python source to run. It is dedented before it runs.
+
+  Returns:
+      The completed process, with stdout and stderr captured as text.
+  """
+  return subprocess.run(
+      [sys.executable, '-c', textwrap.dedent(script)],
+      capture_output=True,
+      text=True,
+      check=False,
+  )
+
+
+def test_gcs_eval_managers_constructible_on_a_fresh_import():
+  """The container must build in a frame that has no manager class local."""
+  result = _run_in_fresh_interpreter("""
+      from google.adk.cli.utils import evals
+
+      eval_sets_manager = object()
+      eval_set_results_manager = object()
+
+      managers = evals.GcsEvalManagers(
+          eval_sets_manager=eval_sets_manager,
+          eval_set_results_manager=eval_set_results_manager,
+      )
+
+      assert managers.eval_sets_manager is eval_sets_manager
+      assert managers.eval_set_results_manager is eval_set_results_manager
+  """)
+
+  assert result.returncode == 0, result.stderr
+
+
+def test_gcs_eval_managers_is_not_a_pydantic_model():
+  """A pydantic model here cannot resolve its TYPE_CHECKING-only fields."""
+  assert not issubclass(evals.GcsEvalManagers, pydantic.BaseModel)
+  assert dataclasses.is_dataclass(evals.GcsEvalManagers)
+
+
+def test_evals_module_does_not_import_google_cloud_storage():
+  """Importing the module must not pull in the optional GCS dependency."""
+  result = _run_in_fresh_interpreter("""
+      import sys
+
+      # Poisoning sys.modules makes `import google.cloud.storage` raise.
+      sys.modules['google.cloud.storage'] = None
+
+      import google.adk.cli.utils.evals
+
+      assert 'google.adk.evaluation.gcs_eval_sets_manager' not in sys.modules
+      assert (
+          'google.adk.evaluation.gcs_eval_set_results_manager'
+          not in sys.modules
+      )
+  """)
+
+  assert result.returncode == 0, result.stderr
 
 
 def _event(author: str, text: str, invocation_id: str) -> Event:
