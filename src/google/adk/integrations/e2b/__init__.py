@@ -21,14 +21,14 @@ shell execution, and on-demand software installs.
 Requires the ``e2b`` extra: ``pip install google-adk[e2b]``.
 
 Example:
-  ```python
-  from google.adk.integrations.e2b import E2BEnvironment
+  .. code-block:: python
 
-  env = E2BEnvironment(image="base", timeout=300)
-  await env.initialize()
-  result = await env.execute("pip install requests")
-  await env.close()
-  ```
+    from google.adk.integrations.e2b import E2BEnvironment
+
+    env = E2BEnvironment(image="base", timeout=300)
+    await env.initialize()
+    result = await env.execute("pip install requests")
+    await env.close()
 """
 
 from ._e2b_environment import E2BEnvironment

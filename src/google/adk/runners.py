@@ -1715,15 +1715,16 @@ class Runner:
   ) -> AsyncGenerator[Event, None]:
     """Runs the agent in live mode (experimental feature).
 
-    The `run_live` method yields a stream of `Event` objects, but not all
+    The ``run_live`` method yields a stream of ``Event`` objects, but not all
     yielded events are saved to the session. Here's a breakdown:
 
     **Events Yielded to Callers:**
+
     *   **Live Model Audio Events with Inline Data:** Events containing raw
-        audio `Blob` data(`inline_data`).
+        audio ``Blob`` data (``inline_data``).
     *   **Live Model Audio Events with File Data:** Both input and output audio
         data are aggregated into an audio file saved into artifacts. The
-        reference to the file is saved in the event as `file_data`.
+        reference to the file is saved in the event as ``file_data``.
     *   **Usage Metadata:** Events containing token usage.
     *   **Transcription Events:** Both partial and non-partial transcription
         events are yielded.
@@ -1731,9 +1732,10 @@ class Runner:
     *   **Other Control Events:** Most control events are saved.
 
     **Events Saved to the Session:**
+
     *   **Live Model Audio Events with File Data:** Both input and output audio
         data are aggregated into an audio file saved into artifacts. The
-        reference to the file is saved as event in the `file_data` to session
+        reference to the file is saved as event in the ``file_data`` to session
         if RunConfig.save_live_model_audio_to_session is True.
     *   **Usage Metadata Events:** Saved to the session.
     *   **Non-Partial Transcription Events:** Non-partial transcription events
@@ -1742,21 +1744,22 @@ class Runner:
     *   **Other Control Events:** Most control events are saved.
 
     **Events Not Saved to the Session:**
+
     *   **Live Model Audio Events with Inline Data:** Events containing raw
-        audio `Blob` data are **not** saved to the session.
+        audio ``Blob`` data are **not** saved to the session.
 
     Args:
-        user_id: The user ID for the session. Required if `session` is None.
-        session_id: The session ID for the session. Required if `session` is
+        user_id: The user ID for the session. Required if ``session`` is None.
+        session_id: The session ID for the session. Required if ``session`` is
           None.
         live_request_queue: The queue for live requests.
         run_config: The run config for the agent.
         session: The session to use. This parameter is deprecated, please use
-          `user_id` and `session_id` instead.
+          ``user_id`` and ``session_id`` instead.
 
     Yields:
         AsyncGenerator[Event, None]: An asynchronous generator that yields
-        `Event`
+        ``Event``
         objects as they are produced by the agent during its live execution.
 
     .. warning::
@@ -1764,7 +1767,8 @@ class Runner:
         in future releases.
 
     .. NOTE::
-        Either `session` or both `user_id` and `session_id` must be provided.
+        Either ``session`` or both ``user_id`` and ``session_id`` must be
+        provided.
     """
     run_config = run_config or RunConfig()
     # Some native audio models requires the modality to be set. So we set it to

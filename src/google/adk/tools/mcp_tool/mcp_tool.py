@@ -93,9 +93,9 @@ class ProgressCallbackFactory(Protocol):
     )
 
   Note:
-    The **kwargs parameter is required for forward compatibility. Future
+    The ``**kwargs`` parameter is required for forward compatibility. Future
     versions may pass additional parameters. Implementations should accept
-    **kwargs even if they don't use them.
+    ``**kwargs`` even if they don't use them.
   """
 
   def __call__(
@@ -113,7 +113,7 @@ class ProgressCallbackFactory(Protocol):
         state, artifacts, and other runtime information. Allows modifying
         state via ctx.state['key'] = value. May be None if not available.
       **kwargs: Additional keyword arguments for future extensibility.
-        Implementations should accept **kwargs for forward compatibility.
+        Implementations should accept ``**kwargs`` for forward compatibility.
 
     Returns:
       A progress callback function, or None if no callback is needed
@@ -171,9 +171,9 @@ class McpTool(BaseAuthenticatedTool):
             This callback will be used for all invocations.
 
           - A ``ProgressCallbackFactory`` that creates per-invocation callbacks.
-            The factory receives (tool_name, callback_context, **kwargs) and
-            returns a ProgressFnT or None. This allows callbacks to access
-            and modify runtime context like session state.
+            The factory receives ``(tool_name, callback_context, **kwargs)`` and
+            returns a ``ProgressFnT`` or None. This allows callbacks to
+            access and modify runtime context like session state.
 
     Raises:
         ValueError: If mcp_tool or mcp_session_manager is None.
@@ -241,13 +241,13 @@ class McpTool(BaseAuthenticatedTool):
   def mcp_app_resource_uri(self) -> str | None:
     """Returns the MCP App UI resource URI if this tool has one.
 
-    MCP Apps declare a UI resource via `meta.ui.resourceUri` in the tool
+    MCP Apps declare a UI resource via ``meta.ui.resourceUri`` in the tool
     definition. This property extracts that URI, supporting both the nested
-    format (`{"ui": {"resourceUri": "ui://..."}}`) and the flat format
-    (`{"ui/resourceUri": "ui://..."}`).
+    format (``{"ui": {"resourceUri": "ui://..."}}``) and the flat format
+    (``{"ui/resourceUri": "ui://..."}``).
 
     Returns:
-        The `ui://` resource URI string, or None if not present.
+        The ``ui://`` resource URI string, or None if not present.
     """
     meta = getattr(self.raw_mcp_tool, "meta", None)
     if not meta or not isinstance(meta, dict):

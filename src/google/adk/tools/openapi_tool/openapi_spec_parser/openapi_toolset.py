@@ -120,13 +120,16 @@ class OpenAPIToolset(BaseToolset):
       tool_name_prefix: The prefix to prepend to the names of the tools returned
         by the toolset. Useful when multiple OpenAPI specs have tools with
         similar names.
-      ssl_verify: SSL certificate verification option for all tools. Can be: -
-        None: Use default verification (True) - True: Verify SSL certificates
-          using system CA - False: Disable SSL verification (insecure, not
-          recommended) - str: Path to a CA bundle file or directory for custom
-          CA - ssl.SSLContext: Custom SSL context for advanced configuration
-          This is useful for enterprise environments where requests go through a
-          TLS-intercepting proxy with a custom CA certificate.
+      ssl_verify: SSL certificate verification option for all tools. Can be:
+
+        - None: Use default verification (True)
+        - True: Verify SSL certificates using system CA
+        - False: Disable SSL verification (insecure, not recommended)
+        - str: Path to a CA bundle file or directory for custom CA
+        - ssl.SSLContext: Custom SSL context for advanced configuration
+
+        This is useful for enterprise environments where requests go through a
+        TLS-intercepting proxy with a custom CA certificate.
       header_provider: A callable that returns a dictionary of headers to be
         included in API requests. The callable receives the ReadonlyContext as
         an argument, allowing dynamic header generation based on the current

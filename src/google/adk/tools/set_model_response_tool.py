@@ -161,10 +161,11 @@ class SetModelResponseTool(BaseTool):
     Returns:
       The validated response, or validation feedback for the model to retry.
       Type depends on the output_schema:
-        - dict for BaseModel
-        - list of dicts for list[BaseModel]
-        - raw value for other schema types (list[str], dict, etc.)
-        - dict with an error message when Pydantic validation fails
+
+      - dict for BaseModel
+      - list of dicts for list[BaseModel]
+      - raw value for other schema types (list[str], dict, etc.)
+      - dict with an error message when Pydantic validation fails
     """
     try:
       if self._is_basemodel:

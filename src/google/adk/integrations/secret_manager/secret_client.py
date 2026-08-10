@@ -131,8 +131,8 @@ class SecretManagerClient:
 
     Args:
         resource_name: The full resource name of the secret, in the format
-          "projects/*/secrets/*/versions/*".  Usually you want the "latest"
-          version, e.g.,
+          ``"projects/*/secrets/*/versions/*"``. Usually you want the
+          "latest" version, e.g.,
           "projects/my-project/secrets/my-secret/versions/latest".
 
     Returns:

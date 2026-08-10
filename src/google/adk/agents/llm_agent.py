@@ -297,10 +297,12 @@ class LlmAgent(BaseAgent, abc.ABC):
   has its own cache mechanism, thus this field doesn't work with Live API.
 
   **Impact on instruction field:**
+
   - When static_instruction is None: instruction → system_instruction
   - When static_instruction is set: instruction → user content (after static content)
 
   **Context Caching:**
+
   - **Implicit Cache**: Automatic caching by model providers (no config needed)
   - **Explicit Cache**: Cache explicitly created by user for instructions, tools and contents
 
@@ -313,6 +315,7 @@ class LlmAgent(BaseAgent, abc.ABC):
 
   **Content Support:**
   Accepts types.ContentUnion which includes:
+
   - str: Simple text instruction
   - types.Content: Rich content object
   - types.Part: Single part (text, inline_data, file_data, etc.)
@@ -321,19 +324,20 @@ class LlmAgent(BaseAgent, abc.ABC):
   - list[PartUnion]: List of parts
 
   **Examples:**
-  ```python
-  # Simple string instruction
-  static_instruction = "You are a helpful assistant."
 
-  # Rich content with files
-  static_instruction = types.Content(
-      role='user',
-      parts=[
-          types.Part(text='You are a helpful assistant.'),
-          types.Part(file_data=types.FileData(...))
-      ]
-  )
-  ```
+  .. code-block:: python
+
+    # Simple string instruction
+    static_instruction = "You are a helpful assistant."
+
+    # Rich content with files
+    static_instruction = types.Content(
+        role='user',
+        parts=[
+            types.Part(text='You are a helpful assistant.'),
+            types.Part(file_data=types.FileData(...))
+        ]
+    )
   """
 
   tools: list[ToolUnion] = Field(default_factory=list)

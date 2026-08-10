@@ -134,25 +134,26 @@ Optional. LlmAgent.tools.
 
 Examples:
 
-  For ADK built-in tools in `google.adk.tools` package, they can be referenced
-  directly with the name:
+  For ADK built-in tools in ``google.adk.tools`` package, they can be
+  referenced directly with the name:
 
-    ```
+  .. code-block:: yaml
+
     tools:
       - name: google_search
       - name: load_memory
-    ```
 
   For user-defined tools, they can be referenced with fully qualified name:
 
-    ```
+  .. code-block:: yaml
+
     tools:
       - name: my_library.my_tools.my_tool
-    ```
 
   For tools that needs to be created via functions:
 
-    ```
+  .. code-block:: yaml
+
     tools:
       - name: my_library.my_tools.create_tool
         args:
@@ -160,12 +161,12 @@ Examples:
             value: value1
           - name: param2
             value: value2
-    ```
 
   For more advanced tools, instead of specifying arguments in config, it's
   recommended to define them in Python files and reference them. E.g.,
 
-    ```
+  .. code-block:: python
+
     # tools.py
     my_mcp_toolset = McpToolset(
         connection_params=StdioServerParameters(
@@ -174,14 +175,13 @@ Examples:
             env={"OPENAPI_MCP_HEADERS": NOTION_HEADERS},
         )
     )
-    ```
 
   Then, reference the toolset in config:
 
-  ```
-  tools:
-    - name: tools.my_mcp_toolset
-  ```""",
+  .. code-block:: yaml
+
+    tools:
+      - name: tools.my_mcp_toolset""",
   )
 
   before_model_callbacks: Optional[List[CodeConfig]] = Field(
@@ -191,10 +191,10 @@ Optional. LlmAgent.before_model_callbacks.
 
 Example:
 
-  ```
-  before_model_callbacks:
-    - name: my_library.callbacks.before_model_callback
-  ```""",
+  .. code-block:: yaml
+
+    before_model_callbacks:
+      - name: my_library.callbacks.before_model_callback""",
   )
 
   after_model_callbacks: Optional[List[CodeConfig]] = Field(

@@ -212,6 +212,7 @@ class BaseToolset(ABC):
     called before each tool processes the llm request.
 
     Use cases:
+
     - Instead of let each tool process the llm request, we can let the toolset
       process the llm request. e.g. ComputerUseToolset can add computer use
       tool to the llm request.

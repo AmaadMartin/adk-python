@@ -478,7 +478,7 @@
             }
           ],
           "default": null,
-          "description": "Optional. The before_agent_callbacks of the agent.\n\nExample:\n\n  ```\n  before_agent_callbacks:\n    - name: my_library.security_callbacks.before_agent_callback\n  ```",
+          "description": "Optional. The before_agent_callbacks of the agent.\n\nExample:\n\n  .. code-block:: yaml\n\n    before_agent_callbacks:\n      - name: my_library.security_callbacks.before_agent_callback",
           "title": "Before Agent Callbacks"
         },
         "after_agent_callbacks": {
@@ -3130,7 +3130,7 @@
             }
           ],
           "default": null,
-          "description": "Optional. The before_agent_callbacks of the agent.\n\nExample:\n\n  ```\n  before_agent_callbacks:\n    - name: my_library.security_callbacks.before_agent_callback\n  ```",
+          "description": "Optional. The before_agent_callbacks of the agent.\n\nExample:\n\n  .. code-block:: yaml\n\n    before_agent_callbacks:\n      - name: my_library.security_callbacks.before_agent_callback",
           "title": "Before Agent Callbacks"
         },
         "after_agent_callbacks": {
@@ -3311,7 +3311,7 @@
             }
           ],
           "default": null,
-          "description": "Optional. LlmAgent.tools.\n\nExamples:\n\n  For ADK built-in tools in `google.adk.tools` package, they can be referenced\n  directly with the name:\n\n    ```\n    tools:\n      - name: google_search\n      - name: load_memory\n    ```\n\n  For user-defined tools, they can be referenced with fully qualified name:\n\n    ```\n    tools:\n      - name: my_library.my_tools.my_tool\n    ```\n\n  For tools that needs to be created via functions:\n\n    ```\n    tools:\n      - name: my_library.my_tools.create_tool\n        args:\n          - name: param1\n            value: value1\n          - name: param2\n            value: value2\n    ```\n\n  For more advanced tools, instead of specifying arguments in config, it's\n  recommended to define them in Python files and reference them. E.g.,\n\n    ```\n    # tools.py\n    my_mcp_toolset = McpToolset(\n        connection_params=StdioServerParameters(\n            command=\"npx\",\n            args=[\"-y\", \"@notionhq/notion-mcp-server\"],\n            env={\"OPENAPI_MCP_HEADERS\": NOTION_HEADERS},\n        )\n    )\n    ```\n\n  Then, reference the toolset in config:\n\n  ```\n  tools:\n    - name: tools.my_mcp_toolset\n  ```",
+          "description": "Optional. LlmAgent.tools.\n\nExamples:\n\n  For ADK built-in tools in ``google.adk.tools`` package, they can be\n  referenced directly with the name:\n\n  .. code-block:: yaml\n\n    tools:\n      - name: google_search\n      - name: load_memory\n\n  For user-defined tools, they can be referenced with fully qualified name:\n\n  .. code-block:: yaml\n\n    tools:\n      - name: my_library.my_tools.my_tool\n\n  For tools that needs to be created via functions:\n\n  .. code-block:: yaml\n\n    tools:\n      - name: my_library.my_tools.create_tool\n        args:\n          - name: param1\n            value: value1\n          - name: param2\n            value: value2\n\n  For more advanced tools, instead of specifying arguments in config, it's\n  recommended to define them in Python files and reference them. E.g.,\n\n  .. code-block:: python\n\n    # tools.py\n    my_mcp_toolset = McpToolset(\n        connection_params=StdioServerParameters(\n            command=\"npx\",\n            args=[\"-y\", \"@notionhq/notion-mcp-server\"],\n            env={\"OPENAPI_MCP_HEADERS\": NOTION_HEADERS},\n        )\n    )\n\n  Then, reference the toolset in config:\n\n  .. code-block:: yaml\n\n    tools:\n      - name: tools.my_mcp_toolset",
           "title": "Tools"
         },
         "before_model_callbacks": {
@@ -3327,7 +3327,7 @@
             }
           ],
           "default": null,
-          "description": "Optional. LlmAgent.before_model_callbacks.\n\nExample:\n\n  ```\n  before_model_callbacks:\n    - name: my_library.callbacks.before_model_callback\n  ```",
+          "description": "Optional. LlmAgent.before_model_callbacks.\n\nExample:\n\n  .. code-block:: yaml\n\n    before_model_callbacks:\n      - name: my_library.callbacks.before_model_callback",
           "title": "Before Model Callbacks"
         },
         "after_model_callbacks": {
@@ -3449,7 +3449,7 @@
             }
           ],
           "default": null,
-          "description": "Optional. The before_agent_callbacks of the agent.\n\nExample:\n\n  ```\n  before_agent_callbacks:\n    - name: my_library.security_callbacks.before_agent_callback\n  ```",
+          "description": "Optional. The before_agent_callbacks of the agent.\n\nExample:\n\n  .. code-block:: yaml\n\n    before_agent_callbacks:\n      - name: my_library.security_callbacks.before_agent_callback",
           "title": "Before Agent Callbacks"
         },
         "after_agent_callbacks": {
@@ -3672,7 +3672,7 @@
             }
           ],
           "default": null,
-          "description": "Optional. The before_agent_callbacks of the agent.\n\nExample:\n\n  ```\n  before_agent_callbacks:\n    - name: my_library.security_callbacks.before_agent_callback\n  ```",
+          "description": "Optional. The before_agent_callbacks of the agent.\n\nExample:\n\n  .. code-block:: yaml\n\n    before_agent_callbacks:\n      - name: my_library.security_callbacks.before_agent_callback",
           "title": "Before Agent Callbacks"
         },
         "after_agent_callbacks": {
@@ -4885,7 +4885,7 @@
             }
           ],
           "default": null,
-          "description": "Optional. The before_agent_callbacks of the agent.\n\nExample:\n\n  ```\n  before_agent_callbacks:\n    - name: my_library.security_callbacks.before_agent_callback\n  ```",
+          "description": "Optional. The before_agent_callbacks of the agent.\n\nExample:\n\n  .. code-block:: yaml\n\n    before_agent_callbacks:\n      - name: my_library.security_callbacks.before_agent_callback",
           "title": "Before Agent Callbacks"
         },
         "after_agent_callbacks": {
@@ -5752,10 +5752,10 @@
     },
     "google__adk__tools__tool_configs__ToolConfig": {
       "additionalProperties": false,
-      "description": "The configuration for a tool.\n\nThe config supports these types of tools:\n1. ADK built-in tools\n2. User-defined tool instances\n3. User-defined tool classes\n4. User-defined functions that generate tool instances\n5. User-defined function tools\n\nFor examples:\n\n  1. For ADK built-in tool instances or classes in `google.adk.tools` package,\n  they can be referenced directly with the `name` and optionally with\n  `args`.\n\n  ```\n  tools:\n    - name: google_search\n    - name: AgentTool\n      args:\n        agent: ./another_agent.yaml\n        skip_summarization: true\n  ```\n\n  2. For user-defined tool instances, the `name` is the fully qualified path\n  to the tool instance.\n\n  ```\n  tools:\n    - name: my_package.my_module.my_tool\n  ```\n\n  3. For user-defined tool classes (custom tools), the `name` is the fully\n  qualified path to the tool class and `args` is the arguments for the tool.\n\n  ```\n  tools:\n    - name: my_package.my_module.my_tool_class\n      args:\n        my_tool_arg1: value1\n        my_tool_arg2: value2\n  ```\n\n  4. For user-defined functions that generate tool instances, the `name` is\n  the fully qualified path to the function and `args` is passed to the\n  function as arguments.\n\n  ```\n  tools:\n    - name: my_package.my_module.my_tool_function\n      args:\n        my_function_arg1: value1\n        my_function_arg2: value2\n  ```\n\n  The function must have the following signature:\n  ```\n  def my_function(args: ToolArgsConfig) -> BaseTool:\n    ...\n  ```\n\n  5. For user-defined function tools, the `name` is the fully qualified path\n  to the function.\n\n  ```\n  tools:\n    - name: my_package.my_module.my_function_tool\n  ```\n\n  If the above use cases don't suffice, users can define a custom tool config\n  by extending BaseToolConfig and override from_config() in the custom tool.",
+      "description": "The configuration for a tool.\n\nThe config supports these types of tools:\n\n1. ADK built-in tools\n2. User-defined tool instances\n3. User-defined tool classes\n4. User-defined functions that generate tool instances\n5. User-defined function tools\n\nFor examples:\n\n1. For ADK built-in tool instances or classes in ``google.adk.tools``\n   package, they can be referenced directly with the ``name`` and optionally\n   with ``args``.\n\n   .. code-block:: yaml\n\n     tools:\n       - name: google_search\n       - name: AgentTool\n         args:\n           agent: ./another_agent.yaml\n           skip_summarization: true\n\n2. For user-defined tool instances, the ``name`` is the fully qualified path\n   to the tool instance.\n\n   .. code-block:: yaml\n\n     tools:\n       - name: my_package.my_module.my_tool\n\n3. For user-defined tool classes (custom tools), the ``name`` is the fully\n   qualified path to the tool class and ``args`` is the arguments for the\n   tool.\n\n   .. code-block:: yaml\n\n     tools:\n       - name: my_package.my_module.my_tool_class\n         args:\n           my_tool_arg1: value1\n           my_tool_arg2: value2\n\n4. For user-defined functions that generate tool instances, the ``name`` is\n   the fully qualified path to the function and ``args`` is passed to the\n   function as arguments.\n\n   .. code-block:: yaml\n\n     tools:\n       - name: my_package.my_module.my_tool_function\n         args:\n           my_function_arg1: value1\n           my_function_arg2: value2\n\n   The function must have the following signature:\n\n   .. code-block:: python\n\n     def my_function(args: ToolArgsConfig) -> BaseTool:\n       ...\n\n5. For user-defined function tools, the ``name`` is the fully qualified path\n   to the function.\n\n   .. code-block:: yaml\n\n     tools:\n       - name: my_package.my_module.my_function_tool\n\nIf the above use cases don't suffice, users can define a custom tool config\nby extending BaseToolConfig and override from_config() in the custom tool.",
       "properties": {
         "name": {
-          "description": "The name of the tool.\n\nFor ADK built-in tools, `name` is the name of the tool, e.g. `google_search`\nor `AgentTool`.\n\nFor user-defined tools, the name is the fully qualified path to the tool, e.g.\n`my_package.my_module.my_tool`.",
+          "description": "The name of the tool.\n\nFor ADK built-in tools, ``name`` is the name of the tool, e.g.\n``google_search`` or ``AgentTool``.\n\nFor user-defined tools, the name is the fully qualified path to the tool, e.g.\n``my_package.my_module.my_tool``.",
           "title": "Name",
           "type": "string"
         },

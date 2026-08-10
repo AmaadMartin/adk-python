@@ -144,11 +144,13 @@ class RestApiTool(BaseTool):
           (https://github.com/OAI/OpenAPI-Specification/blob/main/versions/3.1.0.md#security-scheme-object)
         auth_credential: The authentication credential of the tool.
         should_parse_operation: Whether to parse the operation.
-        ssl_verify: SSL certificate verification option. Can be: - None: Use
-          default verification - True: Verify SSL certificates using system CA -
-          False: Disable SSL verification (insecure, not recommended) - str:
-            Path to a CA bundle file or directory for custom CA -
-            ssl.SSLContext: Custom SSL context for advanced configuration
+        ssl_verify: SSL certificate verification option. Can be:
+
+          - None: Use default verification
+          - True: Verify SSL certificates using system CA
+          - False: Disable SSL verification (insecure, not recommended)
+          - str: Path to a CA bundle file or directory for custom CA
+          - ssl.SSLContext: Custom SSL context for advanced configuration
         header_provider: A callable that returns a dictionary of headers to be
           included in API requests. The callable receives the ReadonlyContext as
           an argument, allowing dynamic header generation based on the current

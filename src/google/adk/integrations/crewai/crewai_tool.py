@@ -64,9 +64,9 @@ class CrewaiTool(FunctionTool):
   ) -> Any:
     """Override run_async to handle CrewAI-specific parameter filtering.
 
-    CrewAI tools use **kwargs pattern, so we need special parameter filtering
-    logic that allows all parameters to pass through while removing only
-    reserved parameters like 'self' and 'tool_context'.
+    CrewAI tools use the ``**kwargs`` pattern, so we need special parameter
+    filtering logic that allows all parameters to pass through while removing
+    only reserved parameters like 'self' and 'tool_context'.
 
     Note: 'tool_context' is removed from the initial args dictionary to prevent
     duplicates, but is re-added if the function signature explicitly requires it

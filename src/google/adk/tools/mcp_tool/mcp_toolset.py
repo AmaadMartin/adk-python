@@ -152,10 +152,11 @@ class McpToolset(BaseToolset):
         ``ProgressFnT`` callback that receives (progress, total, message). This
         callback will be shared by all tools in the toolset.  - A
         ``ProgressCallbackFactory`` that creates per-tool callbacks. The factory
-        receives (tool_name, callback_context, **kwargs) and returns a
-        ProgressFnT or None. This allows different tools to have different
+        receives ``(tool_name, callback_context, **kwargs)`` and returns a
+        ``ProgressFnT`` or None. This allows different tools to have different
         progress handling logic and access/modify session state via the
-        CallbackContext. The **kwargs parameter allows for future extensibility.
+        CallbackContext. The ``**kwargs`` parameter allows for future
+        extensibility.
       use_mcp_resources: Whether the agent should have access to MCP resources.
         This will add a `load_mcp_resource` tool to the toolset and include
         available resources in the agent context. Defaults to False.

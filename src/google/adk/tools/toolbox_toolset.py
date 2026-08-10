@@ -63,11 +63,11 @@ class ToolboxToolset(BaseToolset):
       auth_token_getters: (Optional) A mapping of authentication service names
         to callables that return the corresponding authentication token. see:
         https://github.com/googleapis/mcp-toolbox-sdk-python/tree/main/packages/toolbox-core#authenticating-tools
-          for details.
+        for details.
       bound_params: (Optional) A mapping of parameter names to bind to specific
         values or callables that are called to produce values as needed. see:
         https://github.com/googleapis/mcp-toolbox-sdk-python/tree/main/packages/toolbox-core#binding-parameter-values
-          for details.
+        for details.
       credentials: (Optional) toolbox_adk.CredentialConfig object.
       additional_headers: (Optional) Static headers mapping.
       **kwargs: Additional arguments passed to the underlying
