@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+from collections.abc import Sequence
 import json
 import logging
 import os
@@ -4224,6 +4225,288 @@ def test_create_eval_set_legacy_route_creates_eval_set(
       mock_eval_sets_manager.get_eval_set("test_app", "legacy_eval_set")
       is not None
   )
+
+
+def _seed_eval_set(
+    eval_sets_manager: InMemoryEvalSetsManager,
+    eval_set_id: str,
+    eval_case_ids: Sequence[str] = (),
+) -> None:
+  """Creates an eval set on `test_app` and adds one eval case per given id."""
+  eval_sets_manager.create_eval_set(
+      app_name="test_app", eval_set_id=eval_set_id
+  )
+  for eval_case_id in eval_case_ids:
+    eval_sets_manager.add_eval_case(
+        app_name="test_app",
+        eval_set_id=eval_set_id,
+        eval_case=EvalCase(
+            eval_id=eval_case_id,
+            conversation=[
+                Invocation(
+                    invocation_id=f"invocation_for_{eval_case_id}",
+                    user_content=types.Content(
+                        parts=[
+                            types.Part(text=f"user text for {eval_case_id}")
+                        ],
+                        role="user",
+                    ),
+                )
+            ],
+        ),
+    )
+
+
+def _eval_case_body(eval_id: str, text: str) -> dict[str, Any]:
+  """Builds a camelCase EvalCase request body for the update route."""
+  return {
+      "evalId": eval_id,
+      "conversation": [{
+          "invocationId": f"invocation_for_{eval_id}",
+          "userContent": {"parts": [{"text": text}], "role": "user"},
+      }],
+  }
+
+
+def test_list_eval_sets_returns_created_eval_set_ids(
+    test_app, mock_eval_sets_manager
+):
+  """The canonical list route wraps the ids in a camelCase envelope."""
+  _seed_eval_set(mock_eval_sets_manager, "es_one")
+  _seed_eval_set(mock_eval_sets_manager, "es_two")
+
+  response = test_app.get("/dev/apps/test_app/eval-sets")
+
+  assert response.status_code == 200
+  assert response.json() == {"evalSetIds": ["es_one", "es_two"]}
+
+
+def test_list_eval_sets_is_empty_for_app_without_eval_sets(test_app):
+  """An app with no eval sets lists as empty."""
+  response = test_app.get("/dev/apps/unknown_app/eval-sets")
+
+  # The handler logs NotFoundError and returns an empty list, so an unknown
+  # app is indistinguishable from a known app that has no eval sets.
+  assert response.status_code == 200
+  assert response.json() == {"evalSetIds": []}
+
+
+def test_list_eval_sets_legacy_returns_a_bare_id_list(
+    test_app, mock_eval_sets_manager
+):
+  """The deprecated list route returns a bare list, not the envelope."""
+  _seed_eval_set(mock_eval_sets_manager, "es_one")
+
+  response = test_app.get("/dev/apps/test_app/eval_sets")
+
+  assert response.status_code == 200
+  assert response.json() == ["es_one"]
+
+
+def test_list_evals_in_eval_set_returns_sorted_eval_case_ids(
+    test_app, mock_eval_sets_manager
+):
+  """Eval case ids come back sorted, not in insertion order."""
+  _seed_eval_set(mock_eval_sets_manager, "es_one", ["case_b", "case_a"])
+
+  response = test_app.get("/dev/apps/test_app/eval_sets/es_one/evals")
+
+  assert response.status_code == 200
+  assert response.json() == ["case_a", "case_b"]
+
+
+def test_list_evals_in_eval_set_unknown_eval_set_is_a_client_error(test_app):
+  """Listing the eval cases of an unknown eval set is a client error."""
+  response = test_app.get("/dev/apps/test_app/eval_sets/missing/evals")
+
+  # This route answers 400 where its get/put/delete siblings answer 404. The
+  # test pins today's behaviour; changing the status code is a separate change.
+  assert response.status_code == 400
+  assert response.json()["detail"] == "Eval set `missing` not found."
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "/dev/apps/test_app/eval-sets/es_one/eval-cases/case_a",
+        "/dev/apps/test_app/eval_sets/es_one/evals/case_a",
+    ],
+)
+def test_get_eval_case_returns_the_eval_case(
+    test_app, mock_eval_sets_manager, path
+):
+  """Both route spellings return the same camelCase eval case."""
+  _seed_eval_set(mock_eval_sets_manager, "es_one", ["case_a"])
+
+  response = test_app.get(path)
+
+  assert response.status_code == 200
+  data = response.json()
+  assert data["evalId"] == "case_a"
+  assert (
+      data["conversation"][0]["userContent"]["parts"][0]["text"]
+      == "user text for case_a"
+  )
+
+
+@pytest.mark.parametrize(
+    ("path", "detail"),
+    [
+        (
+            "/dev/apps/test_app/eval-sets/es_one/eval-cases/missing",
+            "Eval set `es_one` or Eval `missing` not found.",
+        ),
+        (
+            "/dev/apps/test_app/eval-sets/missing/eval-cases/case_a",
+            "Eval set `missing` or Eval `case_a` not found.",
+        ),
+    ],
+)
+def test_get_eval_case_returns_404_for_missing_eval_set_or_eval_case(
+    test_app, mock_eval_sets_manager, path, detail
+):
+  """A missing eval set and a missing eval case both read as a 404."""
+  _seed_eval_set(mock_eval_sets_manager, "es_one", ["case_a"])
+
+  response = test_app.get(path)
+
+  assert response.status_code == 404
+  assert response.json()["detail"] == detail
+
+
+def test_update_eval_case_replaces_the_stored_eval_case(
+    test_app, mock_eval_sets_manager
+):
+  """A successful update overwrites the stored eval case."""
+  _seed_eval_set(mock_eval_sets_manager, "es_one", ["case_a"])
+
+  response = test_app.put(
+      "/dev/apps/test_app/eval-sets/es_one/eval-cases/case_a",
+      json=_eval_case_body("case_a", "replacement text"),
+  )
+
+  assert response.status_code == 200
+  assert response.json() is None
+  stored = mock_eval_sets_manager.get_eval_case("test_app", "es_one", "case_a")
+  assert stored.conversation[0].user_content.parts[0].text == "replacement text"
+
+
+def test_update_eval_case_rejects_eval_id_mismatch(
+    test_app, mock_eval_sets_manager
+):
+  """An eval id that disagrees with the route is rejected."""
+  _seed_eval_set(mock_eval_sets_manager, "es_one", ["case_a"])
+
+  response = test_app.put(
+      "/dev/apps/test_app/eval-sets/es_one/eval-cases/case_a",
+      json=_eval_case_body("case_b", "replacement text"),
+  )
+
+  assert response.status_code == 400
+  assert response.json()["detail"] == (
+      "Eval id in EvalCase should match the eval id in the API route."
+  )
+  stored = mock_eval_sets_manager.get_eval_case("test_app", "es_one", "case_a")
+  assert stored.conversation[0].user_content.parts[0].text == (
+      "user text for case_a"
+  )
+
+
+@pytest.mark.parametrize(
+    ("eval_set_id", "eval_case_id", "detail"),
+    [
+        (
+            "missing",
+            "case_a",
+            "EvalSet missing not found for app test_app.",
+        ),
+        (
+            "es_one",
+            "ghost",
+            "EvalCase ghost not found in EvalSet es_one for app test_app.",
+        ),
+    ],
+)
+def test_update_eval_case_returns_404_for_missing_eval_set_or_eval_case(
+    test_app, mock_eval_sets_manager, eval_set_id, eval_case_id, detail
+):
+  """Updating through a missing eval set or eval case reads as a 404."""
+  _seed_eval_set(mock_eval_sets_manager, "es_one", ["case_a"])
+
+  response = test_app.put(
+      f"/dev/apps/test_app/eval-sets/{eval_set_id}/eval-cases/{eval_case_id}",
+      json=_eval_case_body(eval_case_id, "replacement text"),
+  )
+
+  assert response.status_code == 404
+  assert response.json()["detail"] == detail
+
+
+def test_update_eval_case_rejects_a_body_without_a_conversation(
+    test_app, mock_eval_sets_manager
+):
+  """An eval case with neither conversation nor scenario fails validation."""
+  _seed_eval_set(mock_eval_sets_manager, "es_one", ["case_a"])
+
+  response = test_app.put(
+      "/dev/apps/test_app/eval-sets/es_one/eval-cases/case_a",
+      json={"evalId": "case_a"},
+  )
+
+  assert response.status_code == 422
+  assert (
+      "Exactly one of conversation and conversation_scenario"
+      in response.json()["detail"][0]["msg"]
+  )
+
+
+def test_delete_eval_case_removes_it_from_the_eval_set(
+    test_app, mock_eval_sets_manager
+):
+  """A deleted eval case leaves both the manager and the list route."""
+  _seed_eval_set(mock_eval_sets_manager, "es_one", ["case_a", "case_b"])
+
+  response = test_app.delete(
+      "/dev/apps/test_app/eval-sets/es_one/eval-cases/case_b"
+  )
+
+  assert response.status_code == 200
+  assert response.json() is None
+  remaining = test_app.get("/dev/apps/test_app/eval_sets/es_one/evals")
+  assert remaining.json() == ["case_a"]
+  assert (
+      mock_eval_sets_manager.get_eval_case("test_app", "es_one", "case_b")
+      is None
+  )
+
+
+@pytest.mark.parametrize(
+    ("eval_set_id", "eval_case_id", "detail"),
+    [
+        (
+            "missing",
+            "case_a",
+            "EvalSet missing not found for app test_app.",
+        ),
+        (
+            "es_one",
+            "ghost",
+            "EvalCase ghost not found in EvalSet es_one for app test_app.",
+        ),
+    ],
+)
+def test_delete_eval_case_returns_404_for_missing_eval_set_or_eval_case(
+    test_app, mock_eval_sets_manager, eval_set_id, eval_case_id, detail
+):
+  """Deleting through a missing eval set or eval case reads as a 404."""
+  _seed_eval_set(mock_eval_sets_manager, "es_one", ["case_a"])
+
+  response = test_app.delete(
+      f"/dev/apps/test_app/eval-sets/{eval_set_id}/eval-cases/{eval_case_id}"
+  )
+
+  assert response.status_code == 404
+  assert response.json()["detail"] == detail
 
 
 if __name__ == "__main__":
