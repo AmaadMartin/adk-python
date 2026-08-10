@@ -197,14 +197,45 @@ def _run_wrapper(timeout: int, code: str) -> subprocess.CompletedProcess:
   )
 
 
+# Linux reports a process that has exited but not yet been reaped as 'Z'
+# (zombie), and one that has been reaped but whose /proc entry has not gone
+# yet as 'X' ('x' on older kernels). A poll that treats only 'Z' as dead
+# reports an exited process as alive for the width of that second window.
+_NOT_ALIVE_STATES = frozenset({'Z', 'X', 'x'})
+
+
 def _is_alive(pid: int) -> bool:
-  """Returns whether `pid` is a live (non-zombie) process."""
+  """Returns whether `pid` is a live (neither exited nor reaped) process."""
   try:
     with open(f'/proc/{pid}/stat', encoding='utf-8') as stat_file:
       state = stat_file.read().rsplit(')', 1)[1].split()[0]
-  except OSError:
+  except (OSError, IndexError):
+    # Gone, or read mid-teardown and empty: either way, not a live process.
     return False
-  return state != 'Z'
+  return state not in _NOT_ALIVE_STATES
+
+
+@pytest.mark.skipif(
+    not os.path.isdir('/proc'), reason='Liveness is checked through /proc.'
+)
+def test_is_alive_reports_an_exited_process_as_dead():
+  """The poll answers for a running process, an unreaped one and a gone one."""
+  assert _is_alive(os.getpid())
+
+  # Nothing waits on this child, so it stays a zombie until it is reaped, and
+  # the poll has to answer from its /proc entry rather than from its absence.
+  exited = subprocess.Popen([sys.executable, '-c', ''])
+  try:
+    deadline = time.monotonic() + 10
+    alive = _is_alive(exited.pid)
+    while alive and time.monotonic() < deadline:
+      time.sleep(0.01)
+      alive = _is_alive(exited.pid)
+    assert not alive, 'an exited but unreaped child still reads as alive'
+  finally:
+    exited.wait()
+
+  assert not _is_alive(exited.pid)
 
 
 @_POSIX_ONLY
@@ -261,9 +292,11 @@ def test_wrapper_kills_what_the_code_spawned(tmp_path):
   spawned_pid = int(pid_file.read_text())
   try:
     deadline = time.monotonic() + 10
-    while time.monotonic() < deadline and _is_alive(spawned_pid):
+    alive = _is_alive(spawned_pid)
+    while alive and time.monotonic() < deadline:
       time.sleep(0.05)
-    assert not _is_alive(spawned_pid)
+      alive = _is_alive(spawned_pid)
+    assert not alive, 'the process the code spawned outlived the run'
   finally:
     try:
       os.kill(spawned_pid, signal.SIGKILL)
