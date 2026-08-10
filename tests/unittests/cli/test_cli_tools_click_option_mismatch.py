@@ -165,6 +165,7 @@ def test_adk_deploy_agent_engine():
       agent_engine_command,
       cli_deploy_agent_engine.callback,
       "deploy agent_engine",
+      ignore_params={"ctx"},
   )
 
 
@@ -174,5 +175,8 @@ def test_adk_deploy_gke():
 
   assert gke_command is not None, "GKE deploy command not found"
   _check_options_in_parameters(
-      gke_command, cli_deploy_gke.callback, "deploy gke"
+      gke_command,
+      cli_deploy_gke.callback,
+      "deploy gke",
+      ignore_params={"ctx"},
   )
