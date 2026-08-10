@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tool to execute bash commands."""
+"""Tool to execute a single program directly, without a shell."""
 
 from __future__ import annotations
 
@@ -36,6 +36,17 @@ logger = logging.getLogger("google_adk." + __name__)
 
 _resource = importlib.import_module("resource") if os.name == "posix" else None
 
+# Characters a POSIX shell interprets. This tool never runs a shell, so an
+# unquoted occurrence would silently become a literal argv entry. { is absent
+# because bare {} is not brace expansion, and flagging it would reject the
+# common `find . -exec cat {} +`; a real {a,b} therefore still slips through.
+_SHELL_METACHARACTERS = frozenset("|&;<>()$`*?[\n")
+# Inside double quotes a shell still expands these two; the rest go literal.
+_DOUBLE_QUOTED_METACHARACTERS = frozenset("$`")
+# A shell only expands ~ and only opens a comment at # when the character
+# starts a word, so both stay literal elsewhere (a~b, http://example.com#top).
+_WORD_START_METACHARACTERS = frozenset("~#")
+
 
 @dataclasses.dataclass(frozen=True)
 class BashToolPolicy:
@@ -56,6 +67,74 @@ class BashToolPolicy:
   max_child_processes: Optional[int] = None
 
 
+def _shell_syntax_error(syntax: str) -> str:
+  """Builds the rejection message for one unhonoured piece of shell syntax."""
+  displayed = "\\n" if syntax == "\n" else syntax
+  return (
+      f"Command rejected: '{displayed}' is shell syntax, but this tool runs a"
+      " single program directly without a shell, so it would be passed to the"
+      " program as a literal argument instead of being interpreted. Run one"
+      " program per call (no pipes, redirection, &&/||, ;, globs, $VAR"
+      " expansion or subshells), or quote the character if you meant it"
+      " literally."
+  )
+
+
+def _find_unhonoured_shell_syntax(command: str) -> Optional[str]:
+  """Returns an error message if the command relies on shell interpretation.
+
+  Detection is quote-aware: a metacharacter a shell would itself treat as
+  literal (single-quoted, double-quoted where applicable, or backslash-escaped)
+  is not reported. It is also position-aware for the characters a shell only
+  acts on at the start of a word.
+
+  Args:
+    command: The raw command string supplied by the model.
+
+  Returns:
+    An error message, or None when the command can be executed faithfully as
+    argv.
+  """
+  quote: Optional[str] = None
+  escaped = False
+  at_word_start = True
+  for char in command:
+    next_word_start = False
+    if escaped:
+      escaped = False
+      # A shell drops the backslash before an expansion inside double quotes,
+      # so "\$HOME" reaches the program as $HOME. shlex keeps the backslash.
+      if quote == '"' and char in _DOUBLE_QUOTED_METACHARACTERS:
+        return _shell_syntax_error("\\" + char)
+    elif quote == "'":
+      if char == "'":
+        quote = None
+    elif char == "\\":
+      escaped = True
+    elif quote == '"':
+      if char == '"':
+        quote = None
+      elif char in _DOUBLE_QUOTED_METACHARACTERS:
+        return _shell_syntax_error(char)
+    elif char in ("'", '"'):
+      quote = char
+    elif char in _SHELL_METACHARACTERS:
+      return _shell_syntax_error(char)
+    elif char.isspace():
+      next_word_start = True
+    elif at_word_start and char in _WORD_START_METACHARACTERS:
+      return _shell_syntax_error(char)
+    at_word_start = next_word_start
+
+  if quote is not None or escaped:
+    return (
+        "Command rejected: it ends inside a quote or with a trailing"
+        " backslash, so it cannot be split into a program and its arguments."
+        " Close the quote or drop the trailing backslash."
+    )
+  return None
+
+
 def _validate_command(command: str, policy: BashToolPolicy) -> Optional[str]:
   """Validates a bash command against the permitted prefixes."""
   stripped = command.strip()
@@ -65,6 +144,10 @@ def _validate_command(command: str, policy: BashToolPolicy) -> Optional[str]:
   for op in policy.blocked_operators:
     if op in command:
       return f"Command contains blocked operator: {op}"
+
+  shell_syntax_error = _find_unhonoured_shell_syntax(command)
+  if shell_syntax_error:
+    return shell_syntax_error
 
   if "*" in policy.allowed_command_prefixes:
     return None
@@ -103,7 +186,11 @@ def _set_resource_limits(policy: BashToolPolicy) -> None:
 
 
 class ExecuteBashTool(BaseTool):
-  """Tool to execute a validated bash command within a workspace directory."""
+  """Tool to execute a validated command within a workspace directory.
+
+  The command is executed directly, without a shell, so shell syntax such as
+  pipes, redirection and $VAR expansion is not interpreted.
+  """
 
   def __init__(
       self,
@@ -125,9 +212,12 @@ class ExecuteBashTool(BaseTool):
     super().__init__(
         name="execute_bash",
         description=(
-            "Executes a bash command with the working directory set to the"
-            f" workspace. Allowed: {allowed_hint}. All commands require user"
-            " confirmation."
+            "Executes a single program directly, without a shell, with the"
+            " working directory set to the workspace. The command string is"
+            " split into an executable and its arguments. Shell syntax is not"
+            " interpreted and is rejected: no pipes, redirection, &&/||, ;,"
+            f" globs, $VAR expansion or subshells. Allowed: {allowed_hint}."
+            " All commands require user confirmation."
         ),
     )
     self._workspace = workspace
@@ -142,7 +232,10 @@ class ExecuteBashTool(BaseTool):
             "properties": {
                 "command": {
                     "type": "string",
-                    "description": "The bash command to execute.",
+                    "description": (
+                        "The program to run and its arguments, for example"
+                        " 'ls -la src'. This is not a shell command line."
+                    ),
                 },
             },
             "required": ["command"],

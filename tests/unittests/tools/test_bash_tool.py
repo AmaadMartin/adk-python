@@ -13,7 +13,9 @@
 # limitations under the License.
 
 import asyncio
+import shlex
 import signal
+import subprocess
 import sys
 from unittest import mock
 
@@ -101,13 +103,11 @@ class TestValidateCommand:
     assert bash_tool._validate_command("", policy) is not None
     assert bash_tool._validate_command("   ", policy) is not None
 
-  def test_default_policy_allows_everything(self):
+  def test_default_policy_allows_plain_commands(self):
     policy = bash_tool.BashToolPolicy()
     assert bash_tool._validate_command("rm -rf /", policy) is None
     assert bash_tool._validate_command("cat /etc/passwd", policy) is None
     assert bash_tool._validate_command("sudo curl", policy) is None
-    assert bash_tool._validate_command("echo hello | grep h", policy) is None
-    assert bash_tool._validate_command("ls ; rm -rf /", policy) is None
 
   def test_restricted_policy_allows_prefixes(self):
     policy = bash_tool.BashToolPolicy(allowed_command_prefixes=("ls", "cat"))
@@ -135,6 +135,192 @@ class TestValidateCommand:
         bash_tool._validate_command("ls ; rm -rf /", policy)
         == "Command contains blocked operator: ;"
     )
+
+
+# Argument strings the validator accepts, checked against a real shell by
+# TestShellSyntaxRejection.test_accepted_arguments_split_exactly_as_a_shell_would.
+_FAITHFULLY_SPLIT_ARGUMENTS = [
+    "-la src",
+    "'|'",
+    '"a|b"',
+    "'$HOME'",
+    "'a > b'",
+    '"a; b | c"',
+    "a\\|b",
+    '"a\\"b"',
+    "'it'\\''s'",
+    "'https://example.com/x?a=b'",
+    # Bare {} is not brace expansion, so a shell leaves it alone too.
+    "{}",
+    "a~b",
+    "http://example.com/page#top",
+    "'~'",
+    "\\~",
+    "a\\ ~",
+]
+
+
+class TestShellSyntaxRejection:
+  """The tool runs a single program, so unhonoured syntax must be refused."""
+
+  @pytest.mark.parametrize(
+      "command, char",
+      [
+          ("echo hello | grep h", "|"),
+          ("ls ; rm -rf /", ";"),
+          ("a && b", "&"),
+          ("a || b", "|"),
+          ("cat f > out.txt", ">"),
+          ("cat < f", "<"),
+          ("sleep 1 &", "&"),
+          ("echo $(whoami)", "$"),
+          ("echo `whoami`", "`"),
+          ("(cd /tmp)", "("),
+          ("ls *.py", "*"),
+          ("ls ?.py", "?"),
+          ("cat [ab].txt", "["),
+      ],
+  )
+  def test_unquoted_shell_syntax_is_rejected(self, command, char):
+    error = bash_tool._validate_command(command, bash_tool.BashToolPolicy())
+    assert error is not None
+    assert f"'{char}' is shell syntax" in error
+
+  def test_newline_is_reported_without_breaking_the_message(self):
+    error = bash_tool._validate_command(
+        "ls\nrm -rf /", bash_tool.BashToolPolicy()
+    )
+    assert error is not None
+    assert "'\\n' is shell syntax" in error
+    assert "\n" not in error
+
+  @pytest.mark.parametrize(
+      "command",
+      [
+          # The exact command used by TestExecuteBashTool.test_captures_stderr.
+          "python3 -c 'import sys; sys.stderr.write(\"err\")'",
+          "echo '|'",
+          'grep "a|b" file',
+          "echo '$HOME'",
+          "echo 'a > b'",
+          # A shell leaves these literal inside double quotes, so we agree.
+          'echo "a; b | c"',
+          # A shell also passes a backslash-escaped operator through literally.
+          "echo a\\|b",
+      ],
+  )
+  def test_quoted_or_escaped_metacharacters_are_accepted(self, command):
+    assert (
+        bash_tool._validate_command(command, bash_tool.BashToolPolicy()) is None
+    )
+
+  @pytest.mark.parametrize(
+      "command, syntax",
+      [
+          ('echo "$HOME"', "$"),
+          ('echo "`id`"', "`"),
+          # A shell drops the backslash and still expands; shlex keeps it.
+          ('echo "a\\$b"', "\\$"),
+          ('echo "a\\`b"', "\\`"),
+      ],
+  )
+  def test_expansion_inside_double_quotes_is_rejected(self, command, syntax):
+    error = bash_tool._validate_command(command, bash_tool.BashToolPolicy())
+    assert error is not None
+    assert f"'{syntax}' is shell syntax" in error
+
+  @pytest.mark.parametrize(
+      "command, char",
+      [
+          ("ls ~/src", "~"),
+          ("mkdir ~", "~"),
+          ("echo a #comment", "#"),
+          ("#comment", "#"),
+      ],
+  )
+  def test_word_start_expansion_is_rejected(self, command, char):
+    error = bash_tool._validate_command(command, bash_tool.BashToolPolicy())
+    assert error is not None
+    assert f"'{char}' is shell syntax" in error
+
+  @pytest.mark.parametrize(
+      "command",
+      [
+          # A shell only acts on ~ and # at the start of a word.
+          "grep a~b file",
+          "curl https://example.com/page#section",
+          "echo '~'",
+          'echo "#c"',
+          "echo \\~",
+          # An escaped space keeps the next character inside the same word.
+          "echo a\\ ~",
+      ],
+  )
+  def test_word_start_characters_are_accepted_elsewhere(self, command):
+    assert (
+        bash_tool._validate_command(command, bash_tool.BashToolPolicy()) is None
+    )
+
+  @pytest.mark.parametrize("arguments", _FAITHFULLY_SPLIT_ARGUMENTS)
+  def test_accepted_arguments_split_exactly_as_a_shell_would(
+      self, arguments, tmp_path
+  ):
+    """An accepted command must mean the same to execve and to a shell."""
+    command = f"echo {arguments}"
+    assert (
+        bash_tool._validate_command(command, bash_tool.BashToolPolicy()) is None
+    )
+    # printf writes each word a real shell parsed, NUL separated. The probe
+    # runs in an empty tmp_path so a stray file cannot suppress a glob and
+    # make an unexpanded argument look faithful.
+    shell = subprocess.run(
+        ["bash", "-c", f'printf "%s\\0" {arguments}'],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=tmp_path,
+    )
+    assert shlex.split(command)[1:] == shell.stdout.split("\0")[:-1]
+
+  @pytest.mark.parametrize("pattern", ["?.py", "[ab].txt", "*.py"])
+  def test_pathname_expansion_diverges_from_a_shell(self, pattern, tmp_path):
+    """A matching glob is the silent divergence this rejection exists for."""
+    for name in ("a.py", "b.txt", "a.txt"):
+      (tmp_path / name).touch()
+    shell = subprocess.run(
+        ["bash", "-c", f'printf "%s\\0" {pattern}'],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=tmp_path,
+    )
+    assert shell.stdout.split("\0")[:-1] != [pattern]
+    assert (
+        bash_tool._validate_command(f"ls {pattern}", bash_tool.BashToolPolicy())
+        is not None
+    )
+
+  @pytest.mark.parametrize(
+      "command", ["echo 'unterminated", 'echo "x', "echo a\\"]
+  )
+  def test_unterminated_quote_or_trailing_backslash_is_rejected(self, command):
+    error = bash_tool._validate_command(command, bash_tool.BashToolPolicy())
+    assert error is not None
+    assert "ends inside a quote or with a trailing backslash" in error
+
+  def test_blocked_operator_message_wins(self):
+    policy = bash_tool.BashToolPolicy(blocked_operators=("|",))
+    assert (
+        bash_tool._validate_command("echo hello | grep h", policy)
+        == "Command contains blocked operator: |"
+    )
+
+  def test_shell_syntax_message_wins_over_prefix_check(self):
+    policy = bash_tool.BashToolPolicy(allowed_command_prefixes=("ls",))
+    error = bash_tool._validate_command("ls | wc -l", policy)
+    assert error is not None
+    assert "'|' is shell syntax" in error
+    assert "Permitted prefixes" not in error
 
 
 class TestExecuteBashTool:
@@ -206,6 +392,47 @@ class TestExecuteBashTool:
     assert "error" in result
     assert "Permitted prefixes are: ls" in result["error"]
     tool_context_no_confirmation.request_confirmation.assert_not_called()
+
+  @pytest.mark.asyncio
+  async def test_pipe_is_rejected_without_executing(
+      self, workspace, tool_context_confirmed
+  ):
+    tool = bash_tool.ExecuteBashTool(workspace=workspace)
+    mock_exec = mock.AsyncMock()
+    with mock.patch("asyncio.create_subprocess_exec", mock_exec):
+      result = await tool.run_async(
+          args={"command": "echo hello | grep h"},
+          tool_context=tool_context_confirmed,
+      )
+    mock_exec.assert_not_called()
+    assert "without a shell" in result["error"]
+    assert "returncode" not in result
+
+  @pytest.mark.asyncio
+  async def test_quoted_metacharacter_still_executes(
+      self, workspace, tool_context_confirmed
+  ):
+    """Quoting is the supported way to pass a metacharacter literally."""
+    tool = bash_tool.ExecuteBashTool(workspace=workspace)
+    result = await tool.run_async(
+        args={"command": "echo 'hello | world'"},
+        tool_context=tool_context_confirmed,
+    )
+    assert result["returncode"] == 0
+    assert result["stdout"].strip() == "hello | world"
+
+  def test_declaration_states_no_shell(self, workspace):
+    tool = bash_tool.ExecuteBashTool(workspace=workspace)
+    declaration = tool._get_declaration()
+    assert declaration is not None
+    description = declaration.description
+    assert description is not None
+    assert "without a shell" in description
+    assert "Shell syntax is not interpreted and is rejected" in description
+    assert declaration.parameters_json_schema is not None
+    command = declaration.parameters_json_schema["properties"]["command"]
+    assert "bash command" not in command["description"]
+    assert "not a shell command line" in command["description"]
 
   @pytest.mark.asyncio
   async def test_captures_stderr(self, workspace, tool_context_confirmed):
