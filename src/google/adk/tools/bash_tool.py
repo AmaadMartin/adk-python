@@ -127,6 +127,11 @@ async def _read_stream(
     chunks.append(chunk)
 
 
+def _decode(chunks: list[bytes], name: str) -> str:
+  """Joins and decodes `chunks`, or reports that `name` produced nothing."""
+  return b"".join(chunks).decode(errors="replace") or f"<no {name} captured>"
+
+
 def _kill_process_group(process: asyncio.subprocess.Process) -> None:
   """Sends SIGKILL to the subprocess's process group if it still exists."""
   try:
@@ -234,7 +239,7 @@ class ExecuteBashTool(BaseTool):
         # and keeps running must still time out rather than block forever.
         await process.wait()
 
-      collector = asyncio.ensure_future(_collect())
+      collector = asyncio.create_task(_collect())
       try:
         # asyncio.wait leaves the collector running when the deadline
         # expires, unlike asyncio.wait_for, which cancels it and discards
@@ -247,62 +252,34 @@ class ExecuteBashTool(BaseTool):
           # The kill closes both write ends, so give the collector a bounded
           # moment to observe EOF and take what is still buffered.
           await asyncio.wait({collector}, timeout=_TIMEOUT_DRAIN_SECONDS)
-          stdout = b"".join(stdout_chunks)
-          stderr = b"".join(stderr_chunks)
           return {
               "error": (
                   f"Command timed out after {self._policy.timeout_seconds}"
                   " seconds."
               ),
-              "stdout": (
-                  stdout.decode(errors="replace")
-                  if stdout
-                  else "<no stdout captured>"
-              ),
-              "stderr": (
-                  stderr.decode(errors="replace")
-                  if stderr
-                  else "<no stderr captured>"
-              ),
+              "stdout": _decode(stdout_chunks, "stdout"),
+              "stderr": _decode(stderr_chunks, "stderr"),
               "returncode": process.returncode,
           }
+        # Re-raise anything _collect() failed with; the finally below would
+        # otherwise swallow it.
         collector.result()
       finally:
         collector.cancel()
         await asyncio.gather(collector, return_exceptions=True)
         _kill_process_group(process)
 
-      stdout = b"".join(stdout_chunks)
-      stderr = b"".join(stderr_chunks)
       return {
-          "stdout": (
-              stdout.decode(errors="replace")
-              if stdout
-              else "<no stdout captured>"
-          ),
-          "stderr": (
-              stderr.decode(errors="replace")
-              if stderr
-              else "<no stderr captured>"
-          ),
+          "stdout": _decode(stdout_chunks, "stdout"),
+          "stderr": _decode(stderr_chunks, "stderr"),
           "returncode": process.returncode,
       }
     except Exception as e:  # pylint: disable=broad-except
       logger.exception("ExecuteBashTool execution failed")
-
-      stdout = b"".join(stdout_chunks)
-      stderr = b"".join(stderr_chunks)
-      stdout_res = (
-          stdout.decode(errors="replace") if stdout else "<no stdout captured>"
-      )
-      stderr_res = (
-          stderr.decode(errors="replace") if stderr else "<no stderr captured>"
-      )
-
       return {
           "error": f"Execution failed: {str(e)}",
-          "stdout": stdout_res,
-          "stderr": stderr_res,
+          "stdout": _decode(stdout_chunks, "stdout"),
+          "stderr": _decode(stderr_chunks, "stderr"),
       }
 
   def _detect_error_in_response(self, response: Any) -> Optional[str]:

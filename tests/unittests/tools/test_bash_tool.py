@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import asyncio
+import os
 import shlex
 import signal
 import sys
@@ -297,6 +299,37 @@ class TestExecuteBashTool:
     assert result["stdout"] == "<no stdout captured>"
     assert result["stderr"] == "<no stderr captured>"
     assert result["returncode"] == -signal.SIGKILL
+
+  @pytest.mark.asyncio
+  async def test_timeout_kills_the_process_group(
+      self, workspace, tool_context_confirmed
+  ):
+    tool = bash_tool.ExecuteBashTool(
+        workspace=workspace,
+        policy=bash_tool.BashToolPolicy(timeout_seconds=1),
+    )
+    spawned_pids: list[int] = []
+    real_create_subprocess_exec = asyncio.create_subprocess_exec
+
+    async def _record_pid(*args, **kwargs):
+      process = await real_create_subprocess_exec(*args, **kwargs)
+      spawned_pids.append(process.pid)
+      return process
+
+    with (
+        mock.patch.object(asyncio, "create_subprocess_exec", _record_pid),
+        mock.patch("os.killpg", wraps=os.killpg) as mock_killpg,
+    ):
+      result = await tool.run_async(
+          args={"command": _python_command(_SILENT_SCRIPT)},
+          tool_context=tool_context_confirmed,
+      )
+
+    assert "timed out" in result["error"].lower()
+    # The tool signals the whole group, not the leader alone: once on the
+    # deadline, and once more on the way out of run_async.
+    expected_kill = mock.call(spawned_pids[0], signal.SIGKILL)
+    assert mock_killpg.call_args_list == [expected_kill, expected_kill]
 
   @pytest.mark.asyncio
   async def test_timeout_reports_output_larger_than_one_read(
