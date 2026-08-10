@@ -215,6 +215,29 @@ def _is_alive(pid: int) -> bool:
   return state not in _NOT_ALIVE_STATES
 
 
+@pytest.mark.skipif(
+    not os.path.isdir('/proc'), reason='Liveness is checked through /proc.'
+)
+def test_is_alive_reports_an_exited_process_as_dead():
+  """The poll answers for a running process, an unreaped one and a gone one."""
+  assert _is_alive(os.getpid())
+
+  # Nothing waits on this child, so it stays a zombie until it is reaped, and
+  # the poll has to answer from its /proc entry rather than from its absence.
+  exited = subprocess.Popen([sys.executable, '-c', ''])
+  try:
+    deadline = time.monotonic() + 10
+    alive = _is_alive(exited.pid)
+    while alive and time.monotonic() < deadline:
+      time.sleep(0.01)
+      alive = _is_alive(exited.pid)
+    assert not alive, 'an exited but unreaped child still reads as alive'
+  finally:
+    exited.wait()
+
+  assert not _is_alive(exited.pid)
+
+
 @_POSIX_ONLY
 def test_wrapper_kills_a_run_that_hits_the_bound():
   """A loop that never returns is killed, not merely waited on."""
