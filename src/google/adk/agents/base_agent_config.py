@@ -74,10 +74,10 @@ Optional. The before_agent_callbacks of the agent.
 
 Example:
 
-  ```
-  before_agent_callbacks:
-    - name: my_library.security_callbacks.before_agent_callback
-  ```""",
+  .. code-block:: yaml
+
+    before_agent_callbacks:
+      - name: my_library.security_callbacks.before_agent_callback""",
   )
 
   after_agent_callbacks: Optional[List[CodeConfig]] = Field(

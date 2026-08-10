@@ -21,14 +21,14 @@ shell execution.
 Requires the ``daytona`` extra: ``pip install google-adk[daytona]``.
 
 Example:
-  ```python
-  from google.adk.integrations.daytona import DaytonaEnvironment
+  .. code-block:: python
 
-  env = DaytonaEnvironment()
-  await env.initialize()
-  result = await env.execute("pip install requests")
-  await env.close()
-  ```
+    from google.adk.integrations.daytona import DaytonaEnvironment
+
+    env = DaytonaEnvironment()
+    await env.initialize()
+    result = await env.execute("pip install requests")
+    await env.close()
 """
 
 from ._daytona_environment import DaytonaEnvironment

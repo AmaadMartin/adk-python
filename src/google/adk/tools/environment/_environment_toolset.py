@@ -46,10 +46,11 @@ class EnvironmentToolset(BaseToolset):
   """Toolset providing tools to interact with an environment.
 
   Tools provided:
+
     - **Execute** -- run shell commands
     - **ReadFile** -- read file contents
     - **EditFile** -- surgical text replacement
-    - **WriteFile**q -- create/overwrite files
+    - **WriteFile** -- create/overwrite files
 
   The toolset injects an environment-level system instruction on each
   LLM call that establishes environment identity and tool selection

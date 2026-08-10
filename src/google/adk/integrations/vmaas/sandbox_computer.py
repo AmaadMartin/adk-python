@@ -60,6 +60,7 @@ class AgentEngineSandboxComputer(BaseComputer):
 
   This class provides a remote browser environment backed by Vertex AI
   Computer Use Sandbox. It supports:
+
   - Auto-provisioning of agent engines and sandboxes
   - Bring-your-own-sandbox (BYOS) mode
   - Session-aware resource sharing via session_state property
@@ -70,7 +71,9 @@ class AgentEngineSandboxComputer(BaseComputer):
   enabling state sharing across invocations and agent server instances.
 
   Example usage:
-    ```python
+
+  .. code-block:: python
+
     from google.adk.integrations.vmaas import AgentEngineSandboxComputer
     from google.adk.tools.computer_use import ComputerUseToolset
 
@@ -80,7 +83,6 @@ class AgentEngineSandboxComputer(BaseComputer):
     )
     toolset = ComputerUseToolset(computer=computer)
     agent = Agent(tools=[toolset], ...)
-    ```
   """
 
   def __init__(
@@ -107,17 +109,15 @@ class AgentEngineSandboxComputer(BaseComputer):
         to use ADC service account.
       sandbox_name: Existing sandbox resource name (BYOS mode). If provided, the
         agent engine name is extracted from it. If None, creates new agent
-        engine and sandbox on demand.
-        Format:
-          projects/{project}/locations/{location}/reasoningEngines/{id}/sandboxEnvironments/{id}
+        engine and sandbox on demand. Format:
+        ``projects/{project}/locations/{location}/reasoningEngines/{id}/sandboxEnvironments/{id}``
       sandbox_template_name: Sandbox template resource name to use for creating
         new sandboxes. Templates allow faster creation and custom environments.
         Format:
-          projects/{project}/locations/{location}/sandboxEnvironmentTemplates/{id}
+        ``projects/{project}/locations/{location}/sandboxEnvironmentTemplates/{id}``
       sandbox_snapshot_name: Sandbox snapshot resource name to use for restoring
-        sandbox state, enabling faster startup.
-        Format:
-          projects/{project}/locations/{location}/reasoningEngines/{id}/sandboxEnvironmentSnapshots/{id}
+        sandbox state, enabling faster startup. Format:
+        ``projects/{project}/locations/{location}/reasoningEngines/{id}/sandboxEnvironmentSnapshots/{id}``
       sandbox_ttl_seconds: TTL for auto-created sandboxes (default: 1 hour).
       search_engine_url: URL to navigate to for search() method.
       vertexai_client: Optional Vertex AI client instance. If None, creates one

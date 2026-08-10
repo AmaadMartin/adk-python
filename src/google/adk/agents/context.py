@@ -282,7 +282,7 @@ class Context(ReadonlyContext):
     """The delta-aware state of the current session.
 
     For any state change, you can mutate this object directly,
-    e.g. `ctx.state['foo'] = 'bar'`
+    e.g. ``ctx.state['foo'] = 'bar'``
     """
     return self._state
 
@@ -352,6 +352,7 @@ class Context(ReadonlyContext):
     returns.
 
     Raises ValueError if:
+
     - Set a second time (at most one output per execution).
     - Set when interrupt_ids is non-empty (output and interrupt
       are mutually exclusive).
@@ -899,11 +900,11 @@ class Context(ReadonlyContext):
       ValueError: If memory service is not available.
 
     Example:
-      ```python
-      async def my_after_agent_callback(ctx: Context):
-          # Save conversation to memory at the end of each interaction
-          await ctx.add_session_to_memory()
-      ```
+      .. code-block:: python
+
+        async def my_after_agent_callback(ctx: Context):
+            # Save conversation to memory at the end of each interaction
+            await ctx.add_session_to_memory()
     """
     if self._invocation_context.memory_service is None:
       raise ValueError(

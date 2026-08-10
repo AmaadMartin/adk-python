@@ -122,7 +122,7 @@ class RunConfig(BaseModel):
   """Configures real-time speech-to-speech translation.
 
   Only supported by translation models such as
-  `gemini-3.5-live-translate-preview`.
+  ``gemini-3.5-live-translate-preview``.
   """
 
   enable_affective_dialog: Optional[bool] = None
@@ -155,6 +155,7 @@ class RunConfig(BaseModel):
   outlive it.
 
   This helps keep the event loop responsive for:
+
   - User interruptions to be processed immediately
   - Model responses to continue being received
 
@@ -165,11 +166,13 @@ class RunConfig(BaseModel):
   IMPORTANT - GIL (Global Interpreter Lock) Considerations:
 
   Thread pool HELPS with (GIL is released):
+
   - Blocking I/O: time.sleep(), network calls, file I/O, database queries
   - C extensions: numpy, hashlib, image processing libraries
   - Async functions containing blocking I/O (common user mistake)
 
   Thread pool does NOT help with (GIL is held):
+
   - Pure Python CPU-bound code: loops, calculations, recursive algorithms
   - The GIL prevents true parallel execution for Python bytecode
 
@@ -178,24 +181,25 @@ class RunConfig(BaseModel):
   its worker thread until it returns.
 
   For CPU-intensive Python code, consider alternatives:
+
   - Use C extensions that release the GIL
-  - Break work into chunks with periodic `await asyncio.sleep(0)`
+  - Break work into chunks with periodic ``await asyncio.sleep(0)``
   - Use multiprocessing (ProcessPoolExecutor) for true parallelism
 
   Example:
-    ```python
-    from google.adk.agents.run_config import RunConfig, ToolThreadPoolConfig
+    .. code-block:: python
 
-    # Enable thread pool with default settings
-    run_config = RunConfig(
-        tool_thread_pool_config=ToolThreadPoolConfig(),
-    )
+      from google.adk.agents.run_config import RunConfig, ToolThreadPoolConfig
 
-    # Enable thread pool with custom max_workers
-    run_config = RunConfig(
-        tool_thread_pool_config=ToolThreadPoolConfig(max_workers=8),
-    )
-    ```
+      # Enable thread pool with default settings
+      run_config = RunConfig(
+          tool_thread_pool_config=ToolThreadPoolConfig(),
+      )
+
+      # Enable thread pool with custom max_workers
+      run_config = RunConfig(
+          tool_thread_pool_config=ToolThreadPoolConfig(max_workers=8),
+      )
   """
 
   save_live_audio: bool = Field(

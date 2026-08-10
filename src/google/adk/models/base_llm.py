@@ -136,7 +136,7 @@ class BaseLlm(BaseModel):
 
     This method handles Server-Sent Events (SSE) streaming for unidirectional
     content generation. For bidirectional streaming (e.g., Gemini Live API),
-    use the `connect()` method instead.
+    use the ``connect()`` method instead.
 
     Args:
       llm_request: LlmRequest, the request to send to the LLM.
@@ -148,14 +148,15 @@ class BaseLlm(BaseModel):
       **Non-streaming mode (stream=False):**
 
         Yields exactly one LlmResponse containing the complete model output
-        (text, function calls, bytes, etc.). This response has `partial=False`.
+        (text, function calls, bytes, etc.). This response has
+        ``partial=False``.
 
       **Streaming mode (stream=True):**
 
         Yields multiple LlmResponse objects as chunks arrive:
 
-        - Intermediate chunks: `partial=True` (progressive updates)
-        - Final chunk: `partial=False` (aggregated content from entire turn,
+        - Intermediate chunks: ``partial=True`` (progressive updates)
+        - Final chunk: ``partial=False`` (aggregated content from entire turn,
           identical to stream=False output)
         - Text consolidation: Consecutive text parts of the same type
           (thought/non-thought) SHOULD merge without separator, but client
@@ -164,8 +165,8 @@ class BaseLlm(BaseModel):
 
       **Common content in partial chunks:**
 
-        All intermediate chunks have `partial=True` regardless of content type.
-        Common examples include:
+        All intermediate chunks have ``partial=True`` regardless of content
+        type. Common examples include:
 
         - Text: Streams incrementally as tokens arrive
         - Function calls: May arrive in separate chunks
@@ -201,11 +202,11 @@ class BaseLlm(BaseModel):
       4. Text + bytes (image generation with gemini-2.5-flash-image)::
 
            LlmResponse(partial=True,  parts=[Text("Here's an image of a dog.")])
-           LlmResponse(partial=True,  parts=[Text("\n")])
+           LlmResponse(partial=True,  parts=[Text("\\n")])
            LlmResponse(partial=True,  parts=[Blob(image/png, 1.6MB)])
            LlmResponse(partial=True,  parts=[Text("It carries a bone")])
            LlmResponse(partial=True,  parts=[Text(" and running around.")])
-           LlmResponse(partial=False, parts=[Text("Here's an image of a dog.\n"),
+           LlmResponse(partial=False, parts=[Text("Here's an image of a dog.\\n"),
                                              Blob(image/png, 1.6MB),
                                              Text("It carries a bone and running around.")])
 
@@ -223,8 +224,8 @@ class BaseLlm(BaseModel):
          Note: Consecutive parts of same type merge (thoughts→thought, text→text).
 
       **Important:** All yielded responses represent one logical model turn.
-      The final response with `partial=False` should be identical to the
-      response that would be received with `stream=False`.
+      The final response with ``partial=False`` should be identical to the
+      response that would be received with ``stream=False``.
     """
     raise NotImplementedError(
         f'Async generation is not supported for {self.model}.'

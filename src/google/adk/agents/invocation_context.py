@@ -106,40 +106,44 @@ class InvocationContext(BaseModel):
   """An invocation context represents the data of a single invocation of an agent.
 
   An invocation:
-    1. Starts with a user message and ends with a final response.
-    2. Can contain one or multiple agent calls.
-    3. Is handled by runner.run_async().
+
+  1. Starts with a user message and ends with a final response.
+  2. Can contain one or multiple agent calls.
+  3. Is handled by runner.run_async().
 
   An invocation runs an agent until it does not request to transfer to another
   agent.
 
   An agent call:
-    1. Is handled by agent.run().
-    2. Ends when agent.run() ends.
+
+  1. Is handled by agent.run().
+  2. Ends when agent.run() ends.
 
   An LLM agent call is an agent with a BaseLLMFlow.
   An LLM agent call can contain one or multiple steps.
 
   An LLM agent runs steps in a loop until:
-    1. A final response is generated.
-    2. The agent transfers to another agent.
-    3. The end_invocation is set to true by any callbacks or tools.
+
+  1. A final response is generated.
+  2. The agent transfers to another agent.
+  3. The end_invocation is set to true by any callbacks or tools.
 
   A step:
-    1. Calls the LLM only once and yields its response.
-    2. Calls the tools and yields their responses if requested.
+
+  1. Calls the LLM only once and yields its response.
+  2. Calls the tools and yields their responses if requested.
 
   The summarization of the function response is considered another step, since
   it is another llm call.
   A step ends when it's done calling llm and tools, or if the end_invocation
   is set to true at any time.
 
-  ```
-     ┌─────────────────────── invocation ──────────────────────────┐
-     ┌──────────── llm_agent_call_1 ────────────┐ ┌─ agent_call_2 ─┐
-     ┌──── step_1 ────────┐ ┌───── step_2 ──────┐
-     [call_llm] [call_tool] [call_llm] [transfer]
-  ```
+  .. code-block:: text
+
+       ┌─────────────────────── invocation ──────────────────────────┐
+       ┌──────────── llm_agent_call_1 ────────────┐ ┌─ agent_call_2 ─┐
+       ┌──── step_1 ────────┐ ┌───── step_2 ──────┐
+       [call_llm] [call_tool] [call_llm] [transfer]
   """
 
   model_config = ConfigDict(

@@ -18,17 +18,17 @@ This module provides a BaseComputer implementation that uses Vertex AI
 Agent Engine Computer Use Sandbox as the remote browser environment.
 
 Example:
-  ```python
-  from google.adk.integrations.vmaas import AgentEngineSandboxComputer
-  from google.adk.tools.computer_use import ComputerUseToolset
+  .. code-block:: python
 
-  computer = AgentEngineSandboxComputer(
-      project_id="my-project",
-      service_account_email="sa@my-project.iam.gserviceaccount.com",
-  )
-  toolset = ComputerUseToolset(computer=computer)
-  agent = Agent(tools=[toolset], ...)
-  ```
+    from google.adk.integrations.vmaas import AgentEngineSandboxComputer
+    from google.adk.tools.computer_use import ComputerUseToolset
+
+    computer = AgentEngineSandboxComputer(
+        project_id="my-project",
+        service_account_email="sa@my-project.iam.gserviceaccount.com",
+    )
+    toolset = ComputerUseToolset(computer=computer)
+    agent = Agent(tools=[toolset], ...)
 """
 
 from .sandbox_client import SandboxClient

@@ -42,22 +42,22 @@ class VertexAiSearchTool(BaseTool):
 
   To dynamically customize the search configuration at runtime (e.g., set
   filter based on user context), subclass this tool and override the
-  `_build_vertex_ai_search_config` method.
+  ``_build_vertex_ai_search_config`` method.
 
   Example:
-    ```python
-    class DynamicFilterSearchTool(VertexAiSearchTool):
-      def _build_vertex_ai_search_config(
-          self, ctx: ReadonlyContext
-      ) -> types.VertexAISearch:
-        user_id = ctx.state.get('user_id')
-        return types.VertexAISearch(
-            datastore=self.data_store_id,
-            engine=self.search_engine_id,
-            filter=f"user_id = '{user_id}'",
-            max_results=self.max_results,
-        )
-    ```
+    .. code-block:: python
+
+      class DynamicFilterSearchTool(VertexAiSearchTool):
+        def _build_vertex_ai_search_config(
+            self, ctx: ReadonlyContext
+        ) -> types.VertexAISearch:
+          user_id = ctx.state.get('user_id')
+          return types.VertexAISearch(
+              datastore=self.data_store_id,
+              engine=self.search_engine_id,
+              filter=f"user_id = '{user_id}'",
+              max_results=self.max_results,
+          )
   """
 
   def __init__(
