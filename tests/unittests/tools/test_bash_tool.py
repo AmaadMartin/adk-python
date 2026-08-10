@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import asyncio
+import shlex
 import signal
 import sys
 from unittest import mock
@@ -29,6 +29,35 @@ import resource
 from google.adk.tools import bash_tool
 from google.adk.tools import tool_context
 from google.adk.tools.tool_confirmation import ToolConfirmation
+
+_LARGE_OUTPUT_BYTES = 200_000
+
+_PARTIAL_OUTPUT_SCRIPT = (
+    "import sys, time\n"
+    "sys.stdout.write('partial-stdout')\n"
+    "sys.stdout.flush()\n"
+    "sys.stderr.write('partial-stderr')\n"
+    "sys.stderr.flush()\n"
+    "time.sleep(60)\n"
+)
+
+_LARGE_OUTPUT_SCRIPT = (
+    "import sys, time\n"
+    f"sys.stdout.write('x' * {_LARGE_OUTPUT_BYTES})\n"
+    "sys.stdout.flush()\n"
+    "time.sleep(60)\n"
+)
+
+_SILENT_SCRIPT = "import time\ntime.sleep(60)\n"
+
+_CLOSED_PIPES_SCRIPT = (
+    "import os, time\nos.close(1)\nos.close(2)\ntime.sleep(60)\n"
+)
+
+
+def _python_command(script: str) -> str:
+  """Builds a bash command that runs `script` under the running interpreter."""
+  return f"{shlex.quote(sys.executable)} -c {shlex.quote(script)}"
 
 
 @pytest.fixture
@@ -137,6 +166,14 @@ class TestValidateCommand:
     )
 
 
+@pytest.mark.asyncio
+async def test_read_stream_ignores_absent_pipe():
+  """A process without a pipe contributes no chunks."""
+  chunks: list[bytes] = []
+  await bash_tool._read_stream(None, chunks)
+  assert chunks == []
+
+
 class TestExecuteBashTool:
 
   @pytest.mark.asyncio
@@ -226,30 +263,86 @@ class TestExecuteBashTool:
     assert result["returncode"] == 42
 
   @pytest.mark.asyncio
-  async def test_timeout(self, workspace, tool_context_confirmed):
-    tool = bash_tool.ExecuteBashTool(workspace=workspace)
-    mock_process = mock.AsyncMock()
-    mock_process.pid = 12345
-    mock_process.communicate.return_value = (b"", b"")
-    with (
-        mock.patch.object(
-            asyncio,
-            "create_subprocess_exec",
-            autospec=True,
-            return_value=mock_process,
-        ),
-        mock.patch.object(
-            asyncio, "wait_for", autospec=True, side_effect=asyncio.TimeoutError
-        ),
-        mock.patch("os.killpg") as mock_killpg,
-    ):
-      result = await tool.run_async(
-          args={"command": "python scripts/do_thing.py"},
-          tool_context=tool_context_confirmed,
-      )
-      mock_killpg.assert_called_with(12345, signal.SIGKILL)
-    assert "error" in result
+  async def test_timeout_reports_partial_output(
+      self, workspace, tool_context_confirmed
+  ):
+    tool = bash_tool.ExecuteBashTool(
+        workspace=workspace,
+        policy=bash_tool.BashToolPolicy(timeout_seconds=2),
+    )
+    result = await tool.run_async(
+        args={"command": _python_command(_PARTIAL_OUTPUT_SCRIPT)},
+        tool_context=tool_context_confirmed,
+    )
     assert "timed out" in result["error"].lower()
+    # The command wrote both lines before it hung, so the timeout result must
+    # report them instead of the "nothing was captured" placeholders.
+    assert result["stdout"] == "partial-stdout"
+    assert result["stderr"] == "partial-stderr"
+    assert result["returncode"] == -signal.SIGKILL
+
+  @pytest.mark.asyncio
+  async def test_timeout_without_output_keeps_placeholders(
+      self, workspace, tool_context_confirmed
+  ):
+    tool = bash_tool.ExecuteBashTool(
+        workspace=workspace,
+        policy=bash_tool.BashToolPolicy(timeout_seconds=1),
+    )
+    result = await tool.run_async(
+        args={"command": _python_command(_SILENT_SCRIPT)},
+        tool_context=tool_context_confirmed,
+    )
+    assert "timed out" in result["error"].lower()
+    assert result["stdout"] == "<no stdout captured>"
+    assert result["stderr"] == "<no stderr captured>"
+    assert result["returncode"] == -signal.SIGKILL
+
+  @pytest.mark.asyncio
+  async def test_timeout_reports_output_larger_than_one_read(
+      self, workspace, tool_context_confirmed
+  ):
+    tool = bash_tool.ExecuteBashTool(
+        workspace=workspace,
+        policy=bash_tool.BashToolPolicy(timeout_seconds=2),
+    )
+    result = await tool.run_async(
+        args={"command": _python_command(_LARGE_OUTPUT_SCRIPT)},
+        tool_context=tool_context_confirmed,
+    )
+    assert "timed out" in result["error"].lower()
+    assert len(result["stdout"]) == _LARGE_OUTPUT_BYTES
+
+  @pytest.mark.asyncio
+  async def test_timeout_when_command_closes_its_pipes(
+      self, workspace, tool_context_confirmed
+  ):
+    tool = bash_tool.ExecuteBashTool(
+        workspace=workspace,
+        policy=bash_tool.BashToolPolicy(timeout_seconds=1),
+    )
+    result = await tool.run_async(
+        args={"command": _python_command(_CLOSED_PIPES_SCRIPT)},
+        tool_context=tool_context_confirmed,
+    )
+    # Both pipes reach EOF at once, but the command runs on. The deadline must
+    # still cover the reaping, or the tool waits for the command forever.
+    assert "timed out" in result["error"].lower()
+    assert result["returncode"] == -signal.SIGKILL
+
+  @pytest.mark.asyncio
+  async def test_spawn_failure_reports_no_captured_output(
+      self, workspace, tool_context_confirmed
+  ):
+    tool = bash_tool.ExecuteBashTool(workspace=workspace)
+    result = await tool.run_async(
+        args={"command": "adk-no-such-binary"},
+        tool_context=tool_context_confirmed,
+    )
+    # The command never started, so nothing was ever read from a pipe.
+    assert "Execution failed" in result["error"]
+    assert result["stdout"] == "<no stdout captured>"
+    assert result["stderr"] == "<no stderr captured>"
 
   @pytest.mark.asyncio
   async def test_cwd_is_workspace(self, workspace, tool_context_confirmed):
@@ -277,7 +370,11 @@ class TestExecuteBashTool:
     tool = bash_tool.ExecuteBashTool(workspace=workspace, policy=policy)
     mock_process = mock.AsyncMock()
     mock_process.pid = None  # Ensure finally block doesn't try to kill it
-    mock_process.communicate.return_value = (b"", b"")
+    # Both pipes must report EOF on the first read. A bare AsyncMock returns a
+    # truthy AsyncMock instead, which spins the reader loop forever.
+    mock_process.stdout.read = mock.AsyncMock(return_value=b"")
+    mock_process.stderr.read = mock.AsyncMock(return_value=b"")
+    mock_process.wait = mock.AsyncMock(return_value=0)
     mock_exec = mock.AsyncMock(return_value=mock_process)
 
     with mock.patch("asyncio.create_subprocess_exec", mock_exec):

@@ -36,6 +36,9 @@ logger = logging.getLogger("google_adk." + __name__)
 
 _resource = importlib.import_module("resource") if os.name == "posix" else None
 
+_READ_CHUNK_BYTES = 65536
+_TIMEOUT_DRAIN_SECONDS = 1.0
+
 
 @dataclasses.dataclass(frozen=True)
 class BashToolPolicy:
@@ -100,6 +103,37 @@ def _set_resource_limits(policy: BashToolPolicy) -> None:
       )
   except (ValueError, OSError) as e:
     logger.warning("Failed to set resource limits: %s", e)
+
+
+async def _read_stream(
+    stream: Optional[asyncio.StreamReader], chunks: list[bytes]
+) -> None:
+  """Reads `stream` to EOF, appending every chunk to `chunks`.
+
+  `chunks` belongs to the caller, so whatever has been read survives the
+  cancellation of this coroutine. That is what lets the timeout path report
+  the output a command produced before it was killed.
+
+  Args:
+    stream: The pipe to read, or None when the process has no such pipe.
+    chunks: The caller's accumulator, appended to in read order.
+  """
+  if stream is None:
+    return
+  while True:
+    chunk = await stream.read(_READ_CHUNK_BYTES)
+    if not chunk:
+      return
+    chunks.append(chunk)
+
+
+def _kill_process_group(process: asyncio.subprocess.Process) -> None:
+  """Sends SIGKILL to the subprocess's process group if it still exists."""
+  try:
+    if process.pid:
+      os.killpg(process.pid, signal.SIGKILL)
+  except ProcessLookupError:
+    pass
 
 
 class ExecuteBashTool(BaseTool):
@@ -178,8 +212,8 @@ class ExecuteBashTool(BaseTool):
     if os.name != "posix":
       return {"error": "ExecuteBashTool is only supported on POSIX systems."}
 
-    stdout = None
-    stderr = None
+    stdout_chunks: list[bytes] = []
+    stderr_chunks: list[bytes] = []
     try:
       process = await asyncio.create_subprocess_exec(
           *shlex.split(command),
@@ -190,40 +224,56 @@ class ExecuteBashTool(BaseTool):
           preexec_fn=lambda: _set_resource_limits(self._policy),
       )
 
-      try:
-        stdout, stderr = await asyncio.wait_for(
-            process.communicate(), timeout=self._policy.timeout_seconds
+      async def _collect() -> None:
+        """Drains both pipes to EOF, then reaps the process."""
+        await asyncio.gather(
+            _read_stream(process.stdout, stdout_chunks),
+            _read_stream(process.stderr, stderr_chunks),
         )
-      except asyncio.TimeoutError:
-        try:
-          if process.pid:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-          pass
-        stdout, stderr = await process.communicate()
-        return {
-            "error": (
-                f"Command timed out after {self._policy.timeout_seconds}"
-                " seconds."
-            ),
-            "stdout": (
-                stdout.decode(errors="replace")
-                if stdout
-                else "<no stdout captured>"
-            ),
-            "stderr": (
-                stderr.decode(errors="replace")
-                if stderr
-                else "<no stderr captured>"
-            ),
-            "returncode": process.returncode,
-        }
+        # Reaping is part of the deadline: a command that closes both pipes
+        # and keeps running must still time out rather than block forever.
+        await process.wait()
+
+      collector = asyncio.ensure_future(_collect())
+      try:
+        # asyncio.wait leaves the collector running when the deadline
+        # expires, unlike asyncio.wait_for, which cancels it and discards
+        # everything it has read.
+        done, _ = await asyncio.wait(
+            {collector}, timeout=self._policy.timeout_seconds
+        )
+        if not done:
+          _kill_process_group(process)
+          # The kill closes both write ends, so give the collector a bounded
+          # moment to observe EOF and take what is still buffered.
+          await asyncio.wait({collector}, timeout=_TIMEOUT_DRAIN_SECONDS)
+          stdout = b"".join(stdout_chunks)
+          stderr = b"".join(stderr_chunks)
+          return {
+              "error": (
+                  f"Command timed out after {self._policy.timeout_seconds}"
+                  " seconds."
+              ),
+              "stdout": (
+                  stdout.decode(errors="replace")
+                  if stdout
+                  else "<no stdout captured>"
+              ),
+              "stderr": (
+                  stderr.decode(errors="replace")
+                  if stderr
+                  else "<no stderr captured>"
+              ),
+              "returncode": process.returncode,
+          }
+        collector.result()
       finally:
-        try:
-          if process.pid:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-          pass
+        collector.cancel()
+        await asyncio.gather(collector, return_exceptions=True)
+        _kill_process_group(process)
+
+      stdout = b"".join(stdout_chunks)
+      stderr = b"".join(stderr_chunks)
       return {
           "stdout": (
               stdout.decode(errors="replace")
@@ -240,6 +290,8 @@ class ExecuteBashTool(BaseTool):
     except Exception as e:  # pylint: disable=broad-except
       logger.exception("ExecuteBashTool execution failed")
 
+      stdout = b"".join(stdout_chunks)
+      stderr = b"".join(stderr_chunks)
       stdout_res = (
           stdout.decode(errors="replace") if stdout else "<no stdout captured>"
       )
