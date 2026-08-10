@@ -101,8 +101,15 @@ def pytest_generate_tests(metafunc: Metafunc):
 
 
 def _is_explicitly_marked(mark_name: str, metafunc: Metafunc) -> bool:
-  if hasattr(metafunc.function, 'pytestmark'):
-    for mark in metafunc.function.pytestmark:
-      if mark.name == 'parametrize' and mark.args[0] == mark_name:
-        return True
+  """Reports whether the test already parametrizes `mark_name` itself.
+
+  `metafunc.definition.iter_markers` walks the test function, its class and its
+  module, so a mark applied to the enclosing class counts; the function's own
+  `pytestmark` list does not carry class-level marks.
+  """
+  for mark in metafunc.definition.iter_markers('parametrize'):
+    # A mark written as parametrize(argnames=..., argvalues=...) has no
+    # positional args.
+    if mark.args and mark.args[0] == mark_name:
+      return True
   return False
