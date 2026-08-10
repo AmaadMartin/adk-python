@@ -37,8 +37,10 @@ logger = logging.getLogger("google_adk." + __name__)
 _resource = importlib.import_module("resource") if os.name == "posix" else None
 
 # Characters a POSIX shell interprets. This tool never runs a shell, so an
-# unquoted occurrence would silently become a literal argv entry.
-_SHELL_METACHARACTERS = frozenset("|&;<>()$`*\n")
+# unquoted occurrence would silently become a literal argv entry. { is absent
+# because bare {} is not brace expansion, and flagging it would reject the
+# common `find . -exec cat {} +`; a real {a,b} therefore still slips through.
+_SHELL_METACHARACTERS = frozenset("|&;<>()$`*?[\n")
 # Inside double quotes a shell still expands these two; the rest go literal.
 _DOUBLE_QUOTED_METACHARACTERS = frozenset("$`")
 # A shell only expands ~ and only opens a comment at # when the character
@@ -55,12 +57,6 @@ class BashToolPolicy:
 
   Values for max_memory_bytes, max_file_size_bytes, and max_child_processes
   will be enforced upon the spawned subprocess.
-
-  reject_shell_syntax (default True) rejects commands containing unquoted
-  shell syntax. The tool executes a single program directly and never invokes
-  a shell, so operators such as |, >, && and $VAR would otherwise be passed to
-  the program as literal arguments instead of being interpreted. Set it to
-  False only if you want that literal passthrough.
   """
 
   allowed_command_prefixes: tuple[str, ...] = ("*",)
@@ -69,7 +65,6 @@ class BashToolPolicy:
   max_memory_bytes: Optional[int] = None
   max_file_size_bytes: Optional[int] = None
   max_child_processes: Optional[int] = None
-  reject_shell_syntax: bool = True
 
 
 def _shell_syntax_error(syntax: str) -> str:
@@ -150,10 +145,9 @@ def _validate_command(command: str, policy: BashToolPolicy) -> Optional[str]:
     if op in command:
       return f"Command contains blocked operator: {op}"
 
-  if policy.reject_shell_syntax:
-    shell_syntax_error = _find_unhonoured_shell_syntax(command)
-    if shell_syntax_error:
-      return shell_syntax_error
+  shell_syntax_error = _find_unhonoured_shell_syntax(command)
+  if shell_syntax_error:
+    return shell_syntax_error
 
   if "*" in policy.allowed_command_prefixes:
     return None
@@ -215,23 +209,15 @@ class ExecuteBashTool(BaseTool):
             f" {', '.join(policy.allowed_command_prefixes)}"
         )
     )
-    shell_hint = (
-        "Shell syntax is not interpreted and is rejected: no pipes,"
-        " redirection, &&/||, ;, globs, $VAR expansion or subshells"
-        if policy.reject_shell_syntax
-        else (
-            "Shell syntax is not interpreted; operators such as | and > are"
-            " passed to the program as literal arguments"
-        )
-    )
     super().__init__(
         name="execute_bash",
         description=(
             "Executes a single program directly, without a shell, with the"
             " working directory set to the workspace. The command string is"
-            f" split into an executable and its arguments. {shell_hint}."
-            f" Allowed: {allowed_hint}. All commands require user"
-            " confirmation."
+            " split into an executable and its arguments. Shell syntax is not"
+            " interpreted and is rejected: no pipes, redirection, &&/||, ;,"
+            f" globs, $VAR expansion or subshells. Allowed: {allowed_hint}."
+            " All commands require user confirmation."
         ),
     )
     self._workspace = workspace

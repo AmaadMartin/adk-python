@@ -149,9 +149,9 @@ _FAITHFULLY_SPLIT_ARGUMENTS = [
     "a\\|b",
     '"a\\"b"',
     "'it'\\''s'",
-    "https://example.com/x?a=b",
+    "'https://example.com/x?a=b'",
+    # Bare {} is not brace expansion, so a shell leaves it alone too.
     "{}",
-    "[abc]",
     "a~b",
     "http://example.com/page#top",
     "'~'",
@@ -177,6 +177,8 @@ class TestShellSyntaxRejection:
           ("echo `whoami`", "`"),
           ("(cd /tmp)", "("),
           ("ls *.py", "*"),
+          ("ls ?.py", "?"),
+          ("cat [ab].txt", "["),
       ],
   )
   def test_unquoted_shell_syntax_is_rejected(self, command, char):
@@ -260,20 +262,43 @@ class TestShellSyntaxRejection:
     )
 
   @pytest.mark.parametrize("arguments", _FAITHFULLY_SPLIT_ARGUMENTS)
-  def test_accepted_arguments_split_exactly_as_a_shell_would(self, arguments):
+  def test_accepted_arguments_split_exactly_as_a_shell_would(
+      self, arguments, tmp_path
+  ):
     """An accepted command must mean the same to execve and to a shell."""
     command = f"echo {arguments}"
     assert (
         bash_tool._validate_command(command, bash_tool.BashToolPolicy()) is None
     )
-    # printf writes each word a real shell parsed, NUL separated.
+    # printf writes each word a real shell parsed, NUL separated. The probe
+    # runs in an empty tmp_path so a stray file cannot suppress a glob and
+    # make an unexpanded argument look faithful.
     shell = subprocess.run(
         ["bash", "-c", f'printf "%s\\0" {arguments}'],
         capture_output=True,
         text=True,
         check=True,
+        cwd=tmp_path,
     )
     assert shlex.split(command)[1:] == shell.stdout.split("\0")[:-1]
+
+  @pytest.mark.parametrize("pattern", ["?.py", "[ab].txt", "*.py"])
+  def test_pathname_expansion_diverges_from_a_shell(self, pattern, tmp_path):
+    """A matching glob is the silent divergence this rejection exists for."""
+    for name in ("a.py", "b.txt", "a.txt"):
+      (tmp_path / name).touch()
+    shell = subprocess.run(
+        ["bash", "-c", f'printf "%s\\0" {pattern}'],
+        capture_output=True,
+        text=True,
+        check=True,
+        cwd=tmp_path,
+    )
+    assert shell.stdout.split("\0")[:-1] != [pattern]
+    assert (
+        bash_tool._validate_command(f"ls {pattern}", bash_tool.BashToolPolicy())
+        is not None
+    )
 
   @pytest.mark.parametrize(
       "command", ["echo 'unterminated", 'echo "x', "echo a\\"]
@@ -282,15 +307,6 @@ class TestShellSyntaxRejection:
     error = bash_tool._validate_command(command, bash_tool.BashToolPolicy())
     assert error is not None
     assert "ends inside a quote or with a trailing backslash" in error
-
-  def test_opt_out_restores_literal_passthrough(self):
-    policy = bash_tool.BashToolPolicy(reject_shell_syntax=False)
-    assert bash_tool._validate_command("echo hello | grep h", policy) is None
-    assert bash_tool._validate_command("ls ; rm -rf /", policy) is None
-
-  def test_positional_construction_defaults_to_rejecting(self):
-    policy = bash_tool.BashToolPolicy(("ls",), ("|",), 60)
-    assert policy.reject_shell_syntax is True
 
   def test_blocked_operator_message_wins(self):
     policy = bash_tool.BashToolPolicy(blocked_operators=("|",))
@@ -393,17 +409,17 @@ class TestExecuteBashTool:
     assert "returncode" not in result
 
   @pytest.mark.asyncio
-  async def test_metacharacters_execute_literally_when_opted_out(
+  async def test_quoted_metacharacter_still_executes(
       self, workspace, tool_context_confirmed
   ):
-    policy = bash_tool.BashToolPolicy(reject_shell_syntax=False)
-    tool = bash_tool.ExecuteBashTool(workspace=workspace, policy=policy)
+    """Quoting is the supported way to pass a metacharacter literally."""
+    tool = bash_tool.ExecuteBashTool(workspace=workspace)
     result = await tool.run_async(
-        args={"command": "echo hello | grep h"},
+        args={"command": "echo 'hello | world'"},
         tool_context=tool_context_confirmed,
     )
     assert result["returncode"] == 0
-    assert result["stdout"].strip() == "hello | grep h"
+    assert result["stdout"].strip() == "hello | world"
 
   def test_declaration_states_no_shell(self, workspace):
     tool = bash_tool.ExecuteBashTool(workspace=workspace)
@@ -417,16 +433,6 @@ class TestExecuteBashTool:
     command = declaration.parameters_json_schema["properties"]["command"]
     assert "bash command" not in command["description"]
     assert "not a shell command line" in command["description"]
-
-  def test_declaration_reflects_opt_out(self, workspace):
-    policy = bash_tool.BashToolPolicy(reject_shell_syntax=False)
-    tool = bash_tool.ExecuteBashTool(workspace=workspace, policy=policy)
-    declaration = tool._get_declaration()
-    assert declaration is not None
-    description = declaration.description
-    assert description is not None
-    assert "passed to the program as literal arguments" in description
-    assert "rejected" not in description
 
   @pytest.mark.asyncio
   async def test_captures_stderr(self, workspace, tool_context_confirmed):
