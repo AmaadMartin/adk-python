@@ -36,9 +36,9 @@ class ToolboxToolset(BaseToolset):
   """A class that provides access to toolbox toolsets.
 
   Example:
-  ```python
-  toolbox_toolset = ToolboxToolset("http://127.0.0.1:5000")
-  ```
+    .. code-block:: python
+
+      toolbox_toolset = ToolboxToolset("http://127.0.0.1:5000")
   """
 
   def __init__(

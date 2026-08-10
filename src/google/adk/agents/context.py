@@ -282,7 +282,7 @@ class Context(ReadonlyContext):
     """The delta-aware state of the current session.
 
     For any state change, you can mutate this object directly,
-    e.g. `ctx.state['foo'] = 'bar'`
+    e.g. ``ctx.state['foo'] = 'bar'``
     """
     return self._state
 

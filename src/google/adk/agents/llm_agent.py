@@ -346,8 +346,9 @@ class LlmAgent(BaseAgent, abc.ABC):
   generate_content_config: Optional[types.GenerateContentConfig] = None
   """The additional content generation configurations.
 
-  NOTE: not all fields are usable, e.g. tools must be configured via `tools`,
-  thinking_config can be configured here or via the `planner`. If both are set, the planner's configuration takes precedence.
+  NOTE: not all fields are usable, e.g. tools must be configured via ``tools``,
+  thinking_config can be configured here or via the ``planner``. If both are
+  set, the planner's configuration takes precedence.
 
   For example: use this config to adjust model temperature, configure safety
   settings, etc.
@@ -403,7 +404,7 @@ class LlmAgent(BaseAgent, abc.ABC):
     - Schema: Google's Schema type
 
   NOTE:
-    The ADK supports using `output_schema` and `tools` together. It works by
+    The ADK supports using ``output_schema`` and ``tools`` together. It works by
     exposing tools during the thought loop and enforcing structure only on the
     final output.
   """
@@ -421,18 +422,18 @@ class LlmAgent(BaseAgent, abc.ABC):
   """Instructs the agent to make a plan and execute it step by step.
 
   NOTE:
-    To use model's built-in thinking features, set the `thinking_config`
-    field in `google.adk.planners.built_in_planner`.
+    To use model's built-in thinking features, set the ``thinking_config``
+    field in ``google.adk.planners.built_in_planner``.
   """
 
   code_executor: Optional[BaseCodeExecutor] = None
   """Allow agent to execute code blocks from model responses using the provided
   CodeExecutor.
 
-  Check out available code executions in `google.adk.code_executor` package.
+  Check out available code executions in ``google.adk.code_executor`` package.
 
   NOTE:
-    To use model's built-in code executor, use the `BuiltInCodeExecutor`.
+    To use model's built-in code executor, use the ``BuiltInCodeExecutor``.
   """
   # Advance features - End
 

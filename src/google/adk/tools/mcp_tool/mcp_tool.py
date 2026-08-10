@@ -618,7 +618,7 @@ class McpTool(BaseAuthenticatedTool):
 
 
 class MCPTool(McpTool):
-  """Deprecated name, use `McpTool` instead."""
+  """Deprecated name, use ``McpTool`` instead."""
 
   def __init__(self, *args, **kwargs):
     warnings.warn(

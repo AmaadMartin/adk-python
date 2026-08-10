@@ -122,7 +122,7 @@ class RunConfig(BaseModel):
   """Configures real-time speech-to-speech translation.
 
   Only supported by translation models such as
-  `gemini-3.5-live-translate-preview`.
+  ``gemini-3.5-live-translate-preview``.
   """
 
   enable_affective_dialog: Optional[bool] = None

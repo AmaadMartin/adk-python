@@ -138,7 +138,7 @@ class InvocationContext(BaseModel):
   A step ends when it's done calling llm and tools, or if the end_invocation
   is set to true at any time.
 
-  .. code-block::
+  .. code-block:: text
 
        ┌─────────────────────── invocation ──────────────────────────┐
        ┌──────────── llm_agent_call_1 ────────────┐ ┌─ agent_call_2 ─┐

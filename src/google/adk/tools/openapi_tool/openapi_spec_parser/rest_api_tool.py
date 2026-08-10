@@ -81,7 +81,7 @@ HttpxClientFactory = Callable[[], httpx.AsyncClient]
 When supplied to ``RestApiTool`` or ``OpenAPIToolset``, the factory is invoked
 once per API call and its returned client is used as an async context
 manager to issue the request, in place of the default
-```httpx.AsyncClient(verify=..., timeout=None)```. Because the client is closed
+``httpx.AsyncClient(verify=..., timeout=None)``. Because the client is closed
 when the request completes, the factory must return a fresh client on every
 call. This unlocks knobs that the narrower ``ssl_verify`` parameter can't
 reach: proxies, HTTP/2, custom transports (e.g. request-signing), and so on.

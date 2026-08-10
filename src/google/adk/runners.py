@@ -250,20 +250,24 @@ class Runner:
   ) -> None:
     """Initializes the Runner.
 
-    Exactly one of `app`, `agent`, or `node` must be provided. When `agent`
-    or `node` is provided, the Runner wraps it into an `App` internally.
-    Providing `app` is the recommended way to create a runner. When `app` is
-    provided, `app_name` can optionally override the app's name.
+    Exactly one of ``app``, ``agent``, or ``node`` must be provided. When
+    ``agent`` or ``node`` is provided, the Runner wraps it into an ``App``
+    internally.
+    Providing ``app`` is the recommended way to create a runner. When ``app`` is
+    provided, ``app_name`` can optionally override the app's name.
 
     Args:
-        app: An `App` instance. Mutually exclusive with `agent` and `node`.
-        app_name: The application name. Required when `agent` is provided.
-          Optional override for `app.name` when `app` is provided. Defaults to
-          `node.name` when only `node` is provided.
-        agent: The root agent to run. Mutually exclusive with `app` and `node`.
-        node: The root node to run. Mutually exclusive with `app` and `agent`.
+        app: An ``App`` instance. Mutually exclusive with ``agent`` and
+          ``node``.
+        app_name: The application name. Required when ``agent`` is provided.
+          Optional override for ``app.name`` when ``app`` is provided.
+          Defaults to ``node.name`` when only ``node`` is provided.
+        agent: The root agent to run. Mutually exclusive with ``app`` and
+          ``node``.
+        node: The root node to run. Mutually exclusive with ``app`` and
+          ``agent``.
         plugins: Deprecated. A list of plugins for the runner. Please use the
-          `app` argument to provide plugins instead.
+          ``app`` argument to provide plugins instead.
         artifact_service: The artifact service for the runner.
         session_service: The session service for the runner.
         memory_service: The memory service for the runner.
@@ -274,8 +278,9 @@ class Runner:
           ValueError with a helpful message.
 
     Raises:
-        ValueError: If more than one of `app`, `agent`, or `node` is provided,
-          or if none is provided, or if `agent` is provided without `app_name`.
+        ValueError: If more than one of ``app``, ``agent``, or ``node`` is
+          provided, or if none is provided, or if ``agent`` is provided
+          without ``app_name``.
     """
     app = self._resolve_app(app, app_name, agent, node, plugins)
 
@@ -1010,7 +1015,7 @@ class Runner:
         are fetched from session storage.
 
     Returns:
-      The existing or newly created `Session`.
+      The existing or newly created ``Session``.
 
     Raises:
       SessionNotFoundError: If the session is not found and
@@ -1045,7 +1050,7 @@ class Runner:
 
     NOTE:
       This sync interface is only for local testing and convenience purpose.
-      Consider using `run_async` for production usage.
+      Consider using ``run_async`` for production usage.
 
     If event compaction is enabled in the App configuration, it will be
     performed after all agent events for the current invocation have been
@@ -1116,7 +1121,7 @@ class Runner:
     If event compaction is enabled in the App configuration, it will be
     performed after all agent events for the current invocation have been
     yielded. The async generator will only finish iterating after event
-    compaction is complete. However, this does not block new `run_async`
+    compaction is complete. However, this does not block new ``run_async``
     calls for subsequent user queries, which can be started concurrently.
 
     Args:
