@@ -34,6 +34,13 @@ from pydantic_core import to_jsonable_python
 from ..tools.tool_confirmation import ToolConfirmation
 from .ui_widget import UiWidget
 
+# `AuthConfig` is imported lazily, not to break an import cycle -- there is
+# none -- but because `..auth.auth_tool` reaches `fastapi` through
+# `..auth.auth_schemes`. Importing it at module scope pulls FastAPI and
+# Starlette into `import google.adk.events` and adds ~0.1s of import time.
+# The `else` branch also keeps the runtime annotation `dict[str, Any]`. Binding
+# the real class here would change the exported JSON schema and start rejecting
+# values that are accepted today.
 if TYPE_CHECKING:
   from ..auth.auth_tool import AuthConfig
 else:
@@ -142,6 +149,8 @@ class EventActions(BaseModel):  # type: ignore[misc]
   def _parse_auth_configs(cls, v: dict[str, Any]) -> dict[str, Any]:
     if not v:
       return v
+    # Deferred to keep FastAPI out of `import google.adk.events`; see the
+    # `TYPE_CHECKING` block above. Keep the two imports in sync.
     from ..auth.auth_tool import AuthConfig
 
     return {
