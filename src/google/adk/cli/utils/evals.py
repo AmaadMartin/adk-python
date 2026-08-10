@@ -31,10 +31,8 @@ if TYPE_CHECKING:
 class GcsEvalManagers:
   """The GCS backed eval managers for an eval storage URI.
 
-  This is a plain dataclass rather than a pydantic model. The two field types
-  come from an optional dependency, so they are only importable under
-  TYPE_CHECKING. A pydantic model could never resolve them at class creation
-  time and stayed permanently incomplete.
+  Not a pydantic model: both field types come from an optional dependency and
+  import only under TYPE_CHECKING, so pydantic could never complete the class.
   """
 
   eval_sets_manager: GcsEvalSetsManager

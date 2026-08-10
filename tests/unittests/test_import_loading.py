@@ -92,8 +92,16 @@ _LAZY_PACKAGES = (
                 'uvicorn',
             ),
         ),
+        (
+            'google.adk.cli.utils.evals',
+            (
+                'google.adk.evaluation.gcs_eval_set_results_manager',
+                'google.adk.evaluation.gcs_eval_sets_manager',
+                'google.cloud.storage',
+            ),
+        ),
     ],
-    ids=('root', 'agents', 'workflow', 'cli_commands'),
+    ids=('root', 'agents', 'workflow', 'cli_commands', 'cli_utils_evals'),
 )
 def test_package_import_defers_unrelated_runtime(
     module_name: str, forbidden: tuple[str, ...]
