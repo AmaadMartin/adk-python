@@ -19,6 +19,7 @@ from __future__ import annotations
 import datetime
 import logging
 
+from google.adk.auth.auth_tool import AuthConfig
 from google.adk.events.event_actions import _make_json_serializable
 from google.adk.events.event_actions import EventActions
 from pydantic import BaseModel
@@ -148,3 +149,71 @@ class TestAgentStateSerialization:
         'Failed to serialize `agent_state`' in record.message
         for record in caplog.records
     )
+
+
+_AUTH_CONFIG_DICT = {
+    'auth_scheme': {'type': 'apiKey', 'in': 'header', 'name': 'X-Key'}
+}
+
+
+class TestRequestedAuthConfigsValidation:
+  """Tests for the lazily-imported `requested_auth_configs` validator."""
+
+  def test_default_is_an_empty_dict(self):
+    assert EventActions().requested_auth_configs == {}
+    assert (
+        EventActions.model_validate(
+            {'requested_auth_configs': {}}
+        ).requested_auth_configs
+        == {}
+    )
+
+  def test_dict_value_is_coerced_to_auth_config(self):
+    actions = EventActions.model_validate(
+        {'requested_auth_configs': {'fc1': _AUTH_CONFIG_DICT}}
+    )
+
+    assert isinstance(actions.requested_auth_configs['fc1'], AuthConfig)
+
+  def test_auth_config_instance_is_passed_through_unchanged(self):
+    config = AuthConfig.model_validate(_AUTH_CONFIG_DICT)
+
+    actions = EventActions(requested_auth_configs={'fc1': config})
+
+    assert actions.requested_auth_configs['fc1'] is config
+
+  def test_non_dict_value_is_passed_through_unchanged(self):
+    """The runtime annotation is `dict[str, Any]`, so nothing else validates.
+
+    Binding the real `AuthConfig` at module scope would make pydantic reject
+    this value instead. See the `TYPE_CHECKING` comment in `event_actions.py`.
+    """
+    actions = EventActions.model_validate(
+        {'requested_auth_configs': {'fc1': 'not-an-auth-config'}}
+    )
+
+    assert actions.requested_auth_configs == {'fc1': 'not-an-auth-config'}
+
+  def test_multiple_entries_are_each_coerced(self):
+    actions = EventActions.model_validate({
+        'requested_auth_configs': {
+            'fc1': _AUTH_CONFIG_DICT,
+            'fc2': _AUTH_CONFIG_DICT,
+        }
+    })
+
+    assert all(
+        isinstance(value, AuthConfig)
+        for value in actions.requested_auth_configs.values()
+    )
+
+  def test_round_trips_through_json(self):
+    actions = EventActions.model_validate(
+        {'requested_auth_configs': {'fc1': _AUTH_CONFIG_DICT}}
+    )
+
+    restored = EventActions.model_validate_json(
+        actions.model_dump_json(by_alias=True)
+    )
+
+    assert isinstance(restored.requested_auth_configs['fc1'], AuthConfig)

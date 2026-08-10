@@ -268,6 +268,47 @@ def test_event_serialization_always_camel_case():
   assert 'interruptId' in dumped['output']
 
 
+# --- NodeInfo path properties ------------------------------------------------
+
+
+class TestNodeInfoPathProperties:
+  """Tests for the path-derived properties on `NodeInfo`."""
+
+  def test_run_id_is_parsed_from_the_leaf_segment(self):
+    assert NodeInfo(path='wf@1/A@2/B@3').run_id == '3'
+
+  def test_run_id_is_empty_when_the_leaf_has_no_run_id(self):
+    assert NodeInfo(path='A/B').run_id == ''
+
+  def test_run_id_is_empty_for_an_empty_path(self):
+    assert NodeInfo().run_id == ''
+
+  def test_parent_run_id_is_parsed_from_the_parent_segment(self):
+    assert NodeInfo(path='wf@1/A@2/B@3').parent_run_id == '2'
+
+  def test_parent_run_id_is_none_for_a_root_path(self):
+    assert NodeInfo(path='wf@1').parent_run_id is None
+
+  def test_parent_run_id_is_none_for_an_empty_path(self):
+    assert NodeInfo().parent_run_id is None
+
+  def test_name_strips_the_run_id(self):
+    assert NodeInfo(path='wf@1/A@2/B@3').name == 'B'
+
+  def test_name_is_the_leaf_when_there_is_no_run_id(self):
+    assert NodeInfo(path='A/B').name == 'B'
+
+  def test_name_is_empty_for_an_empty_path(self):
+    assert NodeInfo().name == ''
+
+  def test_properties_are_reachable_through_an_event(self):
+    event = Event(node_path='wf@1/A@2')
+
+    assert event.node_info.run_id == '2'
+    assert event.node_info.parent_run_id == '1'
+    assert event.node_info.name == 'A'
+
+
 # --- message alias for content -----------------------------------------------
 
 
