@@ -22,6 +22,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import subprocess
 import sys
 from types import SimpleNamespace
 from typing import Any
@@ -1089,7 +1090,7 @@ def test_cli_deploy_cloud_run_success(
 def test_cli_deploy_cloud_run_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-  """Exception from to_cloud_run should be caught and surfaced via click.secho."""
+  """Exception from to_cloud_run should be surfaced and exit non-zero."""
 
   def _boom(*_a: Any, **_k: Any) -> None:  # noqa: D401
     raise RuntimeError("boom")
@@ -1103,8 +1104,42 @@ def test_cli_deploy_cloud_run_failure(
       cli_tools_click.main, ["deploy", "cloud_run", str(agent_dir)]
   )
 
-  assert result.exit_code == 0
+  assert result.exit_code != 0
   assert "Deploy failed: boom" in result.output
+  # A deliberate exit, not a leaked exception: the real CLI prints a
+  # traceback for anything else.
+  assert isinstance(result.exception, SystemExit)
+
+
+def test_cli_deploy_cloud_run_gcloud_failure_exits_non_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """A non-zero gcloud exit should make the command exit non-zero."""
+
+  def _gcloud_failed(*_a: Any, **_k: Any) -> None:
+    raise subprocess.CalledProcessError(1, ["gcloud", "run", "deploy"])
+
+  monkeypatch.setattr("google.adk.cli.cli_deploy.to_cloud_run", _gcloud_failed)
+
+  agent_dir = tmp_path / "agent_gcloud_failure"
+  agent_dir.mkdir()
+  runner = CliRunner()
+  result = runner.invoke(
+      cli_tools_click.main,
+      [
+          "deploy",
+          "cloud_run",
+          "--project",
+          "test-proj",
+          "--region",
+          "us-central1",
+          str(agent_dir),
+      ],
+  )
+
+  assert result.exit_code != 0
+  assert "Deploy failed:" in result.output
+  assert isinstance(result.exception, SystemExit)
 
 
 def test_cli_deploy_cloud_run_passthrough_args(
@@ -1326,6 +1361,109 @@ def test_cli_deploy_agent_engine_success(
   assert called_kwargs.get("region") == "us-central1"
 
 
+def test_cli_deploy_agent_engine_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """Exception from to_agent_engine should be surfaced and exit non-zero."""
+
+  def _boom(*_a: Any, **_k: Any) -> None:
+    raise RuntimeError("boom")
+
+  monkeypatch.setattr("google.adk.cli.cli_deploy.to_agent_engine", _boom)
+
+  agent_dir = tmp_path / "agent_ae_failure"
+  agent_dir.mkdir()
+  runner = CliRunner()
+  result = runner.invoke(
+      cli_tools_click.main,
+      [
+          "deploy",
+          "agent_engine",
+          "--project",
+          "test-proj",
+          "--region",
+          "us-central1",
+          str(agent_dir),
+      ],
+  )
+
+  assert result.exit_code != 0
+  assert "Deploy failed: boom" in result.output
+  assert isinstance(result.exception, SystemExit)
+
+
+def test_cli_deploy_agent_engine_conflicting_import_flags_exit_non_zero(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """Both agent-import flags together should exit non-zero without deploying."""
+  rec = _Recorder()
+  monkeypatch.setattr("google.adk.cli.cli_deploy.to_agent_engine", rec)
+
+  agent_dir = tmp_path / "agent_ae_conflict"
+  agent_dir.mkdir()
+  runner = CliRunner()
+  result = runner.invoke(
+      cli_tools_click.main,
+      [
+          "deploy",
+          "agent_engine",
+          "--project",
+          "test-proj",
+          "--region",
+          "us-central1",
+          "--validate-agent-import",
+          "--skip-agent-import-validation",
+          str(agent_dir),
+      ],
+  )
+
+  assert result.exit_code != 0
+  assert (
+      "Do not pass both --validate-agent-import and"
+      " --skip-agent-import-validation."
+      in result.output
+  )
+  assert not rec.calls, "the deploy must not start"
+
+
+def test_cli_deploy_agent_engine_failure_exit_status_of_real_process(
+    tmp_path: Path,
+) -> None:
+  """The `adk` process itself must exit non-zero, so `&&` chains stop.
+
+  `CliRunner` reports a simulated exit code. Only a real process proves the
+  status that a shell or a CI pipeline sees.
+  """
+  agent_dir = tmp_path / "agent_ae_process"
+  agent_dir.mkdir()
+  # An empty HOME leaves the child's telemetry consent unset, so the child
+  # neither prompts nor reports.
+  home_dir = tmp_path / "home"
+  home_dir.mkdir()
+
+  completed = subprocess.run(
+      [
+          sys.executable,
+          "-m",
+          "google.adk.cli",
+          "deploy",
+          "agent_engine",
+          "--validate-agent-import",
+          "--skip-agent-import-validation",
+          str(agent_dir),
+      ],
+      env={**os.environ, "HOME": str(home_dir)},
+      stdin=subprocess.DEVNULL,
+      capture_output=True,
+      text=True,
+      check=False,
+  )
+
+  assert completed.returncode == 1
+  assert "Deploy failed: Do not pass both" in completed.stderr
+  assert "Traceback" not in completed.stderr
+
+
 # cli deploy agent_engine with --otel_to_cloud
 def test_cli_deploy_agent_engine_otel_to_cloud_success(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -1389,6 +1527,39 @@ def test_cli_deploy_gke_success(
   assert called_kwargs.get("project") == "test-proj"
   assert called_kwargs.get("region") == "us-central1"
   assert called_kwargs.get("cluster_name") == "my-cluster"
+
+
+def test_cli_deploy_gke_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """Exception from to_gke should be surfaced and exit non-zero."""
+
+  def _boom(*_a: Any, **_k: Any) -> None:
+    raise RuntimeError("boom")
+
+  monkeypatch.setattr("google.adk.cli.cli_deploy.to_gke", _boom)
+
+  agent_dir = tmp_path / "agent_gke_failure"
+  agent_dir.mkdir()
+  runner = CliRunner()
+  result = runner.invoke(
+      cli_tools_click.main,
+      [
+          "deploy",
+          "gke",
+          "--project",
+          "test-proj",
+          "--region",
+          "us-central1",
+          "--cluster_name",
+          "my-cluster",
+          str(agent_dir),
+      ],
+  )
+
+  assert result.exit_code != 0
+  assert "Deploy failed: boom" in result.output
+  assert isinstance(result.exception, SystemExit)
 
 
 # cli eval
@@ -1805,6 +1976,7 @@ def test_cli_deploy_cloud_run_gcloud_arg_conflict(
       " command."
   )
   assert expected_msg in result.output
+  assert result.exit_code != 0
 
   # Test with conflicting --port arg
   result = runner.invoke(
@@ -1826,6 +1998,7 @@ def test_cli_deploy_cloud_run_gcloud_arg_conflict(
       " command."
   )
   assert expected_msg in result.output
+  assert result.exit_code != 0
 
   # Test with conflicting --region arg
   result = runner.invoke(
@@ -1849,6 +2022,7 @@ def test_cli_deploy_cloud_run_gcloud_arg_conflict(
       " command."
   )
   assert expected_msg in result.output
+  assert result.exit_code != 0
 
 
 @pytest.mark.parametrize(

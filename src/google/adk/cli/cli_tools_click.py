@@ -2418,6 +2418,7 @@ def cli_deploy_cloud_run(
     )
   except Exception as e:
     click.secho(f"Deploy failed: {e}", fg="red", err=True)
+    ctx.exit(1)
 
 
 @main.group()
@@ -2678,7 +2679,9 @@ def cli_migrate_session(
         exists=True, dir_okay=True, file_okay=False, resolve_path=True
     ),
 )
+@click.pass_context
 def cli_deploy_agent_engine(
+    ctx: click.Context,
     agent: str,
     project: str | None,
     region: str | None,
@@ -2755,6 +2758,7 @@ def cli_deploy_agent_engine(
     )
   except Exception as e:
     click.secho(f"Deploy failed: {e}", fg="red", err=True)
+    ctx.exit(1)
 
 
 @deploy.command("gke")
@@ -2886,7 +2890,9 @@ def cli_deploy_agent_engine(
         exists=True, dir_okay=True, file_okay=False, resolve_path=True
     ),
 )
+@click.pass_context
 def cli_deploy_gke(
+    ctx: click.Context,
     agent: str,
     project: str | None,
     region: str | None,
@@ -2943,3 +2949,4 @@ def cli_deploy_gke(
     )
   except Exception as e:
     click.secho(f"Deploy failed: {e}", fg="red", err=True)
+    ctx.exit(1)
