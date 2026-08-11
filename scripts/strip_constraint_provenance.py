@@ -27,11 +27,7 @@ shape uv would have emitted for the remaining sources. That keeps the script's
 constrained and unconstrained resolution paths byte-identical.
 
 Reads a uv-generated constraints file on stdin and writes the cleaned file to
-stdout:
-
-  tail -n +3 constraints-3.10.txt.new.tmp \\
-    | python3 scripts/strip_constraint_provenance.py \\
-        --constraint-file constraints-3.10.txt.stable.tmp
+stdout; see `scripts/update_constraints.sh` for the invocation.
 """
 
 from __future__ import annotations
@@ -121,8 +117,9 @@ def main(argv: Sequence[str] | None = None) -> int:
       help='The constraint path as uv spells it in the `# via` comments.',
   )
   args = parser.parse_args(argv)
-  constraint_file: str = args.constraint_file
-  cleaned = strip_provenance(sys.stdin.read().splitlines(), constraint_file)
+  cleaned = strip_provenance(
+      sys.stdin.read().splitlines(), args.constraint_file
+  )
   sys.stdout.writelines(f'{line}\n' for line in cleaned)
   return 0
 
