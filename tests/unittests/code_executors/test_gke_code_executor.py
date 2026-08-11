@@ -539,7 +539,7 @@ class TestGkeCodeExecutor:
     `write(path, content, timeout=60)`, as k8s-agent-sandbox does.
     """
     init_calls: list[tuple[str, str, str | None]] = []
-    write_calls: list[tuple[str, str, int]] = []
+    write_calls: list[tuple[str, str]] = []
     run_calls: list[tuple[str, int]] = []
 
     class FakeSandboxClient:
@@ -560,7 +560,7 @@ class TestGkeCodeExecutor:
         return None
 
       def write(self, path: str, content: str, timeout: int = 60) -> None:
-        write_calls.append((path, content, timeout))
+        write_calls.append((path, content))
 
       def run(self, command: str, timeout: int = 60) -> SimpleNamespace:
         run_calls.append((command, timeout))
@@ -578,5 +578,5 @@ class TestGkeCodeExecutor:
     assert result.stdout == "fake stdout"
     assert init_calls == [("python-sandbox-template", "default", None)]
     assert run_calls == [("python3 script.py", 45)]
-    # The upload keeps the client's own default; only execution is bounded.
-    assert write_calls == [("script.py", "print('hi')", 60)]
+    # The executor sends no timeout on the upload; only execution is bounded.
+    assert write_calls == [("script.py", "print('hi')")]

@@ -100,11 +100,11 @@ class GkeCodeExecutor(BaseCodeExecutor):
   bounds the execution request sent to the sandbox; the script upload that
   precedes it keeps the sandbox client's own default.
 
-  Must be positive: the API server reads `timeoutSeconds=0` as no timeout, so a
-  zero would wait on under the server's own default while the `TimeoutError`
-  raised afterwards reports a `0s` deadline that was never applied. Raise this
-  value for long-running code rather than removing the bound; unlike on the
-  base class, `None` is rejected.
+  Must be positive: the API server treats `timeoutSeconds=0` as no timeout, so
+  a zero would silently fall back to the server default while the
+  `TimeoutError` raised afterwards reports a `0s` deadline that was never
+  applied. Raise this value for long-running code rather than removing the
+  bound; unlike on the base class, `None` is rejected.
   """
   executor_type: Literal["job", "sandbox"] = "job"
   cpu_requested: str = "200m"
