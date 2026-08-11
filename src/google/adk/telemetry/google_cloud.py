@@ -176,12 +176,8 @@ def _warn_optional_import_failed(
 ) -> None:
   """Warns that an optional telemetry import failed, and why.
 
-  An ``AttributeError`` here means the package is installed but blew up while
-  its module body ran -- typically a version skew against the OpenTelemetry
-  API. Reporting that as "not installed" sends the operator to check pip, which
-  finds the package present. Naming the actual exception keeps the two cases
-  distinguishable, and the install hint is only offered when the package really
-  could not be imported.
+  An ``AttributeError`` means the package is installed but failed while
+  importing, so the pip hint is only added for an ``ImportError``.
 
   Args:
     err: The exception raised by the optional import.
