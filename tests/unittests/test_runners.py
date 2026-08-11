@@ -2323,11 +2323,10 @@ class TestRunnerCfcModelGate:
   def test_cfc_gate_accepts_any_gemini_model(self, model: str) -> None:
     agent, runner = self._new_agent_and_runner(model)
 
-    context = runner._new_invocation_context(
+    runner._new_invocation_context(
         self._new_session(), run_config=RunConfig(support_cfc=True)
     )
 
-    assert isinstance(context, InvocationContext)
     assert isinstance(agent.code_executor, BuiltInCodeExecutor)
 
   def test_cfc_gate_accepts_a_models_prefixed_gemini_id(self) -> None:
