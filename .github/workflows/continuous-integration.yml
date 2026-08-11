@@ -33,14 +33,9 @@ on:
 permissions:
   contents: read
 
-# uv is pinned rather than floating. The Pre-commit Linter job below runs
-# scripts/update_constraints.sh through pre-commit. That script re-runs
-# `uv pip compile` and compares the output with the committed
-# constraints-3.*.txt files byte for byte. A uv release that changes the
-# resolver or the output formatting would fail that comparison on every open
-# pull request, for a reason unrelated to the pull request. Bump this only in a
-# change that also regenerates the constraints files, and keep every job on the
-# same version so lint, mypy and the tests resolve identically.
+# Pinned so a new uv release cannot change the constraints-3.*.txt files that
+# the Pre-commit Linter job regenerates and diffs. Bump this only in a change
+# that also regenerates those files, and keep every job on this one version.
 env:
   UV_PINNED_VERSION: "0.12.3"
 
