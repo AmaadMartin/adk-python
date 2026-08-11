@@ -202,6 +202,8 @@ def test_clone_with_updated_skills(mock_skill1, mock_skill2):
       code_executor=executor,
       script_timeout=42,
       additional_tools=[mock_tool],
+      tool_name_prefix="my_prefix",
+      tool_filter=["list_skills", "load_skill"],
   )
 
   new_toolset = toolset.clone_with_updated_skills([mock_skill3])
@@ -216,6 +218,102 @@ def test_clone_with_updated_skills(mock_skill1, mock_skill2):
   assert new_toolset._code_executor is executor
   assert new_toolset._script_timeout == 42
   assert "my_tool" in new_toolset._provided_tools_by_name
+  assert new_toolset.tool_name_prefix == "my_prefix"
+  assert new_toolset.tool_filter == ["list_skills", "load_skill"]
+
+
+@pytest.mark.asyncio
+async def test_clone_preserves_tool_name_prefix_in_tool_names(
+    mock_skill1, mock_skill2
+):
+  """The clone prefixes its tool names exactly like the source toolset."""
+  toolset = skill_toolset.SkillToolset(
+      [mock_skill1], tool_name_prefix="my_prefix"
+  )
+
+  clone = toolset.clone_with_updated_skills([mock_skill2])
+
+  tools = await clone.get_tools_with_prefix()
+  assert [t.name for t in tools] == [
+      "my_prefix_list_skills",
+      "my_prefix_load_skill",
+      "my_prefix_load_skill_resource",
+      "my_prefix_run_skill_script",
+  ]
+
+
+@pytest.mark.asyncio
+async def test_clone_preserves_tool_name_prefix_in_system_instruction(
+    mock_skill1, mock_skill2, tool_context_instance, mock_registry
+):
+  """The clone's system instruction names the prefixed tools."""
+  toolset = skill_toolset.SkillToolset(
+      [mock_skill1],
+      registry=mock_registry,
+      tool_name_prefix="my_prefix",
+  )
+
+  clone = toolset.clone_with_updated_skills([mock_skill2])
+
+  # Remove ListSkillsTool so the skills XML instruction is emitted.
+  clone._tools = [
+      t for t in clone._tools if not isinstance(t, skill_toolset.ListSkillsTool)
+  ]
+
+  llm_req = mock.create_autospec(llm_request_model.LlmRequest, instance=True)
+
+  await clone.process_llm_request(
+      tool_context=tool_context_instance, llm_request=llm_req
+  )
+
+  llm_req.append_instructions.assert_called_once()
+  args, _ = llm_req.append_instructions.call_args
+  instructions = args[0]
+  assert len(instructions) == 3
+  assert "`my_prefix_load_skill`" in instructions[0]
+  assert "`my_prefix_load_skill_resource`" in instructions[0]
+  assert "`my_prefix_run_skill_script`" in instructions[0]
+  assert "my_prefix_search_skills" in instructions[2]
+
+
+@pytest.mark.asyncio
+async def test_clone_preserves_list_tool_filter(mock_skill1, mock_skill2):
+  """The clone exposes only the tools named in the source list filter."""
+  toolset = skill_toolset.SkillToolset(
+      [mock_skill1], tool_filter=["list_skills", "load_skill"]
+  )
+
+  clone = toolset.clone_with_updated_skills([mock_skill2])
+
+  tool_names = [t.name for t in await clone.get_tools()]
+  assert tool_names == ["list_skills", "load_skill"]
+  assert "load_skill_resource" not in tool_names
+  assert "run_skill_script" not in tool_names
+
+
+@pytest.mark.asyncio
+async def test_clone_preserves_predicate_tool_filter(mock_skill1, mock_skill2):
+  """The clone applies the same predicate filter object as the source."""
+  toolset = skill_toolset.SkillToolset(
+      [mock_skill1], tool_filter=lambda tool, ctx=None: "resource" in tool.name
+  )
+
+  clone = toolset.clone_with_updated_skills([mock_skill2])
+
+  assert clone.tool_filter is toolset.tool_filter
+  assert [t.name for t in await clone.get_tools()] == ["load_skill_resource"]
+
+
+def test_clone_without_prefix_or_filter_keeps_them_none(
+    mock_skill1, mock_skill2
+):
+  """A source toolset with neither option clones with neither option."""
+  toolset = skill_toolset.SkillToolset([mock_skill1])
+
+  clone = toolset.clone_with_updated_skills([mock_skill2])
+
+  assert clone.tool_name_prefix is None
+  assert clone.tool_filter is None
 
 
 def test_init_accepts_environment(mock_skill1):
