@@ -94,13 +94,17 @@ class GkeCodeExecutor(BaseCodeExecutor):
   namespace: str = "default"
   image: str = "python:3.11-slim"
   timeout_seconds: int = Field(default=300, gt=0)
-  """Wall-clock bound, in seconds, on waiting for a submitted Job to finish.
+  """Wall-clock bound, in seconds, on a single code execution.
 
-  Must be positive: the API server reads `timeoutSeconds=0` as no timeout, so a
-  zero would wait on under the server's own default while the `TimeoutError`
-  raised afterwards reports a `0s` deadline that was never applied. Raise this
-  value for long-running code rather than removing the bound; unlike on the
-  base class, `None` is rejected.
+  In job mode this bounds the watch on the submitted Job. In sandbox mode it
+  bounds the execution request sent to the sandbox; the script upload that
+  precedes it keeps the sandbox client's own default.
+
+  Must be positive: the API server treats `timeoutSeconds=0` as no timeout, so
+  a zero would silently fall back to the server default while the
+  `TimeoutError` raised afterwards reports a `0s` deadline that was never
+  applied. Raise this value for long-running code rather than removing the
+  bound; unlike on the base class, `None` is rejected.
   """
   executor_type: Literal["job", "sandbox"] = "job"
   cpu_requested: str = "200m"
@@ -194,7 +198,7 @@ class GkeCodeExecutor(BaseCodeExecutor):
       ) as sandbox:
         # Execute the code as a python script
         sandbox.write("script.py", code)
-        result = sandbox.run("python3 script.py")
+        result = sandbox.run("python3 script.py", timeout=self.timeout_seconds)
 
         return CodeExecutionResult(stdout=result.stdout, stderr=result.stderr)
     except RuntimeError as e:
