@@ -81,9 +81,8 @@ _LAZY_SERVICE_IMPORTS: dict[str, str] = {
     "LocalEvalSetsManager": "..evaluation.local_eval_sets_manager",
 }
 
-# Directory holding the packaged Angular dev UI assets. Defined at module level
-# so tests can point the server at a temporary directory instead of writing
-# runtime-config.json into the installed package.
+# Directory holding the packaged Angular dev UI assets. The server only reads
+# from it.
 _WEB_ASSETS_DIR = Path(__file__).parent.resolve() / "browser"
 
 
