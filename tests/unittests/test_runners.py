@@ -19,6 +19,7 @@ import logging
 from pathlib import Path
 import sys
 import textwrap
+from typing import Any
 from typing import AsyncGenerator
 from typing import Optional
 from unittest.mock import AsyncMock
@@ -34,6 +35,7 @@ from google.adk.apps.app import App
 from google.adk.apps.app import ResumabilityConfig
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.cli.utils.agent_loader import AgentLoader
+from google.adk.errors.already_exists_error import AlreadyExistsError
 from google.adk.errors.session_not_found_error import SessionNotFoundError
 from google.adk.events.event import Event
 from google.adk.plugins.base_plugin import BasePlugin
@@ -660,6 +662,139 @@ async def test_session_auto_creation():
   # Verify that session_id="missing" doesn't error out - session is auto-created
   assert event.author == "test_agent"
   assert event.content.parts[0].text == "Test LLM response"
+
+
+class _SlowReadSessionService(InMemorySessionService):
+  """An in-memory service whose reads complete after a scheduling point.
+
+  `InMemorySessionService.get_session` and `create_session` never suspend, so
+  two `asyncio.gather`-ed callers cannot interleave against the real service:
+  the first runs get-then-create to completion before the second starts.
+  Yielding *after* the read - the way a network-backed store behaves, with the
+  answer still in flight while the peer reads - is what lets both callers
+  observe a missing session before either creates it. Yielding before the read
+  would not reproduce the race.
+  """
+
+  async def get_session(
+      self,
+      *,
+      app_name: str,
+      user_id: str,
+      session_id: str,
+      config: Optional[GetSessionConfig] = None,
+  ) -> Optional[Session]:
+    session = await super().get_session(
+        app_name=app_name,
+        user_id=user_id,
+        session_id=session_id,
+        config=config,
+    )
+    await asyncio.sleep(0)
+    return session
+
+
+@pytest.mark.asyncio
+async def test_concurrent_auto_creation_resolves_to_the_same_session():
+  """Both callers of a lost create race get the one session that exists."""
+  session_service = _SlowReadSessionService()
+  runner = Runner(
+      app_name=TEST_APP_ID,
+      agent=MockLlmAgent("test_agent"),
+      session_service=session_service,
+      artifact_service=InMemoryArtifactService(),
+      auto_create_session=True,
+  )
+
+  first, second = await asyncio.gather(
+      runner._get_or_create_session(
+          user_id=TEST_USER_ID, session_id=TEST_SESSION_ID
+      ),
+      runner._get_or_create_session(
+          user_id=TEST_USER_ID, session_id=TEST_SESSION_ID
+      ),
+  )
+
+  assert first.id == TEST_SESSION_ID
+  assert second.id == TEST_SESSION_ID
+  listed = await session_service.list_sessions(
+      app_name=TEST_APP_ID, user_id=TEST_USER_ID
+  )
+  assert len(listed.sessions) == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_run_async_auto_creates_one_session():
+  """Concurrent `run_async` calls share the auto-created session."""
+  session_service = _SlowReadSessionService()
+  runner = Runner(
+      app_name=TEST_APP_ID,
+      agent=MockLlmAgent("test_agent"),
+      session_service=session_service,
+      artifact_service=InMemoryArtifactService(),
+      auto_create_session=True,
+  )
+
+  async def drive() -> list[Event]:
+    async with aclosing(
+        runner.run_async(
+            user_id=TEST_USER_ID,
+            session_id=TEST_SESSION_ID,
+            new_message=types.Content(
+                role="user", parts=[types.Part(text="hi")]
+            ),
+        )
+    ) as agen:
+      return [event async for event in agen]
+
+  first_events, second_events = await asyncio.gather(drive(), drive())
+
+  assert any(event.author == "test_agent" for event in first_events)
+  assert any(event.author == "test_agent" for event in second_events)
+  listed = await session_service.list_sessions(
+      app_name=TEST_APP_ID, user_id=TEST_USER_ID
+  )
+  assert len(listed.sessions) == 1
+
+
+@pytest.mark.asyncio
+async def test_auto_creation_reraises_when_session_is_still_missing():
+  """A create conflict the follow-up read cannot explain still propagates."""
+
+  class _NeverReadableSessionService(InMemorySessionService):
+
+    async def get_session(
+        self,
+        *,
+        app_name: str,
+        user_id: str,
+        session_id: str,
+        config: Optional[GetSessionConfig] = None,
+    ) -> Optional[Session]:
+      return None
+
+    async def create_session(
+        self,
+        *,
+        app_name: str,
+        user_id: str,
+        state: Optional[dict[str, Any]] = None,
+        session_id: Optional[str] = None,
+    ) -> Session:
+      raise AlreadyExistsError(f"Session with id {session_id} already exists.")
+
+  runner = Runner(
+      app_name=TEST_APP_ID,
+      agent=MockLlmAgent("test_agent"),
+      session_service=_NeverReadableSessionService(),
+      artifact_service=InMemoryArtifactService(),
+      auto_create_session=True,
+  )
+
+  with pytest.raises(AlreadyExistsError, match="already exists"):
+    await runner._get_or_create_session(
+        user_id=TEST_USER_ID, session_id=TEST_SESSION_ID
+    )
 
 
 @pytest.mark.asyncio
