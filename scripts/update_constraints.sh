@@ -87,49 +87,30 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
   fi
 
   # Construct the command from scratch. The date is always known here: check
-  # mode has just validated it, and update mode owns it.
-  GENERATION_CMD="uv pip compile pyproject.toml --all-extras --python-version $ver"
-  GENERATION_CMD="$GENERATION_CMD --exclude-newer $date_to_use"
-  GENERATION_CMD="$GENERATION_CMD --index-url https://pypi.org/simple -o $TARGET_FILE"
+  # mode has just validated it, and update mode owns it. --no-emit-package
+  # drops google-adk from the output but keeps its requirements: these files
+  # are applied to the very install they constrain.
+  COMPILE_CMD="uv pip compile pyproject.toml --all-extras --no-emit-package google-adk --python-version $ver --exclude-newer $date_to_use --index-url https://pypi.org/simple"
+  GENERATION_CMD="$COMPILE_CMD -o $TARGET_FILE"
+  NEW_FILE="constraints-${ver}.txt.new.tmp"
+  RUN_CMD="$COMPILE_CMD -o $NEW_FILE"
 
   echo "Found generation command: $GENERATION_CMD"
 
-  STABLE_FILE="constraints-${ver}.txt.stable.tmp"
-  NEW_FILE="constraints-${ver}.txt.new.tmp"
-
-  # Copy the existing constraints to STABLE_FILE if it exists and is not empty
+  # Seed uv with the committed pins by pre-filling the file it writes. Handing
+  # them over with --constraint instead records that path in the annotations.
+  rm -f "$NEW_FILE"
   if [ -s "$TARGET_FILE" ]; then
-    cp "$TARGET_FILE" "$STABLE_FILE"
-  else
-    touch "$STABLE_FILE"
+    cp "$TARGET_FILE" "$NEW_FILE"
   fi
 
-  # Modify the GENERATION_CMD to output to NEW_FILE.
-  RUN_CMD=$(echo "$GENERATION_CMD" | sed -E "s/-o [^ ]+/-o $NEW_FILE/")
-  RUN_CMD=$(echo "$RUN_CMD" | sed -E "s/--output-file [^ ]+/--output-file $NEW_FILE/")
-  RUN_CMD=$(echo "$RUN_CMD" | sed -E "s/--output-file=[^ ]+/--output-file=$NEW_FILE/")
-
-  # Execute the command, also adding STABLE_FILE as a constraint to stabilize resolution.
-  echo "Running: $RUN_CMD --constraint $STABLE_FILE"
-  if ! eval "$RUN_CMD --constraint $STABLE_FILE"; then
-    if [ "$CHECK_ONLY" = true ]; then
-      echo "❌ Resolution failed with stable constraints for $TARGET_FILE."
-      echo "   This usually happens when a new dependency requirement in pyproject.toml conflicts with existing pinned versions."
-      echo "   To fix this, run the update script locally to resolve conflicts and update constraints:"
-      echo "   $ ./scripts/update_constraints.sh"
-      rm -f "$STABLE_FILE" "$NEW_FILE"
-      EXIT_CODE=1
-      continue
-    else
-      echo "⚠️ Resolution failed with stable constraints. Retrying without constraints to allow upgrades..."
-      echo "Running: $RUN_CMD"
-      if ! eval "$RUN_CMD"; then
-        echo "❌ Resolution failed even without constraints."
-        rm -f "$STABLE_FILE" "$NEW_FILE"
-        EXIT_CODE=1
-        continue
-      fi
-    fi
+  # Seeded pins are preferences, so a stale pin cannot abort the resolution.
+  echo "Running: $RUN_CMD"
+  if ! eval "$RUN_CMD"; then
+    echo "❌ Resolution failed for $TARGET_FILE."
+    rm -f "$NEW_FILE"
+    EXIT_CODE=1
+    continue
   fi
 
   # Reconstruct NEW_FILE to have the clean GENERATION_CMD in its header
@@ -144,19 +125,19 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
   # Compare
   if diff -u "$TARGET_FILE" "$NEW_FILE"; then
     echo "✅ $TARGET_FILE is up-to-date."
-    rm -f "$STABLE_FILE" "$NEW_FILE"
+    rm -f "$NEW_FILE"
   else
     if [ "$CHECK_ONLY" = true ]; then
       echo "❌ $TARGET_FILE is OUT OF DATE!"
       echo "   Please run the update script locally to update it and commit the changes:"
       echo "   $ ./scripts/update_constraints.sh"
-      rm -f "$STABLE_FILE" "$NEW_FILE"
+      rm -f "$NEW_FILE"
       EXIT_CODE=1
     else
       echo "🔄 $TARGET_FILE was OUT OF DATE. Updating it automatically..."
       cp "$NEW_FILE" "$TARGET_FILE"
       echo "✅ $TARGET_FILE has been updated locally."
-      rm -f "$STABLE_FILE" "$NEW_FILE"
+      rm -f "$NEW_FILE"
       EXIT_CODE=1
     fi
   fi
