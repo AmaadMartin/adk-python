@@ -221,6 +221,18 @@ part before or alongside your code PR.
    pre-commit run --all-files
    ```
 
+1. **Regenerate the dependency constraints (only if you changed dependencies):**
+
+   `constraints-3.10.txt` through `constraints-3.14.txt` are generated, committed files. `README.md` tells users to install with `pip install google-adk -c constraints-<ver>.txt`, so they must stay in sync with `pyproject.toml`. If you add, remove, or re-bound a dependency, regenerate them and commit the result:
+
+   ```shell
+   ./scripts/update_constraints.sh
+   ```
+
+   The script needs `uv` and network access to PyPI. It **exits 1 whenever it rewrites a file** — that is how it reports "these were out of date"; run it again to confirm it now exits 0. Never hand-edit the generated files.
+
+   CI runs `./scripts/update_constraints.sh --check`, which only reports drift and never rewrites anything.
+
 1. **Build the wheel file:**
 
    ```shell

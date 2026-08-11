@@ -1,0 +1,64 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+# Verifies that the committed constraints-<ver>.txt pin files still match
+# pyproject.toml. README.md tells users to install against these files, so
+# drift between them and the declared dependencies is a supply-chain hazard.
+#
+# This lives here rather than in the pre-commit config because the check needs
+# `uv` and five network resolutions against PyPI. The Pre-commit Linter job
+# runs `pre-commit run --all-files`, which would run it on every pull request.
+name: Constraints Check
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'pyproject.toml'
+      - 'constraints-*.txt'
+      - 'scripts/update_constraints.sh'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'pyproject.toml'
+      - 'constraints-*.txt'
+      - 'scripts/update_constraints.sh'
+  # The paths filter keeps this job off most pull requests, so this is the only
+  # way a maintainer can confirm the gate is green between dependency edits.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  constraints-check:
+    name: Constraints Up To Date
+    runs-on: ubuntu-latest
+    # Five --all-extras resolutions against PyPI.
+    timeout-minutes: 15
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      - name: Install the latest version of uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: true
+
+      # Byte-for-byte diff against a re-resolve, so a uv output-format change
+      # can redden this on its own.
+      - name: Verify constraints are up to date
+        run: ./scripts/update_constraints.sh --check
