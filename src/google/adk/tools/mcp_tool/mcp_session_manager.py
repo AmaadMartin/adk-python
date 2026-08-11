@@ -23,7 +23,6 @@ import functools
 import hashlib
 import json
 import logging
-import os
 import sys
 import threading
 from typing import Any
@@ -78,6 +77,7 @@ except (ImportError, AttributeError):
 
 from ...features import FeatureName
 from ...features import is_feature_enabled
+from ...utils import _mtls_utils
 from .session_context import SessionContext
 
 logger = logging.getLogger('google_adk.' + __name__)
@@ -633,7 +633,7 @@ class MCPSessionManager:
       return self._session_lock_map[current_loop]
 
   async def _get_mtls_transport(self) -> _GoogleAuthAsyncTransport | None:
-    """Attempts to create a _GoogleAuthAsyncTransport for mTLS, caching it per loop."""
+    """Creates a per-loop mTLS transport if client certificates are enabled."""
     if isinstance(self._connection_params, StdioConnectionParams):
       return None
 
@@ -641,11 +641,7 @@ class MCPSessionManager:
       logger.debug('google.auth.aio not available, mTLS not configured')
       return None
 
-    use_client_cert = (
-        os.environ.get('GOOGLE_API_USE_CLIENT_CERTIFICATE', 'true').lower()
-        == 'true'
-    )
-    if not use_client_cert:
+    if not _mtls_utils.use_client_cert_effective():
       return None
 
     current_loop = asyncio.get_running_loop()

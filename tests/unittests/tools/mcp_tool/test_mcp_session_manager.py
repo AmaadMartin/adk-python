@@ -15,6 +15,7 @@
 import asyncio
 import hashlib
 import json
+import pathlib
 import sys
 import time
 from unittest.mock import ANY
@@ -47,6 +48,25 @@ try:
   AIO_SUPPORTED = True
 except ImportError:
   AIO_SUPPORTED = False
+
+
+def _isolate_client_cert_env(
+    monkeypatch: pytest.MonkeyPatch, config_dir: pathlib.Path
+) -> None:
+  """Points every client-certificate lookup google-auth makes at config_dir.
+
+  Unsets the four opt-in environment variables and redirects the gcloud
+  well-known certificate_config.json location, so the outcome does not depend
+  on the developer machine's own certificate configuration.
+  """
+  for name in (
+      "GOOGLE_API_USE_CLIENT_CERTIFICATE",
+      "CLOUDSDK_CONTEXT_AWARE_USE_CLIENT_CERTIFICATE",
+      "GOOGLE_API_CERTIFICATE_CONFIG",
+      "CLOUDSDK_CONTEXT_AWARE_CERTIFICATE_CONFIG_FILE_PATH",
+  ):
+    monkeypatch.delenv(name, raising=False)
+  monkeypatch.setenv("CLOUDSDK_CONFIG", str(config_dir))
 
 
 class MockClientSession:
@@ -989,6 +1009,103 @@ class TestMCPSessionManager:
       with patch("google.auth.default", side_effect=Exception("auth error")):
         transport = await manager._get_mtls_transport()
         assert transport is None
+
+  @pytest.mark.asyncio
+  @pytest.mark.skipif(not AIO_SUPPORTED, reason="google.auth.aio not supported")
+  async def test_get_mtls_transport_defaults_off_when_env_unset(
+      self, monkeypatch, tmp_path
+  ):
+    """Test that _get_mtls_transport is off when no client cert is configured."""
+    _isolate_client_cert_env(monkeypatch, tmp_path)
+    sse_params = SseConnectionParams(url="https://example.com/mcp")
+    manager = MCPSessionManager(sse_params)
+
+    with patch("google.auth.default") as mock_default:
+      transport = await manager._get_mtls_transport()
+
+    assert transport is None
+    mock_default.assert_not_called()
+    assert manager._mtls_transports == {}
+
+  @pytest.mark.asyncio
+  @pytest.mark.skipif(not AIO_SUPPORTED, reason="google.auth.aio not supported")
+  async def test_get_mtls_transport_defaults_off_when_env_unset_streamable_http(
+      self, monkeypatch, tmp_path
+  ):
+    """Test that the default-off gate also covers Streamable HTTP."""
+    _isolate_client_cert_env(monkeypatch, tmp_path)
+    http_params = StreamableHTTPConnectionParams(url="https://example.com/mcp")
+    manager = MCPSessionManager(http_params)
+
+    with patch("google.auth.default") as mock_default:
+      transport = await manager._get_mtls_transport()
+
+    assert transport is None
+    mock_default.assert_not_called()
+    assert manager._mtls_transports == {}
+
+  @pytest.mark.asyncio
+  @pytest.mark.skipif(not AIO_SUPPORTED, reason="google.auth.aio not supported")
+  async def test_get_mtls_transport_honors_certificate_config(
+      self, monkeypatch, tmp_path
+  ):
+    """Test that a workload certificate config alone still enables mTLS."""
+    _isolate_client_cert_env(monkeypatch, tmp_path)
+    cert_config = tmp_path / "certificate_config.json"
+    cert_config.write_text(json.dumps({"cert_configs": {"workload": {}}}))
+    monkeypatch.setenv("GOOGLE_API_CERTIFICATE_CONFIG", str(cert_config))
+
+    sse_params = SseConnectionParams(url="https://example.com/mcp")
+    manager = MCPSessionManager(sse_params)
+
+    mock_session = AsyncMock()
+    mock_session.is_mtls = True
+    mock_session.configure_mtls_channel = AsyncMock()
+
+    with patch("google.auth.default", return_value=(Mock(), None)):
+      with patch(
+          "google.adk.tools.mcp_tool.mcp_session_manager.AsyncAuthorizedSession",
+          return_value=mock_session,
+      ):
+        with patch(
+            "google.adk.tools.mcp_tool.mcp_session_manager._GoogleAuthAsyncTransport"
+        ) as mock_transport_class:
+          transport = await manager._get_mtls_transport()
+
+    assert transport is mock_transport_class.return_value
+    mock_session.configure_mtls_channel.assert_called_once()
+
+  @pytest.mark.asyncio
+  @pytest.mark.skipif(not AIO_SUPPORTED, reason="google.auth.aio not supported")
+  async def test_get_mtls_transport_invalid_env_value_is_off(
+      self, monkeypatch, tmp_path
+  ):
+    """Test that a GOOGLE_API_USE_CLIENT_CERTIFICATE value of maybe is off."""
+    _isolate_client_cert_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("GOOGLE_API_USE_CLIENT_CERTIFICATE", "maybe")
+    sse_params = SseConnectionParams(url="https://example.com/mcp")
+    manager = MCPSessionManager(sse_params)
+
+    with patch("google.auth.default") as mock_default:
+      transport = await manager._get_mtls_transport()
+
+    assert transport is None
+    mock_default.assert_not_called()
+
+  @pytest.mark.asyncio
+  async def test_get_mtls_transport_stdio_returns_none_when_flag_on(
+      self, monkeypatch, tmp_path
+  ):
+    """Test that stdio connections skip mTLS even when client certs are on."""
+    _isolate_client_cert_env(monkeypatch, tmp_path)
+    monkeypatch.setenv("GOOGLE_API_USE_CLIENT_CERTIFICATE", "true")
+    manager = MCPSessionManager(self.mock_stdio_connection_params)
+
+    with patch("google.auth.default") as mock_default:
+      transport = await manager._get_mtls_transport()
+
+    assert transport is None
+    mock_default.assert_not_called()
 
   @patch("google.adk.tools.mcp_tool.mcp_session_manager.sse_client")
   def test_create_client_with_mtls_transport_sse(self, mock_sse_client):
