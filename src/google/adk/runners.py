@@ -64,6 +64,8 @@ from .telemetry import _instrumentation
 from .telemetry.tracing import tracer
 from .tools.base_toolset import BaseToolset
 from .utils._debug_output import print_event
+from .utils.model_name_utils import is_gemini_model
+from .utils.model_name_utils import is_gemini_model_id_check_disabled
 
 if TYPE_CHECKING:
   from .apps.app import App
@@ -2200,6 +2202,11 @@ class Runner:
 
     Returns:
         The new invocation context.
+
+    Raises:
+        ValueError: If ``run_config.support_cfc`` is set and the agent's model
+          is not a Gemini model. CFC runs over the Gemini Live API, so no other
+          model family can serve it.
     """
     run_config = run_config or RunConfig()
     invocation_id = invocation_id or new_invocation_context_id()
@@ -2209,7 +2216,9 @@ class Runner:
 
       cfc_agent = cast(LlmAgent, self.agent)
       model_name = cfc_agent.canonical_model.model
-      if not model_name.startswith('gemini-2'):
+      if not (
+          is_gemini_model(model_name) or is_gemini_model_id_check_disabled()
+      ):
         raise ValueError(
             f'CFC is not supported for model: {model_name} in agent:'
             f' {cfc_agent.name}'
