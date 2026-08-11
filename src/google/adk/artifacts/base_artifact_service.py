@@ -107,7 +107,8 @@ class BaseArtifactService(ABC):
     Args:
       app_name: The app name.
       user_id: The user ID.
-      filename: The filename of the artifact.
+      filename: The filename of the artifact. After any ``user:`` prefix it
+        must not have leading or trailing whitespace.
       artifact: The artifact to save. Accepts a ``types.Part`` instance or a
         plain dictionary (camelCase or snake_case keys) which will be
         normalized via ``ensure_part``. If the artifact consists of
@@ -120,6 +121,10 @@ class BaseArtifactService(ABC):
     Returns:
       The revision ID. The first version of the artifact has a revision ID of 0.
       This is incremented by 1 after each successful save.
+
+    Raises:
+      InputValidationError: If `filename` has leading or trailing whitespace
+        after any ``user:`` prefix.
     """
 
   @abstractmethod
@@ -140,7 +145,9 @@ class BaseArtifactService(ABC):
     Args:
       app_name: The app name.
       user_id: The user ID.
-      filename: The filename of the artifact.
+      filename: The filename of the artifact. A filename with leading or
+        trailing whitespace resolves to nothing, because `save_artifact`
+        rejects it.
       session_id: The session ID. If `None`, load the user-scoped artifact.
       version: The version of the artifact. If None, the latest version will be
         returned.

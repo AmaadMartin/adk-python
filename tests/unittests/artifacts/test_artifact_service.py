@@ -40,6 +40,8 @@ from google.cloud.exceptions import NotFound
 from google.genai import types
 import pytest
 
+from .test_artifact_util import PADDED_FILENAME_CASES
+
 Enum = enum.Enum
 
 # Define a fixed datetime object to be returned by datetime.now()
@@ -2635,3 +2637,210 @@ async def test_list_artifact_keys_survives_metadata_path_shadowed_by_dir(
   # The shadowed artifact has no readable metadata, so it is listed by its
   # scope-relative path rather than dropped or raised on.
   assert keys == ["user:a"]
+
+
+_ALL_SERVICE_TYPES = [
+    ArtifactServiceType.IN_MEMORY,
+    ArtifactServiceType.GCS,
+    ArtifactServiceType.FILE,
+]
+
+_PADDING_ERROR = "must not have leading or trailing whitespace"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("service_type", _ALL_SERVICE_TYPES)
+@pytest.mark.parametrize("filename", PADDED_FILENAME_CASES)
+async def test_save_artifact_rejects_whitespace_padded_filename(
+    service_type, filename, artifact_service_factory
+):
+  """Every backend rejects a padded filename with the same error."""
+  service = artifact_service_factory(service_type)
+
+  with pytest.raises(InputValidationError, match=_PADDING_ERROR):
+    await service.save_artifact(
+        app_name="app0",
+        user_id="user0",
+        session_id="sess0",
+        filename=filename,
+        artifact=types.Part(text="content"),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("service_type", _ALL_SERVICE_TYPES)
+@pytest.mark.parametrize("padded", [" padded.txt", "padded.txt "])
+async def test_padded_filename_does_not_resolve_onto_unpadded_artifact(
+    service_type, padded, artifact_service_factory
+):
+  """A padded filename reads as absent instead of aliasing the stored one."""
+  service = artifact_service_factory(service_type)
+  scope = {"app_name": "app0", "user_id": "user0", "session_id": "sess0"}
+  await service.save_artifact(
+      **scope, filename="padded.txt", artifact=types.Part(text="stored")
+  )
+
+  assert await service.load_artifact(**scope, filename=padded) is None
+  assert await service.get_artifact_version(**scope, filename=padded) is None
+  assert await service.list_versions(**scope, filename=padded) == []
+  assert await service.list_artifact_versions(**scope, filename=padded) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("service_type", _ALL_SERVICE_TYPES)
+async def test_delete_with_padded_filename_deletes_nothing(
+    service_type, artifact_service_factory
+):
+  """Deleting a padded filename must not destroy the unpadded artifact."""
+  service = artifact_service_factory(service_type)
+  scope = {"app_name": "app0", "user_id": "user0", "session_id": "sess0"}
+  await service.save_artifact(
+      **scope, filename="padded.txt", artifact=types.Part(text="stored")
+  )
+
+  await service.delete_artifact(**scope, filename="padded.txt ")
+
+  loaded = await service.load_artifact(**scope, filename="padded.txt")
+  assert loaded is not None
+  assert loaded.text == "stored"
+  assert "padded.txt" in await service.list_artifact_keys(**scope)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("service_type", _ALL_SERVICE_TYPES)
+async def test_rejected_padded_save_stores_nothing(
+    service_type, artifact_service_factory
+):
+  """A rejected save leaves no artifact behind, padded or unpadded."""
+  service = artifact_service_factory(service_type)
+  scope = {"app_name": "app0", "user_id": "user0", "session_id": "sess0"}
+
+  with pytest.raises(InputValidationError, match=_PADDING_ERROR):
+    await service.save_artifact(
+        **scope, filename=" fresh.txt", artifact=types.Part(text="content")
+    )
+
+  keys = await service.list_artifact_keys(**scope)
+  assert " fresh.txt" not in keys
+  assert "fresh.txt" not in keys
+  assert await service.list_versions(**scope, filename="fresh.txt") == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("service_type", _ALL_SERVICE_TYPES)
+async def test_padded_filename_does_not_version_onto_unpadded_artifact(
+    service_type, artifact_service_factory
+):
+  """Saving a padded filename must not append a version to another artifact."""
+  service = artifact_service_factory(service_type)
+  scope = {"app_name": "app0", "user_id": "user0", "session_id": "sess0"}
+  await service.save_artifact(
+      **scope, filename="a.txt", artifact=types.Part(text="first")
+  )
+
+  with pytest.raises(InputValidationError, match=_PADDING_ERROR):
+    await service.save_artifact(
+        **scope, filename=" a.txt", artifact=types.Part(text="second")
+    )
+
+  assert await service.list_versions(**scope, filename="a.txt") == [0]
+  loaded = await service.load_artifact(**scope, filename="a.txt")
+  assert loaded is not None
+  assert loaded.text == "first"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("service_type", _ALL_SERVICE_TYPES)
+async def test_user_scoped_padded_filename_does_not_alias(
+    service_type, artifact_service_factory
+):
+  """Padding after the `user:` prefix must not alias the user-scoped name."""
+  service = artifact_service_factory(service_type)
+  scope = {"app_name": "app0", "user_id": "user0", "session_id": None}
+  await service.save_artifact(
+      **scope, filename="user:a.txt", artifact=types.Part(text="first")
+  )
+
+  with pytest.raises(InputValidationError, match=_PADDING_ERROR):
+    await service.save_artifact(
+        **scope, filename="user: a.txt", artifact=types.Part(text="second")
+    )
+
+  assert await service.load_artifact(**scope, filename="user: a.txt") is None
+  loaded = await service.load_artifact(**scope, filename="user:a.txt")
+  assert loaded is not None
+  assert loaded.text == "first"
+  assert await service.list_versions(**scope, filename="user:a.txt") == [0]
+
+
+@pytest.mark.asyncio
+async def test_file_padded_traversal_filename_does_not_alias_scope_root(
+    tmp_path,
+):
+  """`' ../../secret.txt'` must not resolve back onto `'secret.txt'`.
+
+  `PurePosixPath(' ../../secret.txt').parts` is `(' ..', '..', 'secret.txt')`.
+  The first segment is an ordinary directory name, so the real `'..'` pops it
+  and the join lands back inside the scope root, passing containment.
+  """
+  service = FileArtifactService(root_dir=tmp_path / "artifacts")
+  scope = {"app_name": "myapp", "user_id": "user123", "session_id": "sess789"}
+  await service.save_artifact(
+      **scope, filename="secret.txt", artifact=types.Part(text="top secret")
+  )
+
+  with pytest.raises(InputValidationError, match=_PADDING_ERROR):
+    await service.save_artifact(
+        **scope,
+        filename=" ../../secret.txt",
+        artifact=types.Part(text="overwritten"),
+    )
+
+  assert (
+      await service.load_artifact(**scope, filename=" ../../secret.txt") is None
+  )
+  loaded = await service.load_artifact(**scope, filename="secret.txt")
+  assert loaded is not None
+  assert loaded.text == "top secret"
+  assert await service.list_versions(**scope, filename="secret.txt") == [0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("filename", ["my report.txt", "a b/c d.txt"])
+async def test_file_interior_whitespace_filename_is_accepted(
+    tmp_path, filename
+):
+  """Interior whitespace is legal and still round-trips."""
+  service = FileArtifactService(root_dir=tmp_path / "artifacts")
+  scope = {"app_name": "myapp", "user_id": "user123", "session_id": "sess789"}
+
+  assert (
+      await service.save_artifact(
+          **scope, filename=filename, artifact=types.Part(text="content")
+      )
+      == 0
+  )
+
+  loaded = await service.load_artifact(**scope, filename=filename)
+  assert loaded is not None
+  assert loaded.text == "content"
+
+
+@pytest.mark.asyncio
+async def test_file_empty_filename_still_reaches_the_artifact_fallback(
+    tmp_path,
+):
+  """`''` is not padded, so it keeps reaching the `<scope>/artifact` name."""
+  service = FileArtifactService(root_dir=tmp_path / "artifacts")
+  scope = {"app_name": "myapp", "user_id": "user123", "session_id": "sess789"}
+
+  assert (
+      await service.save_artifact(
+          **scope, filename="", artifact=types.Part(text="fallback")
+      )
+      == 0
+  )
+
+  loaded = await service.load_artifact(**scope, filename="")
+  assert loaded is not None
+  assert loaded.text == "fallback"
