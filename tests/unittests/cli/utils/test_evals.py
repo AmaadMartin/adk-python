@@ -16,6 +16,7 @@
 
 import dataclasses
 import os
+import sys
 from unittest import mock
 
 from google.adk.cli.utils import evals
@@ -31,6 +32,14 @@ from ... import isolated_import_utils
 from ...isolated_import_utils import run_isolated
 
 
+@pytest.mark.parametrize(
+    'uri, expected_bucket',
+    [
+        ('gs://test-bucket', 'test-bucket'),
+        ('gs://test-bucket/evals', 'test-bucket'),
+        ('gs://test-bucket/path/prefix', 'test-bucket'),
+    ],
+)
 @mock.patch.dict(os.environ, {'GOOGLE_CLOUD_PROJECT': 'test-project'})
 @mock.patch(
     'google.adk.evaluation.gcs_eval_set_results_manager.GcsEvalSetResultsManager',
@@ -41,7 +50,10 @@ from ...isolated_import_utils import run_isolated
     autospec=True,
 )
 def test_create_gcs_eval_managers_from_uri_success(
-    mock_gcs_eval_sets_manager, mock_gcs_eval_set_results_manager
+    mock_gcs_eval_sets_manager,
+    mock_gcs_eval_set_results_manager,
+    uri,
+    expected_bucket,
 ):
   mock_gcs_eval_sets_manager.return_value = mock.MagicMock(
       spec=GcsEvalSetsManager
@@ -50,14 +62,14 @@ def test_create_gcs_eval_managers_from_uri_success(
       spec=GcsEvalSetResultsManager
   )
 
-  managers = evals.create_gcs_eval_managers_from_uri('gs://test-bucket')
+  managers = evals.create_gcs_eval_managers_from_uri(uri)
 
   assert managers is not None
   mock_gcs_eval_sets_manager.assert_called_once_with(
-      bucket_name='test-bucket', project='test-project'
+      bucket_name=expected_bucket, project='test-project'
   )
   mock_gcs_eval_set_results_manager.assert_called_once_with(
-      bucket_name='test-bucket', project='test-project'
+      bucket_name=expected_bucket, project='test-project'
   )
   assert managers.eval_sets_manager == mock_gcs_eval_sets_manager.return_value
   assert (
@@ -66,8 +78,39 @@ def test_create_gcs_eval_managers_from_uri_success(
   )
 
 
+@pytest.mark.parametrize('uri', ['gs://', 'gs:///evals'])
+@mock.patch(
+    'google.adk.evaluation.gcs_eval_set_results_manager.GcsEvalSetResultsManager',
+    autospec=True,
+)
+@mock.patch(
+    'google.adk.evaluation.gcs_eval_sets_manager.GcsEvalSetsManager',
+    autospec=True,
+)
+def test_create_gcs_eval_managers_from_uri_without_bucket(
+    mock_gcs_eval_sets_manager, mock_gcs_eval_set_results_manager, uri
+):
+  with pytest.raises(ValueError, match='Invalid evals storage URI'):
+    evals.create_gcs_eval_managers_from_uri(uri)
+
+  mock_gcs_eval_sets_manager.assert_not_called()
+  mock_gcs_eval_set_results_manager.assert_not_called()
+
+
+def test_create_gcs_eval_managers_from_uri_without_bucket_reports_the_uri():
+  """A bad URI must win over the missing optional GCP dependencies."""
+  absent_managers = {
+      'google.adk.evaluation.gcs_eval_set_results_manager': None,
+      'google.adk.evaluation.gcs_eval_sets_manager': None,
+  }
+
+  with mock.patch.dict(sys.modules, absent_managers):
+    with pytest.raises(ValueError, match='Invalid evals storage URI'):
+      evals.create_gcs_eval_managers_from_uri('gs://')
+
+
 def test_create_gcs_eval_managers_from_uri_failure():
-  with pytest.raises(ValueError):
+  with pytest.raises(ValueError, match='Unsupported evals storage URI'):
     evals.create_gcs_eval_managers_from_uri('unsupported-uri')
 
 
