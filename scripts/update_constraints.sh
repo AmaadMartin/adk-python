@@ -87,40 +87,24 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
   fi
 
   # Construct the command from scratch. The date is always known here: check
-  # mode has just validated it, and update mode owns it.
-  #
-  # --no-emit-package google-adk keeps the resolved package out of the output
-  # without dropping its requirements. The community and toolbox extras depend
-  # back on google-adk from PyPI, so uv resolves the published release as a
-  # node in the graph and would otherwise pin it. These files are applied to
-  # the very install they constrain, so such a pin holds the user at whatever
-  # release was current when the files were last regenerated.
-  GENERATION_CMD="uv pip compile pyproject.toml --all-extras --no-emit-package google-adk --python-version $ver"
-  GENERATION_CMD="$GENERATION_CMD --exclude-newer $date_to_use"
-  GENERATION_CMD="$GENERATION_CMD --index-url https://pypi.org/simple -o $TARGET_FILE"
+  # mode has just validated it, and update mode owns it. --no-emit-package
+  # drops google-adk from the output but keeps its requirements: these files
+  # are applied to the very install they constrain.
+  COMPILE_CMD="uv pip compile pyproject.toml --all-extras --no-emit-package google-adk --python-version $ver --exclude-newer $date_to_use --index-url https://pypi.org/simple"
+  GENERATION_CMD="$COMPILE_CMD -o $TARGET_FILE"
+  NEW_FILE="constraints-${ver}.txt.new.tmp"
+  RUN_CMD="$COMPILE_CMD -o $NEW_FILE"
 
   echo "Found generation command: $GENERATION_CMD"
 
-  NEW_FILE="constraints-${ver}.txt.new.tmp"
-
-  # Seed the resolution with the committed pins: uv reads its own output file
-  # and prefers the versions already recorded there. Passing that file with
-  # --constraint instead makes uv record it as a resolution source and stamp
-  # "-c constraints-<ver>.txt.stable.tmp" into the published annotations, which
-  # names a scratch file the reader never has.
+  # Seed uv with the committed pins by pre-filling the file it writes. Handing
+  # them over with --constraint instead records that path in the annotations.
   rm -f "$NEW_FILE"
   if [ -s "$TARGET_FILE" ]; then
     cp "$TARGET_FILE" "$NEW_FILE"
   fi
 
-  # Modify the GENERATION_CMD to output to NEW_FILE.
-  RUN_CMD=$(echo "$GENERATION_CMD" | sed -E "s/-o [^ ]+/-o $NEW_FILE/")
-  RUN_CMD=$(echo "$RUN_CMD" | sed -E "s/--output-file [^ ]+/--output-file $NEW_FILE/")
-  RUN_CMD=$(echo "$RUN_CMD" | sed -E "s/--output-file=[^ ]+/--output-file=$NEW_FILE/")
-
-  # Seeded pins are preferences, not hard constraints: uv keeps one while it
-  # stays valid and picks a new version when it does not. A stale pin can no
-  # longer abort the resolution, so a single attempt is enough.
+  # Seeded pins are preferences, so a stale pin cannot abort the resolution.
   echo "Running: $RUN_CMD"
   if ! eval "$RUN_CMD"; then
     echo "❌ Resolution failed for $TARGET_FILE."
