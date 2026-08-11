@@ -49,12 +49,9 @@ if TYPE_CHECKING:
 def _minimum_cache_tokens(model: Optional[str]) -> Optional[int]:
   """Return the explicit-cache token floor for a named Gemini model.
 
-  The id is normalized with ``extract_model_name`` so every wrapper form
-  (Vertex publisher path, ``apigee/``, ``models/``, LiteLLM provider prefix)
-  resolves to the same floor as the bare id. Ids that the unwrapper
-  deliberately leaves intact -- notably a malformed ``projects/...`` path --
-  match no family prefix, so no floor is guessed and the server stays
-  authoritative.
+  The id is normalized with ``extract_model_name`` first, so a wrapped id
+  resolves to the same floor as the bare id, and an id the unwrapper leaves
+  intact -- a malformed ``projects/...`` path -- matches no family.
   """
   model_name = extract_model_name(model or "")
   if model_name.startswith("gemini-2.5-"):
