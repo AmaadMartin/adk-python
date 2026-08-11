@@ -67,7 +67,9 @@ def _load_dir(directory: pathlib.Path) -> dict[str, str]:
       if file_path.is_file():
         relative_path = file_path.relative_to(directory)
         try:
-          files[str(relative_path)] = file_path.read_text(encoding="utf-8")
+          files[relative_path.as_posix()] = file_path.read_text(
+              encoding="utf-8"
+          )
         except UnicodeDecodeError:
           # Binary files or non-UTF-8 files are skipped for text content.
           continue

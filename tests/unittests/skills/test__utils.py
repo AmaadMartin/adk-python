@@ -17,6 +17,7 @@
 import asyncio
 import builtins
 import io
+import pathlib
 import struct
 import sys
 import threading
@@ -80,6 +81,70 @@ Test instructions
   assert skill.resources.get_reference("ref1.md") == "ref1 content"
   assert skill.resources.get_asset("asset1.txt") == "asset1 content"
   assert skill.resources.get_script("script1.sh").src == "echo hello"
+
+
+def _write_nested_skill(tmp_path):
+  """Writes a skill whose resources live in subdirectories."""
+  skill_dir = tmp_path / "nested-skill"
+  skill_dir.mkdir()
+  (skill_dir / "SKILL.md").write_text("""---
+name: nested-skill
+description: Test description
+---
+Test instructions
+""")
+
+  scripts_dir = skill_dir / "scripts" / "runtime"
+  scripts_dir.mkdir(parents=True)
+  (scripts_dir / "helper.py").write_text("helper source")
+
+  ref_dir = skill_dir / "references" / "deep" / "deeper"
+  ref_dir.mkdir(parents=True)
+  (ref_dir / "note.md").write_text("nested note")
+
+  assets_dir = skill_dir / "assets" / "templates"
+  assets_dir.mkdir(parents=True)
+  (assets_dir / "tmpl.txt").write_text("template body")
+
+  return skill_dir
+
+
+def test__load_skill_from_dir_nested_resources_use_forward_slash_keys(tmp_path):
+  """Resources in subdirectories are keyed with forward slashes."""
+  skill = _load_skill_from_dir(_write_nested_skill(tmp_path))
+
+  assert skill.resources.get_script("runtime/helper.py").src == "helper source"
+  assert skill.resources.get_reference("deep/deeper/note.md") == "nested note"
+  assert skill.resources.get_asset("templates/tmpl.txt") == "template body"
+
+
+def test__load_skill_from_dir_nested_resources_on_windows_paths(tmp_path):
+  """Windows-style separators still produce forward-slash keys.
+
+  Regression test for the Windows-only defect where `_load_dir` keyed resources
+  with `str(relative_path)`. On Windows that is backslash-separated, while
+  callers such as `load_skill_resource` look resources up with forward slashes,
+  so every resource in a subdirectory was unreachable.
+
+  The bug cannot reproduce on a POSIX test runner, where `str()` already yields
+  forward slashes, so the Windows flavour of `relative_to` is simulated here.
+
+  Args:
+    tmp_path: pytest fixture providing a temporary directory.
+  """
+  skill_dir = _write_nested_skill(tmp_path)
+  real_relative_to = pathlib.Path.relative_to
+
+  def windows_relative_to(self, *args, **kwargs):
+    return pathlib.PureWindowsPath(real_relative_to(self, *args, **kwargs))
+
+  with mock.patch.object(pathlib.Path, "relative_to", windows_relative_to):
+    skill = _load_skill_from_dir(skill_dir)
+
+  assert list(skill.resources.scripts) == ["runtime/helper.py"]
+  assert skill.resources.get_script("runtime/helper.py").src == "helper source"
+  assert skill.resources.get_reference("deep/deeper/note.md") == "nested note"
+  assert skill.resources.get_asset("templates/tmpl.txt") == "template body"
 
 
 def test_allowed_tools_yaml_key(tmp_path):
