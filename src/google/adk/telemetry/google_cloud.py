@@ -171,6 +171,38 @@ def _get_gcp_span_exporter(credentials: Credentials) -> SpanProcessor:
   )
 
 
+def _warn_optional_import_failed(
+    err: ImportError | AttributeError, *, package: str, consequence: str
+) -> None:
+  """Warns that an optional telemetry import failed, and why.
+
+  An ``AttributeError`` here means the package is installed but blew up while
+  its module body ran -- typically a version skew against the OpenTelemetry
+  API. Reporting that as "not installed" sends the operator to check pip, which
+  finds the package present. Naming the actual exception keeps the two cases
+  distinguishable, and the install hint is only offered when the package really
+  could not be imported.
+
+  Args:
+    err: The exception raised by the optional import.
+    package: Distribution name to suggest installing.
+    consequence: What is disabled as a result, e.g. "logging is disabled".
+  """
+  hint = (
+      f" Please run 'pip install {package}'."
+      if isinstance(err, ImportError)
+      else ""
+  )
+  logger.warning(
+      "Could not import %s (%s: %s); %s.%s",
+      package,
+      type(err).__name__,
+      err,
+      consequence,
+      hint,
+  )
+
+
 def _get_gcp_otlp_metric_exporter(
     google_auth: tuple[Credentials, str] | None = None,
 ) -> OTLPMetricExporter | None:
@@ -179,8 +211,8 @@ def _get_gcp_otlp_metric_exporter(
   This is the default GCP metric exporter (over Cloud Monitoring). It returns a
   bare push exporter so any metric reader can drain it -- a periodic reader for
   the local ``adk web`` path, or the request-driven reader on Agent Engine's
-  request-billed runtime. Returns None if the OTLP exporter package is
-  unavailable.
+  request-billed runtime. Returns None if the OTLP exporter package is missing,
+  and also if it is installed but fails to import.
 
   Args:
     google_auth: optional custom credentials and project_id.
@@ -188,10 +220,11 @@ def _get_gcp_otlp_metric_exporter(
   """
   try:
     from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
-  except (ImportError, AttributeError):
-    logger.warning(
-        "opentelemetry-exporter-otlp-proto-http is not installed; request-path"
-        " metric export is disabled."
+  except (ImportError, AttributeError) as err:
+    _warn_optional_import_failed(
+        err,
+        package="opentelemetry-exporter-otlp-proto-http",
+        consequence="request-path metric export is disabled",
     )
     return None
 
@@ -426,15 +459,11 @@ def _get_agent_engine_logs_exporter(
   """
   try:
     from opentelemetry.exporter import cloud_logging
-  except (ImportError, AttributeError):
-    logger.warning(
-        "%s is not installed. Please call 'pip install %s'.",
-        "opentelemetry-exporter-gcp-logging",
-        "opentelemetry-exporter-gcp-logging",
-    )
-    logger.warning(
-        "proceeding with logging disabled because not all packages for"
-        " logging have been installed"
+  except (ImportError, AttributeError) as err:
+    _warn_optional_import_failed(
+        err,
+        package="opentelemetry-exporter-gcp-logging",
+        consequence="proceeding with logging disabled",
     )
     return None
 

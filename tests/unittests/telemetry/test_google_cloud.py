@@ -12,7 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from collections.abc import Iterator
+import contextlib
+import logging
 import os
+import sys
+import types
 from typing import Optional
 from unittest import mock
 
@@ -24,6 +29,7 @@ from google.adk.telemetry.google_cloud import _DEFAULT_MTLS_TELEMETRY_METRICS_EN
 from google.adk.telemetry.google_cloud import _DEFAULT_MTLS_TELEMETRY_TRACES_ENPOINT
 from google.adk.telemetry.google_cloud import _DEFAULT_TELEMETRY_METRICS_ENDPOINT
 from google.adk.telemetry.google_cloud import _DEFAULT_TELEMETRY_TRACES_ENPOINT
+from google.adk.telemetry.google_cloud import _get_agent_engine_logs_exporter
 from google.adk.telemetry.google_cloud import _get_api_endpoint
 from google.adk.telemetry.google_cloud import _get_gcp_metrics_exporter
 from google.adk.telemetry.google_cloud import _get_gcp_otlp_metric_exporter
@@ -34,7 +40,9 @@ from google.adk.telemetry.google_cloud import get_gcp_resource
 import google.auth.credentials
 from google.auth.transport import mtls
 from google.auth.transport import requests
+import opentelemetry.exporter
 from opentelemetry.exporter.otlp.proto.http import trace_exporter
+from opentelemetry.sdk._logs.export import LogExporter
 from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 import pytest
 
@@ -469,3 +477,135 @@ def test_agent_engine_uses_only_request_driven_reader(
 
   assert otel_hooks.metric_readers == [fake_state.reader]
   assert otel_hooks.span_processors == [fake_state.span_processor]
+
+
+_OTLP_METRIC_EXPORTER_MODULE = (
+    "opentelemetry.exporter.otlp.proto.http.metric_exporter"
+)
+_CLOUD_LOGGING_MODULE = "opentelemetry.exporter.cloud_logging"
+
+
+@contextlib.contextmanager
+def _import_raises(module_name: str, error: Exception) -> Iterator[None]:
+  """Makes importing ``module_name`` fail with ``error``.
+
+  A ``None`` entry in ``sys.modules`` can only ever yield an ImportError, so
+  the installed-but-broken case needs a finder that fails during the import
+  itself.
+  """
+
+  class _ExplodingFinder:
+
+    def find_spec(self, fullname, path=None, target=None):
+      if fullname == module_name:
+        raise error
+      return None
+
+  finder = _ExplodingFinder()
+  with mock.patch.dict(sys.modules):
+    sys.modules.pop(module_name, None)
+    sys.meta_path.insert(0, finder)
+    try:
+      yield
+    finally:
+      sys.meta_path.remove(finder)
+
+
+def test_otlp_metric_exporter_warns_that_package_is_missing(
+    caplog: pytest.LogCaptureFixture,
+):
+  """An absent OTLP exporter package disables metrics and names the install."""
+  caplog.set_level(logging.WARNING)
+
+  with mock.patch.dict(sys.modules, {_OTLP_METRIC_EXPORTER_MODULE: None}):
+    assert _get_gcp_otlp_metric_exporter() is None
+
+  assert len(caplog.records) == 1
+  assert "opentelemetry-exporter-otlp-proto-http" in caplog.text
+  assert "ModuleNotFoundError" in caplog.text
+  assert "pip install opentelemetry-exporter-otlp-proto-http" in caplog.text
+
+
+def test_otlp_metric_exporter_warns_with_cause_when_exporter_is_broken(
+    caplog: pytest.LogCaptureFixture,
+):
+  """An installed OTLP exporter that fails to import is reported as broken."""
+  caplog.set_level(logging.WARNING)
+  error = AttributeError(
+      "module 'opentelemetry.exporter.otlp.proto.http' has no attribute"
+      " 'Compression'"
+  )
+
+  with _import_raises(_OTLP_METRIC_EXPORTER_MODULE, error):
+    assert _get_gcp_otlp_metric_exporter() is None
+
+  assert len(caplog.records) == 1
+  assert "AttributeError" in caplog.text
+  assert "has no attribute 'Compression'" in caplog.text
+  assert "pip install" not in caplog.text
+  assert "is not installed" not in caplog.text
+
+
+def test_agent_engine_logs_exporter_warns_once_when_package_is_missing(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+):
+  """An absent Cloud Logging exporter disables logging with one warning."""
+  caplog.set_level(logging.WARNING)
+  monkeypatch.delattr(opentelemetry.exporter, "cloud_logging", raising=False)
+
+  with mock.patch.dict(sys.modules, {_CLOUD_LOGGING_MODULE: None}):
+    assert _get_agent_engine_logs_exporter(project_id="test-project") is None
+
+  assert len(caplog.records) == 1
+  assert "opentelemetry-exporter-gcp-logging" in caplog.text
+  assert "ModuleNotFoundError" in caplog.text
+  assert "pip install opentelemetry-exporter-gcp-logging" in caplog.text
+  assert "not all packages" not in caplog.text
+
+
+def test_agent_engine_logs_exporter_warns_with_cause_when_exporter_is_broken(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+):
+  """An installed Cloud Logging exporter that fails to import is broken."""
+  caplog.set_level(logging.WARNING)
+  monkeypatch.delattr(opentelemetry.exporter, "cloud_logging", raising=False)
+  error = AttributeError(
+      "module 'opentelemetry.sdk._logs' has no attribute 'LogData'"
+  )
+
+  with _import_raises(_CLOUD_LOGGING_MODULE, error):
+    assert _get_agent_engine_logs_exporter(project_id="test-project") is None
+
+  assert len(caplog.records) == 1
+  assert "AttributeError" in caplog.text
+  assert "has no attribute 'LogData'" in caplog.text
+  assert "pip install" not in caplog.text
+  assert "is not installed" not in caplog.text
+
+
+def test_agent_engine_logs_exporter_returns_processor_when_available(
+    caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
+):
+  """An importable Cloud Logging exporter yields a log record processor."""
+  caplog.set_level(logging.WARNING)
+  monkeypatch.delenv("GCP_DEFAULT_LOG_NAME", raising=False)
+  fake_module = types.ModuleType(_CLOUD_LOGGING_MODULE)
+  exporter_factory = mock.MagicMock(name="CloudLoggingExporter")
+  exporter_factory.return_value = mock.create_autospec(
+      LogExporter, instance=True
+  )
+  fake_module.CloudLoggingExporter = exporter_factory
+  monkeypatch.setattr(
+      opentelemetry.exporter, "cloud_logging", fake_module, raising=False
+  )
+
+  with mock.patch.dict(sys.modules, {_CLOUD_LOGGING_MODULE: fake_module}):
+    processor = _get_agent_engine_logs_exporter(project_id="test-project")
+
+  assert processor is not None
+  exporter_factory.assert_called_once_with(
+      project_id="test-project",
+      default_log_name="adk-on-agent-engine",
+      structured_json_file=sys.stdout,
+  )
+  assert not caplog.records
