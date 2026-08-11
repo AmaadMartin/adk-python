@@ -71,14 +71,21 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
     if [ "$CHECK_ONLY" = true ]; then
       # In check mode, extract the date used when it was generated
       date_to_use=$(grep -h "#    uv pip compile" "$TARGET_FILE" | grep -oE -- '--exclude-newer [0-9]{4}-[0-9]{2}-[0-9]{2}' | cut -d' ' -f2 || true)
+      # Exactly one date, or there is nothing to verify the pins against: no
+      # date resolves against the live index, and two expand into stray argv.
+      if [[ ! $date_to_use =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+        echo "❌ $TARGET_FILE has no single '--exclude-newer YYYY-MM-DD' snapshot date in its header,"
+        echo "   so there is nothing to verify its pins against. Regenerate it locally and commit the changes:"
+        echo "   $ ./scripts/update_constraints.sh"
+        EXIT_CODE=1
+        continue
+      fi
     fi
   fi
 
   # Construct the command from scratch
   GENERATION_CMD="uv pip compile pyproject.toml --all-extras --python-version $ver"
-  if [ -n "$date_to_use" ]; then
-    GENERATION_CMD="$GENERATION_CMD --exclude-newer $date_to_use"
-  fi
+  GENERATION_CMD="$GENERATION_CMD --exclude-newer $date_to_use"
   GENERATION_CMD="$GENERATION_CMD --index-url https://pypi.org/simple -o $TARGET_FILE"
 
   echo "Found generation command: $GENERATION_CMD"
