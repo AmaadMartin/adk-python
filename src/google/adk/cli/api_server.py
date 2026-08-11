@@ -43,6 +43,7 @@ from fastapi import Query
 from fastapi import Request
 from fastapi import Response
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.responses import RedirectResponse
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -906,8 +907,24 @@ class ApiServer:
     module = importlib.import_module(module_name)
     return getattr(module, obj_name)
 
-  def _setup_runtime_config(self, web_assets_dir: str):
-    """Sets up the runtime config for the web server."""
+  def _build_runtime_config(self, web_assets_dir: str) -> dict[str, Any]:
+    """Builds the runtime config the dev UI fetches at bootstrap.
+
+    The packaged config under ``web_assets_dir`` is read as a base so that any
+    extra keys a distributor baked into the bundle survive, then the
+    server-derived keys are layered on top. Nothing is written back: the bundle
+    lives inside the installed package, which may be read only and is shared by
+    every server process on the machine.
+
+    Args:
+      web_assets_dir: Directory the packaged dev UI bundle is served from.
+
+    Returns:
+      The runtime config to serve to the dev UI.
+
+    Raises:
+      ValueError: If only one of the two logo options is set.
+    """
     # Read existing runtime config file.
     runtime_config_path = os.path.join(
         web_assets_dir, "assets", "config", "runtime-config.json"
@@ -918,13 +935,13 @@ class ApiServer:
         runtime_config = json.load(f)
     except FileNotFoundError:
       logger.info(
-          "File not found: %s. A new runtime config file will be created.",
+          "Runtime config file not found: %s. Serving the dev UI with default"
+          " values.",
           runtime_config_path,
       )
     except json.JSONDecodeError:
       logger.warning(
-          "Failed to decode JSON from %s. The file content will be"
-          " overwritten.",
+          "Failed to decode JSON from %s. The file contents will be ignored.",
           runtime_config_path,
       )
     runtime_config["backendUrl"] = self.url_prefix if self.url_prefix else ""
@@ -946,16 +963,7 @@ class ApiServer:
     elif "logo" in runtime_config:
       del runtime_config["logo"]
 
-    # Write the runtime config file.
-    try:
-      os.makedirs(os.path.dirname(runtime_config_path), exist_ok=True)
-      with open(runtime_config_path, "w") as f:
-        json.dump(runtime_config, f, indent=2)
-        f.write("\n")
-    except IOError as e:
-      logger.error(
-          "Failed to write runtime config file %s: %s", runtime_config_path, e
-      )
+    return runtime_config
 
   async def _create_session(
       self,
@@ -1055,8 +1063,9 @@ class ApiServer:
             export_lib.SimpleSpanProcessor(memory_exporter),
         ],
     )
+    runtime_config: dict[str, Any] = {}
     if web_assets_dir:
-      self._setup_runtime_config(web_assets_dir)
+      runtime_config = self._build_runtime_config(web_assets_dir)
 
     tracer_provider = trace.get_tracer_provider()
     register_processors(tracer_provider)
@@ -1128,6 +1137,18 @@ class ApiServer:
       @app.get("/dev-ui")
       async def redirect_dev_ui_add_slash():
         return RedirectResponse(redirect_dev_ui_url)
+
+      # The bundled Angular app fetches this relative to the /dev-ui/ document
+      # root. Serve it from memory instead of rewriting the copy inside the
+      # installed package: that write fails on read-only installs and races
+      # when two servers start at once. Must be registered before the mount
+      # below, because Starlette matches routes in order and the mount would
+      # otherwise claim this path and serve the stale packaged file.
+      @app.get("/dev-ui/assets/config/runtime-config.json")
+      async def get_dev_ui_runtime_config() -> JSONResponse:
+        return JSONResponse(
+            runtime_config, headers={"Cache-Control": "no-store"}
+        )
 
       app.mount(
           "/dev-ui/",

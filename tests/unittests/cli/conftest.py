@@ -36,27 +36,20 @@ _ORIGINAL_RUNTIME_CONFIG_BYTES = _PACKAGED_RUNTIME_CONFIG.read_bytes()
 
 
 @pytest.fixture(autouse=True)
-def isolated_web_assets_dir(tmp_path_factory, monkeypatch):
-  """Keeps CLI tests from rewriting the packaged dev UI runtime config.
+def packaged_runtime_config_stays_untouched():
+  """Fails any CLI test that writes the packaged dev UI runtime config.
 
-  ``ApiServer._setup_runtime_config`` rewrites
-  ``<web_assets_dir>/assets/config/runtime-config.json`` every time an app is
-  built with ``web=True``. Unpatched, that target is the copy checked into
-  ``src/google/adk/cli/browser``, so running the suite dirties the working tree
-  and lets xdist workers race on one file. Point the server at a throwaway
-  directory, and fail the test that manages to touch the packaged copy anyway.
-
-  Yields:
-    The temporary directory the server treats as its web assets root.
+  The dev UI bundle lives inside the installed package, so a server that
+  rewrites it dirties the working tree, races other server processes, and
+  breaks on a read-only install. The server serves the runtime config from
+  ``GET /dev-ui/assets/config/runtime-config.json`` instead, and reads the
+  packaged copy only as a merge base.
   """
-  assets_dir = tmp_path_factory.mktemp("web_assets")
-  monkeypatch.setattr(fast_api, "_WEB_ASSETS_DIR", assets_dir)
-
-  yield assets_dir
+  yield
 
   assert (
       _PACKAGED_RUNTIME_CONFIG.read_bytes() == _ORIGINAL_RUNTIME_CONFIG_BYTES
   ), (
       f"{_PACKAGED_RUNTIME_CONFIG} was modified by this test. The server must"
-      " only write runtime-config.json into a temporary web assets directory."
+      " never write under its packaged web assets directory."
   )

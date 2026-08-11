@@ -12,16 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the dev UI runtime config written by ApiServer."""
+"""Tests for the dev UI runtime config served by ApiServer."""
 
 from __future__ import annotations
 
-import builtins
-import json
 import logging
+import os
 from pathlib import Path
+import sys
 from unittest import mock
 
+from fastapi.testclient import TestClient
 from google.adk.artifacts.base_artifact_service import BaseArtifactService
 from google.adk.auth.credential_service.base_credential_service import BaseCredentialService
 from google.adk.cli import fast_api
@@ -34,6 +35,10 @@ from google.adk.sessions.base_session_service import BaseSessionService
 import pytest
 
 from .conftest import _PACKAGED_RUNTIME_CONFIG
+
+# The path the packaged Angular bundle fetches at bootstrap, relative to the
+# /dev-ui/ document root it is mounted on.
+_URL = "/dev-ui/assets/config/runtime-config.json"
 
 
 def _make_api_server(agents_dir: Path, **kwargs) -> ApiServer:
@@ -53,6 +58,12 @@ def _make_api_server(agents_dir: Path, **kwargs) -> ApiServer:
       agents_dir=str(agents_dir),
       **kwargs,
   )
+
+
+def _make_client(agents_dir: Path, **kwargs) -> TestClient:
+  """Builds a dev UI server rooted in ``agents_dir`` and a client for it."""
+  api_server = _make_api_server(agents_dir, **kwargs)
+  return TestClient(api_server.get_fast_api_app(web_assets_dir=str(agents_dir)))
 
 
 def _runtime_config_path(assets_dir: Path) -> Path:
@@ -75,54 +86,80 @@ def no_telemetry_consent(monkeypatch):
   )
 
 
-def test_web_assets_dir_receives_the_rewritten_runtime_config(tmp_path):
-  config_path = _seed(tmp_path, '{\n  "backendUrl": ""\n}')
+def test_endpoint_serves_backend_url_and_telemetry(tmp_path):
+  _seed(tmp_path, '{\n  "backendUrl": ""\n}')
 
-  _make_api_server(tmp_path).get_fast_api_app(web_assets_dir=str(tmp_path))
+  response = _make_client(tmp_path).get(_URL)
 
-  assert config_path.read_text() == (
-      '{\n  "backendUrl": "",\n  "telemetry": null\n}\n'
-  )
-
-
-def test_unrelated_keys_in_runtime_config_are_preserved(tmp_path):
-  config_path = _seed(tmp_path, '{"backendUrl": "", "customKey": 1}')
-
-  _make_api_server(tmp_path).get_fast_api_app(web_assets_dir=str(tmp_path))
-
-  assert json.loads(config_path.read_text())["customKey"] == 1
+  assert response.status_code == 200
+  assert response.json() == {"backendUrl": "", "telemetry": None}
 
 
-def test_missing_runtime_config_is_created(tmp_path):
-  config_path = _runtime_config_path(tmp_path)
+def test_packaged_config_is_never_written(tmp_path):
+  seeded = '{\n  "backendUrl": "packaged"\n}\n'
+  config_path = _seed(tmp_path, seeded)
 
-  _make_api_server(tmp_path).get_fast_api_app(web_assets_dir=str(tmp_path))
+  assert _make_client(tmp_path).get(_URL).status_code == 200
 
-  assert json.loads(config_path.read_text()) == {
-      "backendUrl": "",
-      "telemetry": None,
-  }
+  assert config_path.read_bytes() == seeded.encode()
 
 
-def test_unparsable_runtime_config_is_overwritten(tmp_path):
+def test_no_directories_are_created_under_web_assets_dir(tmp_path, caplog):
+  with caplog.at_level(logging.INFO, logger="google_adk"):
+    response = _make_client(tmp_path).get(_URL)
+
+  assert response.json() == {"backendUrl": "", "telemetry": None}
+  assert not (tmp_path / "assets").exists()
+  assert "Runtime config file not found" in caplog.text
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32" or os.geteuid() == 0,
+    reason="A read-only directory does not stop the Windows or root user.",
+)
+def test_read_only_web_assets_dir_serves_the_config(tmp_path, caplog):
+  config_path = _seed(tmp_path, '{"backendUrl": ""}')
+  # The file mode blocks a rewrite in place; the directory modes block a
+  # replacement and a mkdir. A read-only install denies all three.
+  os.chmod(config_path, 0o444)
+  read_only_dirs = [config_path.parent, config_path.parent.parent, tmp_path]
+  for directory in read_only_dirs:
+    os.chmod(directory, 0o555)
+
+  try:
+    with caplog.at_level(logging.ERROR, logger="google_adk"):
+      response = _make_client(tmp_path, url_prefix="/proxy").get(_URL)
+  finally:
+    for directory in read_only_dirs:
+      os.chmod(directory, 0o755)
+    os.chmod(config_path, 0o644)
+
+  assert response.status_code == 200
+  assert response.json() == {"backendUrl": "/proxy", "telemetry": None}
+  assert not caplog.records
+
+
+def test_unparsable_packaged_config_falls_back_to_defaults(tmp_path, caplog):
   config_path = _seed(tmp_path, "not json")
 
-  _make_api_server(tmp_path).get_fast_api_app(web_assets_dir=str(tmp_path))
+  with caplog.at_level(logging.WARNING, logger="google_adk"):
+    response = _make_client(tmp_path).get(_URL)
 
-  assert json.loads(config_path.read_text()) == {
-      "backendUrl": "",
-      "telemetry": None,
-  }
+  assert response.json() == {"backendUrl": "", "telemetry": None}
+  assert "Failed to decode JSON" in caplog.text
+  assert config_path.read_text() == "not json"
+
+
+def test_unrelated_keys_are_preserved(tmp_path):
+  _seed(tmp_path, '{"backendUrl": "", "customKey": 1}')
+
+  assert _make_client(tmp_path).get(_URL).json()["customKey"] == 1
 
 
 def test_url_prefix_becomes_the_backend_url(tmp_path):
-  config_path = _runtime_config_path(tmp_path)
+  response = _make_client(tmp_path, url_prefix="/proxy").get(_URL)
 
-  _make_api_server(tmp_path, url_prefix="/proxy").get_fast_api_app(
-      web_assets_dir=str(tmp_path)
-  )
-
-  assert json.loads(config_path.read_text())["backendUrl"] == "/proxy"
+  assert response.json()["backendUrl"] == "/proxy"
 
 
 @pytest.mark.parametrize("consent", [True, False, None])
@@ -130,36 +167,31 @@ def test_telemetry_consent_is_injected(tmp_path, monkeypatch, consent):
   monkeypatch.setattr(
       "google.adk.cli.api_server.read_telemetry_consent", lambda: consent
   )
-  config_path = _runtime_config_path(tmp_path)
 
-  _make_api_server(tmp_path).get_fast_api_app(web_assets_dir=str(tmp_path))
+  response = _make_client(tmp_path).get(_URL)
 
-  assert json.loads(config_path.read_text())["telemetry"] == consent
+  assert response.json()["telemetry"] == consent
 
 
-def test_logo_options_are_written_to_the_runtime_config(tmp_path):
-  config_path = _runtime_config_path(tmp_path)
-
-  _make_api_server(
+def test_logo_options_are_served(tmp_path):
+  response = _make_client(
       tmp_path,
       logo_text="ACME",
       logo_image_url="https://example.com/logo.png",
-  ).get_fast_api_app(web_assets_dir=str(tmp_path))
+  ).get(_URL)
 
-  assert json.loads(config_path.read_text())["logo"] == {
+  assert response.json()["logo"] == {
       "text": "ACME",
       "imageUrl": "https://example.com/logo.png",
   }
 
 
-def test_stale_logo_is_removed_when_no_logo_is_configured(tmp_path):
-  config_path = _seed(
+def test_stale_logo_in_packaged_config_is_dropped(tmp_path):
+  _seed(
       tmp_path, '{"backendUrl": "", "logo": {"text": "old", "imageUrl": "x"}}'
   )
 
-  _make_api_server(tmp_path).get_fast_api_app(web_assets_dir=str(tmp_path))
-
-  assert "logo" not in json.loads(config_path.read_text())
+  assert "logo" not in _make_client(tmp_path).get(_URL).json()
 
 
 @pytest.mark.parametrize(
@@ -176,35 +208,42 @@ def test_partial_logo_configuration_is_rejected(tmp_path, logo_kwargs):
     api_server.get_fast_api_app(web_assets_dir=str(tmp_path))
 
 
-def test_unwritable_runtime_config_is_logged_and_does_not_raise(
-    tmp_path, monkeypatch, caplog
-):
-  _seed(tmp_path, '{"backendUrl": ""}')
-  real_open = builtins.open
+def test_route_wins_over_the_static_mount(tmp_path):
+  config_path = _seed(tmp_path, '{"backendUrl": "STALE"}')
 
-  def _fail_on_write(file, mode="r", *args, **kwargs):
-    if "w" in mode:
-      raise IOError("disk full")
-    return real_open(file, mode, *args, **kwargs)
+  response = _make_client(tmp_path, url_prefix="/proxy").get(_URL)
 
-  monkeypatch.setattr(builtins, "open", _fail_on_write)
-
-  with caplog.at_level(logging.ERROR, logger="google_adk"):
-    app = _make_api_server(tmp_path).get_fast_api_app(
-        web_assets_dir=str(tmp_path)
-    )
-
-  assert app is not None
-  assert "Failed to write runtime config file" in caplog.text
-  assert str(_runtime_config_path(tmp_path)) in caplog.text
+  assert response.json()["backendUrl"] == "/proxy"
+  assert config_path.read_text() == '{"backendUrl": "STALE"}'
 
 
-def test_web_ui_app_does_not_touch_the_packaged_runtime_config(
-    tmp_path, isolated_web_assets_dir
-):
+def test_response_is_not_cached(tmp_path):
+  response = _make_client(tmp_path).get(_URL)
+
+  assert response.headers["cache-control"] == "no-store"
+
+
+def test_endpoint_absent_without_web_assets_dir(tmp_path):
+  app = _make_api_server(tmp_path).get_fast_api_app()
+
+  assert TestClient(app).get(_URL).status_code == 404
+
+
+def test_concurrent_servers_do_not_share_state(tmp_path):
+  config_path = _seed(tmp_path, '{"backendUrl": "packaged"}')
+
+  first = _make_client(tmp_path, url_prefix="/a")
+  second = _make_client(tmp_path, url_prefix="/b")
+
+  assert first.get(_URL).json()["backendUrl"] == "/a"
+  assert second.get(_URL).json()["backendUrl"] == "/b"
+  assert config_path.read_text() == '{"backendUrl": "packaged"}'
+
+
+def test_web_ui_app_does_not_touch_the_packaged_runtime_config(tmp_path):
   packaged_before = _PACKAGED_RUNTIME_CONFIG.read_bytes()
 
-  fast_api.get_fast_api_app(
+  app = fast_api.get_fast_api_app(
       agents_dir=str(tmp_path),
       web=True,
       session_service_uri="",
@@ -216,5 +255,5 @@ def test_web_ui_app_does_not_touch_the_packaged_runtime_config(
       port=8000,
   )
 
-  assert _runtime_config_path(isolated_web_assets_dir).exists()
+  assert TestClient(app).get(_URL).status_code == 200
   assert _PACKAGED_RUNTIME_CONFIG.read_bytes() == packaged_before
