@@ -133,14 +133,9 @@ class GCPSkillRegistry(SkillRegistry):
     certs = self._mtls_certs
     if certs is None or not certs.cert_path or not certs.key_path:
       return httpx.AsyncClient()
-    if certs.passphrase:
-      # httpx annotates the passphrase as str, but it reaches
-      # ssl.SSLContext.load_cert_chain(password=...), which also takes bytes.
-      # Decoding here would break a passphrase that is not valid UTF-8.
-      return httpx.AsyncClient(
-          cert=(certs.cert_path, certs.key_path, certs.passphrase)  # type: ignore[arg-type]
-      )
-    return httpx.AsyncClient(cert=(certs.cert_path, certs.key_path))
+    context = httpx.create_ssl_context()
+    context.load_cert_chain(certs.cert_path, certs.key_path, certs.passphrase)
+    return httpx.AsyncClient(verify=context)
 
   def close(self) -> None:
     """Releases the mTLS client certificates held by this registry."""

@@ -407,6 +407,28 @@ def _client_certs_available(passphrase):
     yield
 
 
+def _capture_created_client(registry):
+  """Builds one client with httpx mocked out, and reports what it received.
+
+  Args:
+    registry: The registry to call _create_httpx_client on.
+
+  Returns:
+    A tuple of the mocked ssl context and the keyword arguments the
+    httpx.AsyncClient constructor was called with.
+  """
+  with (
+      mock.patch(
+          "httpx.create_ssl_context", autospec=True
+      ) as mock_create_context,
+      mock.patch("httpx.AsyncClient", autospec=True) as mock_client_class,
+  ):
+    registry._create_httpx_client()
+
+  mock_client_class.assert_called_once()
+  return mock_create_context.return_value, mock_client_class.call_args.kwargs
+
+
 def test_constructor_configures_mtls_base_url():
   """Verifies that constructor extracts client certs and uses the mTLS host."""
   with _client_certs_available(b"pass"):
@@ -456,20 +478,25 @@ async def test_get_skill_with_mtls():
     registry = gcp_skill_registry.GCPSkillRegistry()
 
     try:
-      with mock.patch("httpx.AsyncClient", autospec=True) as mock_client_class:
+      with (
+          mock.patch(
+              "httpx.create_ssl_context", autospec=True
+          ) as mock_create_context,
+          mock.patch("httpx.AsyncClient", autospec=True) as mock_client_class,
+      ):
         mock_client = mock_client_class.return_value
         mock_client.__aenter__.return_value = mock_client
         mock_client.get = mock.AsyncMock(side_effect=mock_get)
 
         skill = await registry.get_skill(name="my-skill")
 
-        mock_client_class.assert_called_with(
-            cert=(
-                registry._mtls_certs.cert_path,
-                registry._mtls_certs.key_path,
-                b"pass",
-            )
+        context = mock_create_context.return_value
+        context.load_cert_chain.assert_called_with(
+            registry._mtls_certs.cert_path,
+            registry._mtls_certs.key_path,
+            b"pass",
         )
+        mock_client_class.assert_called_with(verify=context)
     finally:
       registry.close()
 
@@ -500,39 +527,37 @@ def test_constructor_with_no_client_cert_source_uses_plain_client():
   mock_client_class.assert_called_once_with()
 
 
-def test_create_httpx_client_omits_passphrase_when_key_is_unencrypted():
-  """Verifies that an unencrypted key yields a two-element cert tuple."""
+def test_create_httpx_client_loads_an_unencrypted_key_without_a_passphrase():
+  """Verifies that an unencrypted key loads the chain with no passphrase."""
   with _client_certs_available(None):
     registry = gcp_skill_registry.GCPSkillRegistry()
 
   try:
     assert registry._mtls_certs.passphrase is None
-    with mock.patch("httpx.AsyncClient", autospec=True) as mock_client_class:
-      registry._create_httpx_client()
+    context, client_kwargs = _capture_created_client(registry)
 
-    mock_client_class.assert_called_once_with(
-        cert=(registry._mtls_certs.cert_path, registry._mtls_certs.key_path)
+    context.load_cert_chain.assert_called_once_with(
+        registry._mtls_certs.cert_path, registry._mtls_certs.key_path, None
     )
+    assert client_kwargs == {"verify": context}
   finally:
     registry.close()
 
 
-def test_create_httpx_client_passes_passphrase_for_encrypted_key():
-  """Verifies that an encrypted key forwards its passphrase to httpx."""
+def test_create_httpx_client_loads_an_encrypted_key_with_its_passphrase():
+  """Verifies that an encrypted key loads the chain with its passphrase."""
   with _client_certs_available(b"s3cret"):
     registry = gcp_skill_registry.GCPSkillRegistry()
 
   try:
-    with mock.patch("httpx.AsyncClient", autospec=True) as mock_client_class:
-      registry._create_httpx_client()
+    context, client_kwargs = _capture_created_client(registry)
 
-    mock_client_class.assert_called_once_with(
-        cert=(
-            registry._mtls_certs.cert_path,
-            registry._mtls_certs.key_path,
-            b"s3cret",
-        )
+    context.load_cert_chain.assert_called_once_with(
+        registry._mtls_certs.cert_path,
+        registry._mtls_certs.key_path,
+        b"s3cret",
     )
+    assert client_kwargs == {"verify": context}
   finally:
     registry.close()
 
