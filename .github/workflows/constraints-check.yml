@@ -58,10 +58,7 @@ jobs:
         with:
           enable-cache: true
 
-      # Check mode re-resolves against the --exclude-newer date recorded in
-      # each committed file's header and diffs the result byte for byte, so a
-      # change in uv's own output format can turn this red without any
-      # dependency having drifted. The remedy is to regenerate the files
-      # (./scripts/update_constraints.sh), not to relax the diff.
+      # Byte-for-byte diff against a re-resolve, so a uv output-format change
+      # can redden this on its own.
       - name: Verify constraints are up to date
         run: ./scripts/update_constraints.sh --check
