@@ -161,7 +161,9 @@ def test_check_mode_rejects_a_header_without_a_readable_snapshot_date(
   # A corrupt header is not staleness. Reporting it as OUT OF DATE would send
   # the contributor to the updater, which overwrites the header and launders
   # the corruption into the published pins.
-  assert f'constraints-{_BROKEN_VERSION}.txt is OUT OF DATE' not in result.stdout
+  assert (
+      f'constraints-{_BROKEN_VERSION}.txt is OUT OF DATE' not in result.stdout
+  )
   assert broken.read_text() == content
   # The fix itself: no resolution runs for the rejected file, so check mode
   # cannot fall back to the live index.
@@ -217,7 +219,8 @@ def test_update_mode_regenerates_a_file_with_a_malformed_header(
   assert _NO_SNAPSHOT_DATE_MESSAGE not in result.stdout
   assert (
       f'🔄 constraints-{_BROKEN_VERSION}.txt was OUT OF DATE. Updating it'
-      ' automatically...' in result.stdout
+      ' automatically...'
+      in result.stdout
   )
   calls = _calls_for(call_log, _BROKEN_VERSION)
   assert len(calls) == 1

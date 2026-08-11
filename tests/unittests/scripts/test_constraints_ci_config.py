@@ -58,5 +58,7 @@ def test_constraints_workflow_runs_the_script_in_check_mode() -> None:
       for step in job.get('steps', [])
   ]
   assert [
-      command for command in commands if 'update_constraints.sh --check' in command
+      command
+      for command in commands
+      if 'update_constraints.sh --check' in command
   ]
