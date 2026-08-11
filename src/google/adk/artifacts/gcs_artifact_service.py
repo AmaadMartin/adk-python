@@ -248,6 +248,7 @@ class GcsArtifactService(BaseArtifactService):
       artifact: Union[types.Part, dict[str, Any]],
       custom_metadata: Optional[dict[str, Any]] = None,
   ) -> int:
+    artifact_util.validate_artifact_filename(filename)
     artifact = ensure_part(artifact)
     versions = self._list_versions(
         app_name=app_name,

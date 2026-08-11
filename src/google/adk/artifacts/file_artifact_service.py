@@ -118,8 +118,6 @@ def _umask_derived_file_mode() -> int:
 # different sets of principals.
 _DEFAULT_FILE_MODE = _umask_derived_file_mode()
 
-_USER_NAMESPACE_PREFIX = "user:"
-
 # Name of the per-version metadata document. A payload is stored alongside it
 # under the artifact directory's own name, so an artifact whose directory is
 # named `metadata.json` would have its payload written over the metadata
@@ -145,14 +143,12 @@ def _is_reserved_artifact_name(name: str) -> bool:
 
 def _file_has_user_namespace(filename: str) -> bool:
   """Checks whether the file is scoped to the user namespace."""
-  return filename.startswith(_USER_NAMESPACE_PREFIX)
+  return filename.startswith(artifact_util.USER_NAMESPACE_PREFIX)
 
 
 def _strip_user_namespace(filename: str) -> str:
   """Removes the `user:` namespace prefix when present."""
-  if _file_has_user_namespace(filename):
-    return filename[len(_USER_NAMESPACE_PREFIX) :]
-  return filename
+  return filename.removeprefix(artifact_util.USER_NAMESPACE_PREFIX)
 
 
 def _to_posix_path(path_value: str) -> PurePosixPath:
@@ -181,9 +177,15 @@ def _resolve_scoped_artifact_path(
     to `scope_root`.
 
   Raises:
-    InputValidationError: If `filename` resolves outside of `scope_root`.
+    InputValidationError: If `filename` has leading or trailing whitespace, or
+      resolves outside of `scope_root`.
   """
-  stripped = _strip_user_namespace(filename).strip()
+  # Rejected before the join, not merely instead of a strip: in
+  # ' ../../secret.txt' the segment ' ..' is an ordinary directory name, so
+  # the '..' that follows pops it and the result lands back inside the scope
+  # root, passing the containment check below.
+  artifact_util.validate_artifact_filename(filename)
+  stripped = _strip_user_namespace(filename)
   windows_path = PureWindowsPath(stripped)
   if windows_path.drive or windows_path.root:
     raise InputValidationError(
@@ -334,6 +336,9 @@ class FileArtifactService(BaseArtifactService):
   # nested directories, and path traversal is rejected to keep the layout
   # portable across filesystems. `{artifact_path}` therefore mirrors the
   # sanitized, scope-relative path derived from each filename.
+  #
+  # A filename with leading or trailing whitespace is rejected rather than
+  # normalized, so it can never alias the unpadded artifact.
 
   def __init__(self, root_dir: Path | str):
     """Initializes the file-based artifact service.
@@ -377,6 +382,33 @@ class FileArtifactService(BaseArtifactService):
     return _resolve_scoped_artifact_path(
         self._scope_root(base_root, session_id, filename), filename
     )[0]
+
+  def _read_artifact_dir(
+      self,
+      app_name: str,
+      user_id: str,
+      session_id: Optional[str],
+      filename: str,
+  ) -> Optional[Path]:
+    """Builds the artifact directory for a read, or None if unstorable.
+
+    A whitespace-padded filename is rejected on save, so no artifact can exist
+    under one. Reads report it as absent rather than raising, and -- above all
+    -- rather than resolving onto the unpadded artifact.
+
+    Args:
+      app_name: The name of the application.
+      user_id: The ID of the user.
+      session_id: The ID of the session, or None for user-scoped artifacts.
+      filename: Caller-supplied artifact name.
+
+    Returns:
+      The artifact directory, or None if no artifact can be stored under
+      `filename`.
+    """
+    if artifact_util.is_whitespace_padded_filename(filename):
+      return None
+    return self._artifact_dir(app_name, user_id, session_id, filename)
 
   def _build_artifact_version(
       self,
@@ -426,7 +458,10 @@ class FileArtifactService(BaseArtifactService):
     (``"images/photo.png"``), or explicitly user-scoped
     (``"user:shared/diagram.png"``). All values are interpreted relative to the
     computed scope root; absolute paths or inputs that traverse outside that
-    root (for example ``"../../secret.txt"``) raise ``ValueError``.
+    root (for example ``"../../secret.txt"``) raise ``ValueError``. A filename
+    with leading or trailing whitespace after any ``user:`` prefix (for example
+    ``" report.txt"``) also raises ``ValueError``, because it cannot be stored
+    apart from its unpadded form on every supported platform.
     """
     return await asyncio.to_thread(
         self._save_artifact_sync,
@@ -552,13 +587,13 @@ class FileArtifactService(BaseArtifactService):
       version: Optional[int],
   ) -> Optional[types.Part]:
     """Loads an artifact from disk."""
-    artifact_dir = self._artifact_dir(
+    artifact_dir = self._read_artifact_dir(
         app_name=app_name,
         user_id=user_id,
         session_id=session_id,
         filename=filename,
     )
-    if not artifact_dir.exists():
+    if artifact_dir is None or not artifact_dir.exists():
       return None
 
     versions = _list_versions_on_disk(artifact_dir)
@@ -685,7 +720,11 @@ class FileArtifactService(BaseArtifactService):
       filename: str,
       session_id: Optional[str],
   ) -> None:
-    artifact_dir = self._artifact_dir(app_name, user_id, session_id, filename)
+    artifact_dir = self._read_artifact_dir(
+        app_name, user_id, session_id, filename
+    )
+    if artifact_dir is None:
+      return
     versions_dir = _versions_dir(artifact_dir)
     if not versions_dir.exists():
       return
@@ -724,12 +763,14 @@ class FileArtifactService(BaseArtifactService):
       filename: str,
       session_id: Optional[str],
   ) -> list[int]:
-    artifact_dir = self._artifact_dir(
+    artifact_dir = self._read_artifact_dir(
         app_name=app_name,
         user_id=user_id,
         session_id=session_id,
         filename=filename,
     )
+    if artifact_dir is None:
+      return []
     return _list_versions_on_disk(artifact_dir)
 
   @override
@@ -757,12 +798,14 @@ class FileArtifactService(BaseArtifactService):
       filename: str,
       session_id: Optional[str],
   ) -> list[ArtifactVersion]:
-    artifact_dir = self._artifact_dir(
+    artifact_dir = self._read_artifact_dir(
         app_name=app_name,
         user_id=user_id,
         session_id=session_id,
         filename=filename,
     )
+    if artifact_dir is None:
+      return []
     versions = _list_versions_on_disk(artifact_dir)
     artifact_versions: list[ArtifactVersion] = []
     for version in versions:
@@ -805,12 +848,14 @@ class FileArtifactService(BaseArtifactService):
       session_id: Optional[str],
       version: Optional[int],
   ) -> Optional[ArtifactVersion]:
-    artifact_dir = self._artifact_dir(
+    artifact_dir = self._read_artifact_dir(
         app_name=app_name,
         user_id=user_id,
         session_id=session_id,
         filename=filename,
     )
+    if artifact_dir is None:
+      return None
     versions = _list_versions_on_disk(artifact_dir)
     if not versions:
       return None

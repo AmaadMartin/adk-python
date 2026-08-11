@@ -23,6 +23,9 @@ from google.genai import types
 from ..errors import input_validation_error
 
 
+USER_NAMESPACE_PREFIX = "user:"
+
+
 class ParsedArtifactUri(NamedTuple):
   """The result of parsing an artifact URI."""
 
@@ -133,6 +136,48 @@ def validate_artifact_reference_scope(
     raise input_validation_error.InputValidationError(
         "Session-scoped artifact references must stay within the same"
         " session scope."
+    )
+
+
+def is_whitespace_padded_filename(filename: str) -> bool:
+  """Checks whether an artifact filename has leading or trailing whitespace.
+
+  A filename is a storage key, so two filenames that differ only by padding
+  must address two different artifacts. `FileArtifactService` maps a filename
+  onto a directory name, and Windows path normalization drops trailing spaces
+  and periods from a path component
+  (https://learn.microsoft.com/en-us/dotnet/standard/io/file-path-formats#trim-characters).
+  A padded filename is therefore not storable distinctly on every supported
+  platform, so every backend rejects it. Do not turn this check back into a
+  `strip()`: silently trimming makes `' a.txt'` overwrite `'a.txt'`.
+
+  The `user:` prefix marks a namespace instead of forming part of the key, so
+  it is removed before the check and `'user: a.txt'` counts as padded.
+
+  Args:
+    filename: The caller-supplied artifact filename.
+
+  Returns:
+    True if the filename is whitespace-padded.
+  """
+  scoped = filename.removeprefix(USER_NAMESPACE_PREFIX)
+  return scoped != scoped.strip()
+
+
+def validate_artifact_filename(filename: str) -> None:
+  """Rejects an artifact filename with leading or trailing whitespace.
+
+  Args:
+    filename: The caller-supplied artifact filename.
+
+  Raises:
+    InputValidationError: If the filename is whitespace-padded. See
+      `is_whitespace_padded_filename` for why padding cannot be stored.
+  """
+  if is_whitespace_padded_filename(filename):
+    raise input_validation_error.InputValidationError(
+        f"Artifact filename {filename!r} must not have leading or trailing"
+        " whitespace."
     )
 
 
