@@ -88,20 +88,29 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
 
   # Construct the command from scratch. The date is always known here: check
   # mode has just validated it, and update mode owns it.
-  GENERATION_CMD="uv pip compile pyproject.toml --all-extras --python-version $ver"
+  #
+  # --no-emit-package google-adk keeps the resolved package out of the output
+  # without dropping its requirements. The community and toolbox extras depend
+  # back on google-adk from PyPI, so uv resolves the published release as a
+  # node in the graph and would otherwise pin it. These files are applied to
+  # the very install they constrain, so such a pin holds the user at whatever
+  # release was current when the files were last regenerated.
+  GENERATION_CMD="uv pip compile pyproject.toml --all-extras --no-emit-package google-adk --python-version $ver"
   GENERATION_CMD="$GENERATION_CMD --exclude-newer $date_to_use"
   GENERATION_CMD="$GENERATION_CMD --index-url https://pypi.org/simple -o $TARGET_FILE"
 
   echo "Found generation command: $GENERATION_CMD"
 
-  STABLE_FILE="constraints-${ver}.txt.stable.tmp"
   NEW_FILE="constraints-${ver}.txt.new.tmp"
 
-  # Copy the existing constraints to STABLE_FILE if it exists and is not empty
+  # Seed the resolution with the committed pins: uv reads its own output file
+  # and prefers the versions already recorded there. Passing that file with
+  # --constraint instead makes uv record it as a resolution source and stamp
+  # "-c constraints-<ver>.txt.stable.tmp" into the published annotations, which
+  # names a scratch file the reader never has.
+  rm -f "$NEW_FILE"
   if [ -s "$TARGET_FILE" ]; then
-    cp "$TARGET_FILE" "$STABLE_FILE"
-  else
-    touch "$STABLE_FILE"
+    cp "$TARGET_FILE" "$NEW_FILE"
   fi
 
   # Modify the GENERATION_CMD to output to NEW_FILE.
@@ -109,27 +118,15 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
   RUN_CMD=$(echo "$RUN_CMD" | sed -E "s/--output-file [^ ]+/--output-file $NEW_FILE/")
   RUN_CMD=$(echo "$RUN_CMD" | sed -E "s/--output-file=[^ ]+/--output-file=$NEW_FILE/")
 
-  # Execute the command, also adding STABLE_FILE as a constraint to stabilize resolution.
-  echo "Running: $RUN_CMD --constraint $STABLE_FILE"
-  if ! eval "$RUN_CMD --constraint $STABLE_FILE"; then
-    if [ "$CHECK_ONLY" = true ]; then
-      echo "❌ Resolution failed with stable constraints for $TARGET_FILE."
-      echo "   This usually happens when a new dependency requirement in pyproject.toml conflicts with existing pinned versions."
-      echo "   To fix this, run the update script locally to resolve conflicts and update constraints:"
-      echo "   $ ./scripts/update_constraints.sh"
-      rm -f "$STABLE_FILE" "$NEW_FILE"
-      EXIT_CODE=1
-      continue
-    else
-      echo "⚠️ Resolution failed with stable constraints. Retrying without constraints to allow upgrades..."
-      echo "Running: $RUN_CMD"
-      if ! eval "$RUN_CMD"; then
-        echo "❌ Resolution failed even without constraints."
-        rm -f "$STABLE_FILE" "$NEW_FILE"
-        EXIT_CODE=1
-        continue
-      fi
-    fi
+  # Seeded pins are preferences, not hard constraints: uv keeps one while it
+  # stays valid and picks a new version when it does not. A stale pin can no
+  # longer abort the resolution, so a single attempt is enough.
+  echo "Running: $RUN_CMD"
+  if ! eval "$RUN_CMD"; then
+    echo "❌ Resolution failed for $TARGET_FILE."
+    rm -f "$NEW_FILE"
+    EXIT_CODE=1
+    continue
   fi
 
   # Reconstruct NEW_FILE to have the clean GENERATION_CMD in its header
@@ -144,19 +141,19 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
   # Compare
   if diff -u "$TARGET_FILE" "$NEW_FILE"; then
     echo "✅ $TARGET_FILE is up-to-date."
-    rm -f "$STABLE_FILE" "$NEW_FILE"
+    rm -f "$NEW_FILE"
   else
     if [ "$CHECK_ONLY" = true ]; then
       echo "❌ $TARGET_FILE is OUT OF DATE!"
       echo "   Please run the update script locally to update it and commit the changes:"
       echo "   $ ./scripts/update_constraints.sh"
-      rm -f "$STABLE_FILE" "$NEW_FILE"
+      rm -f "$NEW_FILE"
       EXIT_CODE=1
     else
       echo "🔄 $TARGET_FILE was OUT OF DATE. Updating it automatically..."
       cp "$NEW_FILE" "$TARGET_FILE"
       echo "✅ $TARGET_FILE has been updated locally."
-      rm -f "$STABLE_FILE" "$NEW_FILE"
+      rm -f "$NEW_FILE"
       EXIT_CODE=1
     fi
   fi
