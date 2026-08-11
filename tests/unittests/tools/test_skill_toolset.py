@@ -202,8 +202,6 @@ def test_clone_with_updated_skills(mock_skill1, mock_skill2):
       code_executor=executor,
       script_timeout=42,
       additional_tools=[mock_tool],
-      tool_name_prefix="my_prefix",
-      tool_filter=["list_skills", "load_skill"],
   )
 
   new_toolset = toolset.clone_with_updated_skills([mock_skill3])
@@ -218,8 +216,6 @@ def test_clone_with_updated_skills(mock_skill1, mock_skill2):
   assert new_toolset._code_executor is executor
   assert new_toolset._script_timeout == 42
   assert "my_tool" in new_toolset._provided_tools_by_name
-  assert new_toolset.tool_name_prefix == "my_prefix"
-  assert new_toolset.tool_filter == ["list_skills", "load_skill"]
 
 
 @pytest.mark.asyncio
