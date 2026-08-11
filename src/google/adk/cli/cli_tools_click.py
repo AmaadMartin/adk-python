@@ -2418,6 +2418,7 @@ def cli_deploy_cloud_run(
     )
   except Exception as e:
     click.secho(f"Deploy failed: {e}", fg="red", err=True)
+    sys.exit(1)
 
 
 @main.group()
@@ -2755,6 +2756,7 @@ def cli_deploy_agent_engine(
     )
   except Exception as e:
     click.secho(f"Deploy failed: {e}", fg="red", err=True)
+    sys.exit(1)
 
 
 @deploy.command("gke")
@@ -2943,3 +2945,4 @@ def cli_deploy_gke(
     )
   except Exception as e:
     click.secho(f"Deploy failed: {e}", fg="red", err=True)
+    sys.exit(1)
