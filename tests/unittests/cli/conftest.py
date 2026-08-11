@@ -16,17 +16,14 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from google.adk.cli import fast_api
 import pytest
 
+# Read from the server's own constant, so this guard follows the directory the
+# server actually writes to. Module scope runs at collection, before the
+# fixture below repoints it.
 _PACKAGED_RUNTIME_CONFIG = (
-    Path(fast_api.__file__).parent
-    / "browser"
-    / "assets"
-    / "config"
-    / "runtime-config.json"
+    fast_api._WEB_ASSETS_DIR / "assets" / "config" / "runtime-config.json"
 )
 
 
