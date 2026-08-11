@@ -46,6 +46,7 @@ from .agents.run_config import RunConfig
 from .artifacts.base_artifact_service import BaseArtifactService
 from .auth.credential_service.base_credential_service import BaseCredentialService
 from .code_executors.built_in_code_executor import BuiltInCodeExecutor
+from .errors.already_exists_error import AlreadyExistsError
 from .errors.session_not_found_error import SessionNotFoundError
 from .events.event import Event
 from .events.event_actions import EventActions
@@ -1001,7 +1002,9 @@ class Runner:
 
     This helper first attempts to retrieve the session. If not found and
     auto_create_session is True, it creates a new session with the provided
-    identifiers. Otherwise, it raises a SessionNotFoundError.
+    identifiers. Otherwise, it raises a SessionNotFoundError. If a concurrent
+    caller creates the session first, the create conflict is recovered by
+    re-reading the session rather than surfacing `AlreadyExistsError`.
 
     Args:
       user_id: The user ID of the session.
@@ -1015,6 +1018,8 @@ class Runner:
     Raises:
       SessionNotFoundError: If the session is not found and
         auto_create_session is False.
+      AlreadyExistsError: If creating the session reported a conflict and the
+        session still cannot be read back.
     """
     session = await self.session_service.get_session(
         app_name=self.app_name,
@@ -1024,9 +1029,26 @@ class Runner:
     )
     if not session:
       if self.auto_create_session:
-        session = await self.session_service.create_session(
-            app_name=self.app_name, user_id=user_id, session_id=session_id
-        )
+        try:
+          session = await self.session_service.create_session(
+              app_name=self.app_name, user_id=user_id, session_id=session_id
+          )
+        except AlreadyExistsError:
+          # A concurrent caller created the same session between our read and
+          # our create. Re-read and use the winner's session; only re-raise if
+          # the session is genuinely not there, so a real failure to create is
+          # not swallowed.
+          logger.debug(
+              'Session %s was created concurrently; reusing it.', session_id
+          )
+          session = await self.session_service.get_session(
+              app_name=self.app_name,
+              user_id=user_id,
+              session_id=session_id,
+              config=get_session_config,
+          )
+          if not session:
+            raise
       else:
         message = self._format_session_not_found_message(session_id)
         raise SessionNotFoundError(message)
