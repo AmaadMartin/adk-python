@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -454,4 +455,128 @@ class TestGkeCodeExecutor:
     assert result.stdout == ""
     assert result.stderr == "oops\n"
     mock_sandbox_instance.write.assert_called_with("script.py", code_input.code)
-    mock_sandbox_instance.run.assert_called_with("python3 script.py")
+    mock_sandbox_instance.run.assert_called_with(
+        "python3 script.py", timeout=300
+    )
+
+  @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
+  def test_sandbox_run_receives_configured_timeout(
+      self,
+      mock_sandbox_client,
+      mock_invocation_context,
+  ):
+    """Tests that timeout_seconds bounds the sandbox execution request."""
+    mock_sandbox_instance = (
+        mock_sandbox_client.return_value.__enter__.return_value
+    )
+    mock_sandbox_instance.run.return_value = MagicMock(stdout="", stderr=None)
+
+    executor = GkeCodeExecutor(executor_type="sandbox", timeout_seconds=60)
+    code_input = CodeExecutionInput(code='print("sandbox")')
+
+    executor.execute_code(mock_invocation_context, code_input)
+
+    mock_sandbox_instance.run.assert_called_once_with(
+        "python3 script.py", timeout=60
+    )
+
+  @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
+  def test_sandbox_run_uses_default_timeout(
+      self,
+      mock_sandbox_client,
+      mock_invocation_context,
+  ):
+    """Tests that the field default, not the client's own 60s, is sent."""
+    mock_sandbox_instance = (
+        mock_sandbox_client.return_value.__enter__.return_value
+    )
+    mock_sandbox_instance.run.return_value = MagicMock(stdout="", stderr=None)
+
+    executor = GkeCodeExecutor(executor_type="sandbox")
+    code_input = CodeExecutionInput(code='print("sandbox")')
+
+    executor.execute_code(mock_invocation_context, code_input)
+
+    mock_sandbox_instance.run.assert_called_once_with(
+        "python3 script.py", timeout=300
+    )
+
+  @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
+  def test_sandbox_client_constructed_without_timeout(
+      self,
+      mock_sandbox_client,
+      mock_invocation_context,
+  ):
+    """Tests that timeout_seconds does not reach the readiness bounds.
+
+    The client's constructor timeouts bound cluster readiness, not the code,
+    so they keep their library defaults.
+    """
+    mock_sandbox_instance = (
+        mock_sandbox_client.return_value.__enter__.return_value
+    )
+    mock_sandbox_instance.run.return_value = MagicMock(stdout="", stderr=None)
+
+    executor = GkeCodeExecutor(executor_type="sandbox", timeout_seconds=60)
+    code_input = CodeExecutionInput(code='print("sandbox")')
+
+    executor.execute_code(mock_invocation_context, code_input)
+
+    mock_sandbox_client.assert_called_once_with(
+        template_name="python-sandbox-template",
+        gateway_name=None,
+        namespace="default",
+    )
+
+  def test_sandbox_run_timeout_fits_the_client_signature(
+      self,
+      mock_invocation_context,
+  ):
+    """Tests the sandbox path against a client that declares real signatures.
+
+    A MagicMock accepts any keyword, so it cannot show that the executor
+    calls a client that declares `run(command, timeout=60)` and
+    `write(path, content, timeout=60)`, as k8s-agent-sandbox does.
+    """
+    init_calls: list[tuple[str, str, str | None]] = []
+    write_calls: list[tuple[str, str, int]] = []
+    run_calls: list[tuple[str, int]] = []
+
+    class FakeSandboxClient:
+      """Records the calls the executor makes, with no mocking."""
+
+      def __init__(
+          self,
+          template_name: str,
+          namespace: str = "default",
+          gateway_name: str | None = None,
+      ):
+        init_calls.append((template_name, namespace, gateway_name))
+
+      def __enter__(self) -> "FakeSandboxClient":
+        return self
+
+      def __exit__(self, *exc_info: object) -> None:
+        return None
+
+      def write(self, path: str, content: str, timeout: int = 60) -> None:
+        write_calls.append((path, content, timeout))
+
+      def run(self, command: str, timeout: int = 60) -> SimpleNamespace:
+        run_calls.append((command, timeout))
+        return SimpleNamespace(stdout="fake stdout", stderr="")
+
+    with patch(
+        "google.adk.code_executors.gke_code_executor.SandboxClient",
+        FakeSandboxClient,
+    ):
+      executor = GkeCodeExecutor(executor_type="sandbox", timeout_seconds=45)
+      result = executor.execute_code(
+          mock_invocation_context, CodeExecutionInput(code="print('hi')")
+      )
+
+    assert result.stdout == "fake stdout"
+    assert init_calls == [("python-sandbox-template", "default", None)]
+    assert run_calls == [("python3 script.py", 45)]
+    # The upload keeps the client's own default; only execution is bounded.
+    assert write_calls == [("script.py", "print('hi')", 60)]
