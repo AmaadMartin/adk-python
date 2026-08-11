@@ -18,8 +18,6 @@ from __future__ import annotations
 
 import asyncio
 import os
-import ssl
-import tempfile
 from typing import Any
 from urllib.parse import quote
 
@@ -31,7 +29,6 @@ import google.auth
 import google.auth.credentials
 from google.auth.credentials import Credentials
 import google.auth.exceptions
-from google.auth.transport import mtls
 from google.auth.transport import requests as auth_requests
 import httpx
 
@@ -55,36 +52,16 @@ class GCPSkillRegistry(SkillRegistry):
     """
     self.project_id = project_id or os.environ.get("GOOGLE_CLOUD_PROJECT")
     self.location = location or os.environ.get("GOOGLE_CLOUD_LOCATION")
-    # Set up SSL context for mTLS if needed
-    self._ssl_context = None
-    use_client_cert = _mtls_utils.use_client_cert_effective()
-    if use_client_cert and mtls.has_default_client_cert_source():
-      try:
-        client_cert_source = mtls.default_client_cert_source()
-        cert_bytes, key_bytes = client_cert_source()
-        fd_cert, cert_path = tempfile.mkstemp()
-        fd_key, key_path = tempfile.mkstemp()
-        try:
-          with os.fdopen(fd_cert, "wb") as f:
-            f.write(cert_bytes)
-          with os.fdopen(fd_key, "wb") as f:
-            f.write(key_bytes)
-          self._ssl_context = ssl.create_default_context()
-          self._ssl_context.load_cert_chain(
-              certfile=cert_path, keyfile=key_path
-          )
-        finally:
-          try:
-            os.remove(cert_path)
-          except OSError:
-            pass
-          try:
-            os.remove(key_path)
-          except OSError:
-            pass
-      except Exception:  # pylint: disable=broad-exception-caught
-        # Fallback to default ssl configuration if cert source is broken
-        pass
+    # Client certificates for mTLS. MtlsClientCerts checks for a default cert
+    # source itself and leaves its paths unset when there is none, and it
+    # supports passphrase-protected keys, which the endpoint's cert provider
+    # may hand out.
+    self._mtls_certs: _mtls_utils.MtlsClientCerts | None = None
+    if _mtls_utils.use_client_cert_effective():
+      self._mtls_certs = _mtls_utils.MtlsClientCerts()
+      # Extract now, so a broken cert provider raises here with its own
+      # message rather than surfacing later as a TLS handshake failure.
+      self._mtls_certs.get_certs()
 
     self.base_url = os.environ.get(
         "AGENT_REGISTRY_ENDPOINT",
@@ -153,9 +130,18 @@ class GCPSkillRegistry(SkillRegistry):
 
   def _create_httpx_client(self) -> httpx.AsyncClient:
     """Creates a new httpx.AsyncClient with appropriate SSL/mTLS configuration."""
-    if self._ssl_context is not None:
-      return httpx.AsyncClient(verify=self._ssl_context)
-    return httpx.AsyncClient()
+    certs = self._mtls_certs
+    if certs is None or not certs.cert_path or not certs.key_path:
+      return httpx.AsyncClient()
+    context = httpx.create_ssl_context()
+    context.load_cert_chain(certs.cert_path, certs.key_path, certs.passphrase)
+    return httpx.AsyncClient(verify=context)
+
+  def close(self) -> None:
+    """Releases the mTLS client certificates held by this registry."""
+    if self._mtls_certs is not None:
+      self._mtls_certs.close()
+      self._mtls_certs = None
 
   async def get_skill(self, *, name: str) -> models.Skill:
     """Fetches a skill from the registry.
