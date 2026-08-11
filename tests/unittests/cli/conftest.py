@@ -16,17 +16,11 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from google.adk.cli import fast_api
 import pytest
 
 _PACKAGED_RUNTIME_CONFIG = (
-    Path(fast_api.__file__).parent
-    / "browser"
-    / "assets"
-    / "config"
-    / "runtime-config.json"
+    fast_api._WEB_ASSETS_DIR / "assets" / "config" / "runtime-config.json"
 )
 
 
@@ -37,14 +31,7 @@ _ORIGINAL_RUNTIME_CONFIG_BYTES = _PACKAGED_RUNTIME_CONFIG.read_bytes()
 
 @pytest.fixture(autouse=True)
 def packaged_runtime_config_stays_untouched():
-  """Fails any CLI test that writes the packaged dev UI runtime config.
-
-  The dev UI bundle lives inside the installed package, so a server that
-  rewrites it dirties the working tree, races other server processes, and
-  breaks on a read-only install. The server serves the runtime config from
-  ``GET /dev-ui/assets/config/runtime-config.json`` instead, and reads the
-  packaged copy only as a merge base.
-  """
+  """Fails any CLI test that writes the packaged dev UI runtime config."""
   yield
 
   assert (

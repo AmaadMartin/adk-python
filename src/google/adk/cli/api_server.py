@@ -910,17 +910,8 @@ class ApiServer:
   def _build_runtime_config(self, web_assets_dir: str) -> dict[str, Any]:
     """Builds the runtime config the dev UI fetches at bootstrap.
 
-    The packaged config under ``web_assets_dir`` is read as a base so that any
-    extra keys a distributor baked into the bundle survive, then the
-    server-derived keys are layered on top. Nothing is written back: the bundle
-    lives inside the installed package, which may be read only and is shared by
-    every server process on the machine.
-
-    Args:
-      web_assets_dir: Directory the packaged dev UI bundle is served from.
-
-    Returns:
-      The runtime config to serve to the dev UI.
+    The packaged config under ``web_assets_dir`` is the merge base, so extra
+    keys a distributor baked into the bundle survive. Nothing is written back.
 
     Raises:
       ValueError: If only one of the two logo options is set.
@@ -1063,10 +1054,6 @@ class ApiServer:
             export_lib.SimpleSpanProcessor(memory_exporter),
         ],
     )
-    runtime_config: dict[str, Any] = {}
-    if web_assets_dir:
-      runtime_config = self._build_runtime_config(web_assets_dir)
-
     tracer_provider = trace.get_tracer_provider()
     register_processors(tracer_provider)
 
@@ -1144,6 +1131,8 @@ class ApiServer:
       # when two servers start at once. Must be registered before the mount
       # below, because Starlette matches routes in order and the mount would
       # otherwise claim this path and serve the stale packaged file.
+      runtime_config = self._build_runtime_config(web_assets_dir)
+
       @app.get("/dev-ui/assets/config/runtime-config.json")
       async def get_dev_ui_runtime_config() -> JSONResponse:
         return JSONResponse(
