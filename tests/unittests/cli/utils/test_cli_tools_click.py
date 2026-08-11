@@ -1426,6 +1426,9 @@ def test_cli_deploy_agent_engine_conflicting_import_flags_exit_non_zero(
   assert not rec.calls, "the deploy must not start"
 
 
+@pytest.mark.skipif(
+    not sys.executable, reason="no standalone interpreter to spawn"
+)
 def test_cli_deploy_agent_engine_failure_exit_status_of_real_process(
     tmp_path: Path,
 ) -> None:
