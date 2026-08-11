@@ -17,6 +17,7 @@ from __future__ import annotations
 import dataclasses
 import os
 from typing import TYPE_CHECKING
+from urllib.parse import urlparse
 
 from ...evaluation.eval_case import Invocation
 from ...evaluation.evaluation_generator import EvaluationGenerator
@@ -66,10 +67,18 @@ def create_gcs_eval_managers_from_uri(
       GcsEvalManagers: The GcsEvalManagers object.
 
   Raises:
-      ValueError: If the eval_storage_uri is not supported.
+      ValueError: If the eval_storage_uri is not supported or does not contain
+        a bucket name.
       RuntimeError: If GCP optional dependencies are missing.
   """
   if eval_storage_uri.startswith('gs://'):
+    gcs_bucket = urlparse(eval_storage_uri).netloc
+    if not gcs_bucket:
+      raise ValueError(
+          f'Invalid evals storage URI: {eval_storage_uri}. A GCS bucket name'
+          ' is required, e.g. gs://<bucket name>.'
+      )
+
     try:
       from ...evaluation.gcs_eval_set_results_manager import GcsEvalSetResultsManager
       from ...evaluation.gcs_eval_sets_manager import GcsEvalSetsManager
@@ -80,7 +89,6 @@ def create_gcs_eval_managers_from_uri(
           ' google-adk[gcp]\nOr: pip install google-cloud-storage>=2.18'
       ) from e
 
-    gcs_bucket = eval_storage_uri.split('://')[1]
     eval_sets_manager = GcsEvalSetsManager(
         bucket_name=gcs_bucket, project=os.environ['GOOGLE_CLOUD_PROJECT']
     )
