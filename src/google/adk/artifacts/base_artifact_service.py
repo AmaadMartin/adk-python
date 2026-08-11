@@ -108,9 +108,7 @@ class BaseArtifactService(ABC):
       app_name: The app name.
       user_id: The user ID.
       filename: The filename of the artifact. After any ``user:`` prefix it
-        must not have leading or trailing whitespace, because a padded
-        filename cannot be stored apart from its unpadded form on every
-        supported platform.
+        must not have leading or trailing whitespace.
       artifact: The artifact to save. Accepts a ``types.Part`` instance or a
         plain dictionary (camelCase or snake_case keys) which will be
         normalized via ``ensure_part``. If the artifact consists of

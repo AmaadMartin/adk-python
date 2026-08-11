@@ -336,9 +336,6 @@ class FileArtifactService(BaseArtifactService):
   # nested directories, and path traversal is rejected to keep the layout
   # portable across filesystems. `{artifact_path}` therefore mirrors the
   # sanitized, scope-relative path derived from each filename.
-  #
-  # A filename with leading or trailing whitespace is rejected rather than
-  # normalized, so it can never alias the unpadded artifact.
 
   def __init__(self, root_dir: Path | str):
     """Initializes the file-based artifact service.
@@ -390,22 +387,8 @@ class FileArtifactService(BaseArtifactService):
       session_id: Optional[str],
       filename: str,
   ) -> Optional[Path]:
-    """Builds the artifact directory for a read, or None if unstorable.
-
-    A whitespace-padded filename is rejected on save, so no artifact can exist
-    under one. Reads report it as absent rather than raising, and -- above all
-    -- rather than resolving onto the unpadded artifact.
-
-    Args:
-      app_name: The name of the application.
-      user_id: The ID of the user.
-      session_id: The ID of the session, or None for user-scoped artifacts.
-      filename: Caller-supplied artifact name.
-
-    Returns:
-      The artifact directory, or None if no artifact can be stored under
-      `filename`.
-    """
+    """Builds the artifact directory for a read, or None when `filename` is
+    padded and so cannot name a stored artifact."""
     if artifact_util.is_whitespace_padded_filename(filename):
       return None
     return self._artifact_dir(app_name, user_id, session_id, filename)
@@ -460,8 +443,7 @@ class FileArtifactService(BaseArtifactService):
     computed scope root; absolute paths or inputs that traverse outside that
     root (for example ``"../../secret.txt"``) raise ``ValueError``. A filename
     with leading or trailing whitespace after any ``user:`` prefix (for example
-    ``" report.txt"``) also raises ``ValueError``, because it cannot be stored
-    apart from its unpadded form on every supported platform.
+    ``" report.txt"``) also raises ``ValueError``.
     """
     return await asyncio.to_thread(
         self._save_artifact_sync,
