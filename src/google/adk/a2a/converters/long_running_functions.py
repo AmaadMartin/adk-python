@@ -73,6 +73,10 @@ class LongRunningFunctions:
           if not event.partial:
             self._parts.append(part)
             self._long_running_tool_ids.add(part.function_call.id)
+            # A request for end-user credentials pauses the task in
+            # auth_required, and never downgrades to the input_required default.
+            if part.function_call.name == REQUEST_EUC_FUNCTION_CALL_NAME:
+              self._task_state = _compat.TS_AUTH_REQUIRED
           should_remove = True
 
       elif part.function_response:
@@ -146,13 +150,6 @@ class LongRunningFunctions:
           _get_adk_metadata_key(A2A_DATA_PART_METADATA_IS_LONG_RUNNING_KEY)
       ] = True
       _compat.set_part_metadata(a2a_part, meta)
-      # If the function is a request for EUC, set the task state to
-      # auth_required. Otherwise, set it to input_required. Save the state of
-      # the last function call, as it will be the state of the task.
-      if meta.get("name") == REQUEST_EUC_FUNCTION_CALL_NAME:
-        self._task_state = _compat.TS_AUTH_REQUIRED
-      else:
-        self._task_state = _compat.TS_INPUT_REQUIRED
 
 
 def handle_user_input(
