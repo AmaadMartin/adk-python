@@ -17,12 +17,14 @@
 from datetime import datetime
 from datetime import timezone
 import time
+from typing import Optional
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from google.adk.agents.context_cache_config import ContextCacheConfig
 from google.adk.models.cache_metadata import CacheMetadata
+from google.adk.models.gemini_context_cache_manager import _minimum_cache_tokens
 from google.adk.models.gemini_context_cache_manager import GeminiContextCacheManager
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
@@ -404,6 +406,52 @@ class TestGeminiContextCacheManager:
 
     assert result is not None
     assert result.cache_name == "cachedContents/tuned-model"
+    self.manager.genai_client.aio.caches.create.assert_awaited_once()
+
+  async def test_wrapped_gemini_3_path_keeps_4096_token_minimum(self):
+    """A Vertex publisher path gets the same floor as the bare Gemini 3 id."""
+    llm_request = self.create_llm_request(contents_count=0)
+    llm_request.model = (
+        "projects/p/locations/us-central1/publishers/google/models/"
+        "gemini-3-pro-preview"
+    )
+    llm_request.config.system_instruction = "x" * 12_000
+    llm_request.cacheable_contents_token_count = 3_000
+    llm_request.cache_metadata = CacheMetadata(
+        fingerprint=self.manager._generate_cache_fingerprint(llm_request, 0),
+        contents_count=0,
+    )
+
+    result = await self.manager.handle_context_caching(llm_request)
+
+    assert result is not None
+    assert result.cache_name is None
+    self.manager.genai_client.aio.caches.create.assert_not_called()
+
+  async def test_malformed_model_path_does_not_apply_guessed_token_minimum(
+      self,
+  ):
+    """A malformed Vertex path is opaque, so the server enforces the floor."""
+    llm_request = self.create_llm_request(contents_count=0)
+    llm_request.model = (
+        "projects/123/publishers/google/models/gemini-3-pro-preview"
+    )
+    llm_request.config.system_instruction = "x" * 12_000
+    llm_request.cacheable_contents_token_count = 3_000
+    llm_request.cache_metadata = CacheMetadata(
+        fingerprint=self.manager._generate_cache_fingerprint(llm_request, 0),
+        contents_count=0,
+    )
+    cached_content = AsyncMock()
+    cached_content.name = "cachedContents/malformed-path"
+    self.manager.genai_client.aio.caches.create = AsyncMock(
+        return_value=cached_content
+    )
+
+    result = await self.manager.handle_context_caching(llm_request)
+
+    assert result is not None
+    assert result.cache_name == "cachedContents/malformed-path"
     self.manager.genai_client.aio.caches.create.assert_awaited_once()
 
   async def test_handle_context_caching_invalid_cache_fingerprint_mismatch(
@@ -1454,3 +1502,49 @@ class TestGeminiContextCacheManager:
     assert create_call is not None
     cache_config = create_call[1]["config"]
     assert cache_config.http_options is None
+
+
+class TestMinimumCacheTokens:
+  """Test suite for the explicit-cache token floor lookup."""
+
+  @pytest.mark.parametrize(
+      "model,expected",
+      [
+          # No model id at all.
+          (None, None),
+          ("", None),
+          # Gemini 2.5 forms.
+          ("gemini-2.5-flash", 2048),
+          ("models/gemini-2.5-pro", 2048),
+          (
+              "projects/p/locations/us-central1/publishers/google/models/gemini-2.5-flash",
+              2048,
+          ),
+          ("apigee/gemini-2.5-flash", 2048),
+          ("apigee/vertex_ai/v1beta/gemini-2.5-flash", 2048),
+          ("gemini/gemini-2.5-flash", 2048),
+          ("openrouter/google/gemini-2.5-pro:online", 2048),
+          # Gemini 3 forms.
+          ("gemini-3-pro-preview", 4096),
+          (
+              "projects/p/locations/us-central1/publishers/google/models/gemini-3-pro-preview",
+              4096,
+          ),
+          ("vertex_ai/gemini-3-pro-preview", 4096),
+          # Forms with no client-side floor.
+          ("openrouter/anthropic/claude-sonnet-4", None),
+          ("projects/test/locations/us-central1/endpoints/tuned-model", None),
+          # Malformed 'projects/...' paths stay opaque.
+          ("projects/123/locations/us-central1/models/gemini-2.5-flash", None),
+          ("projects/123/publishers/google/models/gemini-3-pro-preview", None),
+          (
+              "projects/123/locations/us-central1/publishers/google/gemini-2.5-flash",
+              None,
+          ),
+      ],
+  )
+  def test_minimum_cache_tokens(
+      self, model: Optional[str], expected: Optional[int]
+  ):
+    """Every wrapper form resolves to the floor of the bare model id."""
+    assert _minimum_cache_tokens(model) == expected
