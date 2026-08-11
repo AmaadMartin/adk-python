@@ -186,6 +186,63 @@ def test_validate_path_segment_invalid(value, field_name):
     artifact_util.validate_path_segment(value, field_name)
 
 
+# Shared with test_artifact_service.py, which replays these against every
+# backend so the three stay in agreement about what a filename means.
+PADDED_FILENAME_CASES = (
+    " padded.txt",
+    "padded.txt ",
+    " padded.txt ",
+    "padded.txt\t",
+    "\npadded.txt",
+    "   ",
+    "user: padded.txt",
+    "user:padded.txt ",
+)
+
+
+@pytest.mark.parametrize(
+    "filename",
+    [
+        "a.txt",
+        "dir/a.txt",
+        "user:a.txt",
+        "user:dir/a.txt",
+        "my report.txt",
+        "",
+        ".",
+    ],
+)
+def test_validate_artifact_filename_accepts_unpadded(filename):
+  """Unpadded filenames pass, including interior spaces and the empty name."""
+  artifact_util.validate_artifact_filename(filename)
+
+
+@pytest.mark.parametrize("filename", PADDED_FILENAME_CASES)
+def test_validate_artifact_filename_rejects_padded(filename):
+  """A padded filename raises, and the message quotes the offending name."""
+  with pytest.raises(
+      InputValidationError,
+      match="must not have leading or trailing whitespace",
+  ) as exc_info:
+    artifact_util.validate_artifact_filename(filename)
+
+  assert repr(filename) in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "filename, expected",
+    [
+        ("a.txt", False),
+        (" a.txt", True),
+        ("user:a.txt", False),
+        ("user: a.txt", True),
+    ],
+)
+def test_is_whitespace_padded_filename(filename, expected):
+  """The `user:` prefix is a namespace marker, not part of the storage key."""
+  assert artifact_util.is_whitespace_padded_filename(filename) is expected
+
+
 @pytest.mark.parametrize(
     "caller_session_id, uri_session_id",
     [

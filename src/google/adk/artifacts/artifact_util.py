@@ -22,7 +22,6 @@ from google.genai import types
 
 from ..errors import input_validation_error
 
-
 USER_NAMESPACE_PREFIX = "user:"
 
 
