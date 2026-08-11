@@ -2279,7 +2279,7 @@ class TestRunnerCfcModelGate:
   all pass.
   """
 
-  def setup_method(self):
+  def setup_method(self) -> None:
     self.session_service = InMemorySessionService()
 
   def _new_agent_and_runner(
@@ -2320,7 +2320,7 @@ class TestRunnerCfcModelGate:
           "projects/p/locations/l/publishers/google/models/gemini-2.5-flash",
       ],
   )
-  def test_cfc_gate_accepts_any_gemini_model(self, model: str):
+  def test_cfc_gate_accepts_any_gemini_model(self, model: str) -> None:
     agent, runner = self._new_agent_and_runner(model)
 
     context = runner._new_invocation_context(
@@ -2330,7 +2330,7 @@ class TestRunnerCfcModelGate:
     assert isinstance(context, InvocationContext)
     assert isinstance(agent.code_executor, BuiltInCodeExecutor)
 
-  def test_cfc_gate_accepts_a_models_prefixed_gemini_id(self):
+  def test_cfc_gate_accepts_a_models_prefixed_gemini_id(self) -> None:
     """``extract_model_name`` strips the ``models/`` prefix before the test.
 
     ``LLMRegistry`` cannot resolve this form from a plain string, so the id
@@ -2347,7 +2347,7 @@ class TestRunnerCfcModelGate:
     assert isinstance(agent.code_executor, BuiltInCodeExecutor)
 
   @pytest.mark.parametrize("model", ["claude-3-5-sonnet", "gpt-4o"])
-  def test_cfc_gate_rejects_a_non_gemini_model(self, model: str):
+  def test_cfc_gate_rejects_a_non_gemini_model(self, model: str) -> None:
     """The gate raises before it mutates the agent."""
     agent, runner = self._new_agent_and_runner(model)
 
@@ -2358,7 +2358,7 @@ class TestRunnerCfcModelGate:
 
     assert agent.code_executor is None
 
-  def test_cfc_gate_rejects_an_empty_model_id(self):
+  def test_cfc_gate_rejects_an_empty_model_id(self) -> None:
     """An empty id is not a Gemini id, so it raises instead of passing."""
     agent, runner = self._new_agent_and_runner(
         testing_utils.MockModel(model="", responses=[])
@@ -2373,7 +2373,7 @@ class TestRunnerCfcModelGate:
 
   def test_cfc_gate_accepts_any_model_when_the_id_check_is_disabled(
       self, monkeypatch: pytest.MonkeyPatch
-  ):
+  ) -> None:
     """``ADK_DISABLE_GEMINI_MODEL_ID_CHECK`` matches ``BuiltInCodeExecutor``."""
     monkeypatch.setenv("ADK_DISABLE_GEMINI_MODEL_ID_CHECK", "true")
     agent, runner = self._new_agent_and_runner("claude-3-5-sonnet")
@@ -2384,14 +2384,16 @@ class TestRunnerCfcModelGate:
 
     assert isinstance(agent.code_executor, BuiltInCodeExecutor)
 
-  def test_cfc_gate_is_inert_when_support_cfc_is_false(self):
+  def test_cfc_gate_is_inert_when_support_cfc_is_false(self) -> None:
     agent, runner = self._new_agent_and_runner("claude-3-5-sonnet")
 
     runner._new_invocation_context(self._new_session(), run_config=RunConfig())
 
     assert agent.code_executor is None
 
-  def test_cfc_gate_is_inert_for_an_agent_without_a_canonical_model(self):
+  def test_cfc_gate_is_inert_for_an_agent_without_a_canonical_model(
+      self,
+  ) -> None:
     agent = MockAgent("root_agent")
     runner = Runner(
         app_name=TEST_APP_ID,
@@ -2406,7 +2408,7 @@ class TestRunnerCfcModelGate:
 
     assert context.agent is agent
 
-  def test_cfc_gate_keeps_an_already_installed_code_executor(self):
+  def test_cfc_gate_keeps_an_already_installed_code_executor(self) -> None:
     agent, runner = self._new_agent_and_runner(LlmAgent.DEFAULT_LIVE_MODEL)
     code_executor = BuiltInCodeExecutor()
     agent.code_executor = code_executor
@@ -2418,7 +2420,9 @@ class TestRunnerCfcModelGate:
     assert agent.code_executor is code_executor
 
   @pytest.mark.asyncio
-  async def test_cfc_run_async_completes_on_the_default_live_model(self):
+  async def test_cfc_run_async_completes_on_the_default_live_model(
+      self,
+  ) -> None:
     """The Live default model runs a full CFC turn through ``run_async``."""
     model = testing_utils.MockModel.create(responses=["cfc reply"])
     model.model = LlmAgent.DEFAULT_LIVE_MODEL
@@ -2438,15 +2442,16 @@ class TestRunnerCfcModelGate:
     reply = None
     async with aclosing(agen) as a:
       async for event in a:
-        if event.author == "cfc_agent" and event.content:
-          reply = event.content.parts[0].text
+        parts = event.content.parts if event.content else None
+        if event.author == "cfc_agent" and parts:
+          reply = parts[0].text
           break
 
     assert reply == "cfc reply"
     assert isinstance(agent.code_executor, BuiltInCodeExecutor)
 
   @pytest.mark.asyncio
-  async def test_cfc_run_async_surfaces_the_rejection(self):
+  async def test_cfc_run_async_surfaces_the_rejection(self) -> None:
     """A non-Gemini model still fails fast on the public entry point."""
     agent, runner = self._new_agent_and_runner("claude-3-5-sonnet")
     await self.session_service.create_session(
