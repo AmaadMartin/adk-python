@@ -18,7 +18,6 @@ import contextlib
 import datetime
 import io
 import json
-import logging
 import os
 import pathlib
 import ssl
@@ -33,6 +32,7 @@ from cryptography.hazmat.primitives.asymmetric import ec
 from cryptography.x509.oid import NameOID
 from google.adk.integrations.skill_registry import gcp_skill_registry
 from google.adk.utils import _mtls_utils
+import google.auth.exceptions
 from google.auth.transport import _mtls_helper
 from google.auth.transport import mtls
 import pytest
@@ -407,28 +407,6 @@ def _client_certs_available(passphrase):
     yield
 
 
-@contextlib.contextmanager
-def _mocked_mtls_certs_helper(**get_certs_behaviour):
-  """Replaces the MtlsClientCerts class with a mock and yields its instance.
-
-  Args:
-    **get_certs_behaviour: Applied to the mocked get_certs, as return_value or
-      side_effect.
-  """
-  with (
-      mock.patch(
-          "google.adk.utils._mtls_utils.use_client_cert_effective",
-          return_value=True,
-      ),
-      mock.patch(
-          "google.adk.utils._mtls_utils.MtlsClientCerts", autospec=True
-      ) as mock_certs_class,
-  ):
-    mock_instance = mock_certs_class.return_value
-    mock_instance.get_certs.configure_mock(**get_certs_behaviour)
-    yield mock_instance
-
-
 def test_constructor_configures_mtls_base_url():
   """Verifies that constructor extracts client certs and uses the mTLS host."""
   with _client_certs_available(b"pass"):
@@ -438,12 +416,13 @@ def test_constructor_configures_mtls_base_url():
     assert (
         registry.base_url == "https://agentregistry.mtls.googleapis.com/v1alpha"
     )
-    tempdir = registry._mtls_certs._tempdir.name
-    assert registry._cert_path is not None
-    assert registry._key_path is not None
-    assert registry._cert_path.startswith(tempdir)
-    assert registry._key_path.startswith(tempdir)
-    assert registry._passphrase == b"pass"
+    certs = registry._mtls_certs
+    tempdir = certs._tempdir.name
+    assert certs.cert_path is not None
+    assert certs.key_path is not None
+    assert certs.cert_path.startswith(tempdir)
+    assert certs.key_path.startswith(tempdir)
+    assert certs.passphrase == b"pass"
   finally:
     registry.close()
 
@@ -485,7 +464,11 @@ async def test_get_skill_with_mtls():
         skill = await registry.get_skill(name="my-skill")
 
         mock_client_class.assert_called_with(
-            cert=(registry._cert_path, registry._key_path, b"pass")
+            cert=(
+                registry._mtls_certs.cert_path,
+                registry._mtls_certs.key_path,
+                b"pass",
+            )
         )
     finally:
       registry.close()
@@ -507,9 +490,9 @@ def test_constructor_with_no_client_cert_source_uses_plain_client():
   ):
     registry = gcp_skill_registry.GCPSkillRegistry()
 
-  assert registry._cert_path is None
-  assert registry._key_path is None
-  assert registry._passphrase is None
+  assert registry._mtls_certs.cert_path is None
+  assert registry._mtls_certs.key_path is None
+  assert registry._mtls_certs.passphrase is None
 
   with mock.patch("httpx.AsyncClient", autospec=True) as mock_client_class:
     registry._create_httpx_client()
@@ -523,12 +506,12 @@ def test_create_httpx_client_omits_passphrase_when_key_is_unencrypted():
     registry = gcp_skill_registry.GCPSkillRegistry()
 
   try:
-    assert registry._passphrase is None
+    assert registry._mtls_certs.passphrase is None
     with mock.patch("httpx.AsyncClient", autospec=True) as mock_client_class:
       registry._create_httpx_client()
 
     mock_client_class.assert_called_once_with(
-        cert=(registry._cert_path, registry._key_path)
+        cert=(registry._mtls_certs.cert_path, registry._mtls_certs.key_path)
     )
   finally:
     registry.close()
@@ -544,63 +527,60 @@ def test_create_httpx_client_passes_passphrase_for_encrypted_key():
       registry._create_httpx_client()
 
     mock_client_class.assert_called_once_with(
-        cert=(registry._cert_path, registry._key_path, b"s3cret")
+        cert=(
+            registry._mtls_certs.cert_path,
+            registry._mtls_certs.key_path,
+            b"s3cret",
+        )
     )
   finally:
     registry.close()
 
 
-def test_constructor_logs_warning_when_cert_extraction_fails(caplog):
-  """Verifies that a broken cert provider is reported and does not raise."""
-  cause = (
-      "Failed to extract default client certificates for mTLS: Encrypted"
-      " private key is not expected"
-  )
-  with _mocked_mtls_certs_helper(side_effect=RuntimeError(cause)) as mock_certs:
-    with caplog.at_level(
-        logging.WARNING, logger=gcp_skill_registry.logger.name
+def test_constructor_raises_when_cert_extraction_fails():
+  """Verifies that a broken cert provider fails construction, naming the cause."""
+  with (
+      mock.patch(
+          "google.adk.utils._mtls_utils.use_client_cert_effective",
+          return_value=True,
+      ),
+      mock.patch(
+          "google.auth.transport.mtls.has_default_client_cert_source",
+          return_value=True,
+      ),
+      mock.patch(
+          "google.auth.transport.mtls.default_client_encrypted_cert_source",
+          side_effect=google.auth.exceptions.MutualTLSChannelError(
+              "Encrypted private key is not expected"
+          ),
+      ),
+  ):
+    with pytest.raises(
+        RuntimeError,
+        match=(
+            "Failed to extract default client certificates for mTLS:"
+            " Encrypted private key is not expected"
+        ),
     ):
-      registry = gcp_skill_registry.GCPSkillRegistry()
-
-  warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
-  assert len(warnings) == 1
-  message = warnings[0].getMessage()
-  assert "Could not load client certificates for mTLS" in message
-  assert cause in message
-
-  mock_certs.close.assert_called_once()
-  assert registry._mtls_certs is None
-  assert registry._cert_path is None
-  assert registry._key_path is None
-  assert registry._passphrase is None
-  assert (
-      registry.base_url == "https://agentregistry.mtls.googleapis.com/v1alpha"
-  )
-
-  with mock.patch("httpx.AsyncClient", autospec=True) as mock_client_class:
-    registry._create_httpx_client()
-
-  mock_client_class.assert_called_once_with()
+      gcp_skill_registry.GCPSkillRegistry()
 
 
 def test_close_releases_certs():
-  """Verifies that close releases the helper and is safe to call twice."""
-  with _mocked_mtls_certs_helper(return_value=("c", "k", b"p")) as mock_certs:
+  """Verifies that close deletes the certificates and is safe to call twice."""
+  with _client_certs_available(b"pass"):
     registry = gcp_skill_registry.GCPSkillRegistry()
 
-  assert registry._cert_path == "c"
+  tempdir = registry._mtls_certs._tempdir.name
+  assert os.path.exists(tempdir)
 
   registry.close()
 
-  mock_certs.close.assert_called_once()
+  assert not os.path.exists(tempdir)
   assert registry._mtls_certs is None
-  assert registry._cert_path is None
-  assert registry._key_path is None
-  assert registry._passphrase is None
 
   registry.close()
 
-  mock_certs.close.assert_called_once()
+  assert registry._mtls_certs is None
 
   with mock.patch("httpx.AsyncClient", autospec=True) as mock_client_class:
     registry._create_httpx_client()
@@ -703,14 +683,15 @@ async def test_encrypted_client_key_configures_a_real_httpx_client(
   ):
     registry = gcp_skill_registry.GCPSkillRegistry()
 
-  tempdir = registry._mtls_certs._tempdir.name
+  certs = registry._mtls_certs
+  tempdir = certs._tempdir.name
   try:
     assert (
         registry.base_url == "https://agentregistry.mtls.googleapis.com/v1alpha"
     )
-    assert registry._passphrase == passphrase
+    assert certs.passphrase == passphrase
     assert (
-        pathlib.Path(registry._key_path)
+        pathlib.Path(certs.key_path)
         .read_bytes()
         .startswith(b"-----BEGIN ENCRYPTED PRIVATE KEY-----")
     )
@@ -720,7 +701,7 @@ async def test_encrypted_client_key_configures_a_real_httpx_client(
     client = registry._create_httpx_client()
     await client.aclose()
 
-    registry._passphrase = b"wrong-passphrase"
+    certs.passphrase = b"wrong-passphrase"
     with pytest.raises(ssl.SSLError):
       registry._create_httpx_client()
   finally:

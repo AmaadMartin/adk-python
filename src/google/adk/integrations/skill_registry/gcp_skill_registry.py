@@ -17,7 +17,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 from typing import Any
 from urllib.parse import quote
@@ -32,8 +31,6 @@ from google.auth.credentials import Credentials
 import google.auth.exceptions
 from google.auth.transport import requests as auth_requests
 import httpx
-
-logger = logging.getLogger("google_adk." + __name__)
 
 
 class GCPSkillRegistry(SkillRegistry):
@@ -56,30 +53,15 @@ class GCPSkillRegistry(SkillRegistry):
     self.project_id = project_id or os.environ.get("GOOGLE_CLOUD_PROJECT")
     self.location = location or os.environ.get("GOOGLE_CLOUD_LOCATION")
     # Client certificates for mTLS. MtlsClientCerts checks for a default cert
-    # source itself and returns (None, None, None) when there is none, and it
+    # source itself and leaves its paths unset when there is none, and it
     # supports passphrase-protected keys, which the endpoint's cert provider
     # may hand out.
     self._mtls_certs: _mtls_utils.MtlsClientCerts | None = None
-    self._cert_path: str | None = None
-    self._key_path: str | None = None
-    self._passphrase: bytes | None = None
     if _mtls_utils.use_client_cert_effective():
       self._mtls_certs = _mtls_utils.MtlsClientCerts()
-      try:
-        self._cert_path, self._key_path, self._passphrase = (
-            self._mtls_certs.get_certs()
-        )
-      except RuntimeError as e:
-        # A broken cert provider must not take the registry down, but it must
-        # not be invisible either: base_url still points at the mTLS host, so
-        # requests will fail later and this warning is the only clue why.
-        logger.warning(
-            "Could not load client certificates for mTLS; falling back to a"
-            " connection without a client certificate: %s",
-            e,
-        )
-        self._mtls_certs.close()
-        self._mtls_certs = None
+      # Extract now, so a broken cert provider raises here with its own
+      # message rather than surfacing later as a TLS handshake failure.
+      self._mtls_certs.get_certs()
 
     self.base_url = os.environ.get(
         "AGENT_REGISTRY_ENDPOINT",
@@ -148,24 +130,23 @@ class GCPSkillRegistry(SkillRegistry):
 
   def _create_httpx_client(self) -> httpx.AsyncClient:
     """Creates a new httpx.AsyncClient with appropriate SSL/mTLS configuration."""
-    if self._cert_path and self._key_path:
-      if self._passphrase:
-        return httpx.AsyncClient(
-            cert=(self._cert_path, self._key_path, self._passphrase)  # type: ignore[arg-type]
-        )
-      return httpx.AsyncClient(cert=(self._cert_path, self._key_path))
-    return httpx.AsyncClient()
+    certs = self._mtls_certs
+    if certs is None or not certs.cert_path or not certs.key_path:
+      return httpx.AsyncClient()
+    if certs.passphrase:
+      # httpx annotates the passphrase as str, but it reaches
+      # ssl.SSLContext.load_cert_chain(password=...), which also takes bytes.
+      # Decoding here would break a passphrase that is not valid UTF-8.
+      return httpx.AsyncClient(
+          cert=(certs.cert_path, certs.key_path, certs.passphrase)  # type: ignore[arg-type]
+      )
+    return httpx.AsyncClient(cert=(certs.cert_path, certs.key_path))
 
   def close(self) -> None:
     """Releases the mTLS client certificates held by this registry."""
     if self._mtls_certs is not None:
       self._mtls_certs.close()
       self._mtls_certs = None
-    # httpx loads the certificate chain eagerly, so a client created after
-    # close() must not be handed the now-deleted paths.
-    self._cert_path = None
-    self._key_path = None
-    self._passphrase = None
 
   async def get_skill(self, *, name: str) -> models.Skill:
     """Fetches a skill from the registry.
