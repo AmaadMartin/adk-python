@@ -88,8 +88,7 @@ class TestReflectAndRetryToolPlugin:
     """Sample tool arguments for testing."""
     return {"param1": "value1", "param2": 42, "param3": True}
 
-  @pytest.mark.asyncio
-  async def test_plugin_initialization_default(self):
+  def test_plugin_initialization_default(self):
     """Test plugin initialization with default parameters."""
     plugin = self.get_plugin()
 
@@ -97,8 +96,7 @@ class TestReflectAndRetryToolPlugin:
     assert plugin.max_retries == 3
     assert plugin.throw_exception_if_retry_exceeded is True
 
-  @pytest.mark.asyncio
-  async def test_plugin_initialization_custom(self):
+  def test_plugin_initialization_custom(self):
     """Test plugin initialization with custom parameters."""
     plugin = ReflectAndRetryToolPlugin(
         name="custom_name",
@@ -108,7 +106,7 @@ class TestReflectAndRetryToolPlugin:
 
     assert plugin.name == "custom_name"
     assert plugin.max_retries == 10
-    assert plugin.throw_exception_if_retry_exceeded is not True
+    assert plugin.throw_exception_if_retry_exceeded is False
 
   @pytest.mark.asyncio
   async def test_after_tool_callback_successful_call(self):
@@ -681,8 +679,7 @@ class TestReflectAndRetryToolPlugin:
     assert events[2].content.parts[0].function_call.name == "increase"
     assert function_called == 1
 
-  @pytest.mark.asyncio
-  async def test_negative_max_retries_rejected(self):
+  def test_negative_max_retries_rejected(self):
     """Test that a negative retry budget is rejected at construction."""
     with pytest.raises(
         ValueError, match=r"max_retries must be a non-negative integer"

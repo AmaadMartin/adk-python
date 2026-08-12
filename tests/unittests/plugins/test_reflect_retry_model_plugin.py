@@ -32,8 +32,7 @@ import pytest
 class TestReflectAndRetryModelPlugin:
   """Tests for model error handling in the ReflectAndRetryModelPlugin."""
 
-  @pytest.mark.asyncio
-  async def test_plugin_initialization_default(self):
+  def test_plugin_initialization_default(self):
     """Test plugin initialization with default parameters for model errors."""
     plugin = ReflectAndRetryModelPlugin()
 
@@ -45,8 +44,7 @@ class TestReflectAndRetryModelPlugin:
         types.FinishReason.MALFORMED_FUNCTION_CALL
     ]
 
-  @pytest.mark.asyncio
-  async def test_validate_model_errors_ensures_finish_reason_types(self):
+  def test_validate_model_errors_ensures_finish_reason_types(self):
     """Checks that input model errors must all be of type FinishReason."""
     valid_reasons = [
         types.FinishReason.MALFORMED_FUNCTION_CALL,
@@ -63,8 +61,7 @@ class TestReflectAndRetryModelPlugin:
           ]
       )
 
-  @pytest.mark.asyncio
-  async def test_adk_handle_model_error_format(self):
+  def test_adk_handle_model_error_format(self):
     """Checks the function call / response format of the tool."""
     plugin = ReflectAndRetryModelPlugin()
     result = plugin.adk_handle_model_error(
@@ -77,8 +74,7 @@ class TestReflectAndRetryModelPlugin:
     assert isinstance(result, dict)
     assert "reflection_guidance" in result
 
-  @pytest.mark.asyncio
-  async def test_check_for_model_error_uses_input_model_errors(self):
+  def test_check_for_model_error_uses_input_model_errors(self):
     """Checks that _check_for_model_error correctly identifies errors in the configured on_model_errors list."""
     plugin = ReflectAndRetryModelPlugin(
         on_model_errors=[
@@ -106,8 +102,7 @@ class TestReflectAndRetryModelPlugin:
 
     assert not plugin._check_for_model_error(llm_response=response_recitation)
 
-  @pytest.mark.asyncio
-  async def test_check_for_model_error_requires_error_code(self):
+  def test_check_for_model_error_requires_error_code(self):
     """Checks that _check_for_model_error returns False if the response has no error code, even if the finish reason matches."""
     plugin = ReflectAndRetryModelPlugin()
     response = LlmResponse(
@@ -115,8 +110,7 @@ class TestReflectAndRetryModelPlugin:
     )
     assert not plugin._check_for_model_error(llm_response=response)
 
-  @pytest.mark.asyncio
-  async def test_get_model_name_from_context_success(self):
+  def test_get_model_name_from_context_success(self):
     """Checks that _get_model_name_from_context successfully retrieves the model name from a valid callback context with an LlmAgent."""
     mock_agent = Mock(spec=LlmAgent)
     mock_agent.canonical_model = Mock()
@@ -136,8 +130,7 @@ class TestReflectAndRetryModelPlugin:
     )
     assert model_name == "TEST_MODEL_NAME"
 
-  @pytest.mark.asyncio
-  async def test_get_model_name_from_context_requires_llm_agent(self):
+  def test_get_model_name_from_context_requires_llm_agent(self):
     """Checks that _get_model_name_from_context raises ValueError if the agent in context is not an LlmAgent."""
     mock_agent = Mock(spec=BaseAgent)
 
