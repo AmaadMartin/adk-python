@@ -30,7 +30,9 @@ code fences, which docutils accepts silently and Sphinx renders as garbage.
 
 Modules are never imported, so no optional dependency has to be installed.
 
-Run it over the whole tree:
+The gate runs under pytest: `tests/unittests/scripts/test_check_docstring_markup.py`
+runs this check over `src/google/adk` in the existing unit-test job. Run it
+directly while you work on a docstring:
 
   python scripts/check_docstring_markup.py
 
@@ -54,14 +56,17 @@ import io
 import pathlib
 import re
 import sys
-from typing import Any
 
 from docutils import nodes
 from docutils.core import publish_doctree
 from docutils.parsers.rst import Directive
 from docutils.parsers.rst import directives
 from docutils.parsers.rst import roles
+from docutils.parsers.rst import states
 from docutils.utils import Reporter
+from sphinx.ext.napoleon.docstring import GoogleDocstring
+from sphinx.ext.napoleon.docstring import NumpyDocstring
+from sphinx.util.docstrings import prepare_docstring
 
 EXIT_OK = 0
 EXIT_VIOLATIONS = 1
@@ -102,20 +107,25 @@ _ALLOWLIST_HEADER = """\
 
 """
 
+# A construct belongs below only if Sphinx core provides it and a docstring
+# may reasonably contain it. Anything else stays unregistered and is reported,
+# which is what keeps `.. code-blok::` a failure.
+#
+# Two consequences worth knowing. Napoleon generates `.. attribute::` from an
+# `Attributes:` section, 202 times in this tree, so dropping that one entry
+# would flag a third of the codebase. And `todo` is deliberately absent:
+# `sphinx.ext.todo` is an optional extension, so a `.. todo::` a docstring
+# cannot be sure the docs build has loaded should be reported, not accepted.
+#
+# The object-description directives (`class`, `function`, `method`, ...) are
+# absent too. autodoc generates those around a docstring, never inside one.
+
 # Directives that carry prose. Their bodies are parsed, so broken markup
 # inside them is still reported.
 _PROSE_DIRECTIVES = (
     'attribute',
-    'class',
-    'data',
     'deprecated',
-    'exception',
-    'function',
-    'method',
-    'module',
-    'property',
     'seealso',
-    'todo',
     'versionadded',
     'versionchanged',
 )
@@ -124,12 +134,13 @@ _PROSE_DIRECTIVES = (
 _LITERAL_DIRECTIVES = (
     'code',
     'code-block',
-    'literalinclude',
     'sourcecode',
 )
 
 # Cross-reference roles. Sphinx resolves these against its own inventory; here
-# they only have to render as inline text.
+# they only have to render as inline text. All thirteen are kept even though
+# four are used today: a cross-reference is the construct a new docstring is
+# most likely to reach for, and each costs one line.
 _ROLES = (
     'attr',
     'class',
@@ -175,8 +186,15 @@ class _StandInDirective(Directive):  # type: ignore[misc]
   """Accepts a Sphinx directive that docutils alone does not know.
 
   docutils ships no type information, so mypy sees `Directive` as `Any` and
-  strict mode rejects the subclass. There is no way to register a directive
-  without subclassing, so the base class is ignored here and nowhere else.
+  strict mode rejects the subclass. A directive cannot be registered without
+  subclassing, so the base class is ignored here and nowhere else.
+
+  Installing `types-docutils` removes this one ignore and adds two: its
+  `_RoleFn` alias says a role returns `Sequence[reference]`, which contradicts
+  docutils itself -- `roles.GenericRole.__call__` returns whatever node class
+  it was built with, and `generic_custom_role` returns `nodes.inline`. Taking
+  the stubs would mean returning link nodes for every cross-reference, so the
+  single ignore below is the smaller defect.
   """
 
   has_content = True
@@ -224,8 +242,8 @@ def _literal_role(
     rawtext: str,
     text: str,
     lineno: int,
-    inliner: Any,
-    options: Mapping[str, Any] | None = None,
+    inliner: states.Inliner,
+    options: Mapping[str, object] | None = None,
     content: Sequence[str] | None = None,
 ) -> tuple[list[nodes.Node], list[nodes.system_message]]:
   """Stands in for a Sphinx cross-reference role."""
@@ -362,24 +380,7 @@ def docstring_to_rst(docstring: str) -> str:
 
   Returns:
     The reStructuredText that Sphinx would hand to docutils.
-
-  Raises:
-    HarnessError: Sphinx is not installed.
   """
-  # Imported here rather than at module level so that this module still
-  # imports without sphinx. That is what lets a missing sphinx exit as a
-  # harness failure naming the extra to install, instead of dying with a
-  # traceback before `main` runs.
-  try:
-    from sphinx.ext.napoleon.docstring import GoogleDocstring
-    from sphinx.ext.napoleon.docstring import NumpyDocstring
-    from sphinx.util.docstrings import prepare_docstring
-  except ImportError as err:
-    raise HarnessError(
-        'sphinx is required to check docstring markup; install it with'
-        ' `uv sync --extra test`.'
-    ) from err
-
   lines: list[str] = prepare_docstring(docstring)
   lines = NumpyDocstring(lines).lines()
   lines = GoogleDocstring(lines).lines()
@@ -394,9 +395,6 @@ def check_docstring(docstring: str) -> list[str]:
 
   Returns:
     Single-line problem descriptions. Empty when the docstring is clean.
-
-  Raises:
-    HarnessError: Sphinx is not installed.
   """
   messages: list[str] = []
   if _FENCE_RE.search(docstring):
@@ -406,7 +404,6 @@ def check_docstring(docstring: str) -> list[str]:
   doctree = publish_doctree(
       rst,
       settings_overrides={
-          'report_level': Reporter.INFO_LEVEL,
           # Above SEVERE, so docutils reports every problem as a node instead
           # of raising and ending the scan at the first bad docstring.
           'halt_level': Reporter.SEVERE_LEVEL + 1,
@@ -415,7 +412,6 @@ def check_docstring(docstring: str) -> list[str]:
           # A docstring must never make this check read a file.
           'file_insertion_enabled': False,
           'raw_enabled': False,
-          'docutils_source_link': False,
       },
   )
   for message in doctree.findall(nodes.system_message):
@@ -440,7 +436,6 @@ def check_source(source: str, path: str) -> list[Violation]:
 
   Raises:
     SyntaxError: The source does not parse.
-    HarnessError: Sphinx is not installed.
   """
   violations: list[Violation] = []
   for symbol, lineno, docstring in iter_docstrings(source):
@@ -470,15 +465,11 @@ def display_path(path: pathlib.Path) -> str:
   return str(path)
 
 
-def check_tree(
-    root: pathlib.Path, base: pathlib.Path | None = None
-) -> list[Violation]:
+def check_tree(root: pathlib.Path) -> list[Violation]:
   """Returns every markup violation under a directory.
 
   Args:
     root: Directory to walk. Every `*.py` file below it is checked.
-    base: Directory the reported paths are made relative to. Defaults to
-      `report_base(root)`.
 
   Returns:
     The violations, ordered by path then source order.
@@ -487,7 +478,7 @@ def check_tree(
     HarnessError: A file could not be read or parsed. A check that silently
       skipped part of its input must not read as a pass.
   """
-  base = report_base(root) if base is None else base
+  base = report_base(root)
   violations: list[Violation] = []
   for path in sorted(root.rglob('*.py')):
     relative = path.relative_to(base).as_posix()

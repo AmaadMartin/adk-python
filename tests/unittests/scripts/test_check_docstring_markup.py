@@ -310,6 +310,39 @@ def test_accepts_the_attribute_directive_napoleon_emits() -> None:
   assert checker.check_docstring(docstring) == []
 
 
+def test_a_code_block_is_handled_by_the_stand_in_not_by_docutils() -> None:
+  # The fence message sends contributors to `.. code-block::`. docutils aliases
+  # that name to its own `code` directive, which runs Pygments and rejects any
+  # lexer it does not know, while Sphinx accepts it. The stand-in keeps a lexer
+  # name from being reported as a markup error.
+  assert '.. code-block::' in checker._FENCE_MESSAGE
+  docstring = 'Doc.\n\n.. code-block:: notalanguage\n\n   x = 1\n'
+  assert checker.check_docstring(docstring) == []
+
+
+@pytest.mark.parametrize(
+    ('docstring', 'message'),
+    [
+        pytest.param(
+            'Doc.\n\n.. include:: /etc/passwd\n',
+            '"include" directive disabled.',
+            id='include',
+        ),
+        pytest.param(
+            'Doc.\n\n.. raw:: html\n\n   <b>x</b>\n',
+            '"raw" directive disabled.',
+            id='raw',
+        ),
+    ],
+)
+def test_a_docstring_cannot_make_the_check_read_a_file(
+    docstring: str, message: str
+) -> None:
+  # `file_insertion_enabled` and `raw_enabled` are off, so a hostile docstring
+  # is reported rather than obeyed.
+  assert checker.check_docstring(docstring) == [message]
+
+
 def test_a_code_block_body_is_not_parsed_as_prose() -> None:
   # `x = a ** b` is invalid inline markup but perfectly good Python.
   docstring = 'Doc.\n\n.. code-block:: python\n\n   x = a ** b\n   s = "``"\n'
@@ -317,8 +350,11 @@ def test_a_code_block_body_is_not_parsed_as_prose() -> None:
 
 
 def test_informational_messages_are_not_reported() -> None:
-  # An unreferenced hyperlink target is level 1, which is noise here.
-  assert checker.check_docstring('Doc.\n\n.. _target:\n\nText.\n') == []
+  # Looking the misspelled name up emits a level 1 note as well as the level 3
+  # error. Only the error is a violation.
+  messages = checker.check_docstring('Doc.\n\n.. code-blok:: python\n\n   x\n')
+  assert not [m for m in messages if 'as canonical directive name' in m]
+  assert len(messages) == 1
 
 
 def test_docstring_to_rst_applies_the_napoleon_transformation() -> None:
@@ -398,16 +434,6 @@ def test_docstring_to_rst_matches_what_sphinx_hands_to_docutils(
   # style, and the two orders indent the blank line inside the generated
   # `.. note::` differently.
   assert checker.docstring_to_rst(docstring) == napoleon_transform(docstring)
-
-
-def test_docstring_to_rst_reports_a_missing_sphinx_as_a_harness_failure(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-  # A None entry in sys.modules makes the import raise, which is how Python
-  # models "this module is not available".
-  monkeypatch.setitem(sys.modules, 'sphinx.ext.napoleon.docstring', None)
-  with pytest.raises(checker.HarnessError, match='uv sync --extra test'):
-    checker.docstring_to_rst('Doc.')
 
 
 # --- plumbing ---------------------------------------------------------------
@@ -504,12 +530,6 @@ def test_check_tree_reports_an_unparsable_file_as_a_harness_failure(
   _write(tmp_path / 'broken.py', 'def (:\n')
   with pytest.raises(checker.HarnessError, match='cannot parse'):
     checker.check_tree(tmp_path)
-
-
-def test_check_tree_honours_an_explicit_base(tmp_path: pathlib.Path) -> None:
-  _write(tmp_path / 'pkg' / 'mod.py', f'"""{_BROKEN_DOCSTRING}"""\n')
-  violations = checker.check_tree(tmp_path / 'pkg', base=tmp_path)
-  assert [violation.path for violation in violations] == ['pkg/mod.py']
 
 
 # --- command line -----------------------------------------------------------
@@ -625,7 +645,7 @@ def test_main_reports_a_missing_allowlist_as_a_harness_failure(
 
 
 def test_main_defaults_to_the_adk_tree_and_the_checked_in_allowlist() -> None:
-  # No arguments: this is the invocation CI and contributors run.
+  # No arguments: the invocation a contributor runs while fixing a docstring.
   assert checker.main([]) == checker.EXIT_OK
 
 
