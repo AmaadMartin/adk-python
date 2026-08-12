@@ -14,10 +14,8 @@
 
 name: Continuous Integration
 
-# Keep both `paths` lists in sync. `constraints-*.txt` and the config schema
-# directory are here for the agent-config-schema job: without them a pull
-# request that only refreshes the pins, or that only hand-edits the generated
-# schema, runs no check at all.
+# Both `paths` lists must stay in sync. The constraints and config_schemas
+# globs exist for the agent-config-schema job.
 on:
   push:
     branches: [main, v1]
@@ -229,10 +227,6 @@ jobs:
   # Do not replace this with `uv sync`: uv sync takes no --constraint, so the
   # dependency versions would float and the job would fail on unrelated pull
   # requests whenever google-genai publishes.
-  #
-  # A constraints refresh that moves google-genai therefore fails this job
-  # until the schema is regenerated in the same pull request. That coupling is
-  # deliberate: it turns silent drift into one deliberate step.
   agent-config-schema:
     name: Agent Config Schema
     runs-on: ubuntu-latest
@@ -268,12 +262,5 @@ jobs:
 
       - name: Check the committed schema is up to date
         run: |
-          if ! git diff --exit-code \
-              -- src/google/adk/agents/config_schemas/AgentConfig.json; then
-            echo '::error::AgentConfig.json is out of date. Regenerate it with the commands below and commit the result.'
-            echo '  uv venv .venv --python 3.14'
-            echo '  uv pip install --python .venv/bin/python -r pyproject.toml --all-extras -c constraints-3.14.txt'
-            echo '  uv pip install --python .venv/bin/python -e . --no-deps'
-            echo '  .venv/bin/python scripts/generate_agent_config_schema.py'
-            exit 1
-          fi
+          git diff --exit-code -- src/google/adk/agents/config_schemas/AgentConfig.json \
+            || { echo '::error::AgentConfig.json is out of date. Re-run the two install steps and the generator step above, then commit the result.'; exit 1; }
