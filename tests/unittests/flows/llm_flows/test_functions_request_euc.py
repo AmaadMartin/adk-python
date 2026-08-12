@@ -630,3 +630,108 @@ def test_function_get_auth_response_partial():
   assert parts[0].function_response.response == {'result': 1}
   assert parts[1].function_response.name == 'call_external_api2'
   assert parts[1].function_response.response == {'result': 2}
+
+
+def test_function_get_auth_response_ignores_client_supplied_client_secret():
+  id_1 = 'id_1'
+  responses = [
+      [
+          function_call(id_1, 'call_external_api1', {}),
+      ],
+      [
+          types.Part.from_text(text='response1'),
+      ],
+      [
+          types.Part.from_text(text='response2'),
+      ],
+  ]
+
+  mock_model = testing_utils.MockModel.create(responses=responses)
+  credentials_seen: list[AuthCredential] = []
+
+  auth_config1 = AuthConfig(
+      auth_scheme=OAuth2(
+          flows=OAuthFlows(
+              authorizationCode=OAuthFlowAuthorizationCode(
+                  authorizationUrl='https://accounts.google.com/o/oauth2/auth',
+                  tokenUrl='https://oauth2.googleapis.com/token',
+                  scopes={
+                      'https://www.googleapis.com/auth/calendar': (
+                          'See, edit, share, and permanently delete all the'
+                          ' calendars you can access using Google Calendar'
+                      )
+                  },
+              )
+          )
+      ),
+      raw_auth_credential=AuthCredential(
+          auth_type=AuthCredentialTypes.OAUTH2,
+          oauth2=OAuth2Auth(
+              client_id='oauth_client_id_1',
+              client_secret='oauth_client_secret1',
+          ),
+      ),
+  )
+
+  # The client answers the credential request with its own client credentials.
+  auth_response1 = AuthConfig(
+      auth_scheme=OAuth2(
+          flows=OAuthFlows(
+              authorizationCode=OAuthFlowAuthorizationCode(
+                  authorizationUrl='https://attacker.example/auth',
+                  tokenUrl='https://attacker.example/token',
+                  scopes={'read': 'Read access'},
+              )
+          )
+      ),
+      raw_auth_credential=AuthCredential(
+          auth_type=AuthCredentialTypes.OAUTH2,
+          oauth2=OAuth2Auth(
+              client_id='attacker_client_id',
+              client_secret='attacker_client_secret',
+          ),
+      ),
+      exchanged_auth_credential=AuthCredential(
+          auth_type=AuthCredentialTypes.OAUTH2,
+          oauth2=OAuth2Auth(
+              client_id='attacker_client_id',
+              client_secret='attacker_client_secret',
+              access_token='token1',
+          ),
+      ),
+  )
+
+  def call_external_api1(tool_context: ToolContext) -> int:
+    auth_response = tool_context.get_auth_response(auth_config1)
+    if not auth_response:
+      tool_context.request_credential(auth_config1)
+      return
+    credentials_seen.append(auth_response)
+    return 1
+
+  agent = Agent(
+      name='root_agent',
+      model=mock_model,
+      tools=[call_external_api1],
+  )
+  runner = testing_utils.InMemoryRunner(agent)
+  runner.run('test')
+  request_euc_function_call_event = runner.session.events[-2]
+  function_response1 = types.FunctionResponse(
+      name=request_euc_function_call_event.content.parts[0].function_call.name,
+      response=auth_response1.model_dump(),
+  )
+  function_response1.id = request_euc_function_call_event.content.parts[
+      0
+  ].function_call.id
+  runner.run(
+      new_message=types.Content(
+          role='user',
+          parts=[types.Part(function_response=function_response1)],
+      ),
+  )
+
+  assert len(credentials_seen) == 1
+  assert credentials_seen[0].oauth2.client_id == 'oauth_client_id_1'
+  assert credentials_seen[0].oauth2.client_secret == 'oauth_client_secret1'
+  assert credentials_seen[0].oauth2.access_token == 'token1'
