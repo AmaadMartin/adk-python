@@ -14,20 +14,29 @@
 
 name: Continuous Integration
 
+# Keep both `paths` lists identical. The constraints files are published
+# artifacts that users install with `pip install -c`, and the Pre-commit Linter
+# job holds the only check that they are still reproducible from
+# pyproject.toml, so a change to them or to their generator under scripts/ has
+# to run this workflow.
 on:
   push:
     branches: [main, v1]
     paths:
       - '**.py'
       - '.pre-commit-config.yaml'
+      - 'constraints-*.txt'
       - 'pyproject.toml'
+      - 'scripts/**'
       - 'tests/**'
   pull_request:
     branches: [main, v1]
     paths:
       - '**.py'
       - '.pre-commit-config.yaml'
+      - 'constraints-*.txt'
       - 'pyproject.toml'
+      - 'scripts/**'
       - 'tests/**'
 
 permissions:
