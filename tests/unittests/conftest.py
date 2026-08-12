@@ -23,6 +23,8 @@ from pytest import FixtureRequest
 from pytest import hookimpl
 from pytest import Metafunc
 
+from ..parametrize_utils import is_explicitly_marked
+
 _ENV_VARS = {
     'GOOGLE_API_KEY': 'fake_google_api_key',
     'GOOGLE_CLOUD_PROJECT': 'fake_google_cloud_project',
@@ -94,22 +96,7 @@ def pytest_sessionfinish(session):
 def pytest_generate_tests(metafunc: Metafunc):
   """Generate test cases for each environment setup."""
   if env_variables.__name__ in metafunc.fixturenames:
-    if not _is_explicitly_marked(env_variables.__name__, metafunc):
+    if not is_explicitly_marked(env_variables.__name__, metafunc):
       metafunc.parametrize(
           env_variables.__name__, ENV_SETUPS.keys(), indirect=True
       )
-
-
-def _is_explicitly_marked(mark_name: str, metafunc: Metafunc) -> bool:
-  """Reports whether the test already parametrizes `mark_name` itself.
-
-  `metafunc.definition.iter_markers` walks the test function, its class and its
-  module, so a mark applied to the enclosing class counts; the function's own
-  `pytestmark` list does not carry class-level marks.
-  """
-  for mark in metafunc.definition.iter_markers('parametrize'):
-    # A mark written as parametrize(argnames=..., argvalues=...) has no
-    # positional args.
-    if mark.args and mark.args[0] == mark_name:
-      return True
-  return False

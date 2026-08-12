@@ -61,10 +61,58 @@ def test_mark_for_another_argument_does_not_suppress_auto_parametrization(
   )
 
 
+@pytest.mark.parametrize('env_variables_extra', [1])
+def test_mark_naming_a_superstring_argument_still_auto_parametrizes(
+    env_variables, env_variables_extra, request
+):
+  assert request.node.callspec.params['env_variables'] in (
+      'GOOGLE_AI',
+      'VERTEX',
+  )
+
+
+@pytest.mark.parametrize('unrelated_a,unrelated_b', [(1, 2)])
+def test_comma_joined_mark_for_other_arguments_still_auto_parametrizes(
+    env_variables, unrelated_a, unrelated_b, request
+):
+  assert request.node.callspec.params['env_variables'] in (
+      'GOOGLE_AI',
+      'VERTEX',
+  )
+
+
 @pytest.mark.parametrize('env_variables', ['GOOGLE_AI'], indirect=True)
 def test_function_level_mark_still_wins(env_variables, request):
   assert request.node.callspec.params == {'env_variables': 'GOOGLE_AI'}
   assert os.environ['GOOGLE_GENAI_USE_ENTERPRISE'] == '0'
+
+
+@pytest.mark.parametrize(
+    argnames='env_variables', argvalues=['VERTEX'], indirect=True
+)
+def test_keyword_form_mark_is_honoured(env_variables, request):
+  assert request.node.callspec.params == {'env_variables': 'VERTEX'}
+  assert os.environ['GOOGLE_GENAI_USE_ENTERPRISE'] == '1'
+
+
+@pytest.mark.parametrize(
+    'other, env_variables', [(1, 'VERTEX')], indirect=['env_variables']
+)
+def test_comma_joined_mark_is_honoured(other, env_variables, request):
+  assert request.node.callspec.params == {'other': 1, 'env_variables': 'VERTEX'}
+  assert os.environ['GOOGLE_GENAI_USE_ENTERPRISE'] == '1'
+
+
+@pytest.mark.parametrize('env_variables,', [('VERTEX',)], indirect=True)
+def test_trailing_comma_mark_is_honoured(env_variables, request):
+  assert request.node.callspec.params == {'env_variables': 'VERTEX'}
+  assert os.environ['GOOGLE_GENAI_USE_ENTERPRISE'] == '1'
+
+
+@pytest.mark.parametrize(['env_variables'], [('VERTEX',)], indirect=True)
+def test_sequence_form_mark_is_honoured(env_variables, request):
+  assert request.node.callspec.params == {'env_variables': 'VERTEX'}
+  assert os.environ['GOOGLE_GENAI_USE_ENTERPRISE'] == '1'
 
 
 def test_unmarked_test_is_auto_parametrized(env_variables, request):
