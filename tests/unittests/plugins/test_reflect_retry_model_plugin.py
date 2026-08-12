@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from unittest import IsolatedAsyncioTestCase
 from unittest.mock import Mock
 
 from google.adk.agents.base_agent import BaseAgent
@@ -27,24 +26,26 @@ from google.adk.plugins._reflect_retry_model_plugin import RESERVED_TOOL_CALL_ER
 from google.adk.plugins._reflect_retry_model_plugin import TrackingScope
 from google.adk.tools.function_tool import FunctionTool
 from google.genai import types
+import pytest
 
 
-class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
+class TestReflectAndRetryModelPlugin:
   """Tests for model error handling in the ReflectAndRetryModelPlugin."""
 
+  @pytest.mark.asyncio
   async def test_plugin_initialization_default(self):
     """Test plugin initialization with default parameters for model errors."""
     plugin = ReflectAndRetryModelPlugin()
 
-    self.assertEqual(plugin.name, "reflect_retry_model_plugin")
-    self.assertEqual(plugin.max_retries, 3)
-    self.assertIs(plugin.throw_exception_if_retry_exceeded, True)
-    self.assertEqual(plugin.scope, TrackingScope.INVOCATION)
-    self.assertEqual(
-        plugin.on_model_errors,
-        [types.FinishReason.MALFORMED_FUNCTION_CALL],
-    )
+    assert plugin.name == "reflect_retry_model_plugin"
+    assert plugin.max_retries == 3
+    assert plugin.throw_exception_if_retry_exceeded is True
+    assert plugin.scope == TrackingScope.INVOCATION
+    assert plugin.on_model_errors == [
+        types.FinishReason.MALFORMED_FUNCTION_CALL
+    ]
 
+  @pytest.mark.asyncio
   async def test_validate_model_errors_ensures_finish_reason_types(self):
     """Checks that input model errors must all be of type FinishReason."""
     valid_reasons = [
@@ -52,9 +53,9 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
         types.FinishReason.SAFETY,
     ]
     plugin = ReflectAndRetryModelPlugin(on_model_errors=valid_reasons)
-    self.assertEqual(plugin.on_model_errors, valid_reasons)
+    assert plugin.on_model_errors == valid_reasons
 
-    with self.assertRaises(ValueError):
+    with pytest.raises(ValueError, match=r"model_error must be a FinishReason"):
       ReflectAndRetryModelPlugin(
           on_model_errors=[
               types.FinishReason.MALFORMED_FUNCTION_CALL,
@@ -62,6 +63,7 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
           ]
       )
 
+  @pytest.mark.asyncio
   async def test_adk_handle_model_error_format(self):
     """Checks the function call / response format of the tool."""
     plugin = ReflectAndRetryModelPlugin()
@@ -72,9 +74,10 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
         finish_reason=types.FinishReason.MALFORMED_FUNCTION_CALL,
         retry_count=1,
     )
-    self.assertIsInstance(result, dict)
-    self.assertIn("reflection_guidance", result)
+    assert isinstance(result, dict)
+    assert "reflection_guidance" in result
 
+  @pytest.mark.asyncio
   async def test_check_for_model_error_uses_input_model_errors(self):
     """Checks that _check_for_model_error correctly identifies errors in the configured on_model_errors list."""
     plugin = ReflectAndRetryModelPlugin(
@@ -93,28 +96,26 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
         finish_reason=types.FinishReason.MALFORMED_FUNCTION_CALL,
     )
 
-    self.assertTrue(plugin._check_for_model_error(llm_response=response_safety))
-    self.assertTrue(
-        plugin._check_for_model_error(llm_response=response_malformed)
-    )
+    assert plugin._check_for_model_error(llm_response=response_safety)
+    assert plugin._check_for_model_error(llm_response=response_malformed)
 
     response_recitation = LlmResponse(
         error_code=types.FinishReason.RECITATION,
         finish_reason=types.FinishReason.RECITATION,
     )
 
-    self.assertFalse(
-        plugin._check_for_model_error(llm_response=response_recitation)
-    )
+    assert not plugin._check_for_model_error(llm_response=response_recitation)
 
+  @pytest.mark.asyncio
   async def test_check_for_model_error_requires_error_code(self):
     """Checks that _check_for_model_error returns False if the response has no error code, even if the finish reason matches."""
     plugin = ReflectAndRetryModelPlugin()
     response = LlmResponse(
         finish_reason=types.FinishReason.MALFORMED_FUNCTION_CALL,
     )
-    self.assertFalse(plugin._check_for_model_error(llm_response=response))
+    assert not plugin._check_for_model_error(llm_response=response)
 
+  @pytest.mark.asyncio
   async def test_get_model_name_from_context_success(self):
     """Checks that _get_model_name_from_context successfully retrieves the model name from a valid callback context with an LlmAgent."""
     mock_agent = Mock(spec=LlmAgent)
@@ -133,8 +134,9 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
     model_name = plugin._get_model_name_from_context(
         callback_context=mock_callback_context
     )
-    self.assertEqual(model_name, "TEST_MODEL_NAME")
+    assert model_name == "TEST_MODEL_NAME"
 
+  @pytest.mark.asyncio
   async def test_get_model_name_from_context_requires_llm_agent(self):
     """Checks that _get_model_name_from_context raises ValueError if the agent in context is not an LlmAgent."""
     mock_agent = Mock(spec=BaseAgent)
@@ -148,11 +150,12 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
     )
 
     plugin = ReflectAndRetryModelPlugin()
-    with self.assertRaises(ValueError):
+    with pytest.raises(ValueError, match=r"Agent model not found"):
       plugin._get_model_name_from_context(
           callback_context=mock_callback_context
       )
 
+  @pytest.mark.asyncio
   async def test_before_model_callback_adds_reflect_tool_to_llm_request(self):
     """Checks that before_model_callback adds adk_handle_model_error to llm_request.tools_dict."""
     mock_callback_context = Mock(spec=CallbackContext)
@@ -164,16 +167,17 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
         llm_request=llm_request,
     )
 
-    self.assertIsNone(response)
-    self.assertIn(
-        ReflectAndRetryModelPlugin.adk_handle_model_error.__name__,
-        llm_request.tools_dict,
+    assert response is None
+    assert (
+        ReflectAndRetryModelPlugin.adk_handle_model_error.__name__
+        in llm_request.tools_dict
     )
     tool = llm_request.tools_dict[
         ReflectAndRetryModelPlugin.adk_handle_model_error.__name__
     ]
-    self.assertIsInstance(tool, FunctionTool)
+    assert isinstance(tool, FunctionTool)
 
+  @pytest.mark.asyncio
   async def test_after_model_callback_retries_on_malformed_call(self):
     """Test that a retry tool call is returned on a malformed function call"""
     mock_agent = Mock(spec=LlmAgent)
@@ -204,21 +208,22 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
         llm_response=llm_response,
     )
 
-    self.assertIsNotNone(response)
-    self.assertIsNone(response.error_code)
-    self.assertIsNotNone(response.content)
-    self.assertEqual(len(response.content.parts), 1)
+    assert response is not None
+    assert response.error_code is None
+    assert response.content is not None
+    assert len(response.content.parts) == 1
     part = response.content.parts[0]
-    self.assertIsNotNone(part.function_call)
-    self.assertEqual(
-        part.function_call.name,
-        ReflectAndRetryModelPlugin.adk_handle_model_error.__name__,
+    assert part.function_call is not None
+    assert (
+        part.function_call.name
+        == ReflectAndRetryModelPlugin.adk_handle_model_error.__name__
     )
-    self.assertEqual(
-        part.function_call.args["finish_reason"],
-        types.FinishReason.MALFORMED_FUNCTION_CALL.value,
+    assert (
+        part.function_call.args["finish_reason"]
+        == types.FinishReason.MALFORMED_FUNCTION_CALL.value
     )
 
+  @pytest.mark.asyncio
   async def test_after_model_callback_can_perform_multiple_retries(self):
     """Checks that after_model_callback increments the retry count for consecutive model errors."""
     mock_agent = Mock(spec=LlmAgent)
@@ -246,26 +251,21 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
         callback_context=mock_callback_context,
         llm_response=llm_response,
     )
-    self.assertEqual(
-        response1.content.parts[0].function_call.args["retry_count"], 1
-    )
+    assert response1.content.parts[0].function_call.args["retry_count"] == 1
 
     response2 = await plugin.after_model_callback(
         callback_context=mock_callback_context,
         llm_response=llm_response,
     )
-    self.assertEqual(
-        response2.content.parts[0].function_call.args["retry_count"], 2
-    )
+    assert response2.content.parts[0].function_call.args["retry_count"] == 2
 
     response3 = await plugin.after_model_callback(
         callback_context=mock_callback_context,
         llm_response=llm_response,
     )
-    self.assertEqual(
-        response3.content.parts[0].function_call.args["retry_count"], 3
-    )
+    assert response3.content.parts[0].function_call.args["retry_count"] == 3
 
+  @pytest.mark.asyncio
   async def test_after_model_callback_returns_response_when_retry_limit_reached(
       self,
   ):
@@ -297,16 +297,17 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
         callback_context=mock_callback_context,
         llm_response=llm_response,
     )
-    self.assertIsNotNone(response1)
+    assert response1 is not None
 
     response2 = await plugin.after_model_callback(
         callback_context=mock_callback_context,
         llm_response=llm_response,
     )
-    self.assertEqual(response2.error_code, llm_response.error_code)
-    self.assertEqual(response2.error_message, llm_response.error_message)
-    self.assertEqual(response2.finish_reason, llm_response.finish_reason)
+    assert response2.error_code == llm_response.error_code
+    assert response2.error_message == llm_response.error_message
+    assert response2.finish_reason == llm_response.finish_reason
 
+  @pytest.mark.asyncio
   async def test_after_model_callback_throws_when_retry_limit_reached(self):
     """Checks that after_model_callback raises an Exception when retry limit is reached and throw_exception_if_retry_exceeded is True."""
     mock_agent = Mock(spec=LlmAgent)
@@ -336,14 +337,19 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
         callback_context=mock_callback_context,
         llm_response=llm_response,
     )
-    self.assertIsNotNone(response1)
+    assert response1 is not None
 
-    with self.assertRaises(RuntimeError):
+    with pytest.raises(
+        RuntimeError,
+        match=r"failed consecutively 1 times and the retry limit has been"
+        r" exceeded",
+    ):
       await plugin.after_model_callback(
           callback_context=mock_callback_context,
           llm_response=llm_response,
       )
 
+  @pytest.mark.asyncio
   async def test_after_model_callback_resets_retry_limit_upon_success(self):
     """Checks that a successful model response resets the failure counter for the model."""
     mock_agent = Mock(spec=LlmAgent)
@@ -372,32 +378,27 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
         callback_context=mock_callback_context,
         llm_response=llm_response_error,
     )
-    self.assertEqual(
-        response1.content.parts[0].function_call.args["retry_count"], 1
-    )
+    assert response1.content.parts[0].function_call.args["retry_count"] == 1
 
     response2 = await plugin.after_model_callback(
         callback_context=mock_callback_context,
         llm_response=llm_response_error,
     )
-    self.assertEqual(
-        response2.content.parts[0].function_call.args["retry_count"], 2
-    )
+    assert response2.content.parts[0].function_call.args["retry_count"] == 2
 
     response_success = await plugin.after_model_callback(
         callback_context=mock_callback_context,
         llm_response=llm_response_success,
     )
-    self.assertIsNone(response_success)
+    assert response_success is None
 
     response2 = await plugin.after_model_callback(
         callback_context=mock_callback_context,
         llm_response=llm_response_error,
     )
-    self.assertEqual(
-        response2.content.parts[0].function_call.args["retry_count"], 1
-    )
+    assert response2.content.parts[0].function_call.args["retry_count"] == 1
 
+  @pytest.mark.asyncio
   async def test_after_model_callback_intercepts_reserved_tool_call(self):
     """Checks that after_model_callback intercepts direct calls to reserved tool."""
     mock_agent = Mock(spec=LlmAgent)
@@ -443,20 +444,19 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
         llm_response=llm_response,
     )
 
-    self.assertIsNotNone(response)
-    self.assertEqual(
-        response.content.parts[0].function_call.name,
-        ReflectAndRetryModelPlugin.adk_handle_model_error.__name__,
+    assert response is not None
+    assert (
+        response.content.parts[0].function_call.name
+        == ReflectAndRetryModelPlugin.adk_handle_model_error.__name__
     )
     # Check that the arguments were overwritten by the plugin
-    self.assertEqual(
-        response.content.parts[0].function_call.args["error_type"],
-        RESERVED_TOOL_CALL_ERROR_TYPE,
+    assert (
+        response.content.parts[0].function_call.args["error_type"]
+        == RESERVED_TOOL_CALL_ERROR_TYPE
     )
-    self.assertEqual(
-        response.content.parts[0].function_call.args["retry_count"], 1
-    )
+    assert response.content.parts[0].function_call.args["retry_count"] == 1
 
+  @pytest.mark.asyncio
   async def test_after_model_callback_returns_error_response_when_reserved_tool_call_limit_reached(
       self,
   ):
@@ -506,10 +506,10 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
         callback_context=mock_callback_context,
         llm_response=llm_response,
     )
-    self.assertIsNotNone(response1)
-    self.assertEqual(
-        response1.content.parts[0].function_call.name,
-        ReflectAndRetryModelPlugin.adk_handle_model_error.__name__,
+    assert response1 is not None
+    assert (
+        response1.content.parts[0].function_call.name
+        == ReflectAndRetryModelPlugin.adk_handle_model_error.__name__
     )
 
     # Second call (2nd failure) -> limit exceeded -> should return error response (no tool call)
@@ -517,10 +517,11 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
         callback_context=mock_callback_context,
         llm_response=llm_response,
     )
-    self.assertIsNotNone(response2)
-    self.assertEqual(response2.error_code, RESERVED_TOOL_CALL_ERROR_TYPE)
-    self.assertIsNone(response2.content)
+    assert response2 is not None
+    assert response2.error_code == RESERVED_TOOL_CALL_ERROR_TYPE
+    assert response2.content is None
 
+  @pytest.mark.asyncio
   async def test_different_models_have_separate_retry_counters(self):
     """Checks that different models maintain separate retry counters within the same invocation."""
     mock_agent_gemini = Mock(spec=LlmAgent)
@@ -554,26 +555,21 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
     resp_gemini_1 = await plugin.after_model_callback(
         callback_context=mock_ctx_gemini, llm_response=llm_response
     )
-    self.assertEqual(
-        resp_gemini_1.content.parts[0].function_call.args["retry_count"], 1
-    )
+    assert resp_gemini_1.content.parts[0].function_call.args["retry_count"] == 1
 
     # First failure on Claude -> count should start fresh at 1 (separate model counter!)
     resp_claude_1 = await plugin.after_model_callback(
         callback_context=mock_ctx_claude, llm_response=llm_response
     )
-    self.assertEqual(
-        resp_claude_1.content.parts[0].function_call.args["retry_count"], 1
-    )
+    assert resp_claude_1.content.parts[0].function_call.args["retry_count"] == 1
 
     # Second failure on Gemini -> count increments to 2 for Gemini
     resp_gemini_2 = await plugin.after_model_callback(
         callback_context=mock_ctx_gemini, llm_response=llm_response
     )
-    self.assertEqual(
-        resp_gemini_2.content.parts[0].function_call.args["retry_count"], 2
-    )
+    assert resp_gemini_2.content.parts[0].function_call.args["retry_count"] == 2
 
+  @pytest.mark.asyncio
   async def test_invocation_tracking_scope_for_models(self):
     """Checks that TrackingScope.INVOCATION isolates failure counts between different invocations for models."""
     mock_agent = Mock(spec=LlmAgent)
@@ -608,26 +604,21 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
     resp1 = await plugin.after_model_callback(
         callback_context=mock_ctx_1, llm_response=llm_response
     )
-    self.assertEqual(
-        resp1.content.parts[0].function_call.args["retry_count"], 1
-    )
+    assert resp1.content.parts[0].function_call.args["retry_count"] == 1
 
     # First failure on invocation 2 -> count is ALSO 1 (isolated scope)
     resp2 = await plugin.after_model_callback(
         callback_context=mock_ctx_2, llm_response=llm_response
     )
-    self.assertEqual(
-        resp2.content.parts[0].function_call.args["retry_count"], 1
-    )
+    assert resp2.content.parts[0].function_call.args["retry_count"] == 1
 
     # Second failure on invocation 1 -> increments invocation 1's counter to 2
     resp3 = await plugin.after_model_callback(
         callback_context=mock_ctx_1, llm_response=llm_response
     )
-    self.assertEqual(
-        resp3.content.parts[0].function_call.args["retry_count"], 2
-    )
+    assert resp3.content.parts[0].function_call.args["retry_count"] == 2
 
+  @pytest.mark.asyncio
   async def test_global_tracking_scope_for_models(self):
     """Checks that TrackingScope.GLOBAL shares failure counts across different invocations for models."""
     mock_agent = Mock(spec=LlmAgent)
@@ -662,14 +653,10 @@ class TestReflectAndRetryModelPlugin(IsolatedAsyncioTestCase):
     resp1 = await plugin.after_model_callback(
         callback_context=mock_ctx_1, llm_response=llm_response
     )
-    self.assertEqual(
-        resp1.content.parts[0].function_call.args["retry_count"], 1
-    )
+    assert resp1.content.parts[0].function_call.args["retry_count"] == 1
 
     # Second failure on invocation 2 should increment to 2 (shared global scope)
     resp2 = await plugin.after_model_callback(
         callback_context=mock_ctx_2, llm_response=llm_response
     )
-    self.assertEqual(
-        resp2.content.parts[0].function_call.args["retry_count"], 2
-    )
+    assert resp2.content.parts[0].function_call.args["retry_count"] == 2
