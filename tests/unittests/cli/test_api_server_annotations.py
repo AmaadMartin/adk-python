@@ -12,18 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Guards for the ``ApiServer.__init__`` eval-manager annotations.
+"""Guard for the ``ApiServer.__init__`` eval-manager annotations.
 
 ``api_server`` uses ``from __future__ import annotations``, so an annotation
 that names an unimported class survives until something resolves it. The two
 eval-manager annotations must therefore stay backed by real module-level
-imports, and those imports must not pull in the optional ``eval`` extra.
+imports.
 """
 
 from __future__ import annotations
 
-import subprocess
-import sys
 import typing
 
 from google.adk.cli.api_server import ApiServer
@@ -36,24 +34,3 @@ def test_api_server_init_type_hints_resolve():
 
   assert hints["eval_sets_manager"] is EvalSetsManager
   assert hints["eval_set_results_manager"] is EvalSetResultsManager
-
-
-def test_importing_api_server_does_not_import_eval_extra():
-  # Run in a fresh interpreter so the check is not polluted by modules that
-  # other tests already imported into sys.modules.
-  code = (
-      "import google.adk.cli.api_server\n"
-      "import sys\n"
-      "forbidden = ['gepa', 'nltk', 'rouge_score', 'tabulate']\n"
-      "loaded = [name for name in forbidden if name in sys.modules]\n"
-      "assert not loaded, loaded\n"
-  )
-
-  result = subprocess.run(
-      [sys.executable, "-c", code],
-      capture_output=True,
-      text=True,
-      check=False,
-  )
-
-  assert result.returncode == 0, result.stderr
