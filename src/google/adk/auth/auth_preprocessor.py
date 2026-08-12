@@ -119,7 +119,7 @@ async def _store_auth_and_collect_resume_targets(
     Set of original function call IDs to resume, excluding toolset auth.
   """
   # Step 1: Scan events for matching adk_request_credential function calls
-  # to extract AuthToolArguments (contains credential_key).
+  # to extract the frozen AuthConfig from their AuthToolArguments.
   requested_auth_config_by_id: dict[str, AuthConfig] = {}
   for event in events:
     event_function_calls = event.get_function_calls()
