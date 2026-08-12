@@ -17,17 +17,23 @@ import asyncio
 import collections
 import json
 import logging
+import os
 from pathlib import Path
 from pathlib import PurePosixPath
+import shutil
 import sys
+import tempfile
 from unittest import mock
 
+from google.adk.agents import LlmAgent
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.code_executors.base_code_executor import BaseCodeExecutor
 from google.adk.code_executors.code_execution_utils import CodeExecutionResult
 from google.adk.code_executors.unsafe_local_code_executor import UnsafeLocalCodeExecutor
 from google.adk.environment import BaseEnvironment
 from google.adk.models import llm_request as llm_request_model
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
 from google.adk.skills import models
 from google.adk.tools import skill_toolset
 from google.adk.tools import tool_context
@@ -2754,6 +2760,135 @@ async def test_close_cancels_futures_and_clears_cache():
   assert fut1.cancelled()
   assert not fut2.cancelled()  # Done futures shouldn't/can't be cancelled
   assert not toolset._fetched_skill_cache
+
+
+class _RegistryWithoutClose(skill_toolset.SkillRegistry):
+  """A registry that implements only the abstract methods."""
+
+  async def get_skill(self, *, name: str) -> models.Skill:
+    raise NotImplementedError
+
+  async def search_skills(self, *, query: str) -> list[models.Frontmatter]:
+    raise NotImplementedError
+
+
+class _RegistryOwningTempDir(_RegistryWithoutClose):
+  """A registry that owns a real temporary directory and releases it."""
+
+  def __init__(self) -> None:
+    self._temp_dir = tempfile.mkdtemp()
+
+  @property
+  def temp_dir(self) -> str:
+    return self._temp_dir
+
+  async def close(self) -> None:
+    shutil.rmtree(self._temp_dir, ignore_errors=True)
+
+
+@pytest.mark.asyncio
+async def test_close_closes_registry(mock_registry):
+  toolset = skill_toolset.SkillToolset(registry=mock_registry)
+
+  await toolset.close()
+
+  mock_registry.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_close_without_registry_does_not_raise():
+  toolset = skill_toolset.SkillToolset()
+  loop = asyncio.get_running_loop()
+  fut = loop.create_future()
+  toolset._fetched_skill_cache = collections.OrderedDict(  # pylint: disable=protected-access
+      {"turn1": {"skill1": fut}}
+  )
+
+  await toolset.close()
+
+  assert fut.cancelled()
+  assert not toolset._fetched_skill_cache  # pylint: disable=protected-access
+
+
+@pytest.mark.asyncio
+async def test_close_with_registry_without_close_override():
+  """A registry that only implements the abstract methods still tears down."""
+  registry = _RegistryWithoutClose()
+  registry.close = mock.AsyncMock(wraps=registry.close)
+  toolset = skill_toolset.SkillToolset(registry=registry)
+
+  await toolset.close()
+
+  registry.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_close_closes_registry_after_cancelling_futures(mock_registry):
+  mock_env = mock.create_autospec(BaseEnvironment, instance=True)
+  mock_env.is_initialized = True
+  toolset = skill_toolset.SkillToolset(
+      registry=mock_registry, environment=mock_env
+  )
+
+  loop = asyncio.get_running_loop()
+  fut = loop.create_future()
+  toolset._fetched_skill_cache = collections.OrderedDict(  # pylint: disable=protected-access
+      {"turn1": {"skill1": fut}}
+  )
+  observed: dict[str, bool] = {}
+  mock_registry.close.side_effect = lambda: observed.update(
+      future_cancelled=fut.cancelled(), env_closed=mock_env.close.called
+  )
+
+  await toolset.close()
+
+  # The toolset cancels in-flight fetches and closes the environment before it
+  # closes the registry.
+  assert observed == {"future_cancelled": True, "env_closed": True}
+  assert not toolset._fetched_skill_cache  # pylint: disable=protected-access
+  mock_env.close.assert_awaited_once()
+  mock_registry.close.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_close_propagates_registry_error(mock_registry):
+  mock_registry.close.side_effect = RuntimeError("registry teardown failed")
+  toolset = skill_toolset.SkillToolset(registry=mock_registry)
+
+  with pytest.raises(RuntimeError, match="registry teardown failed"):
+    await toolset.close()
+
+
+@pytest.mark.asyncio
+async def test_runner_close_releases_registry_resources():
+  """Runner teardown reaches the registry through the toolset, with no mocks."""
+  registry = _RegistryOwningTempDir()
+  agent = LlmAgent(
+      name="skill_agent",
+      model="gemini-2.0-flash",
+      tools=[skill_toolset.SkillToolset(registry=registry)],
+  )
+  runner = Runner(
+      app_name="skill_registry_close_app",
+      agent=agent,
+      session_service=InMemorySessionService(),
+  )
+  assert os.path.isdir(registry.temp_dir)
+
+  await runner.close()
+
+  assert not os.path.exists(registry.temp_dir)
+
+
+@pytest.mark.asyncio
+async def test_close_closes_shared_registry_of_clone(mock_registry):
+  toolset = skill_toolset.SkillToolset(registry=mock_registry)
+  clone = toolset.clone_with_updated_skills([])
+
+  await toolset.close()
+  await clone.close()
+
+  assert mock_registry.close.await_count == 2
 
 
 @pytest.mark.asyncio

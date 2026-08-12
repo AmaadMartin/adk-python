@@ -1161,7 +1161,8 @@ class SkillToolset(BaseToolset):
 
     Args:
       skills: List of skills to register.
-      registry: Optional skill registry for dynamic loading.
+      registry: Optional skill registry for dynamic loading. `close()` closes
+        the registry.
       code_executor: Optional code executor for script execution.
       environment: Optional environment for executing scripts.
       skills_folder: Optional absolute path where skills are stored in the
@@ -1436,6 +1437,8 @@ class SkillToolset(BaseToolset):
         if isinstance(cached, asyncio.Future) and not cached.done():
           cached.cancel()
     self._fetched_skill_cache.clear()
+    if self._registry is not None:
+      await self._registry.close()
     await super().close()
 
 
