@@ -338,7 +338,7 @@ class TestGoogleApiToOpenApiConverter:
         mock_build,
     )
 
-    captured_dirs = _enable_mtls_capturing_tempdir(monkeypatch)
+    _enable_mtls_capturing_tempdir(monkeypatch)
 
     converter = GoogleApiToOpenApiConverter("calendar", "v3")
     converter.fetch_google_api_spec()
@@ -354,11 +354,6 @@ class TestGoogleApiToOpenApiConverter:
         kwargs["discoveryServiceUrl"]
         == "https://www.mtls.googleapis.com/discovery/v1/apis/{api}/{apiVersion}/rest"
     )
-
-    # The certificate temp directory is released before the method returns.
-    assert captured_dirs
-    assert not os.path.exists(captured_dirs[0])
-    assert converter._mtls_certs is not None
 
   def test_fetch_google_api_spec_with_mtls_no_passphrase(
       self, monkeypatch, mock_api_resource, calendar_api_spec
@@ -370,7 +365,7 @@ class TestGoogleApiToOpenApiConverter:
         mock_build,
     )
 
-    captured_dirs = _enable_mtls_capturing_tempdir(monkeypatch, passphrase=None)
+    _enable_mtls_capturing_tempdir(monkeypatch, passphrase=None)
 
     converter = GoogleApiToOpenApiConverter("calendar", "v3")
     converter.fetch_google_api_spec()
@@ -386,11 +381,6 @@ class TestGoogleApiToOpenApiConverter:
         kwargs["discoveryServiceUrl"]
         == "https://www.mtls.googleapis.com/discovery/v1/apis/{api}/{apiVersion}/rest"
     )
-
-    # The certificate temp directory is released before the method returns.
-    assert captured_dirs
-    assert not os.path.exists(captured_dirs[0])
-    assert converter._mtls_certs is not None
 
   def test_fetch_google_api_spec_mtls_certs_present_during_build(
       self, monkeypatch, mock_api_resource
@@ -438,9 +428,7 @@ class TestGoogleApiToOpenApiConverter:
     assert captured_dirs
     assert not os.path.exists(captured_dirs[0])
 
-  def test_fetch_google_api_spec_mtls_cleanup_on_error(
-      self, monkeypatch, mock_api_resource
-  ):
+  def test_fetch_google_api_spec_mtls_cleanup_on_error(self, monkeypatch):
     """Test the certificate temp directory is released when build fails."""
     mock_build = MagicMock(
         side_effect=HttpError(resp=MagicMock(status=500), content=b"boom")
