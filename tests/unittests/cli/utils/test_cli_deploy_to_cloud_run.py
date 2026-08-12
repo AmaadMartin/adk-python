@@ -573,7 +573,6 @@ def test_to_cloud_run_env_vars_carry_the_memory_defaults(
     [
         "--update-env-vars=FOO=bar",
         "--set-env-vars=FOO=bar",
-        "--remove-env-vars=FOO",
         "--clear-env-vars",
         "--env-vars-file=env.yaml",
     ],
@@ -612,3 +611,23 @@ def test_to_cloud_run_rejects_a_user_env_var_flag_while_injecting(
     )
 
   assert not run_recorder.calls
+
+
+def test_to_cloud_run_keeps_a_user_remove_env_vars_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+) -> None:
+  """gcloud applies --remove-env-vars first, so it cannot drop ADK's vars."""
+  gcloud_args, _ = _deploy_and_capture(
+      monkeypatch,
+      agent_dir,
+      tmp_path,
+      session_service_uri="sqlite://",
+      extra_gcloud_args=("--remove-env-vars=FOO",),
+  )
+
+  assert "--remove-env-vars=FOO" in gcloud_args
+  assert gcloud_args[gcloud_args.index("--update-env-vars") + 1] == (
+      "ADK_SESSION_SERVICE_URI=sqlite://"
+  )

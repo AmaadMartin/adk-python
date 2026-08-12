@@ -51,13 +51,14 @@ _SERVICE_URI_ENV_VARS: Final[tuple[tuple[str, str], ...]] = (
     ('--memory_service_uri', 'ADK_MEMORY_SERVICE_URI'),
 )
 
-# gcloud flags that write the environment of a Cloud Run service. ADK claims
-# all of them while it injects the service URIs, so a user-supplied flag
-# cannot silently drop the injected variables.
+# gcloud flags that would discard the variables ADK injects: the last three
+# replace the whole environment, and a second '--update-env-vars' wins by last
+# occurrence. ADK claims them only while it is injecting. '--remove-env-vars'
+# is not claimed: gcloud applies it before '--update-env-vars', so it cannot
+# drop an injected variable.
 _GCLOUD_ENV_VAR_ARGS: Final[tuple[str, ...]] = (
     '--update-env-vars',
     '--set-env-vars',
-    '--remove-env-vars',
     '--clear-env-vars',
     '--env-vars-file',
 )
@@ -676,6 +677,10 @@ def _get_service_option_by_adk_version(
   value stays out of the generated Dockerfile. `CMD` is in shell form, so
   `/bin/sh -c` expands the variable when the container starts, and the double
   quotes keep a value with spaces or shell metacharacters as one argument.
+
+  The flags reference the variables rather than the click options declaring
+  `envvar=`, because the image installs the `adk_version` the caller asked
+  for and a release that predates such an option would ignore the variables.
   """
   parsed_version = parse(adk_version)
   options: list[str] = []
@@ -1314,7 +1319,9 @@ def to_agent_engine(
           stacklevel=2,
       )
 
-    def create_dockerfile_for_agent_engine(agent_engine_uri: str) -> None:
+    def create_dockerfile_for_agent_engine(
+        effective_uris: tuple[str, Optional[str], str],
+    ) -> None:
       requirements_txt_path = os.path.join(agent_src_path, 'requirements.txt')
       install_agent_deps = (
           f'RUN pip install -r "/app/agents/{app_name}/requirements.txt"'
@@ -1343,9 +1350,7 @@ def to_agent_engine(
           install_agent_deps=install_agent_deps,
           service_option=_get_service_option_by_adk_version(
               adk_version,
-              session_service_uri or agent_engine_uri,
-              artifact_service_uri,
-              memory_service_uri or agent_engine_uri,
+              *effective_uris,
               False,  # use_local_storage
           ),
           trace_to_cloud_option='--trace_to_cloud' if trace_to_cloud else '',
@@ -1389,17 +1394,18 @@ def to_agent_engine(
     elif project and region and not resource_name.startswith('projects/'):
       resource_name = f'projects/{project}/locations/{region}/reasoningEngines/{agent_engine_id}'
     agent_engine_uri = f'agentengine://{resource_name}'
-    click.echo('Creating Dockerfile...')
-    create_dockerfile_for_agent_engine(agent_engine_uri)
-    click.echo(f'Dockerfile created at {os.getcwd()}/Dockerfile.')
-
-    # The Dockerfile only references these variables, so the deployment config
-    # has to carry the values.
-    service_env_vars = _get_service_env_vars(
+    # The Dockerfile references a variable only when the deployment config
+    # sets it, so both must read the same three URIs.
+    effective_uris = (
         session_service_uri or agent_engine_uri,
         artifact_service_uri,
         memory_service_uri or agent_engine_uri,
     )
+    click.echo('Creating Dockerfile...')
+    create_dockerfile_for_agent_engine(effective_uris)
+    click.echo(f'Dockerfile created at {os.getcwd()}/Dockerfile.')
+
+    service_env_vars = _get_service_env_vars(*effective_uris)
     deployed_env_vars = agent_config.get('env_vars') or {}
     for name in service_env_vars:
       if name in deployed_env_vars:
