@@ -111,11 +111,17 @@ _LAZY_PROVIDERS: dict[str, tuple[list[str], str]] = {
     ),
 }
 
-for _name, (_patterns, _module) in _LAZY_PROVIDERS.items():
-  _target_module = (
-      _module if _module.startswith('google.adk.') else f'{__name__}.{_module}'
+def _lazy_module_path(module_name: str) -> str:
+  """Returns the absolute import path for a lazily-imported provider module."""
+  return (
+      module_name
+      if module_name.startswith('google.adk.')
+      else f'{__name__}.{module_name}'
   )
-  LLMRegistry._register_lazy(_patterns, _target_module, _name)
+
+
+for _name, (_patterns, _module) in _LAZY_PROVIDERS.items():
+  LLMRegistry._register_lazy(_patterns, _lazy_module_path(_module), _name)
 
 
 _OTHER_LAZY_IMPORTS: dict[str, str] = {
@@ -131,14 +137,13 @@ def __getattr__(name: str) -> Any:
   else:
     raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
 
+  module_path = _lazy_module_path(module_name)
   try:
-    if module_name.startswith('google.adk.'):
-      module = importlib.import_module(module_name)
-    else:
-      module = importlib.import_module(f'{__name__}.{module_name}')
+    module = importlib.import_module(module_path)
   except ImportError as e:
     raise ImportError(
-        f'`{name}` requires an optional dependency that is not installed.'
-        ' Install with: pip install google-adk[extensions]'
+        f'`{name}` could not be loaded: importing `{module_path}` failed'
+        f' with: {e}. This usually means an optional dependency is missing;'
+        ' try: pip install google-adk[extensions]'
     ) from e
   return getattr(module, name)
