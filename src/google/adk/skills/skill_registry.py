@@ -60,3 +60,12 @@ class SkillRegistry(ABC):
     on how to use their specific search capabilities.
     """
     return None
+
+  async def close(self) -> None:
+    """Releases resources held by the registry.
+
+    Called when the registry is no longer needed, for example by
+    `SkillToolset.close()`. The default implementation is a no-op.
+    Sub-classes should ensure this method is idempotent, since a registry may
+    be shared by more than one toolset.
+    """
