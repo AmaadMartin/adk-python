@@ -15,10 +15,8 @@
 name: Update Dependency Constraints
 
 on:
-  # Refresh the resolution snapshot every Monday at 07:00 UTC. Nothing else in
-  # the repository moves it: the pre-commit hook runs in --check mode, and
-  # check mode re-reads --exclude-newer out of the header of the file it is
-  # checking, so a frozen snapshot verifies itself and stays green forever.
+  # Nothing else refreshes the snapshot on a schedule: the pre-commit hook only
+  # fires when pyproject.toml or a constraints file is edited.
   schedule:
     - cron: '0 7 * * 1'
 
@@ -49,10 +47,8 @@ jobs:
         with:
           enable-cache: true
 
-      # Exit 1 means the script rewrote the files, which is the normal outcome
-      # of a scheduled run because --exclude-newer moves every time. Exit 2 is
-      # a failed resolution and must fail the job, so that no pull request
-      # mixes fresh pins with the stale ones the failure left behind.
+      # Exit 1 is the normal "files rewritten" outcome; exit 2 is a failed
+      # resolution. See scripts/update_constraints.sh.
       - name: Regenerate constraints files
         run: ./scripts/update_constraints.sh || [ $? -eq 1 ]
 

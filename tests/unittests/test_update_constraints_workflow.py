@@ -37,9 +37,7 @@ import subprocess
 import pytest
 import yaml
 
-from tests.unittests.test_release_dependencies import _find_pyproject
-
-_REPO_ROOT = _find_pyproject().parent
+_REPO_ROOT = Path(__file__).parents[2]
 _SCRIPT = _REPO_ROOT / 'scripts' / 'update_constraints.sh'
 _WORKFLOW = _REPO_ROOT / '.github' / 'workflows' / 'update-constraints.yml'
 

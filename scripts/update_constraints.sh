@@ -161,8 +161,6 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
   fi
 done
 
-# A failed resolution outranks an out-of-date file: the tree now mixes freshly
-# resolved pins with the stale ones the failure left behind.
 if [ "$RESOLUTION_FAILED" = true ]; then
   exit 2
 fi
