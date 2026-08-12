@@ -424,9 +424,18 @@ class RestApiTool(BaseTool):
 
         if schema.type == "object":
           body_data = {}
-          for param in parameters:
-            if param.param_location == "body" and param.py_name in kwargs:
-              body_data[param.original_name] = kwargs[param.py_name]
+          if schema.properties:
+            for param in parameters:
+              if param.param_location == "body" and param.py_name in kwargs:
+                body_data[param.original_name] = kwargs[param.py_name]
+          else:
+            # A free-form object body is carried by a single parameter that
+            # holds the whole payload, so its value is the body itself rather
+            # than one key inside it. When it is absent the body stays {}.
+            for param in parameters:
+              if param.param_location == "body" and param.py_name in kwargs:
+                body_data = kwargs[param.py_name]
+                break
 
         elif schema.type == "array":
           for param in parameters:

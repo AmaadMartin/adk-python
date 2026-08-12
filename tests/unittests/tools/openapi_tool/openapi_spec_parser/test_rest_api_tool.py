@@ -154,6 +154,26 @@ def sample_auth_credential():
   return credential
 
 
+def free_form_body_operation(mime_type: str = "application/json") -> Operation:
+  """Builds an operation whose request body is a free-form object."""
+  return Operation(
+      operationId="ingest_document",
+      requestBody=RequestBody(
+          content={mime_type: MediaType(schema=OpenAPISchema(type="object"))}
+      ),
+  )
+
+
+def free_form_body_parameter() -> ApiParameter:
+  """Builds the whole-body parameter that OperationParser emits for it."""
+  return ApiParameter(
+      original_name="body",
+      py_name="body",
+      param_location="body",
+      param_schema=OpenAPISchema(type="object"),
+  )
+
+
 class TestRestApiToolLegacy:
 
   @pytest.fixture(autouse=True)
@@ -612,6 +632,102 @@ class TestRestApiTool:
     request_params = tool._prepare_request_params(params, kwargs)
 
     assert request_params["json"] == ["item1", "item2"]
+
+  def test_prepare_request_params_free_form_object_body(
+      self, sample_endpoint, sample_auth_scheme, sample_auth_credential
+  ):
+    """A free-form object body is sent as the body, not wrapped in a key."""
+    tool = RestApiTool(
+        name="ingest_document",
+        description="test",
+        endpoint=sample_endpoint,
+        operation=free_form_body_operation(),
+        auth_credential=sample_auth_credential,
+        auth_scheme=sample_auth_scheme,
+    )
+
+    request_params = tool._prepare_request_params(
+        [free_form_body_parameter()], {"body": {"a": 1, "nested": {"b": 2}}}
+    )
+
+    assert request_params["json"] == {"a": 1, "nested": {"b": 2}}
+    assert request_params["headers"]["Content-Type"] == "application/json"
+
+  def test_prepare_request_params_free_form_object_body_omitted(
+      self, sample_endpoint, sample_auth_scheme, sample_auth_credential
+  ):
+    """An omitted free-form body argument still sends an empty object."""
+    tool = RestApiTool(
+        name="ingest_document",
+        description="test",
+        endpoint=sample_endpoint,
+        operation=free_form_body_operation(),
+        auth_credential=sample_auth_credential,
+        auth_scheme=sample_auth_scheme,
+    )
+
+    request_params = tool._prepare_request_params(
+        [free_form_body_parameter()], {}
+    )
+
+    assert request_params["json"] == {}
+
+  def test_prepare_request_params_object_body_with_property_named_body(
+      self, sample_endpoint, sample_auth_scheme, sample_auth_credential
+  ):
+    """A declared property called 'body' keeps going through the wrapping path."""
+    mock_operation = Operation(
+        operationId="test_op",
+        requestBody=RequestBody(
+            content={
+                "application/json": MediaType(
+                    schema=OpenAPISchema(
+                        type="object",
+                        properties={"body": OpenAPISchema(type="string")},
+                    )
+                )
+            }
+        ),
+    )
+    tool = RestApiTool(
+        name="test_tool",
+        description="test",
+        endpoint=sample_endpoint,
+        operation=mock_operation,
+        auth_credential=sample_auth_credential,
+        auth_scheme=sample_auth_scheme,
+    )
+    params = [
+        ApiParameter(
+            original_name="body",
+            py_name="body",
+            param_location="body",
+            param_schema=OpenAPISchema(type="string"),
+        )
+    ]
+
+    request_params = tool._prepare_request_params(params, {"body": "x"})
+
+    assert request_params["json"] == {"body": "x"}
+
+  def test_prepare_request_params_free_form_object_body_form_urlencoded(
+      self, sample_endpoint, sample_auth_scheme, sample_auth_credential
+  ):
+    """A form-urlencoded free-form body reaches httpx unwrapped too."""
+    tool = RestApiTool(
+        name="ingest_document",
+        description="test",
+        endpoint=sample_endpoint,
+        operation=free_form_body_operation("application/x-www-form-urlencoded"),
+        auth_credential=sample_auth_credential,
+        auth_scheme=sample_auth_scheme,
+    )
+
+    request_params = tool._prepare_request_params(
+        [free_form_body_parameter()], {"body": {"key1": "value1"}}
+    )
+
+    assert request_params["data"] == {"key1": "value1"}
 
   def test_prepare_request_params_string(
       self, sample_endpoint, sample_auth_credential, sample_auth_scheme
@@ -1553,6 +1669,82 @@ class TestRestApiTool:
     ) as mock_async_client:
       await tool.call(args={}, tool_context=mock_tool_context)
       assert mock_async_client.called
+
+  @pytest.mark.asyncio
+  async def test_call_puts_free_form_object_body_on_the_wire(self):
+    """The whole tool path sends the body argument as the request body."""
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+      captured["content"] = request.content
+      captured["content_type"] = request.headers.get("content-type")
+      return httpx.Response(200, json={"ok": True})
+
+    tool = RestApiTool(
+        name="ingest_document",
+        description="Ingest an arbitrary JSON document.",
+        endpoint=OperationEndpoint(
+            base_url="https://example.com", path="/ingest", method="POST"
+        ),
+        operation=free_form_body_operation(),
+        httpx_client_factory=lambda: httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ),
+    )
+
+    result = await tool.call(args={"body": {"a": 1}}, tool_context=None)
+
+    assert json.loads(captured["content"]) == {"a": 1}
+    assert captured["content_type"] == "application/json"
+    assert result == {"ok": True}
+
+  @pytest.mark.asyncio
+  async def test_call_free_form_object_body_omitted_sends_empty_object(self):
+    """An omitted body argument keeps the empty object sent before."""
+    captured = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+      captured["content"] = request.content
+      return httpx.Response(200, json={"ok": True})
+
+    tool = RestApiTool(
+        name="ingest_document",
+        description="Ingest an arbitrary JSON document.",
+        endpoint=OperationEndpoint(
+            base_url="https://example.com", path="/ingest", method="POST"
+        ),
+        operation=free_form_body_operation(),
+        httpx_client_factory=lambda: httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ),
+    )
+
+    await tool.call(args={}, tool_context=None)
+
+    assert json.loads(captured["content"]) == {}
+
+  def test_get_declaration_exposes_free_form_object_body(self, sample_endpoint):
+    """The model-facing declaration advertises the free-form body argument."""
+    tool = RestApiTool(
+        name="ingest_document",
+        description="Ingest an arbitrary JSON document.",
+        endpoint=sample_endpoint,
+        operation=free_form_body_operation(),
+    )
+
+    with temporary_feature_override(
+        FeatureName.JSON_SCHEMA_FOR_FUNC_DECL, True
+    ):
+      json_schema_declaration = tool._get_declaration()
+    with temporary_feature_override(
+        FeatureName.JSON_SCHEMA_FOR_FUNC_DECL, False
+    ):
+      gemini_schema_declaration = tool._get_declaration()
+
+    assert (
+        "body" in json_schema_declaration.parameters_json_schema["properties"]
+    )
+    assert "body" in gemini_schema_declaration.parameters.properties
 
   def test_prepare_request_params_extracts_embedded_query_params(
       self, sample_auth_credential, sample_auth_scheme
