@@ -111,6 +111,7 @@ _LAZY_PROVIDERS: dict[str, tuple[list[str], str]] = {
     ),
 }
 
+
 def _lazy_module_path(module_name: str) -> str:
   """Returns the absolute import path for a lazily-imported provider module."""
   return (
