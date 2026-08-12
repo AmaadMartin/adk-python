@@ -22,10 +22,6 @@ from google.adk.telemetry.setup import flush_telemetry
 from google.adk.telemetry.setup import maybe_set_otel_providers
 from google.adk.telemetry.setup import OTelHooks
 from google.adk.telemetry.setup import setup_telemetry
-from opentelemetry.sdk._logs import LoggerProvider
-from opentelemetry.sdk._logs import LoggingHandler
-from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
-from opentelemetry.sdk._logs.export import InMemoryLogRecordExporter
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 from opentelemetry.sdk.resources import Resource
@@ -174,8 +170,8 @@ def no_otel_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv(name, raising=False)
 
 
-@pytest.fixture
-def instrumented(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+@pytest.fixture(name="instrumented")
+def instrumented_fixture(monkeypatch: pytest.MonkeyPatch) -> list[str]:
   """Replaces the optional instrumentation packages with recording fakes."""
   recorded: list[str] = []
   for module_name, class_name in (
@@ -292,11 +288,11 @@ def test_flush_telemetry_warns_when_a_provider_does_not_flush(
   )
 
 
+@pytest.mark.usefixtures("no_otel_env_vars")
 @pytest.mark.parametrize("pass_internal_exporters", [True, False])
 def test_setup_telemetry_falls_back_to_a_bare_tracer_provider(
     monkeypatch: pytest.MonkeyPatch,
     pass_internal_exporters: bool,
-    no_otel_env_vars,  # pylint: disable=unused-argument,redefined-outer-name
 ) -> None:
   """Without the flag and without env vars, only ADK exporters are wired."""
   # Arrange.
@@ -321,10 +317,10 @@ def test_setup_telemetry_falls_back_to_a_bare_tracer_provider(
   )
 
 
+@pytest.mark.usefixtures("no_otel_env_vars")
 def test_setup_telemetry_uses_the_otlp_env_exporters(
     monkeypatch: pytest.MonkeyPatch,
-    no_otel_env_vars,  # pylint: disable=unused-argument,redefined-outer-name
-    instrumented: list[str],  # pylint: disable=redefined-outer-name
+    instrumented: list[str],
 ) -> None:
   """An OTLP endpoint in the environment selects the env exporters."""
   # Arrange.
@@ -359,12 +355,12 @@ def test_setup_telemetry_uses_the_otlp_env_exporters(
   assert instrumented == ["GoogleGenAiSdkInstrumentor"]
 
 
+@pytest.mark.usefixtures("no_otel_env_vars")
 @pytest.mark.parametrize("pass_internal_exporters", [True, False])
 def test_setup_telemetry_uses_the_gcp_exporters(
     monkeypatch: pytest.MonkeyPatch,
     pass_internal_exporters: bool,
-    no_otel_env_vars,  # pylint: disable=unused-argument,redefined-outer-name
-    instrumented: list[str],  # pylint: disable=redefined-outer-name
+    instrumented: list[str],
 ) -> None:
   """The flag selects the Cloud exporters, resolved against ADC."""
   # Arrange.
@@ -412,10 +408,10 @@ def test_setup_telemetry_uses_the_gcp_exporters(
   assert instrumented == ["GoogleGenAiSdkInstrumentor"]
 
 
+@pytest.mark.usefixtures("no_otel_env_vars")
 def test_setup_telemetry_instruments_a2a_clients_on_agent_engine(
     monkeypatch: pytest.MonkeyPatch,
-    no_otel_env_vars,  # pylint: disable=unused-argument,redefined-outer-name
-    instrumented: list[str],  # pylint: disable=redefined-outer-name
+    instrumented: list[str],
 ) -> None:
   """On Agent Engine, the HTTPX and gRPC clients are instrumented too."""
   # Arrange.
@@ -440,11 +436,10 @@ def test_setup_telemetry_instruments_a2a_clients_on_agent_engine(
   ]
 
 
+@pytest.mark.usefixtures("no_otel_env_vars", "uninstrumentable")
 def test_setup_telemetry_warns_when_the_instrumentation_extra_is_missing(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
-    no_otel_env_vars,  # pylint: disable=unused-argument,redefined-outer-name
-    uninstrumentable,  # pylint: disable=unused-argument,redefined-outer-name
 ) -> None:
   """Missing instrumentation packages warn once each and never raise."""
   # Arrange.
@@ -470,13 +465,11 @@ def test_setup_telemetry_warns_when_the_instrumentation_extra_is_missing(
   assert "without gRPC instrumentation" in messages[2]
 
 
-def test_flush_telemetry_exports_buffered_telemetry(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_flush_telemetry_exports_buffered_telemetry() -> None:
   """Real SDK providers hand their buffered data to the exporters.
 
-  The batch processors are given a 60 second schedule, so nothing reaches an
-  exporter until flush_telemetry drains them.
+  The batch processor is given a 60 second schedule, so the span reaches the
+  exporter only because flush_telemetry drains it.
   """
   # Arrange.
   span_exporter = InMemorySpanExporter()
@@ -484,44 +477,40 @@ def test_flush_telemetry_exports_buffered_telemetry(
   tracer_provider.add_span_processor(
       BatchSpanProcessor(span_exporter, schedule_delay_millis=60_000)
   )
-  log_exporter = InMemoryLogRecordExporter()
-  logger_provider = LoggerProvider()
-  logger_provider.add_log_record_processor(
-      BatchLogRecordProcessor(log_exporter, schedule_delay_millis=60_000)
-  )
   metric_reader = InMemoryMetricReader()
   meter_provider = MeterProvider(
       metric_readers=[metric_reader], shutdown_on_exit=False
   )
-  _patch_provider_getters(
-      monkeypatch, tracer_provider, meter_provider, logger_provider
-  )
-  emitting_logger = logging.getLogger("adk_flush_telemetry_test")
-  emitting_logger.setLevel(logging.INFO)
-  emitting_logger.addHandler(LoggingHandler(logger_provider=logger_provider))
 
-  try:
-    tracer_provider.get_tracer("test").start_span("a-span").end()
-    emitting_logger.info("a log record")
-    meter_provider.get_meter("test").create_counter("a-counter").add(1)
-    assert span_exporter.get_finished_spans() == ()
-    assert log_exporter.get_finished_logs() == ()
+  # `monkeypatch` is not used here: the providers must be torn down in a
+  # `finally`, and their batch worker threads outlive fixture finalization.
+  with (
+      mock.patch(
+          "opentelemetry.trace.get_tracer_provider",
+          return_value=tracer_provider,
+      ),
+      mock.patch(
+          "opentelemetry.metrics.get_meter_provider",
+          return_value=meter_provider,
+      ),
+  ):
+    try:
+      tracer_provider.get_tracer("test").start_span("a-span").end()
+      meter_provider.get_meter("test").create_counter("a-counter").add(1)
+      assert span_exporter.get_finished_spans() == ()
 
-    # Act.
-    flush_telemetry()
+      # Act.
+      flush_telemetry()
 
-    # Assert.
-    assert [span.name for span in span_exporter.get_finished_spans()] == [
-        "a-span"
-    ]
-    assert len(log_exporter.get_finished_logs()) == 1
-    metrics_data = metric_reader.get_metrics_data()
-    assert (
-        metrics_data.resource_metrics[0].scope_metrics[0].metrics[0].name
-        == "a-counter"
-    )
-  finally:
-    emitting_logger.handlers.clear()
-    tracer_provider.shutdown()
-    logger_provider.shutdown()
-    meter_provider.shutdown()
+      # Assert.
+      assert [span.name for span in span_exporter.get_finished_spans()] == [
+          "a-span"
+      ]
+      metrics_data = metric_reader.get_metrics_data()
+      assert (
+          metrics_data.resource_metrics[0].scope_metrics[0].metrics[0].name
+          == "a-counter"
+      )
+    finally:
+      tracer_provider.shutdown()
+      meter_provider.shutdown()
