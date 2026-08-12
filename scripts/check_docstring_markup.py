@@ -181,20 +181,38 @@ class _StandInDirective(Directive):  # type: ignore[misc]
 
   has_content = True
   optional_arguments = 1
-  final_argument_whitespace = True
 
 
 class _ProseDirective(_StandInDirective):
-  """Stands in for a Sphinx directive whose body is reStructuredText."""
+  """Stands in for a Sphinx directive whose body is reStructuredText.
+
+  Both the argument and the body are parsed, because Sphinx parses both. The
+  replacement text of `.. deprecated:: 2.0 Use something else.` is the
+  argument, not the body, so a stand-in that read only the body would miss
+  every mistake written there.
+  """
+
+  final_argument_whitespace = True
 
   def run(self) -> list[nodes.Node]:
     container = nodes.container()
+    if self.arguments:
+      inline, messages = self.state.inline_text(self.arguments[0], self.lineno)
+      container += nodes.paragraph('', '', *inline)
+      container += messages
     self.state.nested_parse(self.content, self.content_offset, container)
     return [container]
 
 
 class _LiteralDirective(_StandInDirective):
-  """Stands in for a Sphinx directive whose body is code, not prose."""
+  """Stands in for a Sphinx directive whose body is code, not prose.
+
+  `final_argument_whitespace` is False to match
+  `sphinx.directives.code.CodeBlock`, so a code block written without the
+  blank line its body needs is reported here as Sphinx reports it.
+  """
+
+  final_argument_whitespace = False
 
   def run(self) -> list[nodes.Node]:
     text = '\n'.join(self.content)
