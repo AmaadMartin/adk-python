@@ -14,7 +14,6 @@
 # limitations under the License.
 
 
-import os
 from unittest import mock
 
 from google.adk.integrations.eventarc import _client as client
