@@ -193,6 +193,11 @@ class StdioConnectionParams(BaseModel):
   timeout: float = 5.0
 
 
+@runtime_checkable
+class CheckableMcpHttpClientFactory(McpHttpClientFactory, Protocol):
+  pass
+
+
 class SseConnectionParams(BaseModel):
   """Parameters for the MCP SSE connection.
 
@@ -217,11 +222,6 @@ class SseConnectionParams(BaseModel):
   timeout: float = 5.0
   sse_read_timeout: float = 60 * 5.0
   httpx_client_factory: CheckableMcpHttpClientFactory = create_mcp_http_client
-
-
-@runtime_checkable
-class CheckableMcpHttpClientFactory(McpHttpClientFactory, Protocol):
-  pass
 
 
 class _DebugHttpxClientFactory:
