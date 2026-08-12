@@ -639,11 +639,17 @@ _TOOL_NAME = 'read_calendar'
 _EXPIRES_AT = 4102444800
 
 
-def _oauth2_auth_config() -> AuthConfig:
+def _oauth2_auth_config(
+    redirect_uri: str | None = _FROZEN_REDIRECT_URI,
+) -> AuthConfig:
   """Builds the OAuth2 config a tool requests credentials with.
 
   ``exchanged_auth_credential`` mirrors what ``AuthHandler.generate_auth_uri``
   produces: the tool's client credentials plus the nonce ADK minted.
+
+  Args:
+    redirect_uri: The redirect URI the tool pins. Most tools pin none and let
+      the client choose, so pass ``None`` for that shape.
   """
   return AuthConfig(
       auth_scheme=OAuth2(
@@ -660,7 +666,7 @@ def _oauth2_auth_config() -> AuthConfig:
           oauth2=OAuth2Auth(
               client_id='tool-client',
               client_secret='tool-secret',
-              redirect_uri=_FROZEN_REDIRECT_URI,
+              redirect_uri=redirect_uri,
           ),
       ),
       exchanged_auth_credential=AuthCredential(
@@ -668,7 +674,7 @@ def _oauth2_auth_config() -> AuthConfig:
           oauth2=OAuth2Auth(
               client_id='tool-client',
               client_secret='tool-secret',
-              redirect_uri=_FROZEN_REDIRECT_URI,
+              redirect_uri=redirect_uri,
               state=_FROZEN_STATE,
               auth_uri=f'https://provider.example/auth?state={_FROZEN_STATE}',
               code_verifier='tool-verifier',
@@ -864,7 +870,6 @@ class TestAuthResumeBinding:
         _resumed_credential(
             client_id='attacker-client',
             client_secret='attacker-secret',
-            redirect_uri='https://attacker.example/cb',
             auth_response_uri=(
                 f'https://app.example.com/cb?code=granted&state={_FROZEN_STATE}'
             ),
@@ -877,11 +882,43 @@ class TestAuthResumeBinding:
 
     assert sessions[0].client_id == 'tool-client'
     assert sessions[0].client_secret == 'tool-secret'
-    assert sessions[0].redirect_uri == _FROZEN_REDIRECT_URI
     stored = state['temp:' + auth_config.credential_key]
     assert stored.oauth2.client_id == 'tool-client'
     assert stored.oauth2.client_secret == 'tool-secret'
-    assert stored.oauth2.redirect_uri == _FROZEN_REDIRECT_URI
+
+  @pytest.mark.asyncio
+  async def test_resume_supplies_the_redirect_uri_the_client_used(
+      self, sessions
+  ):
+    """The token request repeats the redirect URI the client authorized with.
+
+    The bundled dev UI rewrites the `redirect_uri` of the authorization URI and
+    reports it back on the resume, and most tools pin none. RFC 6749 section
+    4.1.3 requires the token request to repeat it.
+    """
+    auth_config = _oauth2_auth_config(redirect_uri=None)
+    dev_ui_redirect_uri = 'http://localhost:8000'
+    payload = _resume_payload(
+        auth_config,
+        _resumed_credential(
+            redirect_uri=dev_ui_redirect_uri,
+            auth_response_uri=(
+                f'{dev_ui_redirect_uri}?code=granted&state={_FROZEN_STATE}'
+            ),
+        ),
+    )
+
+    state, _ = await self._run(
+        [_request_event(auth_config), _resume_event(payload)]
+    )
+
+    assert sessions[0].redirect_uri == dev_ui_redirect_uri
+    assert sessions[0].token_endpoints == [_TOOL_TOKEN_URL]
+    stored = state['temp:' + auth_config.credential_key]
+    assert stored.oauth2.access_token == 'minted-token'
+    # The client chose where the user was sent, and nothing else.
+    assert stored.oauth2.client_secret == 'tool-secret'
+    assert stored.oauth2.state == _FROZEN_STATE
 
   @pytest.mark.asyncio
   async def test_resume_cannot_override_auth_scheme(self, sessions):

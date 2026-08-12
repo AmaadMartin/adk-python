@@ -41,13 +41,22 @@ logger = logging.getLogger("google_adk." + __name__)
 TOOLSET_AUTH_CREDENTIAL_ID_PREFIX = "_adk_toolset_auth_"
 
 # The OAuth2 fields a resume message may contribute. Everything else on
-# `oauth2` -- the client credentials, the redirect URI, the PKCE verifier and
-# the CSRF state -- belongs to the tool or to ADK, so it is read back from the
-# frozen request. A field added to `OAuth2Auth` later stays frozen-sourced
-# until it is named here.
+# `oauth2` -- the client credentials, the PKCE verifier and the CSRF state --
+# belongs to the tool or to ADK, so it is read back from the frozen request. A
+# field added to `OAuth2Auth` later stays frozen-sourced until it is named
+# here.
+#
+# `redirect_uri` is resumable because the client, not the tool, decides where
+# the authorization server sends the user. The bundled dev UI rewrites the
+# `redirect_uri` of the authorization URI before it opens the consent popup,
+# and most tools set none at all. RFC 6749 section 4.1.3 requires the token
+# request to repeat that same value, so the client has to report it back. This
+# grants the client nothing: ADK still sends the request to the frozen token
+# endpoint and reads the token out of the response.
 _RESUMABLE_OAUTH2_FIELDS = (
     "auth_response_uri",
     "auth_code",
+    "redirect_uri",
     "access_token",
     "refresh_token",
     "id_token",
