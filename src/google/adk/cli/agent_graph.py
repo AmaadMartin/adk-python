@@ -197,16 +197,16 @@ async def build_graph(
         await build_graph(child, sub_agent, highlight_pairs)
         if parent_agent:
           draw_edge(parent_agent.name, sub_agent.name)
-    elif isinstance(agent, Workflow) and agent._graph is not None:
-      for wf_node in agent._graph.nodes:
+    elif isinstance(agent, Workflow) and agent.graph is not None:
+      for wf_node in agent.graph.nodes:
         if wf_node.name == START.name:
           continue
         await build_graph(child, wf_node, highlight_pairs)
-      for edge in agent._graph.edges:
+      for edge in agent.graph.edges:
         if edge.from_node.name == START.name:
           continue
-        label = str(edge.route) if edge.route is not None else ''
-        draw_edge(edge.from_node.name, edge.to_node.name)
+        label = str(edge.route) if edge.route is not None else None
+        draw_edge(edge.from_node.name, edge.to_node.name, label)
     else:
       for sub_agent in agent.sub_agents:
         await build_graph(child, sub_agent, highlight_pairs)
@@ -265,14 +265,14 @@ async def build_graph(
 
       return
 
-  def draw_edge(from_name: str, to_name: str) -> None:
+  def draw_edge(from_name: str, to_name: str, label: str | None = None) -> None:
     if highlight_pairs:
       for highlight_from, highlight_to in highlight_pairs:
         if from_name == highlight_from and to_name == highlight_to:
-          graph.edge(from_name, to_name, color=light_green)
+          graph.edge(from_name, to_name, label, color=light_green)
           return
         elif from_name == highlight_to and to_name == highlight_from:
-          graph.edge(from_name, to_name, color=light_green, dir='back')
+          graph.edge(from_name, to_name, label, color=light_green, dir='back')
           return
     # if no need to highlight, color gray
     if should_build_agent_cluster(agent):
@@ -280,10 +280,11 @@ async def build_graph(
       graph.edge(
           from_name,
           to_name,
+          label,
           color=light_gray,
       )
     else:
-      graph.edge(from_name, to_name, arrowhead='none', color=light_gray)
+      graph.edge(from_name, to_name, label, arrowhead='none', color=light_gray)
 
   await draw_node(agent)
   if hasattr(agent, 'sub_agents'):
