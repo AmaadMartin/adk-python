@@ -142,18 +142,32 @@ class OperationParser:
 
       if schema and schema.type == 'object':
         properties = schema.properties or {}
-        required_properties = set(schema.required or [])
-        for prop_name, prop_details in properties.items():
+        if not properties:
+          # A free-form object body (e.g. one governed by
+          # additionalProperties) declares no property to expand, so expose
+          # the body itself as a single parameter. Without it the operation
+          # has no argument the model can put a payload in.
           self._params.append(
               ApiParameter(
-                  original_name=prop_name,
+                  original_name='body',
                   param_location='body',
-                  param_schema=prop_details,
-                  description=prop_details.description,
-                  required=prop_name in required_properties,
-                  py_name=self._get_py_name(prop_name),
+                  param_schema=schema,
+                  description=description,
               )
           )
+        else:
+          required_properties = set(schema.required or [])
+          for prop_name, prop_details in properties.items():
+            self._params.append(
+                ApiParameter(
+                    original_name=prop_name,
+                    param_location='body',
+                    param_schema=prop_details,
+                    description=prop_details.description,
+                    required=prop_name in required_properties,
+                    py_name=self._get_py_name(prop_name),
+                )
+            )
 
       elif schema and schema.type == 'array':
         self._params.append(
