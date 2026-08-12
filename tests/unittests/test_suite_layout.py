@@ -25,9 +25,14 @@ enforces the invariant directly instead.
 from __future__ import annotations
 
 import collections
+import itertools
 import pathlib
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+# pytest's default ``python_files``, which this repository does not override.
+# pytest collects both suffixes, so a file of either shape can collide.
+_TEST_FILE_PATTERNS = ("test_*.py", "*_test.py")
 
 
 def _pytest_module_name(path: pathlib.Path) -> str:
@@ -44,15 +49,19 @@ def _duplicate_module_names(tests_root: pathlib.Path) -> dict[str, list[str]]:
   """Returns each pytest module name that more than one test file claims.
 
   Args:
-    tests_root: The directory to walk for ``test_*.py`` files.
+    tests_root: The directory to walk for files matching
+      ``_TEST_FILE_PATTERNS``.
 
   Returns:
     A mapping of module name to the paths that claim it, relative to the
     parent of ``tests_root``. Module names claimed by a single file are
     omitted.
   """
+  paths = itertools.chain.from_iterable(
+      tests_root.rglob(pattern) for pattern in _TEST_FILE_PATTERNS
+  )
   by_module_name = collections.defaultdict(list)
-  for path in sorted(tests_root.rglob("test_*.py")):
+  for path in sorted(set(paths)):
     module_name = _pytest_module_name(path)
     by_module_name[module_name].append(
         path.relative_to(tests_root.parent).as_posix()
@@ -76,19 +85,29 @@ def test_no_duplicate_pytest_module_names() -> None:
 def test_duplicate_module_names_flags_same_name_in_two_namespace_dirs(
     tmp_path: pathlib.Path,
 ) -> None:
-  """Pins the detector on the layout that broke a bare ``pytest`` run."""
+  """Pins the detector on the layout that broke a bare ``pytest`` run.
+
+  Packaging only the leaf, as here, is the partial fix that does not work: the
+  walk stops at the unpackaged ``integrations/`` on both sides. Both naming
+  conventions in ``_TEST_FILE_PATTERNS`` are covered.
+  """
   tests_root = tmp_path / "tests"
   for suite in ("integration", "unittests"):
     leaf = tests_root / suite / "integrations" / "oci"
     leaf.mkdir(parents=True)
     (leaf / "__init__.py").touch()
     (leaf / "test_thing.py").touch()
+    (leaf / "thing_test.py").touch()
 
   assert _duplicate_module_names(tests_root) == {
       "oci.test_thing": [
           "tests/integration/integrations/oci/test_thing.py",
           "tests/unittests/integrations/oci/test_thing.py",
-      ]
+      ],
+      "oci.thing_test": [
+          "tests/integration/integrations/oci/thing_test.py",
+          "tests/unittests/integrations/oci/thing_test.py",
+      ],
   }
 
 
@@ -103,5 +122,6 @@ def test_packaged_directories_produce_distinct_module_names(
     for package in (tests_root / suite, leaf.parent, leaf):
       (package / "__init__.py").touch()
     (leaf / "test_thing.py").touch()
+    (leaf / "thing_test.py").touch()
 
   assert not _duplicate_module_names(tests_root)
