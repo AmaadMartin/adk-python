@@ -2485,6 +2485,7 @@ def cli_migrate_session(
     click.secho("Migration check and upgrade process finished.", fg="green")
   except Exception as e:
     click.secho(f"Migration failed: {e}", fg="red", err=True)
+    sys.exit(1)
 
 
 @deploy.command("agent_engine")

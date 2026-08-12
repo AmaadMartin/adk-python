@@ -2887,7 +2887,7 @@ def test_cli_migrate_session_defaults_to_safe_unpickling(
 def test_cli_migrate_session_reports_the_underlying_failure(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-  """A failed migration is reported to the user rather than raised."""
+  """A failed migration is reported to the user and exits non-zero."""
 
   def explode(*args: Any, **kwargs: Any) -> None:
     raise RuntimeError("destination schema is newer")
@@ -2909,6 +2909,9 @@ def test_cli_migrate_session_reports_the_underlying_failure(
   )
 
   assert "Migration failed: destination schema is newer" in result.output
+  assert result.exit_code != 0
+  # A deliberate exit, not a leaked exception.
+  assert isinstance(result.exception, SystemExit), repr(result.exception)
 
 
 @pytest.mark.unmute_click
@@ -2939,7 +2942,9 @@ def test_cli_migrate_session_points_at_the_db_extra_when_sqlalchemy_is_missing(
       ],
   )
 
-  assert result.exception is None, repr(result.exception)
+  # A deliberate exit, not a leaked ModuleNotFoundError.
+  assert isinstance(result.exception, SystemExit), repr(result.exception)
+  assert result.exit_code != 0
   assert "Migration failed:" in result.output
   assert "pip install google-adk[db]" in result.output
   assert "No module named" not in result.output
