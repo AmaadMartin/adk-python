@@ -462,6 +462,14 @@ def report_base(root: pathlib.Path) -> pathlib.Path:
   return _REPO_ROOT if resolved.is_relative_to(_REPO_ROOT) else resolved
 
 
+def display_path(path: pathlib.Path) -> str:
+  """Returns a path a reader can paste, relative to the repository root."""
+  resolved = path.resolve()
+  if resolved.is_relative_to(_REPO_ROOT):
+    return resolved.relative_to(_REPO_ROOT).as_posix()
+  return str(path)
+
+
 def check_tree(
     root: pathlib.Path, base: pathlib.Path | None = None
 ) -> list[Violation]:
@@ -572,10 +580,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f'error: {err}', file=sys.stderr)
     return EXIT_HARNESS_FAILURE
 
+  allowlist_path = display_path(args.allowlist)
   offending = {violation.path for violation in violations}
   if args.update_allowlist:
     write_allowlist(args.allowlist, offending)
-    print(f'Wrote {len(offending)} entries to {args.allowlist}.')
+    print(f'Wrote {len(offending)} entries to {allowlist_path}.')
     return EXIT_OK
 
   # `--all` widens what is printed. It never widens what fails, so a burn-down
@@ -589,7 +598,7 @@ def main(argv: Sequence[str] | None = None) -> int:
   for entry in stale:
     print(
         f'{entry}: allowlisted but clean; delete this line from'
-        f' {args.allowlist}.'
+        f' {allowlist_path}.'
     )
 
   files = len({violation.path for violation in reported})

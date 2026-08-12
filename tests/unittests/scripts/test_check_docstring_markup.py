@@ -476,6 +476,20 @@ def test_report_base_is_the_scanned_directory_for_a_path_outside_it(
   assert checker.report_base(tmp_path) == tmp_path.resolve()
 
 
+def test_display_path_shortens_a_path_inside_the_repository() -> None:
+  assert (
+      checker.display_path(checker._ALLOWLIST)
+      == 'scripts/docstring_markup_allowlist.txt'
+  )
+
+
+def test_display_path_leaves_a_path_outside_the_repository_alone(
+    tmp_path: pathlib.Path,
+) -> None:
+  outside = tmp_path / 'allowlist.txt'
+  assert checker.display_path(outside) == str(outside)
+
+
 def test_check_tree_reports_an_unreadable_file_as_a_harness_failure(
     tmp_path: pathlib.Path,
 ) -> None:
