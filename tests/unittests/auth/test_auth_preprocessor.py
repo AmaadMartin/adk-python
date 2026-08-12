@@ -82,6 +82,8 @@ class TestAuthLlmRequestProcessor:
     """Create a mock AuthConfig."""
     config = Mock(spec=AuthConfig)
     config.credential_key = None
+    config.raw_auth_credential = None
+    config.exchanged_auth_credential = None
     return config
 
   @pytest.fixture
@@ -109,6 +111,7 @@ class TestAuthLlmRequestProcessor:
     event = Mock(spec=Event)
     event.author = 'user'
     event.content = Mock()  # Non-None content
+    event.get_function_calls.return_value = []
     event.get_function_responses.return_value = [
         mock_function_response_with_auth
     ]
@@ -327,8 +330,21 @@ class TestAuthLlmRequestProcessor:
     mock_auth_handler.parse_and_store_auth_response = AsyncMock()
     mock_auth_handler_class.return_value = mock_auth_handler
 
+    # The frozen adk_request_credential function call the client is answering.
+    request_function_call = Mock()
+    request_function_call.id = 'auth_response_id'
+    request_function_call.name = REQUEST_EUC_FUNCTION_CALL_NAME
+    request_function_call.args = {
+        'function_call_id': 'tool_id_1',
+        'auth_config': mock_auth_config,
+    }
+    request_event = Mock(spec=Event)
+    request_event.content = Mock()  # Non-None content
+    request_event.get_function_calls.return_value = [request_function_call]
+
     mock_invocation_context.session.events = [
-        mock_user_event_with_auth_response
+        request_event,
+        mock_user_event_with_auth_response,
     ]
 
     result = []
@@ -340,9 +356,11 @@ class TestAuthLlmRequestProcessor:
     # Verify auth config validation was called
     mock_auth_config_validate.assert_called_once()
 
-    # Verify auth handler was created with the config
+    # Verify the auth handler was created with a copy of the frozen request,
+    # not with the config the client sent back.
+    mock_auth_config.model_copy.assert_called_once_with(deep=True)
     mock_auth_handler_class.assert_called_once_with(
-        auth_config=mock_auth_config
+        auth_config=mock_auth_config.model_copy.return_value
     )
 
     # Verify parse_and_store_auth_response was called
@@ -470,7 +488,11 @@ class TestAuthLlmRequestProcessor:
       mock_user_event_with_auth_response,
       mock_auth_config,
   ):
-    """Test that missing matching system function calls returns early."""
+    """Test that missing matching system function calls returns early.
+
+    Without a matching ``adk_request_credential`` function call there is no
+    frozen request to bind the resume to, so nothing is stored.
+    """
     # Setup mocks
     mock_auth_config_validate.return_value = mock_auth_config
     mock_auth_handler = Mock(spec=AuthHandler)
@@ -498,8 +520,8 @@ class TestAuthLlmRequestProcessor:
     ):
       result.append(event)
 
-    # Should process auth response but not resume any tools
-    mock_auth_handler.parse_and_store_auth_response.assert_called_once()
+    # Should drop the unmatched auth response and not resume any tools
+    mock_auth_handler.parse_and_store_auth_response.assert_not_called()
     assert result == []
 
   @pytest.mark.asyncio
@@ -527,10 +549,12 @@ class TestAuthLlmRequestProcessor:
     # Create matching system function call
     auth_tool_args = Mock(spec=AuthToolArguments)
     auth_tool_args.function_call_id = 'tool_id_1'
+    auth_tool_args.auth_config = mock_auth_config
     mock_auth_tool_args_validate.return_value = auth_tool_args
 
     system_function_call = Mock()
     system_function_call.id = 'auth_response_id'  # Matches the response ID
+    system_function_call.name = REQUEST_EUC_FUNCTION_CALL_NAME
     system_function_call.args = {
         'function_call_id': 'tool_id_1',
         'auth_config': mock_auth_config,

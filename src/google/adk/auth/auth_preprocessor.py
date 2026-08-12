@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from typing import AsyncGenerator
 
@@ -27,14 +28,70 @@ from ..flows.llm_flows.functions import handle_function_calls_async
 from ..flows.llm_flows.functions import REQUEST_EUC_FUNCTION_CALL_NAME
 from ..models.llm_request import LlmRequest
 from ..sessions.state import State
+from .auth_credential import AuthCredential
 from .auth_handler import AuthHandler
 from .auth_tool import AuthConfig
 from .auth_tool import AuthToolArguments
+
+logger = logging.getLogger("google_adk." + __name__)
 
 # Prefix used by toolset auth credential IDs.
 # Auth requests with this prefix are for toolset authentication (before tool
 # listing) and don't require resuming a function call.
 TOOLSET_AUTH_CREDENTIAL_ID_PREFIX = "_adk_toolset_auth_"
+
+# The OAuth2 fields a resume message may contribute. Everything else on
+# `oauth2` -- the client credentials, the redirect URI, the PKCE verifier and
+# the CSRF state -- belongs to the tool or to ADK, so it is read back from the
+# frozen request. A field added to `OAuth2Auth` later stays frozen-sourced
+# until it is named here.
+_RESUMABLE_OAUTH2_FIELDS = (
+    "auth_response_uri",
+    "auth_code",
+    "access_token",
+    "refresh_token",
+    "id_token",
+    "expires_in",
+    "expires_at",
+)
+
+
+def _bind_oauth2_to_request(
+    requested_auth_config: AuthConfig,
+    response_credential: AuthCredential | None,
+) -> AuthCredential | None:
+  """Rebuilds the credential to store from the frozen request.
+
+  Only the fields a resume message is allowed to contribute are overlaid onto
+  the frozen OAuth2 credential, so the state ADK issued is the one compared
+  against the state returned by the authorization server.
+
+  Args:
+    requested_auth_config: The frozen ``AuthConfig`` recovered from the
+      ``adk_request_credential`` function call.
+    response_credential: The credential from the client's resume message.
+
+  Returns:
+    The credential to store, or *response_credential* unchanged when the frozen
+    request carries no OAuth2 credential (API key, HTTP and service-account
+    schemes).
+  """
+  frozen = (
+      requested_auth_config.exchanged_auth_credential
+      or requested_auth_config.raw_auth_credential
+  )
+  if frozen is None:
+    return response_credential
+  bound = frozen.model_copy(deep=True)
+  if bound.oauth2 is None:
+    return response_credential
+  resumed = response_credential.oauth2 if response_credential else None
+  if resumed is not None:
+    for field in _RESUMABLE_OAUTH2_FIELDS:
+      value = getattr(resumed, field)
+      if value is not None:
+        setattr(bound.oauth2, field, value)
+  return bound
 
 
 async def _store_auth_and_collect_resume_targets(
@@ -45,22 +102,21 @@ async def _store_auth_and_collect_resume_targets(
 ) -> set[str]:
   """Store auth credentials and return original function call IDs to resume.
 
-  Scans session events for ``adk_request_credential`` function calls whose
-  IDs are in *auth_fc_ids*, extracts ``credential_key`` from their
-  ``AuthToolArguments`` args, merges ``credential_key`` into the
-  corresponding auth response, stores credentials via ``AuthHandler``,
-  and returns the set of original function call IDs that should be
-  re-executed (excluding toolset auth).
+  Scans session events for the ``adk_request_credential`` function calls whose
+  IDs are in *auth_fc_ids* and reads back the frozen ``AuthConfig`` from their
+  ``AuthToolArguments`` args. Each credential is stored via ``AuthHandler``
+  under that frozen config, with only the resumable OAuth2 fields taken from
+  the client. A response with no matching request is ignored.
 
   Args:
-    events: Session events to scan.
+    events: Session events to scan. Trusted.
     auth_fc_ids: IDs of ``adk_request_credential`` function calls to match.
     auth_responses: Mapping of FC ID -> auth config response dict from the
-      client.
+      client. Untrusted.
     state: Session state for temporary credential storage.
 
   Returns:
-    Set of original function call IDs to resume.
+    Set of original function call IDs to resume, excluding toolset auth.
   """
   # Step 1: Scan events for matching adk_request_credential function calls
   # to extract AuthToolArguments (contains credential_key).
@@ -80,18 +136,24 @@ async def _store_auth_and_collect_resume_targets(
     except TypeError:
       continue
 
-  # Step 2: Store credentials. Merge credential_key from the original
-  # request into the client's auth response before storing.
+  # Step 2: Store credentials. The frozen request decides how the credential
+  # is stored and exchanged; the resume message may only carry what the user
+  # just obtained from the identity provider.
   for fc_id in auth_fc_ids:
     if fc_id not in auth_responses:
       continue
-    auth_config = AuthConfig.model_validate(auth_responses[fc_id])
     requested_auth_config = requested_auth_config_by_id.get(fc_id)
-    if (
-        requested_auth_config
-        and requested_auth_config.credential_key is not None
-    ):
-      auth_config.credential_key = requested_auth_config.credential_key
+    if not requested_auth_config:
+      logger.warning(
+          "Ignoring auth response for %s: no matching credential request.",
+          fc_id,
+      )
+      continue
+    response_config = AuthConfig.model_validate(auth_responses[fc_id])
+    auth_config = requested_auth_config.model_copy(deep=True)
+    auth_config.exchanged_auth_credential = _bind_oauth2_to_request(
+        requested_auth_config, response_config.exchanged_auth_credential
+    )
     await AuthHandler(auth_config=auth_config).parse_and_store_auth_response(
         state=state
     )

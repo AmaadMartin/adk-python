@@ -352,7 +352,9 @@ def test_function_get_auth_response():
     if not auth_response:
       tool_context.request_credential(auth_config1)
       return
-    assert auth_response == auth_response1.exchanged_auth_credential
+    assert auth_response.oauth2.access_token == 'token1'
+    assert auth_response.oauth2.client_id == 'oauth_client_id_1'
+    assert auth_response.oauth2.client_secret == 'oauth_client_secret1'
     return 1
 
   def call_external_api2(tool_context: ToolContext) -> int:
@@ -362,7 +364,9 @@ def test_function_get_auth_response():
     if not auth_response:
       tool_context.request_credential(auth_config2)
       return
-    assert auth_response == auth_response2.exchanged_auth_credential
+    assert auth_response.oauth2.access_token == 'token2'
+    assert auth_response.oauth2.client_id == 'oauth_client_id_2'
+    assert auth_response.oauth2.client_secret == 'oauth_client_secret2'
     return 2
 
   agent = Agent(
@@ -548,7 +552,9 @@ def test_function_get_auth_response_partial():
     if not auth_response:
       tool_context.request_credential(auth_config1)
       return
-    assert auth_response == auth_response1.exchanged_auth_credential
+    assert auth_response.oauth2.access_token == 'token1'
+    assert auth_response.oauth2.client_id == 'oauth_client_id_1'
+    assert auth_response.oauth2.client_secret == 'oauth_client_secret1'
     return 1
 
   def call_external_api2(tool_context: ToolContext) -> int:
@@ -558,7 +564,9 @@ def test_function_get_auth_response_partial():
     if not auth_response:
       tool_context.request_credential(auth_config2)
       return
-    assert auth_response == auth_response2.exchanged_auth_credential
+    assert auth_response.oauth2.access_token == 'token2'
+    assert auth_response.oauth2.client_id == 'oauth_client_id_2'
+    assert auth_response.oauth2.client_secret == 'oauth_client_secret2'
     return 2
 
   agent = Agent(
