@@ -15,7 +15,6 @@
 """Unit tests for the AgentEngineSandboxComputer class."""
 
 import time
-import unittest
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -27,29 +26,28 @@ from google.adk.integrations.vmaas.sandbox_computer import _STATE_KEY_TOKEN_EXPI
 from google.adk.integrations.vmaas.sandbox_computer import AgentEngineSandboxComputer
 from google.adk.tools.computer_use.base_computer import ComputerEnvironment
 from google.adk.tools.computer_use.base_computer import ComputerState
+import pytest
+
+_PROJECT_ID = "test-project"
+_LOCATION = "us-central1"
+_SERVICE_ACCOUNT = "sa@test-project.iam.gserviceaccount.com"
 
 
-class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
+class TestAgentEngineSandboxComputer:
   """Tests for AgentEngineSandboxComputer."""
-
-  def setUp(self):
-    """Set up test fixtures."""
-    self.project_id = "test-project"
-    self.location = "us-central1"
-    self.service_account = "sa@test-project.iam.gserviceaccount.com"
 
   def test_init(self):
     """Test computer initialization."""
     computer = AgentEngineSandboxComputer(
-        project_id=self.project_id,
-        location=self.location,
-        service_account_email=self.service_account,
+        project_id=_PROJECT_ID,
+        location=_LOCATION,
+        service_account_email=_SERVICE_ACCOUNT,
     )
 
-    self.assertEqual(computer._project_id, self.project_id)
-    self.assertEqual(computer._location, self.location)
-    self.assertEqual(computer._service_account_email, self.service_account)
-    self.assertEqual(computer._screen_size, (1280, 720))
+    assert computer._project_id == _PROJECT_ID
+    assert computer._location == _LOCATION
+    assert computer._service_account_email == _SERVICE_ACCOUNT
+    assert computer._screen_size == (1280, 720)
 
   def test_init_with_byos(self):
     """Test initialization with bring-your-own-sandbox."""
@@ -59,13 +57,13 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     sandbox_name = f"{agent_engine_name}/sandboxEnvironments/456"
 
     computer = AgentEngineSandboxComputer(
-        project_id=self.project_id,
+        project_id=_PROJECT_ID,
         sandbox_name=sandbox_name,
     )
 
     # Agent engine name should be extracted from sandbox_name
-    self.assertEqual(computer._agent_engine_name, agent_engine_name)
-    self.assertEqual(computer._sandbox_name, sandbox_name)
+    assert computer._agent_engine_name == agent_engine_name
+    assert computer._sandbox_name == sandbox_name
 
   def test_init_with_template_derives_agent_engine(self):
     """Test agent engine is derived from sandbox_template_name."""
@@ -75,14 +73,14 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     template_name = f"{agent_engine_name}/sandboxEnvironmentTemplates/789"
 
     computer = AgentEngineSandboxComputer(
-        project_id=self.project_id,
+        project_id=_PROJECT_ID,
         sandbox_template_name=template_name,
     )
 
     # Agent engine name should be derived from the template name so the
     # sandbox is created under the template's reasoning engine (no BYOS).
-    self.assertEqual(computer._agent_engine_name, agent_engine_name)
-    self.assertEqual(computer._sandbox_template_name, template_name)
+    assert computer._agent_engine_name == agent_engine_name
+    assert computer._sandbox_template_name == template_name
 
   def test_init_with_snapshot_derives_agent_engine(self):
     """Test agent engine is derived from sandbox_snapshot_name."""
@@ -92,12 +90,12 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     snapshot_name = f"{agent_engine_name}/sandboxEnvironmentSnapshots/789"
 
     computer = AgentEngineSandboxComputer(
-        project_id=self.project_id,
+        project_id=_PROJECT_ID,
         sandbox_snapshot_name=snapshot_name,
     )
 
-    self.assertEqual(computer._agent_engine_name, agent_engine_name)
-    self.assertEqual(computer._sandbox_snapshot_name, snapshot_name)
+    assert computer._agent_engine_name == agent_engine_name
+    assert computer._sandbox_snapshot_name == snapshot_name
 
   def test_init_sandbox_name_takes_precedence_over_template(self):
     """Test sandbox_name wins when both sandbox_name and template are set."""
@@ -111,18 +109,19 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     )
 
     computer = AgentEngineSandboxComputer(
-        project_id=self.project_id,
+        project_id=_PROJECT_ID,
         sandbox_name=sandbox_name,
         sandbox_template_name=template_name,
     )
 
-    self.assertEqual(computer._agent_engine_name, sandbox_engine)
+    assert computer._agent_engine_name == sandbox_engine
 
   def test_init_without_sandbox_source_has_no_agent_engine(self):
     """Test agent engine is None when no sandbox source is provided."""
-    computer = AgentEngineSandboxComputer(project_id=self.project_id)
-    self.assertIsNone(computer._agent_engine_name)
+    computer = AgentEngineSandboxComputer(project_id=_PROJECT_ID)
+    assert computer._agent_engine_name is None
 
+  @pytest.mark.asyncio
   async def test_ensure_agent_engine_with_template_name(self):
     """Test _ensure_agent_engine reuses the template's reasoning engine."""
     agent_engine_name = (
@@ -134,28 +133,31 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
 
     result = await computer._ensure_agent_engine()
 
-    self.assertEqual(result, agent_engine_name)
+    assert result == agent_engine_name
     # Should not have created or stored a new engine.
-    self.assertNotIn(_STATE_KEY_AGENT_ENGINE_NAME, computer._session_state)
+    assert _STATE_KEY_AGENT_ENGINE_NAME not in computer._session_state
 
   def test_init_with_vertexai_client(self):
     """Test initialization with provided vertexai client."""
     mock_client = MagicMock()
     computer = AgentEngineSandboxComputer(vertexai_client=mock_client)
-    self.assertEqual(computer._client, mock_client)
+    assert computer._client == mock_client
 
+  @pytest.mark.asyncio
   async def test_screen_size(self):
     """Test screen_size returns hardcoded size."""
     computer = AgentEngineSandboxComputer()
     result = await computer.screen_size()
-    self.assertEqual(result, (1280, 720))
+    assert result == (1280, 720)
 
+  @pytest.mark.asyncio
   async def test_environment(self):
     """Test environment returns ENVIRONMENT_BROWSER."""
     computer = AgentEngineSandboxComputer()
     result = await computer.environment()
-    self.assertEqual(result, ComputerEnvironment.ENVIRONMENT_BROWSER)
+    assert result == ComputerEnvironment.ENVIRONMENT_BROWSER
 
+  @pytest.mark.asyncio
   async def test_ensure_agent_engine_with_sandbox_name(self):
     """Test _ensure_agent_engine extracts agent engine from sandbox_name."""
     agent_engine_name = (
@@ -167,10 +169,11 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
 
     result = await computer._ensure_agent_engine()
 
-    self.assertEqual(result, agent_engine_name)
+    assert result == agent_engine_name
     # Should not have touched session state
-    self.assertNotIn(_STATE_KEY_AGENT_ENGINE_NAME, computer._session_state)
+    assert _STATE_KEY_AGENT_ENGINE_NAME not in computer._session_state
 
+  @pytest.mark.asyncio
   async def test_ensure_agent_engine_from_session_state(self):
     """Test _ensure_agent_engine uses session state value."""
     agent_engine_name = (
@@ -181,8 +184,9 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
 
     result = await computer._ensure_agent_engine()
 
-    self.assertEqual(result, agent_engine_name)
+    assert result == agent_engine_name
 
+  @pytest.mark.asyncio
   @patch("google.adk.integrations.vmaas.sandbox_computer.asyncio.to_thread")
   @patch.object(AgentEngineSandboxComputer, "_get_client")
   async def test_ensure_agent_engine_creates_new(
@@ -198,16 +202,17 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     mock_engine.api_resource.name = new_engine_name
     mock_to_thread.return_value = mock_engine
 
-    computer = AgentEngineSandboxComputer(project_id=self.project_id)
+    computer = AgentEngineSandboxComputer(project_id=_PROJECT_ID)
     computer._session_state = {}
 
     result = await computer._ensure_agent_engine()
 
-    self.assertEqual(result, new_engine_name)
-    self.assertEqual(
-        computer._session_state[_STATE_KEY_AGENT_ENGINE_NAME], new_engine_name
+    assert result == new_engine_name
+    assert (
+        computer._session_state[_STATE_KEY_AGENT_ENGINE_NAME] == new_engine_name
     )
 
+  @pytest.mark.asyncio
   @patch("google.adk.integrations.vmaas.sandbox_computer.asyncio.to_thread")
   @patch.object(AgentEngineSandboxComputer, "_get_client")
   async def test_get_sandbox_with_constructor_value(
@@ -228,9 +233,10 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
 
     result_name, result_sandbox = await computer._get_sandbox()
 
-    self.assertEqual(result_name, sandbox_name)
-    self.assertEqual(result_sandbox, mock_sandbox)
+    assert result_name == sandbox_name
+    assert result_sandbox == mock_sandbox
 
+  @pytest.mark.asyncio
   @patch("google.adk.integrations.vmaas.sandbox_computer.asyncio.to_thread")
   @patch.object(AgentEngineSandboxComputer, "_get_client")
   async def test_get_sandbox_from_session_state(
@@ -250,9 +256,10 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
 
     result_name, result_sandbox = await computer._get_sandbox()
 
-    self.assertEqual(result_name, sandbox_name)
-    self.assertEqual(result_sandbox, mock_sandbox)
+    assert result_name == sandbox_name
+    assert result_sandbox == mock_sandbox
 
+  @pytest.mark.asyncio
   async def test_get_access_token_cached(self):
     """Test _get_access_token uses cached token."""
     sandbox_name = "projects/test/sandboxEnvironments/123"
@@ -268,8 +275,9 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
 
     result = await computer._get_access_token(sandbox_name)
 
-    self.assertEqual(result, cached_token)
+    assert result == cached_token
 
+  @pytest.mark.asyncio
   @patch("google.adk.integrations.vmaas.sandbox_computer.asyncio.to_thread")
   @patch.object(AgentEngineSandboxComputer, "_get_client")
   async def test_get_access_token_generates_new_when_expired(
@@ -286,7 +294,7 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     mock_get_client.return_value = mock_client
 
     computer = AgentEngineSandboxComputer(
-        service_account_email=self.service_account
+        service_account_email=_SERVICE_ACCOUNT
     )
     computer._session_state = {
         _STATE_KEY_ACCESS_TOKEN: "old_token",
@@ -295,11 +303,10 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
 
     result = await computer._get_access_token(sandbox_name)
 
-    self.assertEqual(result, new_token)
-    self.assertEqual(
-        computer._session_state[_STATE_KEY_ACCESS_TOKEN], new_token
-    )
+    assert result == new_token
+    assert computer._session_state[_STATE_KEY_ACCESS_TOKEN] == new_token
 
+  @pytest.mark.asyncio
   @patch.object(AgentEngineSandboxComputer, "_get_sandbox_client")
   async def test_click_at(self, mock_get_client):
     """Test click_at method."""
@@ -315,10 +322,11 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     result = await computer.click_at(100, 200)
 
     mock_client.click_at.assert_called_once_with(100, 200)
-    self.assertIsInstance(result, ComputerState)
-    self.assertEqual(result.screenshot, b"png_data")
-    self.assertEqual(result.url, "https://example.com")
+    assert isinstance(result, ComputerState)
+    assert result.screenshot == b"png_data"
+    assert result.url == "https://example.com"
 
+  @pytest.mark.asyncio
   @patch.object(AgentEngineSandboxComputer, "_get_sandbox_client")
   async def test_hover_at(self, mock_get_client):
     """Test hover_at method."""
@@ -334,8 +342,9 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     result = await computer.hover_at(150, 250)
 
     mock_client.hover_at.assert_called_once_with(150, 250)
-    self.assertIsInstance(result, ComputerState)
+    assert isinstance(result, ComputerState)
 
+  @pytest.mark.asyncio
   @patch.object(AgentEngineSandboxComputer, "_get_sandbox_client")
   async def test_type_text_at(self, mock_get_client):
     """Test type_text_at method."""
@@ -363,8 +372,9 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
         press_enter=True,
         clear_before_typing=False,
     )
-    self.assertIsInstance(result, ComputerState)
+    assert isinstance(result, ComputerState)
 
+  @pytest.mark.asyncio
   @patch.object(AgentEngineSandboxComputer, "_get_sandbox_client")
   async def test_scroll_document(self, mock_get_client):
     """Test scroll_document method."""
@@ -381,8 +391,9 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
 
     # Should scroll at center of screen
     mock_client.scroll_at.assert_called_once_with(640, 360, "down", 400)
-    self.assertIsInstance(result, ComputerState)
+    assert isinstance(result, ComputerState)
 
+  @pytest.mark.asyncio
   @patch.object(AgentEngineSandboxComputer, "_get_sandbox_client")
   async def test_scroll_at(self, mock_get_client):
     """Test scroll_at method."""
@@ -398,8 +409,9 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     result = await computer.scroll_at(100, 200, "up", 500)
 
     mock_client.scroll_at.assert_called_once_with(100, 200, "up", 500)
-    self.assertIsInstance(result, ComputerState)
+    assert isinstance(result, ComputerState)
 
+  @pytest.mark.asyncio
   @patch.object(AgentEngineSandboxComputer, "_get_sandbox_client")
   async def test_navigate(self, mock_get_client):
     """Test navigate method."""
@@ -415,9 +427,10 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     result = await computer.navigate("https://newsite.com")
 
     mock_client.navigate.assert_called_once_with("https://newsite.com")
-    self.assertIsInstance(result, ComputerState)
-    self.assertEqual(result.url, "https://newsite.com")
+    assert isinstance(result, ComputerState)
+    assert result.url == "https://newsite.com"
 
+  @pytest.mark.asyncio
   @patch.object(AgentEngineSandboxComputer, "_get_sandbox_client")
   async def test_search(self, mock_get_client):
     """Test search method navigates to search engine."""
@@ -437,8 +450,9 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     result = await computer.search()
 
     mock_client.navigate.assert_called_once_with("https://www.google.com")
-    self.assertIsInstance(result, ComputerState)
+    assert isinstance(result, ComputerState)
 
+  @pytest.mark.asyncio
   @patch.object(AgentEngineSandboxComputer, "_get_sandbox_client")
   async def test_go_back(self, mock_get_client):
     """Test go_back method."""
@@ -454,8 +468,9 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     result = await computer.go_back()
 
     mock_client.go_back.assert_called_once()
-    self.assertIsInstance(result, ComputerState)
+    assert isinstance(result, ComputerState)
 
+  @pytest.mark.asyncio
   @patch.object(AgentEngineSandboxComputer, "_get_sandbox_client")
   async def test_go_forward(self, mock_get_client):
     """Test go_forward method."""
@@ -471,8 +486,9 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     result = await computer.go_forward()
 
     mock_client.go_forward.assert_called_once()
-    self.assertIsInstance(result, ComputerState)
+    assert isinstance(result, ComputerState)
 
+  @pytest.mark.asyncio
   @patch.object(AgentEngineSandboxComputer, "_get_sandbox_client")
   async def test_key_combination(self, mock_get_client):
     """Test key_combination method."""
@@ -488,8 +504,9 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     result = await computer.key_combination(["control", "c"])
 
     mock_client.key_combination.assert_called_once_with(["control", "c"])
-    self.assertIsInstance(result, ComputerState)
+    assert isinstance(result, ComputerState)
 
+  @pytest.mark.asyncio
   @patch.object(AgentEngineSandboxComputer, "_get_sandbox_client")
   async def test_drag_and_drop(self, mock_get_client):
     """Test drag_and_drop method."""
@@ -505,8 +522,9 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     result = await computer.drag_and_drop(10, 20, 100, 200)
 
     mock_client.drag_and_drop.assert_called_once_with(10, 20, 100, 200)
-    self.assertIsInstance(result, ComputerState)
+    assert isinstance(result, ComputerState)
 
+  @pytest.mark.asyncio
   @patch.object(AgentEngineSandboxComputer, "_get_sandbox_client")
   async def test_wait(self, mock_get_client):
     """Test wait method."""
@@ -523,9 +541,10 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     result = await computer.wait(1)
     elapsed = time.time() - start_time
 
-    self.assertGreaterEqual(elapsed, 0.9)  # Allow some margin
-    self.assertIsInstance(result, ComputerState)
+    assert elapsed >= 0.9  # Allow some margin
+    assert isinstance(result, ComputerState)
 
+  @pytest.mark.asyncio
   @patch.object(AgentEngineSandboxComputer, "_get_sandbox_client")
   async def test_current_state(self, mock_get_client):
     """Test current_state method."""
@@ -539,10 +558,11 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
 
     result = await computer.current_state()
 
-    self.assertIsInstance(result, ComputerState)
-    self.assertEqual(result.screenshot, b"png_data")
-    self.assertEqual(result.url, "https://example.com")
+    assert isinstance(result, ComputerState)
+    assert result.screenshot == b"png_data"
+    assert result.url == "https://example.com"
 
+  @pytest.mark.asyncio
   @patch.object(AgentEngineSandboxComputer, "_get_sandbox_client")
   async def test_open_web_browser(self, mock_get_client):
     """Test open_web_browser method returns current state."""
@@ -557,20 +577,18 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     result = await computer.open_web_browser()
 
     # open_web_browser is a no-op for sandbox, just returns current state
-    self.assertIsInstance(result, ComputerState)
+    assert isinstance(result, ComputerState)
 
+  @pytest.mark.asyncio
   async def test_initialize_is_noop(self):
     """Test initialize does nothing (lazy provisioning)."""
     computer = AgentEngineSandboxComputer()
     # Should not raise
     await computer.initialize()
 
+  @pytest.mark.asyncio
   async def test_close_is_noop(self):
     """Test close does nothing (TTL-based cleanup)."""
     computer = AgentEngineSandboxComputer()
     # Should not raise
     await computer.close()
-
-
-if __name__ == "__main__":
-  unittest.main()
