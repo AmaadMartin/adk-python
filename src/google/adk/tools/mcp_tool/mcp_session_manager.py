@@ -526,6 +526,34 @@ def _create_mtls_client_factory(
   return factory
 
 
+def _select_httpx_factory(
+    connection_params: SseConnectionParams | StreamableHTTPConnectionParams,
+    mtls_transport: httpx.AsyncBaseTransport | None,
+) -> CheckableMcpHttpClientFactory:
+  """Picks the HTTP client factory to build this connection's client with.
+
+  A factory the caller supplied wins over the mTLS transport ADK derives from
+  the ambient environment. Replacing it drops the caller's proxy, CA bundle,
+  limits, retry and event-hook configuration, and nothing else reports that
+  loss.
+  """
+  # Pydantic returns the field default object itself, so identity against
+  # create_mcp_http_client says whether the caller supplied their own.
+  factory = connection_params.httpx_client_factory
+  if not mtls_transport:
+    return factory
+  if factory is not create_mcp_http_client:
+    logger.warning(
+        'Skipping the ADK mTLS transport for %s because a custom'
+        ' httpx_client_factory was supplied. The custom factory is used as-is;'
+        ' configure client certificates inside it if this connection needs'
+        ' mTLS.',
+        type(connection_params).__name__,
+    )
+    return factory
+  return _create_mtls_client_factory(mtls_transport)
+
+
 class MCPSessionManager:
   """Manages MCP client sessions.
 
@@ -839,40 +867,6 @@ class MCPSessionManager:
       if session_key in self._active_debug_lists:
         del self._active_debug_lists[session_key]
 
-  def _select_httpx_client_factory(
-      self,
-      factory: CheckableMcpHttpClientFactory,
-      mtls_transport: httpx.AsyncBaseTransport | None,
-  ) -> CheckableMcpHttpClientFactory:
-    """Picks the HTTP client factory to build this connection's client with.
-
-    A factory the caller supplied wins over the mTLS transport ADK derives from
-    the ambient environment. Replacing it drops the caller's proxy, CA bundle,
-    limits, retry and event-hook configuration, and nothing else reports that
-    loss.
-
-    Args:
-        factory: The factory held by the connection params. Pydantic returns the
-          field default object itself, so an identity check against
-          `create_mcp_http_client` says whether the caller supplied their own.
-        mtls_transport: The mTLS transport, if one was configured.
-
-    Returns:
-        The factory to use for this connection.
-    """
-    if not mtls_transport:
-      return factory
-    if factory is not create_mcp_http_client:
-      logger.warning(
-          'Skipping the ADK mTLS transport for %s because a custom'
-          ' httpx_client_factory was supplied. The custom factory is used'
-          ' as-is; configure client certificates inside it if this connection'
-          ' needs mTLS.',
-          type(self._connection_params).__name__,
-      )
-      return factory
-    return _create_mtls_client_factory(mtls_transport)
-
   def _create_client(
       self,
       merged_headers: dict[str, str] | None = None,
@@ -902,9 +896,7 @@ class MCPSessionManager:
           errlog=self._errlog,
       )
     elif isinstance(self._connection_params, SseConnectionParams):
-      factory = self._select_httpx_client_factory(
-          self._connection_params.httpx_client_factory, mtls_transport
-      )
+      factory = _select_httpx_factory(self._connection_params, mtls_transport)
       debug_factory = _DebugHttpxClientFactory(
           factory,
           session_manager=self,
@@ -921,9 +913,7 @@ class MCPSessionManager:
           on_session_created=on_session_created,
       )
     elif isinstance(self._connection_params, StreamableHTTPConnectionParams):
-      factory = self._select_httpx_client_factory(
-          self._connection_params.httpx_client_factory, mtls_transport
-      )
+      factory = _select_httpx_factory(self._connection_params, mtls_transport)
       debug_factory = _DebugHttpxClientFactory(
           factory,
           session_manager=self,
