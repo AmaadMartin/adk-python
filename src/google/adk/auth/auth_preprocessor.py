@@ -40,19 +40,11 @@ logger = logging.getLogger("google_adk." + __name__)
 # listing) and don't require resuming a function call.
 TOOLSET_AUTH_CREDENTIAL_ID_PREFIX = "_adk_toolset_auth_"
 
-# The OAuth2 fields a resume message may contribute. Everything else on
-# `oauth2` -- the client credentials, the PKCE verifier and the CSRF state --
-# belongs to the tool or to ADK, so it is read back from the frozen request. A
-# field added to `OAuth2Auth` later stays frozen-sourced until it is named
-# here.
-#
-# `redirect_uri` is resumable because the client, not the tool, decides where
-# the authorization server sends the user. The bundled dev UI rewrites the
-# `redirect_uri` of the authorization URI before it opens the consent popup,
-# and most tools set none at all. RFC 6749 section 4.1.3 requires the token
-# request to repeat that same value, so the client has to report it back. This
-# grants the client nothing: ADK still sends the request to the frozen token
-# endpoint and reads the token out of the response.
+# The OAuth2 fields a resume message may contribute; everything else -- client
+# credentials, PKCE verifier, CSRF state -- is read back from the frozen
+# request. `redirect_uri` is here because the client chooses it (the dev UI
+# rewrites it, most tools pin none) and RFC 6749 4.1.3 requires the token
+# request to repeat it; ADK still uses the frozen token endpoint.
 _RESUMABLE_OAUTH2_FIELDS = (
     "auth_response_uri",
     "auth_code",
@@ -89,11 +81,9 @@ def _bind_oauth2_to_request(
       requested_auth_config.exchanged_auth_credential
       or requested_auth_config.raw_auth_credential
   )
-  if frozen is None:
+  if frozen is None or frozen.oauth2 is None:
     return response_credential
   bound = frozen.model_copy(deep=True)
-  if bound.oauth2 is None:
-    return response_credential
   resumed = response_credential.oauth2 if response_credential else None
   if resumed is not None:
     for field in _RESUMABLE_OAUTH2_FIELDS:

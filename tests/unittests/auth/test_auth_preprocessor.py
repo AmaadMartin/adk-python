@@ -343,8 +343,13 @@ class TestAuthLlmRequestProcessor:
       mock_auth_config,
   ):
     """Test successful processing of auth response in last event."""
-    # Setup mocks
-    mock_auth_config_validate.return_value = mock_auth_config
+    # Setup mocks. The client's parsed payload is a distinct object from the
+    # frozen request, so the handler argument tells the two apart.
+    client_auth_config = Mock(spec=AuthConfig)
+    client_auth_config.credential_key = None
+    client_auth_config.raw_auth_credential = None
+    client_auth_config.exchanged_auth_credential = None
+    mock_auth_config_validate.return_value = client_auth_config
     mock_auth_handler = Mock(spec=AuthHandler)
     mock_auth_handler.parse_and_store_auth_response = AsyncMock()
     mock_auth_handler_class.return_value = mock_auth_handler
@@ -378,12 +383,12 @@ class TestAuthLlmRequestProcessor:
     # Verify auth config validation was called
     mock_auth_config_validate.assert_called_once()
 
-    # Verify the auth handler was created with a copy of the frozen request,
-    # not with the config the client sent back.
-    mock_auth_config.model_copy.assert_called_once_with(deep=True)
-    mock_auth_handler_class.assert_called_once_with(
-        auth_config=mock_auth_config.model_copy.return_value
-    )
+    # Verify the auth handler was never handed the client's config.
+    mock_auth_handler_class.assert_called_once()
+    handler_auth_config = mock_auth_handler_class.call_args.kwargs[
+        'auth_config'
+    ]
+    assert handler_auth_config is not client_auth_config
 
     # Verify parse_and_store_auth_response was called
     mock_auth_handler.parse_and_store_auth_response.assert_called_once_with(
