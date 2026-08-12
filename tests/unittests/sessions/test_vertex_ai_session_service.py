@@ -19,6 +19,7 @@ from typing import Any
 from typing import List
 from typing import Optional
 from typing import Tuple
+from typing import Union
 from unittest import mock
 
 from dateutil.parser import isoparse
@@ -1557,3 +1558,93 @@ async def test_get_session_strips_full_resource_name(
   mock_api_client_instance.agent_engines.sessions.get.assert_called_once_with(
       name='reasoningEngines/123/sessions/session-123'
   )
+
+
+class _HttpOptionsOverridingSessionService(VertexAiSessionService):
+  """Session service that supplies its own http options, like an embedder."""
+
+  def __init__(
+      self,
+      http_options: Optional[
+          Union[genai_types.HttpOptions, genai_types.HttpOptionsDict]
+      ],
+      **kwargs: Any,
+  ):
+    super().__init__(**kwargs)
+    self._http_options = http_options
+
+  def _api_client_http_options_override(
+      self,
+  ) -> Optional[Union[genai_types.HttpOptions, genai_types.HttpOptionsDict]]:
+    return self._http_options
+
+
+def test_get_api_client_passes_no_http_options_by_default():
+  with mock.patch('vertexai.Client') as mock_client_constructor:
+    api_client = mock_vertex_ai_session_service()._get_api_client()
+
+  mock_client_constructor.assert_called_once_with(
+      project='test-project',
+      location='test-location',
+      http_options=None,
+  )
+  assert api_client is mock_client_constructor.return_value.aio
+
+
+def test_get_api_client_express_mode_passes_no_http_options_by_default(
+    monkeypatch,
+):
+  monkeypatch.setenv('GOOGLE_GENAI_USE_ENTERPRISE', '1')
+  session_service = mock_vertex_ai_session_service(
+      project=None, location=None, express_mode_api_key='test-api-key'
+  )
+
+  with mock.patch('vertexai.Client') as mock_client_constructor:
+    api_client = session_service._get_api_client()
+
+  mock_client_constructor.assert_called_once_with(
+      http_options=None,
+      api_key='test-api-key',
+  )
+  assert api_client is mock_client_constructor.return_value.aio
+
+
+def test_get_api_client_forwards_subclass_http_options_override():
+  override = genai_types.HttpOptions(headers={'x-custom': 'value'})
+  session_service = _HttpOptionsOverridingSessionService(
+      http_options=override,
+      project='test-project',
+      location='test-location',
+  )
+
+  with mock.patch('vertexai.Client') as mock_client_constructor:
+    api_client = session_service._get_api_client()
+
+  mock_client_constructor.assert_called_once_with(
+      project='test-project',
+      location='test-location',
+      http_options=override,
+  )
+  # Identity, not equality: a merged copy would still compare equal.
+  assert mock_client_constructor.call_args.kwargs['http_options'] is override
+  assert api_client is mock_client_constructor.return_value.aio
+
+
+def test_get_api_client_forwards_subclass_http_options_dict_override(
+    monkeypatch,
+):
+  monkeypatch.setenv('GOOGLE_GENAI_USE_ENTERPRISE', '1')
+  override: genai_types.HttpOptionsDict = {'headers': {'x-custom': 'value'}}
+  session_service = _HttpOptionsOverridingSessionService(
+      http_options=override, express_mode_api_key='test-api-key'
+  )
+
+  with mock.patch('vertexai.Client') as mock_client_constructor:
+    api_client = session_service._get_api_client()
+
+  mock_client_constructor.assert_called_once_with(
+      http_options=override,
+      api_key='test-api-key',
+  )
+  assert mock_client_constructor.call_args.kwargs['http_options'] is override
+  assert api_client is mock_client_constructor.return_value.aio

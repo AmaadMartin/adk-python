@@ -516,6 +516,20 @@ class VertexAiSessionService(BaseSessionService):
   def _api_client_http_options_override(
       self,
   ) -> Optional[Union[types.HttpOptions, types.HttpOptionsDict]]:
+    """Returns the http options that the Vertex AI client is built with.
+
+    Subclasses override this hook to control credentials, endpoint, timeouts or
+    custom headers. ``_get_api_client`` forwards the return value to
+    ``vertexai.Client`` verbatim, on the express-mode path and on the
+    project/location path. ADK never copies, merges or replaces the value, and
+    it adds no headers of its own. A subclass that wants ADK attribution
+    headers returns
+    ``google.adk.utils._google_client_headers.get_tracking_http_options()``.
+
+    Returns:
+      The http options to build the Vertex AI client with, or None to build the
+      client with no http options.
+    """
     return None
 
   def _get_api_client(self) -> vertexai.AsyncClient:
