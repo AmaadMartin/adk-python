@@ -24,7 +24,11 @@ from google.adk.agents.parallel_agent import ParallelAgent
 from google.adk.agents.sequential_agent import SequentialAgent
 from google.adk.cli.agent_graph import get_agent_graph
 from google.adk.tools.agent_tool import AgentTool
+from google.adk.workflow import START
+from google.adk.workflow import Workflow
 import pytest
+
+from tests.unittests.workflow.workflow_testing_utils import TestingNode
 
 _DARK_GREEN = '#0F5223'
 _LIGHT_GREEN = '#69CB87'
@@ -250,3 +254,54 @@ async def test_get_agent_graph_is_strict_so_repeated_edges_collapse():
 
   assert graph.strict
   assert graph.source.count('child -> roll_dice') == 1
+
+
+@pytest.mark.asyncio
+async def test_build_graph_workflow_labels_conditional_route_edges():
+  router = TestingNode(name='router')
+  approve = TestingNode(name='approve')
+  reject = TestingNode(name='reject')
+  workflow = Workflow(
+      name='review',
+      edges=[
+          (START, router),
+          (router, {'approved': approve, 'rejected': reject}),
+      ],
+  )
+
+  graph = await get_agent_graph(workflow, [])
+
+  nodes, edges = _parse(graph.source)
+
+  assert set(nodes) == {'router', 'approve', 'reject'}
+  assert edges[('router', 'approve')]['label'] == 'approved'
+  assert edges[('router', 'reject')]['label'] == 'rejected'
+
+
+@pytest.mark.asyncio
+async def test_build_graph_workflow_unrouted_edge_has_no_label():
+  first = TestingNode(name='first')
+  second = TestingNode(name='second')
+  workflow = Workflow(name='chain', edges=[(START, first), (first, second)])
+
+  graph = await get_agent_graph(workflow, [])
+
+  _, edges = _parse(graph.source)
+
+  assert 'label' not in edges[('first', 'second')]
+
+
+@pytest.mark.asyncio
+async def test_build_graph_workflow_highlighted_route_edge_keeps_its_label():
+  router = TestingNode(name='router')
+  approve = TestingNode(name='approve')
+  workflow = Workflow(
+      name='review', edges=[(START, router), (router, {'approved': approve})]
+  )
+
+  graph = await get_agent_graph(workflow, [('router', 'approve')])
+
+  _, edges = _parse(graph.source)
+
+  assert edges[('router', 'approve')]['color'] == _LIGHT_GREEN
+  assert edges[('router', 'approve')]['label'] == 'approved'
