@@ -13,6 +13,7 @@
 # limitations under the License.
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import datetime
 import importlib
 import json
@@ -40,6 +41,29 @@ _LOCAL_STORAGE_FLAG_MIN_VERSION: Final[str] = '1.21.0'
 _AGENT_ENGINE_REQUIREMENT: Final[str] = (
     'google-cloud-aiplatform[adk,agent_engines]'
 )
+
+# CLI flag -> environment variable that carries its value at run time. The
+# generated Dockerfile references the variable instead of the value, so a
+# credentialed URI never lands in the image configuration or its history.
+_SERVICE_URI_ENV_VARS: Final[tuple[tuple[str, str], ...]] = (
+    ('--session_service_uri', 'ADK_SESSION_SERVICE_URI'),
+    ('--artifact_service_uri', 'ADK_ARTIFACT_SERVICE_URI'),
+    ('--memory_service_uri', 'ADK_MEMORY_SERVICE_URI'),
+)
+
+# gcloud flags that write the environment of a Cloud Run service. ADK claims
+# all of them while it injects the service URIs, so a user-supplied flag
+# cannot silently drop the injected variables.
+_GCLOUD_ENV_VAR_ARGS: Final[tuple[str, ...]] = (
+    '--update-env-vars',
+    '--set-env-vars',
+    '--remove-env-vars',
+    '--clear-env-vars',
+    '--env-vars-file',
+)
+
+# Characters tried as gcloud's alternate list delimiter, in preference order.
+_ENV_VAR_DELIMITERS: Final[tuple[str, ...]] = ('|', '#', '~', '!', '+', '@')
 
 
 def _ensure_agent_engine_dependency(requirements_txt_path: str) -> None:
@@ -579,6 +603,66 @@ def _validate_agent_import(
         sys.modules.pop(key, None)
 
 
+def _get_service_env_vars(
+    session_uri: Optional[str],
+    artifact_uri: Optional[str],
+    memory_uri: Optional[str],
+) -> dict[str, str]:
+  """Returns the deploy-time env vars carrying the service URIs.
+
+  Args:
+    session_uri: The session service URI, if any.
+    artifact_uri: The artifact service URI, if any.
+    memory_uri: The memory service URI, if any.
+
+  Returns:
+    A mapping of environment variable name to URI, in session, artifact,
+    memory order, holding an entry only for each URI that is set.
+  """
+  uris = (session_uri, artifact_uri, memory_uri)
+  return {
+      env_var: uri
+      for (_, env_var), uri in zip(_SERVICE_URI_ENV_VARS, uris)
+      if uri
+  }
+
+
+def _format_env_vars_flag_value(env_vars: Mapping[str, str]) -> str:
+  """Returns the value for a single gcloud `--update-env-vars` flag.
+
+  gcloud splits the value on commas, so a URI that contains a comma needs
+  gcloud's alternate delimiter form, `^<delimiter>^<pair><delimiter><pair>`.
+
+  Args:
+    env_vars: The environment variables to encode.
+
+  Returns:
+    The encoded flag value.
+
+  Raises:
+    click.ClickException: If every candidate delimiter occurs in the values,
+      so gcloud cannot carry them without truncation.
+  """
+  pairs = [f'{name}={value}' for name, value in env_vars.items()]
+  if not any(',' in pair for pair in pairs):
+    return ','.join(pairs)
+
+  for delimiter in _ENV_VAR_DELIMITERS:
+    if all(delimiter not in pair for pair in pairs):
+      return f'^{delimiter}^' + delimiter.join(pairs)
+
+  offenders = ', '.join(
+      name for name, value in env_vars.items() if ',' in value
+  )
+  raise click.ClickException(
+      f'Cannot pass {offenders} to gcloud: the value contains a comma and the'
+      ' service URIs use every alternate delimiter'
+      f' ({" ".join(_ENV_VAR_DELIMITERS)}). Remove one of those characters'
+      ' from the URIs, or keep the credential in Secret Manager and reference'
+      ' it from the service instead.'
+  )
+
+
 def _get_service_option_by_adk_version(
     adk_version: str,
     session_uri: Optional[str],
@@ -586,16 +670,20 @@ def _get_service_option_by_adk_version(
     memory_uri: Optional[str],
     use_local_storage: Optional[bool] = None,
 ) -> str:
-  """Returns service option string based on adk_version."""
+  """Returns service option string based on adk_version.
+
+  Each service URI is referenced through its environment variable, so the
+  value stays out of the generated Dockerfile. `CMD` is in shell form, so
+  `/bin/sh -c` expands the variable when the container starts, and the double
+  quotes keep a value with spaces or shell metacharacters as one argument.
+  """
   parsed_version = parse(adk_version)
   options: list[str] = []
 
-  if session_uri:
-    options.append(f'--session_service_uri={session_uri}')
-  if artifact_uri:
-    options.append(f'--artifact_service_uri={artifact_uri}')
-  if memory_uri:
-    options.append(f'--memory_service_uri={memory_uri}')
+  uris = (session_uri, artifact_uri, memory_uri)
+  for (flag, env_var), uri in zip(_SERVICE_URI_ENV_VARS, uris):
+    if uri:
+      options.append(f'{flag}="${env_var}"')
 
   if use_local_storage is not None and parsed_version >= parse(
       _LOCAL_STORAGE_FLAG_MIN_VERSION
@@ -779,12 +867,18 @@ def to_cloud_run(
     region_options = ['--region', region] if region else []
     project = _resolve_project(project)
 
+    service_env_vars = _get_service_env_vars(
+        session_service_uri, artifact_service_uri, memory_service_uri
+    )
+
     # Build the set of args that ADK will manage
     adk_managed_args = {'--source', '--project', '--port', '--verbosity'}
     if region:
       adk_managed_args.add('--region')
     if with_cloud_run_sandbox:
       adk_managed_args.add('--sandbox-launcher')
+    if service_env_vars:
+      adk_managed_args.update(_GCLOUD_ENV_VAR_ARGS)
 
     # Validate that extra gcloud args don't conflict with ADK-managed args
     _validate_gcloud_extra_args(extra_gcloud_args, adk_managed_args)
@@ -830,6 +924,13 @@ def to_cloud_run(
     labels_arg = ','.join(all_labels)
 
     gcloud_cmd.extend(['--labels', labels_arg])
+
+    # gcloud keeps only the last --update-env-vars occurrence, so all the
+    # variables go in one flag.
+    if service_env_vars:
+      gcloud_cmd.extend(
+          ['--update-env-vars', _format_env_vars_flag_value(service_env_vars)]
+      )
 
     # Add any remaining extra passthrough args
     gcloud_cmd.extend(extra_args_without_labels)
@@ -1213,7 +1314,7 @@ def to_agent_engine(
           stacklevel=2,
       )
 
-    def create_dockerfile_for_agent_engine(resource_name: str) -> None:
+    def create_dockerfile_for_agent_engine(agent_engine_uri: str) -> None:
       requirements_txt_path = os.path.join(agent_src_path, 'requirements.txt')
       install_agent_deps = (
           f'RUN pip install -r "/app/agents/{app_name}/requirements.txt"'
@@ -1233,7 +1334,6 @@ def to_agent_engine(
         ]
         copy_lines.append('ENV PYTHONPATH="/app:$PYTHONPATH"')
         extra_packages_copy = '\n'.join(copy_lines)
-      agent_engine_uri = f'agentengine://{resource_name}'
       dockerfile_content = _DOCKERFILE_TEMPLATE.format(
           gcp_project_id=project,
           gcp_region=region,
@@ -1288,9 +1388,27 @@ def to_agent_engine(
       click.secho(f'Created a new instance: {resource_name}', fg='green')
     elif project and region and not resource_name.startswith('projects/'):
       resource_name = f'projects/{project}/locations/{region}/reasoningEngines/{agent_engine_id}'
+    agent_engine_uri = f'agentengine://{resource_name}'
     click.echo('Creating Dockerfile...')
-    create_dockerfile_for_agent_engine(resource_name)
+    create_dockerfile_for_agent_engine(agent_engine_uri)
     click.echo(f'Dockerfile created at {os.getcwd()}/Dockerfile.')
+
+    # The Dockerfile only references these variables, so the deployment config
+    # has to carry the values.
+    service_env_vars = _get_service_env_vars(
+        session_service_uri or agent_engine_uri,
+        artifact_service_uri,
+        memory_service_uri or agent_engine_uri,
+    )
+    deployed_env_vars = agent_config.get('env_vars') or {}
+    for name in service_env_vars:
+      if name in deployed_env_vars:
+        click.secho(
+            f'Ignoring {name} in .env as the deploy-time service URI takes'
+            ' precedence',
+            fg='yellow',
+        )
+    agent_config['env_vars'] = {**deployed_env_vars, **service_env_vars}
     try:
       client.agent_engines.update(name=resource_name, config=agent_config)
       click.secho(f'Deployed to Agent Platform: {resource_name}', fg='green')
@@ -1471,6 +1589,16 @@ def to_gke(
 
     # Create a Kubernetes deployment
     click.echo('  - Creating Kubernetes deployment.yaml...')
+    # The Dockerfile only references these variables, so the pod template has
+    # to carry the values. json.dumps writes a valid YAML double-quoted
+    # scalar, which quotes and escapes the URI without a YAML dependency.
+    env_entries = ''.join(
+        f'\n        - name: {name}\n          value: {json.dumps(uri)}'
+        for name, uri in _get_service_env_vars(
+            session_service_uri, artifact_service_uri, memory_service_uri
+        ).items()
+    )
+    env_block = f'\n        env:{env_entries}' if env_entries else ''
     deployment_yaml = f"""
 apiVersion: apps/v1
 kind: Deployment
@@ -1499,7 +1627,7 @@ spec:
       - name: {service_name}
         image: {image_name}
         ports:
-        - containerPort: {port}
+        - containerPort: {port}{env_block}
 ---
 apiVersion: v1
 kind: Service
