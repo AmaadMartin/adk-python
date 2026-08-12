@@ -72,6 +72,14 @@ _LAZY_PACKAGES = (
             ),
         ),
         (
+            'google.adk.events',
+            (
+                'fastapi',
+                'google.adk.auth.auth_tool',
+                'starlette',
+            ),
+        ),
+        (
             'google.adk.workflow',
             (
                 'google.adk.workflow._function_node',
@@ -93,7 +101,7 @@ _LAZY_PACKAGES = (
             ),
         ),
     ],
-    ids=('root', 'agents', 'workflow', 'cli_commands'),
+    ids=('root', 'agents', 'events', 'workflow', 'cli_commands'),
 )
 def test_package_import_defers_unrelated_runtime(
     module_name: str, forbidden: tuple[str, ...]
