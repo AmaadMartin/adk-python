@@ -1,0 +1,81 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Update Dependency Constraints
+
+on:
+  # Refresh the resolution snapshot every Monday at 07:00 UTC. Nothing else in
+  # the repository moves it: the pre-commit hook runs in --check mode, and
+  # check mode re-reads --exclude-newer out of the header of the file it is
+  # checking, so a frozen snapshot verifies itself and stays green forever.
+  schedule:
+    - cron: '0 7 * * 1'
+
+  # Lets a maintainer regenerate on demand from the Actions console.
+  workflow_dispatch:
+
+jobs:
+  update-constraints:
+    name: Regenerate Constraints Files
+    if: github.repository == 'google/adk-python'
+    runs-on: ubuntu-latest
+    # Five --all-extras resolutions against PyPI.
+    timeout-minutes: 30
+    permissions:
+      contents: write
+      pull-requests: write
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      # No setup-python step: the script passes --python-version for each of
+      # 3.10-3.14, so the interpreter running uv is irrelevant.
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: true
+
+      # Exit 1 means the script rewrote the files, which is the normal outcome
+      # of a scheduled run because --exclude-newer moves every time. Exit 2 is
+      # a failed resolution and must fail the job, so that no pull request
+      # mixes fresh pins with the stale ones the failure left behind.
+      - name: Regenerate constraints files
+        run: ./scripts/update_constraints.sh || [ $? -eq 1 ]
+
+      - name: Extract Bot Identity
+        id: bot-identity
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PAT }}
+        run: |
+          USER_JSON=$(gh api user)
+          echo "name=$(echo "$USER_JSON" | jq -r '.login')" >> $GITHUB_OUTPUT
+          echo "email=$(echo "$USER_JSON" | jq -r '.id')+$(echo "$USER_JSON" | jq -r '.login')@users.noreply.github.com" >> $GITHUB_OUTPUT
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@c5a7806660adbe173f04e3e038b0ccdcd758773c # v6
+        with:
+          token: ${{ secrets.RELEASE_PAT }}
+          commit-message: "chore: update dependency constraints files"
+          branch: update-dependency-constraints
+          delete-branch: true
+          title: "chore: update dependency constraints files"
+          committer: "${{ steps.bot-identity.outputs.name }} <${{ steps.bot-identity.outputs.email }}>"
+          author: "${{ steps.bot-identity.outputs.name }} <${{ steps.bot-identity.outputs.email }}>"
+          body: |
+            This PR regenerates `constraints-3.10.txt` through `constraints-3.14.txt` by running `./scripts/update_constraints.sh`. Each file records in its header the `--exclude-newer` date it was resolved against.
+
+            Please review the diff before merging.
