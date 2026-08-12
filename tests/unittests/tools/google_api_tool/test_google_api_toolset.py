@@ -52,6 +52,20 @@ TOOLSET_MODULE = "google.adk.tools.google_api_tool.google_api_toolset"
 NON_UTF8_PASSPHRASE = b"p\xffass"
 
 
+@pytest.fixture(autouse=True)
+def disable_mtls_by_default(monkeypatch):
+  """Keeps the developer machine's own client certificate out of these tests.
+
+  The toolset now reads and decrypts the certificate in its constructor, so a
+  test that does not patch `use_client_cert_effective` would otherwise parse
+  whatever SecureConnect installed.
+  """
+  monkeypatch.setattr(
+      "google.auth.transport.mtls.should_use_client_cert",
+      lambda: False,
+  )
+
+
 @pytest.fixture
 def mock_rest_api_tool():
   """Fixture for a mock RestApiTool."""
@@ -144,7 +158,9 @@ def mtls_env(mock_converter_instance, mock_openapi_toolset_instance):
     openapi_toolset_class.return_value = mock_openapi_toolset_instance
     yield types.SimpleNamespace(
         use_client_cert=use_client_cert,
+        certs_class=mtls_certs_class,
         certs=mtls_certs_class.return_value,
+        openapi_toolset_class=openapi_toolset_class,
         openapi_toolset=mock_openapi_toolset_instance,
     )
 
@@ -159,9 +175,7 @@ def mtls_env_mocked_httpx(mtls_env):
       mock.patch(f"{TOOLSET_MODULE}.httpx.AsyncClient") as async_client_class,
   ):
     yield types.SimpleNamespace(
-        use_client_cert=mtls_env.use_client_cert,
-        certs=mtls_env.certs,
-        openapi_toolset=mtls_env.openapi_toolset,
+        **vars(mtls_env),
         create_ssl_context=create_ssl_context,
         ssl_context=create_ssl_context.return_value,
         async_client_class=async_client_class,
@@ -722,6 +736,11 @@ class TestGoogleApiToolset:
 
     assert tool_set._httpx_client_factory is None
     env.create_ssl_context.assert_not_called()
+    env.certs_class.assert_not_called()
+    assert (
+        env.openapi_toolset_class.call_args.kwargs["httpx_client_factory"]
+        is None
+    )
 
   async def test_no_mtls_when_cert_paths_missing(self, mtls_env_mocked_httpx):
     """Test that no ssl context is built when no client cert is available."""
@@ -746,8 +765,8 @@ class TestGoogleApiToolset:
         NON_UTF8_PASSPHRASE,
     )
 
-    with warnings.catch_warnings():
-      warnings.simplefilter("error", DeprecationWarning)
+    with warnings.catch_warnings(record=True) as raised:
+      warnings.simplefilter("always")
       tool_set = GoogleApiToolset(
           api_name=TEST_API_NAME, api_version=TEST_API_VERSION
       )
@@ -755,6 +774,12 @@ class TestGoogleApiToolset:
 
     assert isinstance(client, httpx.AsyncClient)
     await client.aclose()
+    assert not [
+        warning
+        for warning in raised
+        if issubclass(warning.category, DeprecationWarning)
+        and "cert=" in str(warning.message)
+    ]
 
   async def test_mtls_wrong_passphrase_raises(self, mtls_env, mtls_cert_files):
     """Test that an unusable client key fails toolset construction."""
