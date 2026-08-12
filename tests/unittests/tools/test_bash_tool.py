@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import asyncio
+import os
 import signal
 import sys
 from unittest import mock
@@ -230,6 +231,8 @@ class TestExecuteBashTool:
     tool = bash_tool.ExecuteBashTool(workspace=workspace)
     mock_process = mock.AsyncMock()
     mock_process.pid = 12345
+    # A timed-out command has not been reaped, so the tool still signals it.
+    mock_process.returncode = None
     mock_process.communicate.return_value = (b"", b"")
     with (
         mock.patch.object(
@@ -250,6 +253,107 @@ class TestExecuteBashTool:
       mock_killpg.assert_called_with(12345, signal.SIGKILL)
     assert "error" in result
     assert "timed out" in result["error"].lower()
+
+  @pytest.mark.asyncio
+  async def test_success_does_not_signal_the_reaped_process(
+      self, workspace, tool_context_confirmed
+  ):
+    """A command that ran to completion is never signalled on the way out.
+
+    asyncio reaps the child as `communicate()` returns, which frees its pid for
+    reuse; signalling it then could reach an unrelated process group.
+    """
+    tool = bash_tool.ExecuteBashTool(workspace=workspace)
+    with mock.patch("os.killpg") as mock_killpg:
+      result = await tool.run_async(
+          args={"command": "ls"},
+          tool_context=tool_context_confirmed,
+      )
+    assert result["returncode"] == 0
+    mock_killpg.assert_not_called()
+
+  @pytest.mark.asyncio
+  async def test_timeout_signals_the_group_exactly_once(
+      self, workspace, tool_context_confirmed
+  ):
+    """The deadline kill still fires; the one on the way out does not."""
+    tool = bash_tool.ExecuteBashTool(
+        workspace=workspace,
+        policy=bash_tool.BashToolPolicy(timeout_seconds=1),
+    )
+    spawned_pids: list[int] = []
+    real_exec = asyncio.create_subprocess_exec
+
+    async def _record_pid(*args, **kwargs):
+      process = await real_exec(*args, **kwargs)
+      spawned_pids.append(process.pid)
+      return process
+
+    with (
+        mock.patch.object(asyncio, "create_subprocess_exec", _record_pid),
+        mock.patch("os.killpg", wraps=os.killpg) as mock_killpg,
+    ):
+      result = await tool.run_async(
+          args={"command": "python3 -c 'import time; time.sleep(60)'"},
+          tool_context=tool_context_confirmed,
+      )
+
+    assert "timed out" in result["error"].lower()
+    assert result["returncode"] == -signal.SIGKILL
+    assert mock_killpg.call_args_list == [
+        mock.call(spawned_pids[0], signal.SIGKILL)
+    ]
+
+  @pytest.mark.asyncio
+  async def test_signals_a_process_that_is_still_running_at_exit(
+      self, workspace, tool_context_confirmed
+  ):
+    """An unreaped child is still torn down when run_async returns."""
+    tool = bash_tool.ExecuteBashTool(workspace=workspace)
+    mock_process = mock.AsyncMock()
+    mock_process.pid = 12345
+    mock_process.returncode = None
+    mock_process.communicate.return_value = (b"", b"")
+    with (
+        mock.patch.object(
+            asyncio,
+            "create_subprocess_exec",
+            autospec=True,
+            return_value=mock_process,
+        ),
+        mock.patch("os.killpg") as mock_killpg,
+    ):
+      await tool.run_async(
+          args={"command": "ls"},
+          tool_context=tool_context_confirmed,
+      )
+    mock_killpg.assert_called_once_with(12345, signal.SIGKILL)
+
+  @pytest.mark.asyncio
+  async def test_process_lost_between_check_and_signal_is_ignored(
+      self, workspace, tool_context_confirmed
+  ):
+    """A child that exits just before the signal does not fail the call."""
+    tool = bash_tool.ExecuteBashTool(workspace=workspace)
+    mock_process = mock.AsyncMock()
+    mock_process.pid = 12345
+    mock_process.returncode = None
+    mock_process.communicate.return_value = (b"done", b"")
+    with (
+        mock.patch.object(
+            asyncio,
+            "create_subprocess_exec",
+            autospec=True,
+            return_value=mock_process,
+        ),
+        mock.patch("os.killpg", side_effect=ProcessLookupError),
+    ):
+      result = await tool.run_async(
+          args={"command": "ls"},
+          tool_context=tool_context_confirmed,
+      )
+    assert result["stdout"] == "done"
+    assert "error" not in result
 
   @pytest.mark.asyncio
   async def test_cwd_is_workspace(self, workspace, tool_context_confirmed):

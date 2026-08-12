@@ -102,6 +102,24 @@ def _set_resource_limits(policy: BashToolPolicy) -> None:
     logger.warning("Failed to set resource limits: %s", e)
 
 
+def _kill_process_group(process: asyncio.subprocess.Process) -> None:
+  """SIGKILLs the group `process` leads, unless it has already been reaped.
+
+  A reaped pid can be recycled, and because this signals the group it would
+  then reach an unrelated group; while returncode is None the pid is still held
+  by our child. The tradeoff: a reaped child's backgrounded descendants are no
+  longer torn down.
+  """
+  if process.returncode is not None:
+    return
+  try:
+    os.killpg(process.pid, signal.SIGKILL)
+  except ProcessLookupError:
+    # The child exited between the check and the signal; its pid is still held
+    # by an unreaped zombie, so there is nothing to clean up.
+    pass
+
+
 class ExecuteBashTool(BaseTool):
   """Tool to execute a validated bash command within a workspace directory."""
 
@@ -195,11 +213,7 @@ class ExecuteBashTool(BaseTool):
             process.communicate(), timeout=self._policy.timeout_seconds
         )
       except asyncio.TimeoutError:
-        try:
-          if process.pid:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-          pass
+        _kill_process_group(process)
         stdout, stderr = await process.communicate()
         return {
             "error": (
@@ -219,11 +233,7 @@ class ExecuteBashTool(BaseTool):
             "returncode": process.returncode,
         }
       finally:
-        try:
-          if process.pid:
-            os.killpg(process.pid, signal.SIGKILL)
-        except ProcessLookupError:
-          pass
+        _kill_process_group(process)
       return {
           "stdout": (
               stdout.decode(errors="replace")
