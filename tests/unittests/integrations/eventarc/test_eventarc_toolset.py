@@ -14,7 +14,6 @@
 # limitations under the License.
 
 
-import unittest
 from unittest import mock
 import warnings
 
@@ -24,9 +23,10 @@ from google.adk.integrations.eventarc import EventarcCredentialsConfig
 from google.adk.integrations.eventarc import EventarcToolConfig
 from google.adk.integrations.eventarc import EventarcToolset
 import google.oauth2.credentials
+import pytest
 
 
-class TestEventarcToolset(unittest.IsolatedAsyncioTestCase):
+class TestEventarcToolset:
 
   def test_initializes_with_defaults(self):
     toolset = EventarcToolset(
@@ -34,10 +34,10 @@ class TestEventarcToolset(unittest.IsolatedAsyncioTestCase):
             credentials=google.oauth2.credentials.Credentials(token="fake")
         )
     )
-    self.assertIsInstance(toolset.tool_config, EventarcToolConfig)
-    self.assertIsInstance(toolset.credentials_config, EventarcCredentialsConfig)
-    self.assertEqual(len(toolset._tools), 1)
-    self.assertEqual(toolset._publish_message_tool.name, "publish_message")
+    assert isinstance(toolset.tool_config, EventarcToolConfig)
+    assert isinstance(toolset.credentials_config, EventarcCredentialsConfig)
+    assert len(toolset._tools) == 1
+    assert toolset._publish_message_tool.name == "publish_message"
 
   def test_initializes_with_explicit_configs(self):
     tool_config = EventarcToolConfig(project_id="test-project")
@@ -47,9 +47,10 @@ class TestEventarcToolset(unittest.IsolatedAsyncioTestCase):
     toolset = EventarcToolset(
         tool_config=tool_config, credentials_config=credentials_config
     )
-    self.assertEqual(toolset.tool_config.project_id, "test-project")
-    self.assertIs(toolset.credentials_config, credentials_config)
+    assert toolset.tool_config.project_id == "test-project"
+    assert toolset.credentials_config is credentials_config
 
+  @pytest.mark.asyncio
   async def test_get_tools_returns_publish_message(self):
     toolset = EventarcToolset(
         credentials_config=EventarcCredentialsConfig(
@@ -57,9 +58,10 @@ class TestEventarcToolset(unittest.IsolatedAsyncioTestCase):
         )
     )
     tools = await toolset.get_tools()
-    self.assertEqual(len(tools), 1)
-    self.assertEqual(tools[0].name, "publish_message")
+    assert len(tools) == 1
+    assert tools[0].name == "publish_message"
 
+  @pytest.mark.asyncio
   @mock.patch.object(eventarc_toolset, "eventarc_client", autospec=True)
   async def test_close_cleans_up_clients(self, mock_client):
     toolset = EventarcToolset(
@@ -80,8 +82,8 @@ class TestEventarcToolset(unittest.IsolatedAsyncioTestCase):
               credentials=google.oauth2.credentials.Credentials(token="fake")
           )
       )
-      self.assertTrue(
-          any("EVENTARC_TOOLSET is enabled." in str(warn.message) for warn in w)
+      assert any(
+          "EVENTARC_TOOLSET is enabled." in str(warn.message) for warn in w
       )
 
   def test_eventarc_tool_config_experimental_warning(self):
@@ -89,13 +91,6 @@ class TestEventarcToolset(unittest.IsolatedAsyncioTestCase):
     with warnings.catch_warnings(record=True) as w:
       warnings.simplefilter("always")
       EventarcToolConfig()
-      self.assertTrue(
-          any(
-              "EVENTARC_TOOL_CONFIG is enabled." in str(warn.message)
-              for warn in w
-          )
+      assert any(
+          "EVENTARC_TOOL_CONFIG is enabled." in str(warn.message) for warn in w
       )
-
-
-if __name__ == "__main__":
-  unittest.main()
