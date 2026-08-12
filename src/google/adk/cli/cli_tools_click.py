@@ -887,6 +887,16 @@ def adk_services_options(*, default_use_local_storage: bool = True):
     help="Optional. Output structured JSONL instead of human-readable text.",
 )
 @click.option(
+    "--otel_to_cloud",
+    is_flag=True,
+    show_default=True,
+    default=False,
+    help=(
+        "Optional. Whether to write OTel data to Google Cloud"
+        " Observability services - Cloud Trace and Cloud Logging."
+    ),
+)
+@click.option(
     "--default_llm_model",
     type=str,
     help=(
@@ -913,6 +923,7 @@ def cli_run(
     timeout: Optional[str] = None,
     in_memory: bool = False,
     jsonl: bool = False,
+    otel_to_cloud: bool = False,
     session_service_uri: Optional[str] = None,
     artifact_service_uri: Optional[str] = None,
     memory_service_uri: Optional[str] = None,
@@ -955,6 +966,7 @@ def cli_run(
             memory_service_uri=memory_service_uri,
             use_local_storage=use_local_storage,
             default_llm_model=default_llm_model,
+            otel_to_cloud=otel_to_cloud,
         )
     )
     sys.exit(exit_code)
@@ -979,6 +991,7 @@ def cli_run(
             memory_service_uri=memory_service_uri,
             use_local_storage=use_local_storage,
             default_llm_model=default_llm_model,
+            otel_to_cloud=otel_to_cloud,
         )
     )
 
