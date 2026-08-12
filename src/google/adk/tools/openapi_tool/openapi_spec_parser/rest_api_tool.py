@@ -422,21 +422,17 @@ class RestApiTool(BaseTool):
         schema = media_type_object.schema_
         body_data = None
 
-        # media_type_object.schema_ is typed Schema | Reference | None, and
-        # every $ref is resolved before a tool is built, so narrowing here
-        # lets the branch read schema.properties.
+        # $refs are resolved before a tool is built; narrow so .properties is
+        # readable.
         if isinstance(schema, Schema) and schema.type == "object":
           body_data = {}
-          if schema.properties:
-            for param in parameters:
-              if param.param_location == "body" and param.py_name in kwargs:
+          for param in parameters:
+            if param.param_location == "body" and param.py_name in kwargs:
+              if schema.properties:
                 body_data[param.original_name] = kwargs[param.py_name]
-          else:
-            # A free-form object body is carried by a single parameter that
-            # holds the whole payload, so its value is the body itself rather
-            # than one key inside it. When it is absent the body stays {}.
-            for param in parameters:
-              if param.param_location == "body" and param.py_name in kwargs:
+              else:
+                # A free-form body has one parameter holding the whole
+                # payload, so its value is the body rather than a key in it.
                 body_data = kwargs[param.py_name]
                 break
 
