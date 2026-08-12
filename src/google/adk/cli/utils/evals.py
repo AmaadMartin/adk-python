@@ -69,6 +69,7 @@ def create_gcs_eval_managers_from_uri(
 
   Raises:
       ValueError: If the eval_storage_uri is not supported.
+        Also raised if GOOGLE_CLOUD_PROJECT is not set.
       RuntimeError: If GCP optional dependencies are missing.
   """
   if eval_storage_uri.startswith('gs://'):
@@ -83,11 +84,19 @@ def create_gcs_eval_managers_from_uri(
       ) from e
 
     gcs_bucket = eval_storage_uri.split('://')[1]
+    project = os.environ.get('GOOGLE_CLOUD_PROJECT')
+    if not project:
+      raise ValueError(
+          'GOOGLE_CLOUD_PROJECT must be set to use gs:// eval storage. Export'
+          ' it with `export GOOGLE_CLOUD_PROJECT=<your project id>`, or set it'
+          ' in the .env file next to your agent.'
+      )
+
     eval_sets_manager = GcsEvalSetsManager(
-        bucket_name=gcs_bucket, project=os.environ['GOOGLE_CLOUD_PROJECT']
+        bucket_name=gcs_bucket, project=project
     )
     eval_set_results_manager = GcsEvalSetResultsManager(
-        bucket_name=gcs_bucket, project=os.environ['GOOGLE_CLOUD_PROJECT']
+        bucket_name=gcs_bucket, project=project
     )
     return GcsEvalManagers(
         eval_sets_manager=eval_sets_manager,
