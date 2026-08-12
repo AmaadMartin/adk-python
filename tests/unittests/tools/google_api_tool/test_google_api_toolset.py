@@ -11,9 +11,18 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+import datetime
+import ssl
+import types
 from typing import Optional
 from unittest import mock
+import warnings
 
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.auth.auth_credential import ServiceAccount
 from google.adk.auth.auth_credential import ServiceAccountCredential
@@ -31,11 +40,16 @@ from google.adk.tools.google_api_tool.google_api_toolsets import YoutubeToolset
 from google.adk.tools.google_api_tool.googleapi_to_openapi_converter import GoogleApiToOpenApiConverter
 from google.adk.tools.openapi_tool.openapi_spec_parser.openapi_toolset import OpenAPIToolset
 from google.adk.tools.openapi_tool.openapi_spec_parser.rest_api_tool import RestApiTool
+import httpx
 import pytest
 
 TEST_API_NAME = "calendar"
 TEST_API_VERSION = "v3"
 DEFAULT_SCOPE = "https://www.googleapis.com/auth/calendar"
+TOOLSET_MODULE = "google.adk.tools.google_api_tool.google_api_toolset"
+# google.auth hands back the client key passphrase as raw bytes that need not be
+# valid UTF-8, so the toolset must forward it to OpenSSL without decoding it.
+NON_UTF8_PASSPHRASE = b"p\xffass"
 
 
 @pytest.fixture
@@ -108,6 +122,89 @@ def mock_converter_instance():  # Renamed from mock_converter
 def mock_readonly_context():
   """Fixture for a mock ReadonlyContext."""
   return mock.MagicMock(spec=ReadonlyContext)
+
+
+@pytest.fixture
+def mtls_env(mock_converter_instance, mock_openapi_toolset_instance):
+  """Enables the toolset's mTLS path with a real httpx.
+
+  The discovery fetch is mocked out, but nothing else is: the toolset builds a
+  real ssl context from whatever `get_certs` returns.
+  """
+  with (
+      mock.patch(
+          f"{TOOLSET_MODULE}.use_client_cert_effective"
+      ) as use_client_cert,
+      mock.patch(f"{TOOLSET_MODULE}.MtlsClientCerts") as mtls_certs_class,
+      mock.patch(f"{TOOLSET_MODULE}.GoogleApiToOpenApiConverter") as converter,
+      mock.patch(f"{TOOLSET_MODULE}.OpenAPIToolset") as openapi_toolset_class,
+  ):
+    use_client_cert.return_value = True
+    converter.return_value = mock_converter_instance
+    openapi_toolset_class.return_value = mock_openapi_toolset_instance
+    yield types.SimpleNamespace(
+        use_client_cert=use_client_cert,
+        certs=mtls_certs_class.return_value,
+        openapi_toolset=mock_openapi_toolset_instance,
+    )
+
+
+@pytest.fixture
+def mtls_env_mocked_httpx(mtls_env):
+  """Same as `mtls_env`, but with httpx mocked so no certificate is read."""
+  with (
+      mock.patch(
+          f"{TOOLSET_MODULE}.httpx.create_ssl_context"
+      ) as create_ssl_context,
+      mock.patch(f"{TOOLSET_MODULE}.httpx.AsyncClient") as async_client_class,
+  ):
+    yield types.SimpleNamespace(
+        use_client_cert=mtls_env.use_client_cert,
+        certs=mtls_env.certs,
+        openapi_toolset=mtls_env.openapi_toolset,
+        create_ssl_context=create_ssl_context,
+        ssl_context=create_ssl_context.return_value,
+        async_client_class=async_client_class,
+    )
+
+
+@pytest.fixture
+def mtls_cert_files(tmp_path):
+  """Writes a throwaway self-signed certificate and an encrypted RSA key.
+
+  The key is encrypted with `NON_UTF8_PASSPHRASE`, so loading it proves the
+  passphrase reached OpenSSL as bytes.
+
+  Returns:
+      A tuple of (cert_path, key_path) as strings.
+  """
+  key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+  name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "adk-mtls-test")])
+  now = datetime.datetime.now(datetime.timezone.utc)
+  certificate = (
+      x509.CertificateBuilder()
+      .subject_name(name)
+      .issuer_name(name)
+      .public_key(key.public_key())
+      .serial_number(x509.random_serial_number())
+      .not_valid_before(now - datetime.timedelta(days=1))
+      .not_valid_after(now + datetime.timedelta(days=1))
+      .sign(key, hashes.SHA256())
+  )
+
+  cert_path = tmp_path / "cert.pem"
+  key_path = tmp_path / "key.pem"
+  cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+  key_path.write_bytes(
+      key.private_bytes(
+          encoding=serialization.Encoding.PEM,
+          format=serialization.PrivateFormat.PKCS8,
+          encryption_algorithm=serialization.BestAvailableEncryption(
+              NON_UTF8_PASSPHRASE
+          ),
+      )
+  )
+  return str(cert_path), str(key_path)
 
 
 class TestGoogleApiToolset:
@@ -530,35 +627,13 @@ class TestGoogleApiToolset:
 
     assert tool_set.tool_name_prefix == tool_name_prefix
 
-  @mock.patch(
-      "google.adk.tools.google_api_tool.google_api_toolset.OpenAPIToolset"
-  )
-  @mock.patch(
-      "google.adk.tools.google_api_tool.google_api_toolset.GoogleApiToOpenApiConverter"
-  )
-  @mock.patch(
-      "google.adk.tools.google_api_tool.google_api_toolset.MtlsClientCerts"
-  )
-  @mock.patch(
-      "google.adk.tools.google_api_tool.google_api_toolset.use_client_cert_effective"
-  )
-  async def test_mtls_cleanup_on_close(
-      self,
-      mock_use_client_cert,
-      mock_mtls_certs_class,
-      mock_converter_class,
-      mock_openapi_toolset_class,
-  ):
+  async def test_mtls_cleanup_on_close(self, mtls_env_mocked_httpx):
     """Test that mTLS temp files are cleaned up on close."""
-    mock_converter_class.return_value = mock.MagicMock()
-    mock_openapi_toolset_instance = mock.MagicMock()
-    mock_openapi_toolset_instance.close = mock.AsyncMock()
-    mock_openapi_toolset_class.return_value = mock_openapi_toolset_instance
-
-    mock_use_client_cert.return_value = True
-    mock_mtls_certs_instance = mock.MagicMock()
-    mock_mtls_certs_instance.get_certs.return_value = ("cert", "key", b"pass")
-    mock_mtls_certs_class.return_value = mock_mtls_certs_instance
+    mtls_env_mocked_httpx.certs.get_certs.return_value = (
+        "cert",
+        "key",
+        b"pass",
+    )
 
     tool_set = GoogleApiToolset(
         api_name=TEST_API_NAME, api_version=TEST_API_VERSION
@@ -568,42 +643,13 @@ class TestGoogleApiToolset:
 
     await tool_set.close()
 
-    mock_openapi_toolset_instance.close.assert_called_once()
-    mock_mtls_certs_instance.close.assert_called_once()
+    mtls_env_mocked_httpx.openapi_toolset.close.assert_called_once()
+    mtls_env_mocked_httpx.certs.close.assert_called_once()
 
-  @mock.patch(
-      "google.adk.tools.google_api_tool.google_api_toolset.httpx.AsyncClient"
-  )
-  @mock.patch(
-      "google.adk.tools.google_api_tool.google_api_toolset.OpenAPIToolset"
-  )
-  @mock.patch(
-      "google.adk.tools.google_api_tool.google_api_toolset.GoogleApiToOpenApiConverter"
-  )
-  @mock.patch(
-      "google.adk.tools.google_api_tool.google_api_toolset.MtlsClientCerts"
-  )
-  @mock.patch(
-      "google.adk.tools.google_api_tool.google_api_toolset.use_client_cert_effective"
-  )
-  async def test_mtls_no_passphrase(
-      self,
-      mock_use_client_cert,
-      mock_mtls_certs_class,
-      mock_converter_class,
-      mock_openapi_toolset_class,
-      mock_async_client_class,
-      mock_converter_instance,
-      mock_openapi_toolset_instance,
-  ):
+  async def test_mtls_no_passphrase(self, mtls_env_mocked_httpx):
     """Test that mTLS is configured even if key passphrase is None."""
-    mock_converter_class.return_value = mock_converter_instance
-    mock_openapi_toolset_class.return_value = mock_openapi_toolset_instance
-
-    mock_use_client_cert.return_value = True
-    mock_mtls_certs_instance = mock.MagicMock()
-    mock_mtls_certs_instance.get_certs.return_value = ("cert", "key", None)
-    mock_mtls_certs_class.return_value = mock_mtls_certs_instance
+    env = mtls_env_mocked_httpx
+    env.certs.get_certs.return_value = ("cert", "key", None)
 
     tool_set = GoogleApiToolset(
         api_name=TEST_API_NAME, api_version=TEST_API_VERSION
@@ -613,7 +659,114 @@ class TestGoogleApiToolset:
 
     client = tool_set._httpx_client_factory()
     assert client is not None
-    mock_async_client_class.assert_called_once_with(cert=("cert", "key"))
+    env.create_ssl_context.assert_called_once_with()
+    env.ssl_context.load_cert_chain.assert_called_once_with("cert", "key", None)
+    env.async_client_class.assert_called_once_with(verify=env.ssl_context)
+
+  async def test_mtls_with_passphrase(self, mtls_env_mocked_httpx):
+    """Test that an encrypted client key passphrase reaches the ssl context."""
+    env = mtls_env_mocked_httpx
+    env.certs.get_certs.return_value = ("cert", "key", b"secret")
+
+    tool_set = GoogleApiToolset(
+        api_name=TEST_API_NAME, api_version=TEST_API_VERSION
+    )
+    client = tool_set._httpx_client_factory()
+
+    assert client is not None
+    env.ssl_context.load_cert_chain.assert_called_once_with(
+        "cert", "key", b"secret"
+    )
+    env.async_client_class.assert_called_once_with(verify=env.ssl_context)
+
+  async def test_mtls_non_utf8_passphrase(self, mtls_env_mocked_httpx):
+    """Test that a non-UTF-8 passphrase is forwarded byte for byte."""
+    env = mtls_env_mocked_httpx
+    env.certs.get_certs.return_value = ("cert", "key", NON_UTF8_PASSPHRASE)
+
+    GoogleApiToolset(api_name=TEST_API_NAME, api_version=TEST_API_VERSION)
+
+    env.ssl_context.load_cert_chain.assert_called_once_with(
+        "cert", "key", NON_UTF8_PASSPHRASE
+    )
+
+  async def test_mtls_ssl_context_built_once_and_reused(
+      self, mtls_env_mocked_httpx
+  ):
+    """Test that every client of a toolset shares one ssl context."""
+    env = mtls_env_mocked_httpx
+    env.certs.get_certs.return_value = ("cert", "key", b"pass")
+
+    tool_set = GoogleApiToolset(
+        api_name=TEST_API_NAME, api_version=TEST_API_VERSION
+    )
+    tool_set._httpx_client_factory()
+    tool_set._httpx_client_factory()
+
+    env.create_ssl_context.assert_called_once_with()
+    env.ssl_context.load_cert_chain.assert_called_once()
+    contexts = [
+        call.kwargs["verify"] for call in env.async_client_class.call_args_list
+    ]
+    assert len(contexts) == 2
+    assert all(context is env.ssl_context for context in contexts)
+
+  async def test_no_mtls_when_client_cert_disabled(self, mtls_env_mocked_httpx):
+    """Test that no ssl context is built when client certs are disabled."""
+    env = mtls_env_mocked_httpx
+    env.use_client_cert.return_value = False
+
+    tool_set = GoogleApiToolset(
+        api_name=TEST_API_NAME, api_version=TEST_API_VERSION
+    )
+
+    assert tool_set._httpx_client_factory is None
+    env.create_ssl_context.assert_not_called()
+
+  async def test_no_mtls_when_cert_paths_missing(self, mtls_env_mocked_httpx):
+    """Test that no ssl context is built when no client cert is available."""
+    env = mtls_env_mocked_httpx
+    env.certs.get_certs.return_value = (None, None, None)
+
+    tool_set = GoogleApiToolset(
+        api_name=TEST_API_NAME, api_version=TEST_API_VERSION
+    )
+
+    assert tool_set._httpx_client_factory is None
+    env.create_ssl_context.assert_not_called()
+
+  async def test_mtls_client_builds_without_deprecation_warning(
+      self, mtls_env, mtls_cert_files
+  ):
+    """Test that a real client loads a real certificate with no warning."""
+    cert_path, key_path = mtls_cert_files
+    mtls_env.certs.get_certs.return_value = (
+        cert_path,
+        key_path,
+        NON_UTF8_PASSPHRASE,
+    )
+
+    with warnings.catch_warnings():
+      warnings.simplefilter("error", DeprecationWarning)
+      tool_set = GoogleApiToolset(
+          api_name=TEST_API_NAME, api_version=TEST_API_VERSION
+      )
+      client = tool_set._httpx_client_factory()
+
+    assert isinstance(client, httpx.AsyncClient)
+    await client.aclose()
+
+  async def test_mtls_wrong_passphrase_raises(self, mtls_env, mtls_cert_files):
+    """Test that an unusable client key fails toolset construction."""
+    cert_path, key_path = mtls_cert_files
+    mtls_env.certs.get_certs.return_value = (
+        cert_path,
+        key_path,
+        b"wrong-passphrase",
+    )
+
+    with pytest.raises(ssl.SSLError):
+      GoogleApiToolset(api_name=TEST_API_NAME, api_version=TEST_API_VERSION)
 
 
 # The (api_name, api_version) pair each prebuilt toolset is documented to
