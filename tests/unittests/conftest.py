@@ -21,8 +21,9 @@ pytest.register_assert_rewrite('google.adk.cli.agent_test_runner')
 from pytest import fixture
 from pytest import FixtureRequest
 from pytest import hookimpl
-from pytest import Mark
 from pytest import Metafunc
+
+from ..parametrize_utils import is_explicitly_marked
 
 _ENV_VARS = {
     'GOOGLE_API_KEY': 'fake_google_api_key',
@@ -95,33 +96,7 @@ def pytest_sessionfinish(session):
 def pytest_generate_tests(metafunc: Metafunc):
   """Generate test cases for each environment setup."""
   if env_variables.__name__ in metafunc.fixturenames:
-    if not _is_explicitly_marked(env_variables.__name__, metafunc):
+    if not is_explicitly_marked(env_variables.__name__, metafunc):
       metafunc.parametrize(
           env_variables.__name__, ENV_SETUPS.keys(), indirect=True
       )
-
-
-def _is_explicitly_marked(mark_name: str, metafunc: Metafunc) -> bool:
-  """Reports whether the test already parametrizes `mark_name` itself.
-
-  `metafunc.definition.iter_markers` walks the test function, its class and its
-  module, so a mark applied to the enclosing class counts; the function's own
-  `pytestmark` list does not carry class-level marks.
-  """
-  for mark in metafunc.definition.iter_markers('parametrize'):
-    if mark_name in _parametrized_argnames(mark):
-      return True
-  return False
-
-
-def _parametrized_argnames(mark: Mark) -> tuple[str, ...]:
-  """Returns the argument names a `parametrize` mark declares.
-
-  Mirrors pytest's own parsing of `argnames`: the caller may pass it
-  positionally or by keyword, and the string form may join several names with
-  commas.
-  """
-  argnames = mark.args[0] if mark.args else mark.kwargs.get('argnames', ())
-  if isinstance(argnames, str):
-    return tuple(name.strip() for name in argnames.split(',') if name.strip())
-  return tuple(argnames)

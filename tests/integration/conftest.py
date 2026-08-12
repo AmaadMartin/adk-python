@@ -24,6 +24,7 @@ from pytest import FixtureRequest
 from pytest import hookimpl
 from pytest import Metafunc
 
+from ..parametrize_utils import is_explicitly_marked
 from .utils import TestRunner
 
 logger = logging.getLogger('google_adk.' + __name__)
@@ -94,7 +95,7 @@ def llm_backend(request: FixtureRequest):
 @hookimpl(tryfirst=True)
 def pytest_generate_tests(metafunc: Metafunc):
   if llm_backend.__name__ in metafunc.fixturenames:
-    if not _is_explicitly_marked(llm_backend.__name__, metafunc):
+    if not is_explicitly_marked(llm_backend.__name__, metafunc):
       test_backend = os.environ.get('TEST_BACKEND', 'BOTH')
       if test_backend == 'GOOGLE_AI_ONLY':
         metafunc.parametrize(llm_backend.__name__, ['GOOGLE_AI'], indirect=True)
@@ -109,11 +110,3 @@ def pytest_generate_tests(metafunc: Metafunc):
             f'Invalid TEST_BACKEND value: {test_backend}, should be one of'
             ' [GOOGLE_AI_ONLY, VERTEX_ONLY, BOTH]'
         )
-
-
-def _is_explicitly_marked(mark_name: str, metafunc: Metafunc) -> bool:
-  if hasattr(metafunc.function, 'pytestmark'):
-    for mark in metafunc.function.pytestmark:
-      if mark.name == 'parametrize' and mark_name in mark.args[0]:
-        return True
-  return False

@@ -61,6 +61,16 @@ def test_mark_for_another_argument_does_not_suppress_auto_parametrization(
   )
 
 
+@pytest.mark.parametrize('env_variables_extra', [1])
+def test_mark_naming_a_superstring_argument_still_auto_parametrizes(
+    env_variables, env_variables_extra, request
+):
+  assert request.node.callspec.params['env_variables'] in (
+      'GOOGLE_AI',
+      'VERTEX',
+  )
+
+
 @pytest.mark.parametrize('unrelated_a,unrelated_b', [(1, 2)])
 def test_comma_joined_mark_for_other_arguments_still_auto_parametrizes(
     env_variables, unrelated_a, unrelated_b, request
