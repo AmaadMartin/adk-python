@@ -12,7 +12,6 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-import unittest
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -27,18 +26,32 @@ from google.genai import types
 from slack_bolt.app.async_app import AsyncApp
 
 
-class TestSlackRunner(unittest.IsolatedAsyncioTestCase):
+@pytest.fixture
+def mock_runner():
+  return MagicMock(spec=Runner)
 
-  def setUp(self):
-    self.mock_runner = MagicMock(spec=Runner)
-    self.mock_slack_app = MagicMock(spec=AsyncApp)
-    self.mock_slack_app.client = MagicMock()
-    self.mock_slack_app.client.chat_update = AsyncMock()
-    self.mock_slack_app.client.chat_delete = AsyncMock()
-    self.slack_runner = SlackRunner(self.mock_runner, self.mock_slack_app)
 
+@pytest.fixture
+def mock_slack_app():
+  slack_app = MagicMock(spec=AsyncApp)
+  slack_app.client = MagicMock()
+  slack_app.client.chat_update = AsyncMock()
+  slack_app.client.chat_delete = AsyncMock()
+  return slack_app
+
+
+@pytest.fixture
+def slack_runner(mock_runner, mock_slack_app):
+  return SlackRunner(mock_runner, mock_slack_app)
+
+
+class TestSlackRunner:
+
+  @pytest.mark.asyncio
   @patch("google.adk.integrations.slack.slack_runner.logger")
-  async def test_handle_message_success(self, mock_logger):
+  async def test_handle_message_success(
+      self, mock_logger, mock_runner, mock_slack_app, slack_runner
+  ):
     # Setup mocks
     mock_say = AsyncMock()
     mock_say.return_value = {"ts": "thinking_ts"}
@@ -58,24 +71,27 @@ class TestSlackRunner(unittest.IsolatedAsyncioTestCase):
     async def mock_run_async(*args, **kwargs):
       yield mock_event
 
-    self.mock_runner.run_async.side_effect = mock_run_async
+    mock_runner.run_async.side_effect = mock_run_async
 
     # Call the handler
-    await self.slack_runner._handle_message(event, mock_say)
+    await slack_runner._handle_message(event, mock_say)
 
     # Verify calls
-    self.mock_runner.run_async.assert_called_once()
+    mock_runner.run_async.assert_called_once()
     mock_say.assert_called_once_with(
         text="_Thinking..._", thread_ts="1234567890.123456"
     )
-    self.mock_slack_app.client.chat_update.assert_called_once_with(
+    mock_slack_app.client.chat_update.assert_called_once_with(
         channel="C67890",
         ts="thinking_ts",
         text="Hi user!",
     )
 
+  @pytest.mark.asyncio
   @patch("google.adk.integrations.slack.slack_runner.logger")
-  async def test_handle_message_multi_turn(self, mock_logger):
+  async def test_handle_message_multi_turn(
+      self, mock_logger, mock_runner, mock_slack_app, slack_runner
+  ):
     # Setup mocks
     mock_say = AsyncMock()
     mock_say.return_value = {"ts": "thinking_ts"}
@@ -100,18 +116,18 @@ class TestSlackRunner(unittest.IsolatedAsyncioTestCase):
       yield e1
       yield e2
 
-    self.mock_runner.run_async.side_effect = mock_run_async
+    mock_runner.run_async.side_effect = mock_run_async
 
-    await self.slack_runner._handle_message(event, mock_say)
+    await slack_runner._handle_message(event, mock_say)
 
     # First message uses chat_update
-    self.mock_slack_app.client.chat_update.assert_called_once_with(
+    mock_slack_app.client.chat_update.assert_called_once_with(
         channel="C67890",
         ts="thinking_ts",
         text="First thing.",
     )
     # Second message uses say
-    self.assertEqual(mock_say.call_count, 2)
+    assert mock_say.call_count == 2
     mock_say.assert_any_call(
         text="_Thinking..._", thread_ts="1234567890.123456"
     )
@@ -119,8 +135,11 @@ class TestSlackRunner(unittest.IsolatedAsyncioTestCase):
         text="Second thing.", thread_ts="1234567890.123456"
     )
 
+  @pytest.mark.asyncio
   @patch("google.adk.integrations.slack.slack_runner.logger")
-  async def test_handle_message_error(self, mock_logger):
+  async def test_handle_message_error(
+      self, mock_logger, mock_runner, mock_slack_app, slack_runner
+  ):
     mock_say = AsyncMock()
     mock_say.return_value = {"ts": "thinking_ts"}
     event = {
@@ -134,19 +153,15 @@ class TestSlackRunner(unittest.IsolatedAsyncioTestCase):
       raise Exception("Something went wrong")
       yield  # To make it a generator
 
-    self.mock_runner.run_async.side_effect = mock_run_async_error
+    mock_runner.run_async.side_effect = mock_run_async_error
 
-    await self.slack_runner._handle_message(event, mock_say)
+    await slack_runner._handle_message(event, mock_say)
 
     mock_say.assert_called_once_with(
         text="_Thinking..._", thread_ts="1234567890.123456"
     )
-    self.mock_slack_app.client.chat_update.assert_called_once()
-    self.assertIn(
-        "Sorry, I encountered an error",
-        self.mock_slack_app.client.chat_update.call_args[1]["text"],
+    mock_slack_app.client.chat_update.assert_called_once()
+    assert (
+        "Sorry, I encountered an error"
+        in mock_slack_app.client.chat_update.call_args[1]["text"]
     )
-
-
-if __name__ == "__main__":
-  unittest.main()
