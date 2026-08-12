@@ -61,6 +61,46 @@ def test_create_gcs_eval_managers_from_uri_success(
   )
 
 
+@mock.patch.dict(os.environ, {}, clear=True)
+@mock.patch(
+    'google.adk.evaluation.gcs_eval_set_results_manager.GcsEvalSetResultsManager',
+    autospec=True,
+)
+@mock.patch(
+    'google.adk.evaluation.gcs_eval_sets_manager.GcsEvalSetsManager',
+    autospec=True,
+)
+def test_create_gcs_eval_managers_from_uri_without_project(
+    mock_gcs_eval_sets_manager, mock_gcs_eval_set_results_manager
+):
+  """An unset project must name the variable, not raise a bare KeyError."""
+  with pytest.raises(ValueError, match='GOOGLE_CLOUD_PROJECT'):
+    evals.create_gcs_eval_managers_from_uri('gs://test-bucket')
+
+  mock_gcs_eval_sets_manager.assert_not_called()
+  mock_gcs_eval_set_results_manager.assert_not_called()
+
+
+@mock.patch.dict(os.environ, {'GOOGLE_CLOUD_PROJECT': ''}, clear=True)
+@mock.patch(
+    'google.adk.evaluation.gcs_eval_set_results_manager.GcsEvalSetResultsManager',
+    autospec=True,
+)
+@mock.patch(
+    'google.adk.evaluation.gcs_eval_sets_manager.GcsEvalSetsManager',
+    autospec=True,
+)
+def test_create_gcs_eval_managers_from_uri_with_empty_project(
+    mock_gcs_eval_sets_manager, mock_gcs_eval_set_results_manager
+):
+  """An exported but empty project is as unusable as an absent one."""
+  with pytest.raises(ValueError, match='GOOGLE_CLOUD_PROJECT'):
+    evals.create_gcs_eval_managers_from_uri('gs://test-bucket')
+
+  mock_gcs_eval_sets_manager.assert_not_called()
+  mock_gcs_eval_set_results_manager.assert_not_called()
+
+
 def test_create_gcs_eval_managers_from_uri_failure():
   with pytest.raises(ValueError):
     evals.create_gcs_eval_managers_from_uri('unsupported-uri')
