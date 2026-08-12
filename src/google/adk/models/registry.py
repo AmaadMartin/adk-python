@@ -33,6 +33,12 @@ logger = logging.getLogger('google_adk.' + __name__)
 _LazyEntry = tuple[str, str]
 _llm_registry_dict: dict[str, Union[type['BaseLlm'], _LazyEntry]] = {}
 
+# Lazy entries whose module failed to import, kept after the entry is dropped
+# from `_llm_registry_dict` so `resolve` can still name the provider module in
+# its final error. Keyed by the registered model-name regex; the value is the
+# registered module path and the text of the `ImportError`.
+_failed_lazy_imports: dict[str, tuple[str, str]] = {}
+
 
 def _resolve_litellm_provider(model: str) -> type[BaseLlm] | None:
   """Resolves a `provider/model` name that LiteLLM knows about.
@@ -53,7 +59,8 @@ def _resolve_litellm_provider(model: str) -> type[BaseLlm] | None:
     import litellm
 
     from .lite_llm import LiteLlm
-  except ImportError:
+  except ImportError as e:
+    logger.debug('LiteLLM is not available for provider %s: %s', provider, e)
     return None
 
   return LiteLlm if provider in litellm.provider_list else None
@@ -177,8 +184,17 @@ class LLMRegistry:
         module_path, class_name = entry
         try:
           module = importlib.import_module(module_path)
-        except ImportError:
+        except ImportError as e:
+          logger.debug(
+              'Dropping lazy LLM registry entry %s -> %s.%s: the provider'
+              ' module failed to import: %s',
+              regex,
+              module_path,
+              class_name,
+              e,
+          )
           _llm_registry_dict.pop(regex, None)
+          _failed_lazy_imports[regex] = (module_path, str(e))
           continue
         llm_class = cast('type[BaseLlm]', getattr(module, class_name))
         _llm_registry_dict[regex] = llm_class
@@ -192,6 +208,15 @@ class LLMRegistry:
 
     # Provide helpful error messages for known patterns
     error_msg = f'Model {model} not found.'
+
+    # Name every provider that advertised this model but could not be imported,
+    # including entries dropped by an earlier call.
+    for failed_regex, (module_path, error) in _failed_lazy_imports.items():
+      if re.compile(failed_regex).fullmatch(model):
+        error_msg += (
+            f'\n\nA provider registered for pattern {failed_regex!r} was'
+            f' dropped because importing {module_path} failed: {error}'
+        )
 
     # Check if it matches known patterns that require optional dependencies
     if re.match(r'^claude-', model):
