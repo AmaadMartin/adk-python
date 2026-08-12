@@ -44,6 +44,15 @@ class BashToolPolicy:
   Set allowed_command_prefixes to ("*",) to allow all commands (default),
   or explicitly list allowed prefixes.
 
+  A prefix restricts only which program the model can name, not what that
+  program then does. A prefix that names an interpreter therefore allows
+  everything: ("bash",) permits bash -c '<any script>', and ("python3",)
+  permits python3 -c '<any program>'. Programs such as env, xargs and make
+  run other programs too, so this tool does not try to enumerate them.
+  Treat the prefixes as a filter for honest commands. The confirmation that
+  every call requires is the real boundary, together with an OS-level
+  sandbox if you need one.
+
   Values for max_memory_bytes, max_file_size_bytes, and max_child_processes
   will be enforced upon the spawned subprocess.
   """

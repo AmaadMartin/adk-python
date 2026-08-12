@@ -122,6 +122,25 @@ class TestValidateCommand:
         "tree", policy
     )
 
+  def test_interpreter_prefix_allows_arbitrary_code(self):
+    """A prefix naming an interpreter allows anything that interpreter runs.
+
+    This is the documented contract on BashToolPolicy, not an oversight. The
+    prefix constrains the program name only.
+    """
+    shell_policy = bash_tool.BashToolPolicy(allowed_command_prefixes=("bash",))
+    python_policy = bash_tool.BashToolPolicy(
+        allowed_command_prefixes=("python3",)
+    )
+
+    assert (
+        bash_tool._validate_command("bash -c 'rm -rf /'", shell_policy) is None
+    )
+    assert (
+        bash_tool._validate_command("python3 -c 'import os'", python_policy)
+        is None
+    )
+
   def test_blocked_operators_validation(self):
     policy = bash_tool.BashToolPolicy(
         allowed_command_prefixes=("*",),
@@ -206,6 +225,22 @@ class TestExecuteBashTool:
     assert "error" in result
     assert "Permitted prefixes are: ls" in result["error"]
     tool_context_no_confirmation.request_confirmation.assert_not_called()
+
+  @pytest.mark.asyncio
+  async def test_interpreter_prefix_runs_a_shell(
+      self, workspace, tool_context_confirmed
+  ):
+    """A policy allowing only "bash" still runs an arbitrary shell script."""
+    policy = bash_tool.BashToolPolicy(allowed_command_prefixes=("bash",))
+    tool = bash_tool.ExecuteBashTool(workspace=workspace, policy=policy)
+
+    result = await tool.run_async(
+        args={"command": "bash -c 'echo escaped'"},
+        tool_context=tool_context_confirmed,
+    )
+
+    assert result["returncode"] == 0
+    assert "escaped" in result["stdout"]
 
   @pytest.mark.asyncio
   async def test_captures_stderr(self, workspace, tool_context_confirmed):
