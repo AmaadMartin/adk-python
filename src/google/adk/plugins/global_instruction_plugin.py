@@ -25,6 +25,7 @@ from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.utils import instructions_utils
+from google.genai import types
 
 if TYPE_CHECKING:
   from google.adk.agents.llm_agent import InstructionProvider
@@ -96,11 +97,30 @@ class GlobalInstructionPlugin(BasePlugin):
       llm_request.config.system_instruction = (
           f"{final_global_instruction}\n\n{existing_instruction}"
       )
-    else:  # It's an Iterable
-      # Convert to list to allow prepending
-      new_instruction_list = [final_global_instruction]
-      new_instruction_list.extend(list(existing_instruction))
-      llm_request.config.system_instruction = new_instruction_list
+    elif isinstance(existing_instruction, types.Content):
+      # A pydantic model iterates its fields, not its parts, so the global
+      # instruction has to be prepended as a real Part on a new Content. The
+      # caller may reuse the same Content on a later request, so this must not
+      # mutate it.
+      llm_request.config.system_instruction = types.Content(
+          role=existing_instruction.role,
+          parts=[
+              types.Part(text=final_global_instruction),
+              *(existing_instruction.parts or []),
+          ],
+      )
+    elif isinstance(existing_instruction, list):
+      llm_request.config.system_instruction = [
+          final_global_instruction,
+          *existing_instruction,
+      ]
+    else:
+      # The remaining single-value arms of ContentUnion are all valid elements
+      # of a list instruction.
+      llm_request.config.system_instruction = [
+          final_global_instruction,
+          existing_instruction,
+      ]
 
     return None
 
