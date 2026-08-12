@@ -2797,34 +2797,33 @@ async def test_close_closes_registry(mock_registry):
 
 @pytest.mark.asyncio
 async def test_close_without_registry_does_not_raise():
-  # pylint: disable=protected-access
   toolset = skill_toolset.SkillToolset()
   loop = asyncio.get_running_loop()
   fut = loop.create_future()
-  toolset._fetched_skill_cache = collections.OrderedDict(
+  toolset._fetched_skill_cache = collections.OrderedDict(  # pylint: disable=protected-access
       {"turn1": {"skill1": fut}}
   )
 
   await toolset.close()
 
   assert fut.cancelled()
-  assert not toolset._fetched_skill_cache
+  assert not toolset._fetched_skill_cache  # pylint: disable=protected-access
 
 
 @pytest.mark.asyncio
 async def test_close_with_registry_without_close_override():
   """A registry that only implements the abstract methods still tears down."""
   registry = _RegistryWithoutClose()
+  registry.close = mock.AsyncMock(wraps=registry.close)
   toolset = skill_toolset.SkillToolset(registry=registry)
 
   await toolset.close()
 
-  assert await registry.close() is None
+  registry.close.assert_awaited_once()
 
 
 @pytest.mark.asyncio
 async def test_close_closes_registry_after_cancelling_futures(mock_registry):
-  # pylint: disable=protected-access
   mock_env = mock.create_autospec(BaseEnvironment, instance=True)
   mock_env.is_initialized = True
   toolset = skill_toolset.SkillToolset(
@@ -2833,7 +2832,7 @@ async def test_close_closes_registry_after_cancelling_futures(mock_registry):
 
   loop = asyncio.get_running_loop()
   fut = loop.create_future()
-  toolset._fetched_skill_cache = collections.OrderedDict(
+  toolset._fetched_skill_cache = collections.OrderedDict(  # pylint: disable=protected-access
       {"turn1": {"skill1": fut}}
   )
   observed: dict[str, bool] = {}
@@ -2846,7 +2845,7 @@ async def test_close_closes_registry_after_cancelling_futures(mock_registry):
   # The toolset cancels in-flight fetches and closes the environment before it
   # closes the registry.
   assert observed == {"future_cancelled": True, "env_closed": True}
-  assert not toolset._fetched_skill_cache
+  assert not toolset._fetched_skill_cache  # pylint: disable=protected-access
   mock_env.close.assert_awaited_once()
   mock_registry.close.assert_awaited_once()
 
