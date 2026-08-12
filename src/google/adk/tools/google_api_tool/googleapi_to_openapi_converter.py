@@ -120,6 +120,15 @@ class GoogleApiToOpenApiConverter:
     except Exception as e:
       logger.error("Error fetching API spec: %s", e)
       raise
+    finally:
+      # add_certificate() only records the cert and key paths. httplib2 reads
+      # them when it builds the SSL context for the connection, which happens
+      # inside build(). After that the chain is held in memory, so the private
+      # key does not need to stay on disk. MtlsClientCerts.close() is
+      # idempotent and lets a later get_certs() extract a fresh copy, so a
+      # second fetch still works over mTLS.
+      if self._mtls_certs:
+        self._mtls_certs.close()
 
   def convert(self) -> Dict[str, Any]:
     """Convert the Google API spec to OpenAPI v3 format.

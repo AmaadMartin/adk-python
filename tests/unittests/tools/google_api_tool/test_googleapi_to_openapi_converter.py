@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+import os
 from unittest.mock import MagicMock
 
 from google.adk.tools.google_api_tool.googleapi_to_openapi_converter import GoogleApiToOpenApiConverter
@@ -205,6 +206,43 @@ def disable_mtls_by_default(monkeypatch):
   )
 
 
+def _enable_mtls_capturing_tempdir(
+    monkeypatch: pytest.MonkeyPatch, passphrase: bytes | None = b"passphrase"
+) -> list[str]:
+  """Enables mTLS and returns a list that receives the cert temp dir paths.
+
+  Only the certificate source is faked, so MtlsClientCerts still creates a real
+  temporary directory. The list grows by one entry per extraction.
+
+  Args:
+      monkeypatch: The pytest monkeypatch fixture.
+      passphrase: The passphrase the fake certificate source returns.
+
+  Returns:
+      A list of directory paths, appended to on every certificate extraction.
+  """
+  captured_dirs = []
+
+  monkeypatch.setattr(
+      "google.auth.transport.mtls.should_use_client_cert",
+      lambda: True,
+  )
+  monkeypatch.setattr(
+      "google.auth.transport.mtls.has_default_client_cert_source",
+      lambda: True,
+  )
+
+  def fake_cert_source_factory(cert_path, key_path):
+    captured_dirs.append(os.path.dirname(cert_path))
+    return MagicMock(return_value=(cert_path, key_path, passphrase))
+
+  monkeypatch.setattr(
+      "google.auth.transport.mtls.default_client_encrypted_cert_source",
+      fake_cert_source_factory,
+  )
+  return captured_dirs
+
+
 @pytest.fixture
 def converter():
   """Fixture that provides a basic converter instance."""
@@ -300,23 +338,7 @@ class TestGoogleApiToOpenApiConverter:
         mock_build,
     )
 
-    # Enable mTLS
-    monkeypatch.setattr(
-        "google.auth.transport.mtls.should_use_client_cert",
-        lambda: True,
-    )
-    monkeypatch.setattr(
-        "google.auth.transport.mtls.has_default_client_cert_source",
-        lambda: True,
-    )
-
-    mock_cert_source = MagicMock(
-        return_value=("/path/to/cert", "/path/to/key", b"passphrase")
-    )
-    monkeypatch.setattr(
-        "google.auth.transport.mtls.default_client_encrypted_cert_source",
-        lambda c, k: mock_cert_source,
-    )
+    captured_dirs = _enable_mtls_capturing_tempdir(monkeypatch)
 
     converter = GoogleApiToOpenApiConverter("calendar", "v3")
     converter.fetch_google_api_spec()
@@ -333,6 +355,11 @@ class TestGoogleApiToOpenApiConverter:
         == "https://www.mtls.googleapis.com/discovery/v1/apis/{api}/{apiVersion}/rest"
     )
 
+    # The certificate temp directory is released before the method returns.
+    assert captured_dirs
+    assert not os.path.exists(captured_dirs[0])
+    assert converter._mtls_certs is not None
+
   def test_fetch_google_api_spec_with_mtls_no_passphrase(
       self, monkeypatch, mock_api_resource, calendar_api_spec
   ):
@@ -343,24 +370,7 @@ class TestGoogleApiToOpenApiConverter:
         mock_build,
     )
 
-    # Enable mTLS
-    monkeypatch.setattr(
-        "google.auth.transport.mtls.should_use_client_cert",
-        lambda: True,
-    )
-    monkeypatch.setattr(
-        "google.auth.transport.mtls.has_default_client_cert_source",
-        lambda: True,
-    )
-
-    # Return None for passphrase
-    mock_cert_source = MagicMock(
-        return_value=("/path/to/cert", "/path/to/key", None)
-    )
-    monkeypatch.setattr(
-        "google.auth.transport.mtls.default_client_encrypted_cert_source",
-        lambda c, k: mock_cert_source,
-    )
+    captured_dirs = _enable_mtls_capturing_tempdir(monkeypatch, passphrase=None)
 
     converter = GoogleApiToOpenApiConverter("calendar", "v3")
     converter.fetch_google_api_spec()
@@ -371,6 +381,108 @@ class TestGoogleApiToOpenApiConverter:
     mock_build.assert_called_once()
     _, kwargs = mock_build.call_args
     assert "http" in kwargs
+    assert kwargs["http"] is not None
+    assert (
+        kwargs["discoveryServiceUrl"]
+        == "https://www.mtls.googleapis.com/discovery/v1/apis/{api}/{apiVersion}/rest"
+    )
+
+    # The certificate temp directory is released before the method returns.
+    assert captured_dirs
+    assert not os.path.exists(captured_dirs[0])
+    assert converter._mtls_certs is not None
+
+  def test_fetch_google_api_spec_mtls_certs_present_during_build(
+      self, monkeypatch, mock_api_resource
+  ):
+    """Test the certificate files outlive build, which is what reads them."""
+    captured_dirs = _enable_mtls_capturing_tempdir(monkeypatch)
+
+    alive_at_add_certificate = []
+    alive_at_build = []
+
+    class FakeHttp:
+      """Minimal httplib2.Http stand-in that records the certificate dir."""
+
+      redirect_codes = frozenset({301, 308})
+
+      def __init__(self, timeout=None):
+        self.timeout = timeout
+        self.cert_dir = None
+
+      def add_certificate(self, key, cert, domain, password=None):
+        self.cert_dir = os.path.dirname(cert)
+        alive_at_add_certificate.append(os.path.isdir(self.cert_dir))
+
+    def fake_build(api_name, api_version, **kwargs):
+      # httplib2 loads the certificate chain here, when it opens the
+      # connection, so the files must still be on disk.
+      alive_at_build.append(os.path.isdir(kwargs["http"].cert_dir))
+      return mock_api_resource
+
+    monkeypatch.setattr(
+        "google.adk.tools.google_api_tool.googleapi_to_openapi_converter.httplib2.Http",
+        FakeHttp,
+    )
+    monkeypatch.setattr(
+        "google.adk.tools.google_api_tool.googleapi_to_openapi_converter.build",
+        fake_build,
+    )
+
+    converter = GoogleApiToOpenApiConverter("calendar", "v3")
+    converter.fetch_google_api_spec()
+
+    # The directory is alive through build, and gone once the method returns.
+    assert alive_at_add_certificate == [True]
+    assert alive_at_build == [True]
+    assert captured_dirs
+    assert not os.path.exists(captured_dirs[0])
+
+  def test_fetch_google_api_spec_mtls_cleanup_on_error(
+      self, monkeypatch, mock_api_resource
+  ):
+    """Test the certificate temp directory is released when build fails."""
+    mock_build = MagicMock(
+        side_effect=HttpError(resp=MagicMock(status=500), content=b"boom")
+    )
+    monkeypatch.setattr(
+        "google.adk.tools.google_api_tool.googleapi_to_openapi_converter.build",
+        mock_build,
+    )
+    captured_dirs = _enable_mtls_capturing_tempdir(monkeypatch)
+
+    converter = GoogleApiToOpenApiConverter("calendar", "v3")
+    with pytest.raises(HttpError):
+      converter.fetch_google_api_spec()
+
+    assert captured_dirs
+    assert not os.path.exists(captured_dirs[0])
+
+  def test_fetch_google_api_spec_mtls_repeatable_after_cleanup(
+      self, monkeypatch, mock_api_resource, calendar_api_spec
+  ):
+    """Test a second fetch still uses mTLS after the first one cleaned up."""
+    mock_build = MagicMock(return_value=mock_api_resource)
+    monkeypatch.setattr(
+        "google.adk.tools.google_api_tool.googleapi_to_openapi_converter.build",
+        mock_build,
+    )
+    captured_dirs = _enable_mtls_capturing_tempdir(monkeypatch)
+
+    converter = GoogleApiToOpenApiConverter("calendar", "v3")
+    converter.fetch_google_api_spec()
+    converter.fetch_google_api_spec()
+
+    assert converter._google_api_spec == calendar_api_spec
+
+    # Each fetch extracted into its own directory, and none survives.
+    assert len(captured_dirs) == 2
+    assert captured_dirs[0] != captured_dirs[1]
+    assert not any(os.path.exists(d) for d in captured_dirs)
+
+    # The second fetch still went over mTLS.
+    assert mock_build.call_count == 2
+    _, kwargs = mock_build.call_args
     assert kwargs["http"] is not None
     assert (
         kwargs["discoveryServiceUrl"]
