@@ -164,6 +164,11 @@ class OperationParser:
     if not content:
       return
 
+    # OpenAPI defaults `requestBody.required` to false when it is omitted.
+    body_required = (
+        request_body.required if request_body.required is not None else False
+    )
+
     # If request body is an object, expand the properties as parameters
     for _, media_type_object in content.items():
       schema = media_type_object.schema_ or Schema()
@@ -197,6 +202,7 @@ class OperationParser:
                 param_location='body',
                 param_schema=schema,
                 description=description,
+                required=body_required,
             )
         )
       else:
@@ -216,6 +222,7 @@ class OperationParser:
                 param_location='body',
                 param_schema=schema,
                 description=description,
+                required=body_required,
             )
         )
       break  # Process first mime type only
