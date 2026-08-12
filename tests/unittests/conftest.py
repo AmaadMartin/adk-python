@@ -21,6 +21,7 @@ pytest.register_assert_rewrite('google.adk.cli.agent_test_runner')
 from pytest import fixture
 from pytest import FixtureRequest
 from pytest import hookimpl
+from pytest import Mark
 from pytest import Metafunc
 
 _ENV_VARS = {
@@ -108,8 +109,19 @@ def _is_explicitly_marked(mark_name: str, metafunc: Metafunc) -> bool:
   `pytestmark` list does not carry class-level marks.
   """
   for mark in metafunc.definition.iter_markers('parametrize'):
-    # A mark written as parametrize(argnames=..., argvalues=...) has no
-    # positional args.
-    if mark.args and mark.args[0] == mark_name:
+    if mark_name in _parametrized_argnames(mark):
       return True
   return False
+
+
+def _parametrized_argnames(mark: Mark) -> tuple[str, ...]:
+  """Returns the argument names a `parametrize` mark declares.
+
+  Mirrors pytest's own parsing of `argnames`: the caller may pass it
+  positionally or by keyword, and the string form may join several names with
+  commas.
+  """
+  argnames = mark.args[0] if mark.args else mark.kwargs.get('argnames', ())
+  if isinstance(argnames, str):
+    return tuple(name.strip() for name in argnames.split(',') if name.strip())
+  return tuple(argnames)
