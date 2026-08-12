@@ -36,7 +36,6 @@ from typing import Callable
 from typing import List
 from typing import Literal
 from typing import Optional
-from typing import TYPE_CHECKING
 
 from fastapi import FastAPI
 from fastapi import HTTPException
@@ -77,6 +76,8 @@ from ..auth.credential_service.base_credential_service import BaseCredentialServ
 from ..errors.already_exists_error import AlreadyExistsError
 from ..errors.input_validation_error import InputValidationError
 from ..errors.session_not_found_error import SessionNotFoundError
+from ..evaluation.eval_set_results_manager import EvalSetResultsManager
+from ..evaluation.eval_sets_manager import EvalSetsManager
 from ..events.event import Event
 from ..memory.base_memory_service import BaseMemoryService
 from ..plugins.base_plugin import BasePlugin
@@ -94,10 +95,6 @@ from .utils import cleanup
 from .utils import common
 from .utils.base_agent_loader import BaseAgentLoader
 from .utils.shared_value import SharedValue
-
-if TYPE_CHECKING:
-  from ..evaluation.eval_set_results_manager import EvalSetResultsManager
-  from ..evaluation.eval_sets_manager import EvalSetsManager
 
 logger = logging.getLogger("google_adk." + __name__)
 
