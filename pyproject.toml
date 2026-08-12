@@ -266,6 +266,7 @@ optional-dependencies.test = [
   "python-multipart>=0.0.9",
   "rouge-score>=0.1.2",
   "slack-bolt>=1.22",
+  "sphinx<9",                                                        # For scripts/check_docstring_markup.py, which reuses the Napoleon transform the API reference build applies. Also declared in the docs extra.
   "sqlalchemy>=2,<3",
   "sqlalchemy-spanner>=1.14",
   "tabulate>=0.9",
