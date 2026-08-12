@@ -105,12 +105,10 @@ def _set_resource_limits(policy: BashToolPolicy) -> None:
 def _kill_process_group(process: asyncio.subprocess.Process) -> None:
   """SIGKILLs the group `process` leads, unless it has already been reaped.
 
-  `process.returncode` is set the moment asyncio reaps the child, and a reaped
-  pid is free for the kernel to reuse. Signalling then would reach whatever now
-  holds that pid -- and because this signals the group, it would reach that
-  process's whole group rather than one process. While the returncode is still
-  None the pid is held by the child, so the group this tool spawned is the only
-  thing the signal can reach.
+  A reaped pid can be recycled, and because this signals the group it would
+  then reach an unrelated group; while returncode is None the pid is still held
+  by our child. The tradeoff: a reaped child's backgrounded descendants are no
+  longer torn down.
   """
   if process.returncode is not None:
     return

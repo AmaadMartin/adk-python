@@ -14,7 +14,6 @@
 
 import asyncio
 import os
-import shlex
 import signal
 import sys
 from unittest import mock
@@ -295,12 +294,7 @@ class TestExecuteBashTool:
         mock.patch("os.killpg", wraps=os.killpg) as mock_killpg,
     ):
       result = await tool.run_async(
-          args={
-              "command": (
-                  f"{shlex.quote(sys.executable)} -c"
-                  f" {shlex.quote('import time; time.sleep(60)')}"
-              )
-          },
+          args={"command": "python3 -c 'import time; time.sleep(60)'"},
           tool_context=tool_context_confirmed,
       )
 
@@ -386,9 +380,7 @@ class TestExecuteBashTool:
     )
     tool = bash_tool.ExecuteBashTool(workspace=workspace, policy=policy)
     mock_process = mock.AsyncMock()
-    mock_process.pid = 12345
-    # Already reaped, so the exit path leaves it alone.
-    mock_process.returncode = 0
+    mock_process.pid = None  # Ensure finally block doesn't try to kill it
     mock_process.communicate.return_value = (b"", b"")
     mock_exec = mock.AsyncMock(return_value=mock_process)
 
