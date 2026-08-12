@@ -32,345 +32,111 @@
       "title": "AgentRefConfig",
       "type": "object"
     },
-    "ApiAuth": {
+    "AudioTranscriptionConfig": {
       "additionalProperties": false,
-      "description": "The generic reusable api auth config.\n\nDeprecated. Please use AuthConfig (google/cloud/aiplatform/master/auth.proto)\ninstead. This data type is not supported in Gemini API.",
+      "description": "The audio transcription configuration in Setup.",
       "properties": {
-        "apiKeyConfig": {
+        "languageCodes": {
           "anyOf": [
             {
-              "$ref": "#/$defs/ApiAuthApiKeyConfig"
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
             },
             {
               "type": "null"
             }
           ],
           "default": null,
-          "description": "The API secret."
+          "description": "Deprecated: use LanguageAuto or LanguageHints instead.",
+          "title": "Languagecodes"
+        },
+        "languageAuto": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LanguageAuto"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The model will detect the language automatically. Do not use together with LanguageHints."
+        },
+        "languageHints": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/LanguageHints"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Specifies one or more languages in the audio. Do not use together with LanguageAuto."
+        },
+        "customVocabulary": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A list of custom vocabulary phrases, which biases the ASR model to improve recognition of these specific terms.",
+          "title": "Customvocabulary"
+        },
+        "adaptationPhrases": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Deprecated. A list of phrases used for speech adaptation, which biases the ASR model to improve recognition of these specific terms.",
+          "title": "Adaptationphrases"
+        },
+        "wordTimestamp": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Configures word-level timestamp generation.\n      ",
+          "title": "Wordtimestamp"
+        },
+        "diarization": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Configures speaker diarization.\n      ",
+          "title": "Diarization"
         }
       },
-      "title": "ApiAuth",
+      "title": "AudioTranscriptionConfig",
       "type": "object"
-    },
-    "ApiAuthApiKeyConfig": {
-      "additionalProperties": false,
-      "description": "The API secret. This data type is not supported in Gemini API.",
-      "properties": {
-        "apiKeySecretVersion": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Required. The SecretManager secret version resource name storing API key. e.g. projects/{project}/secrets/{secret}/versions/{version}",
-          "title": "Apikeysecretversion"
-        },
-        "apiKeyString": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The API key string. Either this or `api_key_secret_version` must be set.",
-          "title": "Apikeystring"
-        }
-      },
-      "title": "ApiAuthApiKeyConfig",
-      "type": "object"
-    },
-    "ApiKeyConfig": {
-      "additionalProperties": false,
-      "description": "Config for authentication with API key.\n\nThis data type is not supported in Gemini API.",
-      "properties": {
-        "apiKeySecret": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. The name of the SecretManager secret version resource storing the API key. Format: `projects/{project}/secrets/{secrete}/versions/{version}` - If both `api_key_secret` and `api_key_string` are specified, this field takes precedence over `api_key_string`. - If specified, the `secretmanager.versions.access` permission should be granted to Vertex AI Extension Service Agent (https://cloud.google.com/vertex-ai/docs/general/access-control#service-agents) on the specified resource.",
-          "title": "Apikeysecret"
-        },
-        "apiKeyString": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. The API key to be used in the request directly.",
-          "title": "Apikeystring"
-        },
-        "httpElementLocation": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/HttpElementLocation"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. The location of the API key."
-        },
-        "name": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. The parameter name of the API key. E.g. If the API request is \"https://example.com/act?api_key=\", \"api_key\" would be the parameter name.",
-          "title": "Name"
-        }
-      },
-      "title": "ApiKeyConfig",
-      "type": "object"
-    },
-    "ApiSpec": {
-      "description": "The API spec that the external API implements.\n\nThis enum is not supported in Gemini API.",
-      "enum": [
-        "API_SPEC_UNSPECIFIED",
-        "SIMPLE_SEARCH",
-        "ELASTIC_SEARCH"
-      ],
-      "title": "ApiSpec",
-      "type": "string"
-    },
-    "AuthConfig": {
-      "additionalProperties": false,
-      "description": "The authentication config to access the API.",
-      "properties": {
-        "apiKey": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The authentication config to access the API. Only API key is supported. This field is not supported in Gemini API.",
-          "title": "Apikey"
-        },
-        "apiKeyConfig": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ApiKeyConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Config for API key auth."
-        },
-        "authType": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/AuthType"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Type of auth scheme."
-        },
-        "googleServiceAccountConfig": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/AuthConfigGoogleServiceAccountConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Config for Google Service Account auth."
-        },
-        "httpBasicAuthConfig": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/AuthConfigHttpBasicAuthConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Config for HTTP Basic auth."
-        },
-        "oauthConfig": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/AuthConfigOauthConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Config for user oauth."
-        },
-        "oidcConfig": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/AuthConfigOidcConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Config for user OIDC auth."
-        }
-      },
-      "title": "AuthConfig",
-      "type": "object"
-    },
-    "AuthConfigGoogleServiceAccountConfig": {
-      "additionalProperties": false,
-      "description": "Config for Google Service Account Authentication.\n\nThis data type is not supported in Gemini API.",
-      "properties": {
-        "serviceAccount": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. The service account that the extension execution service runs as. - If the service account is specified, the `iam.serviceAccounts.getAccessToken` permission should be granted to Vertex AI Extension Service Agent (https://cloud.google.com/vertex-ai/docs/general/access-control#service-agents) on the specified service account. - If not specified, the Vertex AI Extension Service Agent will be used to execute the Extension.",
-          "title": "Serviceaccount"
-        }
-      },
-      "title": "AuthConfigGoogleServiceAccountConfig",
-      "type": "object"
-    },
-    "AuthConfigHttpBasicAuthConfig": {
-      "additionalProperties": false,
-      "description": "Config for HTTP Basic Authentication.\n\nThis data type is not supported in Gemini API.",
-      "properties": {
-        "credentialSecret": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Required. The name of the SecretManager secret version resource storing the base64 encoded credentials. Format: `projects/{project}/secrets/{secrete}/versions/{version}` - If specified, the `secretmanager.versions.access` permission should be granted to Vertex AI Extension Service Agent (https://cloud.google.com/vertex-ai/docs/general/access-control#service-agents) on the specified resource.",
-          "title": "Credentialsecret"
-        }
-      },
-      "title": "AuthConfigHttpBasicAuthConfig",
-      "type": "object"
-    },
-    "AuthConfigOauthConfig": {
-      "additionalProperties": false,
-      "description": "Config for user oauth. This data type is not supported in Gemini API.",
-      "properties": {
-        "accessToken": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Access token for extension endpoint. Only used to propagate token from [[ExecuteExtensionRequest.runtime_auth_config]] at request time.",
-          "title": "Accesstoken"
-        },
-        "serviceAccount": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The service account used to generate access tokens for executing the Extension. - If the service account is specified, the `iam.serviceAccounts.getAccessToken` permission should be granted to Vertex AI Extension Service Agent (https://cloud.google.com/vertex-ai/docs/general/access-control#service-agents) on the provided service account.",
-          "title": "Serviceaccount"
-        }
-      },
-      "title": "AuthConfigOauthConfig",
-      "type": "object"
-    },
-    "AuthConfigOidcConfig": {
-      "additionalProperties": false,
-      "description": "Config for user OIDC auth.\n\nThis data type is not supported in Gemini API.",
-      "properties": {
-        "idToken": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "OpenID Connect formatted ID token for extension endpoint. Only used to propagate token from [[ExecuteExtensionRequest.runtime_auth_config]] at request time.",
-          "title": "Idtoken"
-        },
-        "serviceAccount": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The service account used to generate an OpenID Connect (OIDC)-compatible JWT token signed by the Google OIDC Provider (accounts.google.com) for extension endpoint (https://cloud.google.com/iam/docs/create-short-lived-credentials-direct#sa-credentials-oidc). - The audience for the token will be set to the URL in the server url defined in the OpenApi spec. - If the service account is provided, the service account should grant `iam.serviceAccounts.getOpenIdToken` permission to Vertex AI Extension Service Agent (https://cloud.google.com/vertex-ai/docs/general/access-control#service-agents).",
-          "title": "Serviceaccount"
-        }
-      },
-      "title": "AuthConfigOidcConfig",
-      "type": "object"
-    },
-    "AuthType": {
-      "description": "Type of auth scheme. This enum is not supported in Gemini API.",
-      "enum": [
-        "AUTH_TYPE_UNSPECIFIED",
-        "NO_AUTH",
-        "API_KEY_AUTH",
-        "HTTP_BASIC_AUTH",
-        "GOOGLE_SERVICE_ACCOUNT_AUTH",
-        "OAUTH",
-        "OIDC_AUTH"
-      ],
-      "title": "AuthType",
-      "type": "string"
     },
     "AutomaticFunctionCallingConfig": {
       "additionalProperties": false,
@@ -504,16 +270,6 @@
       "title": "BaseAgentConfig",
       "type": "object"
     },
-    "Behavior": {
-      "description": "Specifies the function Behavior.\n\nCurrently only supported by the BidiGenerateContent method. This enum is not\nsupported in Vertex AI.",
-      "enum": [
-        "UNSPECIFIED",
-        "BLOCKING",
-        "NON_BLOCKING"
-      ],
-      "title": "Behavior",
-      "type": "string"
-    },
     "Blob": {
       "additionalProperties": false,
       "description": "A content blob.\n\nA Blob contains data of a specific media type. It is used to represent images,\naudio, and video.",
@@ -579,7 +335,7 @@
     },
     "CodeExecutionResult": {
       "additionalProperties": false,
-      "description": "Result of executing the `ExecutableCode`.\n\nGenerated only when the `CodeExecution` tool is used.",
+      "description": "Result of executing the ExecutableCode.\n\nGenerated only when the `CodeExecution` tool is used.",
       "properties": {
         "outcome": {
           "anyOf": [
@@ -616,47 +372,11 @@
             }
           ],
           "default": null,
-          "description": "The identifier of the `ExecutableCode` part this result is for. Only populated if the corresponding `ExecutableCode` has an id.",
+          "description": "Optional. The identifier of the `ExecutableCode` part this result is for. Only populated if the corresponding `ExecutableCode` has an id. This field is not supported in Vertex AI.",
           "title": "Id"
         }
       },
       "title": "CodeExecutionResult",
-      "type": "object"
-    },
-    "ComputerUse": {
-      "additionalProperties": false,
-      "description": "Tool to support computer use.",
-      "properties": {
-        "environment": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Environment"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Required. The environment being operated."
-        },
-        "excludedPredefinedFunctions": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "By default, predefined functions are included in the final model call.\n    Some of them can be explicitly excluded from being automatically included.\n    This can serve two purposes:\n      1. Using a more restricted / different action space.\n      2. Improving the definitions / instructions of predefined functions.",
-          "title": "Excludedpredefinedfunctions"
-        }
-      },
-      "title": "ComputerUse",
       "type": "object"
     },
     "Content": {
@@ -696,96 +416,9 @@
       "title": "Content",
       "type": "object"
     },
-    "DynamicRetrievalConfig": {
-      "additionalProperties": false,
-      "description": "Describes the options to customize dynamic retrieval.",
-      "properties": {
-        "dynamicThreshold": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. The threshold to be used in dynamic retrieval. If not set, a system default value is used.",
-          "title": "Dynamicthreshold"
-        },
-        "mode": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/DynamicRetrievalConfigMode"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The mode of the predictor to be used in dynamic retrieval."
-        }
-      },
-      "title": "DynamicRetrievalConfig",
-      "type": "object"
-    },
-    "DynamicRetrievalConfigMode": {
-      "description": "The mode of the predictor to be used in dynamic retrieval.",
-      "enum": [
-        "MODE_UNSPECIFIED",
-        "MODE_DYNAMIC"
-      ],
-      "title": "DynamicRetrievalConfigMode",
-      "type": "string"
-    },
-    "EnterpriseWebSearch": {
-      "additionalProperties": false,
-      "description": "Tool to search public web data, powered by Vertex AI Search and Sec4 compliance.\n\nThis data type is not supported in Gemini API.",
-      "properties": {
-        "blockingConfidence": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PhishBlockThreshold"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Sites with confidence level chosen & above this value will be blocked from the search results."
-        },
-        "excludeDomains": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. List of domains to be excluded from the search results. The default limit is 2000 domains.",
-          "title": "Excludedomains"
-        }
-      },
-      "title": "EnterpriseWebSearch",
-      "type": "object"
-    },
-    "Environment": {
-      "description": "The environment being operated.",
-      "enum": [
-        "ENVIRONMENT_UNSPECIFIED",
-        "ENVIRONMENT_BROWSER"
-      ],
-      "title": "Environment",
-      "type": "string"
-    },
     "ExecutableCode": {
       "additionalProperties": false,
-      "description": "Model-generated code executed server-side, results returned to the model.\n\nOnly generated when using the `CodeExecution` tool, in which the code will\nbe automatically executed, and a corresponding `CodeExecutionResult` will\nalso be generated.",
+      "description": "Code generated by the model that is meant to be executed, and the result returned to the model.\n\nGenerated when using the `CodeExecution` tool, in which the code will be\nautomatically executed, and a corresponding CodeExecutionResult will also be\ngenerated.",
       "properties": {
         "code": {
           "anyOf": [
@@ -822,146 +455,11 @@
             }
           ],
           "default": null,
-          "description": "Unique identifier of the `ExecutableCode` part. The server returns the `CodeExecutionResult` with the matching `id`.",
+          "description": "Optional. Unique identifier of the `ExecutableCode` part. The server returns the `CodeExecutionResult` with the matching `id`. This field is not supported in Vertex AI.",
           "title": "Id"
         }
       },
       "title": "ExecutableCode",
-      "type": "object"
-    },
-    "ExternalApi": {
-      "additionalProperties": false,
-      "description": "Retrieve from data source powered by external API for grounding.\n\nThe external API is not owned by Google, but need to follow the pre-defined\nAPI spec. This data type is not supported in Gemini API.",
-      "properties": {
-        "apiAuth": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ApiAuth"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The authentication config to access the API. Deprecated. Please use auth_config instead."
-        },
-        "apiSpec": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ApiSpec"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The API spec that the external API implements."
-        },
-        "authConfig": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/AuthConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The authentication config to access the API."
-        },
-        "elasticSearchParams": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ExternalApiElasticSearchParams"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Parameters for the elastic search API."
-        },
-        "endpoint": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The endpoint of the external API. The system will call the API at this endpoint to retrieve the data for grounding. Example: https://acme.com:443/search",
-          "title": "Endpoint"
-        },
-        "simpleSearchParams": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ExternalApiSimpleSearchParams"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Parameters for the simple search API."
-        }
-      },
-      "title": "ExternalApi",
-      "type": "object"
-    },
-    "ExternalApiElasticSearchParams": {
-      "additionalProperties": false,
-      "description": "The search parameters to use for the ELASTIC_SEARCH spec.\n\nThis data type is not supported in Gemini API.",
-      "properties": {
-        "index": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The ElasticSearch index to use.",
-          "title": "Index"
-        },
-        "numHits": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Number of hits (chunks) to request. When specified, it is passed to Elasticsearch as the `num_hits` param.",
-          "title": "Numhits"
-        },
-        "searchTemplate": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The ElasticSearch search template to use.",
-          "title": "Searchtemplate"
-        }
-      },
-      "title": "ExternalApiElasticSearchParams",
-      "type": "object"
-    },
-    "ExternalApiSimpleSearchParams": {
-      "additionalProperties": false,
-      "description": "The search parameters to use for SIMPLE_SEARCH spec.\n\nThis data type is not supported in Gemini API.",
-      "properties": {},
-      "title": "ExternalApiSimpleSearchParams",
       "type": "object"
     },
     "FeatureSelectionPreference": {
@@ -1213,56 +711,6 @@
       "title": "FileData",
       "type": "object"
     },
-    "FileSearch": {
-      "additionalProperties": false,
-      "description": "The FileSearch tool that retrieves knowledge from Semantic Retrieval corpora.\n\nFiles are imported to Semantic Retrieval corpora using the ImportFile API.\nThis data type is not supported in Vertex AI.",
-      "properties": {
-        "fileSearchStoreNames": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Required. The names of the file_search_stores to retrieve from. Example: `fileSearchStores/my-file-search-store-123`",
-          "title": "Filesearchstorenames"
-        },
-        "topK": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. The number of semantic retrieval chunks to retrieve.",
-          "title": "Topk"
-        },
-        "metadataFilter": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Metadata filter to apply to the semantic retrieval documents and chunks.",
-          "title": "Metadatafilter"
-        }
-      },
-      "title": "FileSearch",
-      "type": "object"
-    },
     "FileSource": {
       "description": "Source of the File.",
       "enum": [
@@ -1338,7 +786,7 @@
     },
     "FunctionCall": {
       "additionalProperties": false,
-      "description": "A function call.",
+      "description": "A predicted FunctionCall returned from the model that contains a string representing the FunctionDeclaration.name and a structured JSON object containing the parameters and their values.",
       "properties": {
         "id": {
           "anyOf": [
@@ -1350,7 +798,7 @@
             }
           ],
           "default": null,
-          "description": "The unique id of the function call. If populated, the client to execute the\n   `function_call` and return the response with the matching `id`.",
+          "description": "Optional. The unique id of the function call. If populated, the client to execute the `function_call` and return the response with the matching `id`.",
           "title": "Id"
         },
         "args": {
@@ -1364,7 +812,7 @@
             }
           ],
           "default": null,
-          "description": "Optional. The function parameters and values in JSON object format. See [FunctionDeclaration.parameters] for parameter details.",
+          "description": "Optional. The function parameters and values in JSON object format. See FunctionDeclaration.parameters for parameter details.",
           "title": "Args"
         },
         "name": {
@@ -1377,7 +825,7 @@
             }
           ],
           "default": null,
-          "description": "Optional. The name of the function to call. Matches [FunctionDeclaration.name].",
+          "description": "Optional. The name of the function to call. Matches FunctionDeclaration.name.",
           "title": "Name"
         },
         "partialArgs": {
@@ -1430,7 +878,7 @@
             }
           ],
           "default": null,
-          "description": "Optional. Function names to call. Only set when the Mode is ANY. Function names should match [FunctionDeclaration.name]. With mode set to ANY, model will predict a function call from the set of function names provided.",
+          "description": "Optional. Function names to call. Only set when the Mode is ANY. Function names should match FunctionDeclaration.name. With mode set to ANY, model will predict a function call from the set of function names provided.",
           "title": "Allowedfunctionnames"
         },
         "mode": {
@@ -1455,7 +903,7 @@
             }
           ],
           "default": null,
-          "description": "Optional. When set to true, arguments of a single function call will be streamed out in multiple parts/contents/responses. Partial parameter results will be returned in the [FunctionCall.partial_args] field. This field is not supported in Gemini API.",
+          "description": "Optional. When set to true, arguments of a single function call will be streamed out in multiple parts/contents/responses. Partial parameter results will be returned in the `FunctionCall.partial_args` field. This field is not supported in Gemini API.",
           "title": "Streamfunctioncallarguments"
         }
       },
@@ -1474,101 +922,9 @@
       "title": "FunctionCallingConfigMode",
       "type": "string"
     },
-    "FunctionDeclaration": {
-      "additionalProperties": false,
-      "description": "Structured representation of a function declaration as defined by the [OpenAPI 3.0 specification](https://spec.openapis.org/oas/v3.0.3).\n\nIncluded in this declaration are the function name, description, parameters\nand response type. This FunctionDeclaration is a representation of a block of\ncode that can be used as a `Tool` by the model and executed by the client.",
-      "properties": {
-        "description": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Description and purpose of the function. Model uses it to decide how and whether to call the function.",
-          "title": "Description"
-        },
-        "name": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Required. The name of the function to call. Must start with a letter or an underscore. Must be a-z, A-Z, 0-9, or contain underscores, dots, colons and dashes, with a maximum length of 64.",
-          "title": "Name"
-        },
-        "parameters": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Schema"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Describes the parameters to this function in JSON Schema Object format. Reflects the Open API 3.03 Parameter Object. string Key: the name of the parameter. Parameter names are case sensitive. Schema Value: the Schema defining the type used for the parameter. For function with no parameters, this can be left unset. Parameter names must start with a letter or an underscore and must only contain chars a-z, A-Z, 0-9, or underscores with a maximum length of 64. Example with 1 required and 1 optional parameter: type: OBJECT properties: param1: type: STRING param2: type: INTEGER required: - param1"
-        },
-        "parametersJsonSchema": {
-          "anyOf": [
-            {},
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Describes the parameters to the function in JSON Schema format. The schema must describe an object where the properties are the parameters to the function. For example: ``` { \"type\": \"object\", \"properties\": { \"name\": { \"type\": \"string\" }, \"age\": { \"type\": \"integer\" } }, \"additionalProperties\": false, \"required\": [\"name\", \"age\"], \"propertyOrdering\": [\"name\", \"age\"] } ``` This field is mutually exclusive with `parameters`.",
-          "title": "Parametersjsonschema"
-        },
-        "response": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Schema"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Describes the output from this function in JSON Schema format. Reflects the Open API 3.03 Response Object. The Schema defines the type used for the response value of the function."
-        },
-        "responseJsonSchema": {
-          "anyOf": [
-            {},
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Describes the output from this function in JSON Schema format. The value specified by the schema is the response value of the function. This field is mutually exclusive with `response`.",
-          "title": "Responsejsonschema"
-        },
-        "behavior": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Behavior"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Specifies the function Behavior. Currently only supported by the BidiGenerateContent method. This field is not supported in Vertex AI."
-        }
-      },
-      "title": "FunctionDeclaration",
-      "type": "object"
-    },
     "FunctionResponse": {
       "additionalProperties": false,
-      "description": "A function response.",
+      "description": "The result output from a FunctionCall that contains a string representing the FunctionDeclaration.name and a structured JSON object containing any output from the function is used as context to the model.\n\nThis should contain the result of a `FunctionCall` made based on model\nprediction.",
       "properties": {
         "willContinue": {
           "anyOf": [
@@ -1580,7 +936,7 @@
             }
           ],
           "default": null,
-          "description": "Signals that function call continues, and more responses will be returned, turning the function call into a generator. Is only applicable to NON_BLOCKING function calls (see FunctionDeclaration.behavior for details), ignored otherwise. If false, the default, future responses will not be considered. Is only applicable to NON_BLOCKING function calls, is ignored otherwise. If set to false, future responses will not be considered. It is allowed to return empty `response` with `will_continue=False` to signal that the function call is finished.",
+          "description": "Optional. Signals that function call continues, and more responses will be returned, turning the function call into a generator. Is only applicable to NON_BLOCKING function calls, is ignored otherwise. If set to false, future responses will not be considered. It is allowed to return empty `response` with `will_continue=False` to signal that the function call is finished. This may still trigger the model generation. To avoid triggering the generation and finish the function call, additionally set `scheduling` to `SILENT`. This field is not supported in Vertex AI.",
           "title": "Willcontinue"
         },
         "scheduling": {
@@ -1593,7 +949,7 @@
             }
           ],
           "default": null,
-          "description": "Specifies how the response should be scheduled in the conversation. Only applicable to NON_BLOCKING function calls, is ignored otherwise. Defaults to WHEN_IDLE."
+          "description": "Optional. Specifies how the response should be scheduled in the conversation. Only applicable to NON_BLOCKING function calls, is ignored otherwise. Defaults to WHEN_IDLE."
         },
         "parts": {
           "anyOf": [
@@ -1608,7 +964,7 @@
             }
           ],
           "default": null,
-          "description": "List of parts that constitute a function response. Each part may\n      have a different IANA MIME type.",
+          "description": "Optional. Ordered `Parts` that constitute a function response. Parts may have different IANA MIME types.",
           "title": "Parts"
         },
         "id": {
@@ -1634,7 +990,7 @@
             }
           ],
           "default": null,
-          "description": "Required. The name of the function to call. Matches [FunctionDeclaration.name] and [FunctionCall.name].",
+          "description": "Required. The name of the function to call. Matches FunctionDeclaration.name and FunctionCall.name.",
           "title": "Name"
         },
         "response": {
@@ -1657,7 +1013,7 @@
     },
     "FunctionResponseBlob": {
       "additionalProperties": false,
-      "description": "Raw media bytes for function response.\n\nText should not be sent as raw bytes, use the FunctionResponse.response\nfield.",
+      "description": "Raw media bytes for function response.\n\nText should not be sent as raw bytes, use the 'text' field.",
       "properties": {
         "mimeType": {
           "anyOf": [
@@ -1683,7 +1039,7 @@
             }
           ],
           "default": null,
-          "description": "Required. Inline media bytes.",
+          "description": "Required. Raw bytes.",
           "title": "Data"
         },
         "displayName": {
@@ -1696,7 +1052,7 @@
             }
           ],
           "default": null,
-          "description": "Optional. Display name of the blob.\n      Used to provide a label or filename to distinguish blobs.",
+          "description": "Optional. Display name of the blob. Used to provide a label or filename to distinguish blobs. This field is only returned in PromptMessage for prompt management. It is currently used in the Gemini GenerateContent calls only when server side tools (code_execution, google_search, and url_context) are enabled. This field is not supported in Gemini API.",
           "title": "Displayname"
         }
       },
@@ -1705,7 +1061,7 @@
     },
     "FunctionResponseFileData": {
       "additionalProperties": false,
-      "description": "URI based data for function response.",
+      "description": "URI based data for function response.\n\nThis data type is not supported in Gemini API.",
       "properties": {
         "fileUri": {
           "anyOf": [
@@ -1743,7 +1099,7 @@
             }
           ],
           "default": null,
-          "description": "Optional. Display name of the file.\n      Used to provide a label or filename to distinguish files.",
+          "description": "Optional. Display name of the file data. Used to provide a label or filename to distinguish file datas. This field is only returned in PromptMessage for prompt management. It is currently used in the Gemini GenerateContent calls only when server side tools (code_execution, google_search, and url_context) are enabled.",
           "title": "Displayname"
         }
       },
@@ -1752,7 +1108,7 @@
     },
     "FunctionResponsePart": {
       "additionalProperties": false,
-      "description": "A datatype containing media that is part of a `FunctionResponse` message.\n\nA `FunctionResponsePart` consists of data which has an associated datatype. A\n`FunctionResponsePart` can only contain one of the accepted types in\n`FunctionResponsePart.data`.\n\nA `FunctionResponsePart` must have a fixed IANA MIME type identifying the\ntype and subtype of the media if the `inline_data` field is filled with raw\nbytes.",
+      "description": "A datatype containing media that is part of a `FunctionResponse` message.\n\nA `FunctionResponsePart` consists of data which has an associated datatype. A\n`FunctionResponsePart` can only contain one of the accepted types in\n`FunctionResponsePart.data`. A `FunctionResponsePart` must have a fixed IANA\nMIME type identifying the type and subtype of the media if the `inline_data`\nfield is filled with raw bytes.",
       "properties": {
         "inlineData": {
           "anyOf": [
@@ -1764,7 +1120,7 @@
             }
           ],
           "default": null,
-          "description": "Optional. Inline media bytes."
+          "description": "Inline media bytes."
         },
         "fileData": {
           "anyOf": [
@@ -1776,14 +1132,14 @@
             }
           ],
           "default": null,
-          "description": "Optional. URI based data."
+          "description": "URI based data. This field is not supported in Gemini API."
         }
       },
       "title": "FunctionResponsePart",
       "type": "object"
     },
     "FunctionResponseScheduling": {
-      "description": "Specifies how the response should be scheduled in the conversation.",
+      "description": "Specifies how the response should be scheduled in the conversation.\n\nOnly applicable to NON_BLOCKING function calls, is ignored otherwise. Defaults\nto WHEN_IDLE.",
       "enum": [
         "SCHEDULING_UNSPECIFIED",
         "SILENT",
@@ -2110,24 +1466,7 @@
         "tools": {
           "anyOf": [
             {
-              "items": {
-                "anyOf": [
-                  {
-                    "$ref": "#/$defs/google__genai__types__Tool"
-                  },
-                  {
-                    "description": "Fallback for invalid schema: core_schema.CallableSchema",
-                    "type": "object"
-                  },
-                  {
-                    "$ref": "#/$defs/mcp__types__Tool"
-                  },
-                  {
-                    "description": "Fallback for invalid schema: core_schema.IsInstanceSchema (<class 'mcp.client.session.ClientSession'>)",
-                    "type": "object"
-                  }
-                ]
-              },
+              "items": {},
               "type": "array"
             },
             {
@@ -2308,6 +1647,18 @@
           ],
           "default": null,
           "description": "The service tier to use for the request. For example, ServiceTier.FLEX."
+        },
+        "audioTranscriptionConfig": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AudioTranscriptionConfig"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional. Configuration for audio transcription (speech recognition).\n      "
         }
       },
       "title": "GenerateContentConfig",
@@ -2393,119 +1744,6 @@
       "title": "GenerationConfigRoutingConfigManualRoutingMode",
       "type": "object"
     },
-    "GoogleMaps": {
-      "additionalProperties": false,
-      "description": "Tool to retrieve knowledge from Google Maps.",
-      "properties": {
-        "authConfig": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/AuthConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The authentication config to access the API. Only API key is supported. This field is not supported in Gemini API."
-        },
-        "enableWidget": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Whether to return a widget context token in the GroundingMetadata of the response. Developers can use the widget context token to render a Google Maps widget with geospatial context related to the places that the model references in the response.",
-          "title": "Enablewidget"
-        }
-      },
-      "title": "GoogleMaps",
-      "type": "object"
-    },
-    "GoogleSearch": {
-      "additionalProperties": false,
-      "description": "GoogleSearch tool type.\n\nTool to support Google Search in Model. Powered by Google.",
-      "properties": {
-        "searchTypes": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/SearchTypes"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. The set of search types to enable. If not set, web search is enabled by default."
-        },
-        "blockingConfidence": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/PhishBlockThreshold"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Sites with confidence level chosen & above this value will be blocked from the search results. This field is not supported in Gemini API."
-        },
-        "excludeDomains": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. List of domains to be excluded from the search results. The default limit is 2000 domains. Example: [\"amazon.com\", \"facebook.com\"]. This field is not supported in Gemini API.",
-          "title": "Excludedomains"
-        },
-        "timeRangeFilter": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Interval"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Filter search results to a specific time range. If customers set a start time, they must set an end time (and vice versa). This field is not supported in Vertex AI."
-        }
-      },
-      "title": "GoogleSearch",
-      "type": "object"
-    },
-    "GoogleSearchRetrieval": {
-      "additionalProperties": false,
-      "description": "Tool to retrieve public web data for grounding, powered by Google.",
-      "properties": {
-        "dynamicRetrievalConfig": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/DynamicRetrievalConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Specifies the dynamic retrieval configuration for the given source."
-        }
-      },
-      "title": "GoogleSearchRetrieval",
-      "type": "object"
-    },
     "HarmBlockMethod": {
       "description": "The method for blocking content.\n\nIf not specified, the default behavior is to use the probability score. This\nenum is not supported in Gemini API.",
       "enum": [
@@ -2545,19 +1783,6 @@
         "HARM_CATEGORY_JAILBREAK"
       ],
       "title": "HarmCategory",
-      "type": "string"
-    },
-    "HttpElementLocation": {
-      "description": "The location of the API key. This enum is not supported in Gemini API.",
-      "enum": [
-        "HTTP_IN_UNSPECIFIED",
-        "HTTP_IN_QUERY",
-        "HTTP_IN_HEADER",
-        "HTTP_IN_PATH",
-        "HTTP_IN_BODY",
-        "HTTP_IN_COOKIE"
-      ],
-      "title": "HttpElementLocation",
       "type": "string"
     },
     "HttpOptions": {
@@ -2820,48 +2045,6 @@
       "title": "HttpRetryOptions",
       "type": "object"
     },
-    "Icon": {
-      "additionalProperties": true,
-      "description": "An icon for display in user interfaces.",
-      "properties": {
-        "src": {
-          "title": "Src",
-          "type": "string"
-        },
-        "mimeType": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Mimetype"
-        },
-        "sizes": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Sizes"
-        }
-      },
-      "required": [
-        "src"
-      ],
-      "title": "Icon",
-      "type": "object"
-    },
     "ImageConfig": {
       "additionalProperties": false,
       "description": "The image generation configuration to be used in GenerateContentConfig.",
@@ -2993,49 +2176,6 @@
       "title": "ImageConfigImageOutputOptions",
       "type": "object"
     },
-    "ImageSearch": {
-      "additionalProperties": false,
-      "description": "Image search for grounding and related configurations.",
-      "properties": {},
-      "title": "ImageSearch",
-      "type": "object"
-    },
-    "Interval": {
-      "additionalProperties": false,
-      "description": "Represents a time interval, encoded as a Timestamp start (inclusive) and a Timestamp end (exclusive).\n\nThe start must be less than or equal to the end. When the start equals the\nend, the interval is empty (matches no time). When both start and end are\nunspecified, the interval matches any time.",
-      "properties": {
-        "endTime": {
-          "anyOf": [
-            {
-              "format": "date-time",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Exclusive end of the interval. If specified, a Timestamp matching this interval will have to be before the end.",
-          "title": "Endtime"
-        },
-        "startTime": {
-          "anyOf": [
-            {
-              "format": "date-time",
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Inclusive start of the interval. If specified, a Timestamp matching this interval will have to be the same or after the start.",
-          "title": "Starttime"
-        }
-      },
-      "title": "Interval",
-      "type": "object"
-    },
     "Language": {
       "description": "Programming language of the `code`.",
       "enum": [
@@ -3045,9 +2185,40 @@
       "title": "Language",
       "type": "string"
     },
+    "LanguageAuto": {
+      "additionalProperties": false,
+      "description": "Indicates the language of the audio should be automatically detected.",
+      "properties": {},
+      "title": "LanguageAuto",
+      "type": "object"
+    },
+    "LanguageHints": {
+      "additionalProperties": false,
+      "description": "Provides hints to the model about possible languages present in the audio.",
+      "properties": {
+        "languageCodes": {
+          "anyOf": [
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "BCP-47 language codes. At least one must be specified.",
+          "title": "Languagecodes"
+        }
+      },
+      "title": "LanguageHints",
+      "type": "object"
+    },
     "LatLng": {
       "additionalProperties": false,
-      "description": "An object that represents a latitude/longitude pair.\n\nThis is expressed as a pair of doubles to represent degrees latitude and\ndegrees longitude. Unless specified otherwise, this object must conform to the\n<a href=\"https://en.wikipedia.org/wiki/World_Geodetic_System#1984_version\">\nWGS84 standard</a>. Values must be within normalized ranges.",
+      "description": "An object that represents a latitude/longitude pair.\n\nThis is expressed as a pair of doubles to represent degrees latitude and\ndegrees longitude. Unless specified otherwise, this object must conform to the\nWGS84 standard. Values must be within normalized ranges.",
       "properties": {
         "latitude": {
           "anyOf": [
@@ -3072,7 +2243,7 @@
             }
           ],
           "default": null,
-          "description": "The longitude in degrees. It must be in the range [-180.0, +180.0]",
+          "description": "The longitude in degrees. It must be in the range [-180.0, +180.0].",
           "title": "Longitude"
         }
       },
@@ -3488,39 +2659,6 @@
       "title": "LoopAgentConfig",
       "type": "object"
     },
-    "McpServer": {
-      "additionalProperties": false,
-      "description": "A MCPServer is a server that can be called by the model to perform actions.\n\nIt is a server that implements the MCP protocol. Next ID: 5. This data type is\nnot supported in Vertex AI.",
-      "properties": {
-        "name": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The name of the MCPServer.",
-          "title": "Name"
-        },
-        "streamableHttpTransport": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/StreamableHttpTransport"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "A transport that can stream HTTP requests and responses."
-        }
-      },
-      "title": "McpServer",
-      "type": "object"
-    },
     "MediaResolution": {
       "description": "The media resolution to use.",
       "enum": [
@@ -3875,6 +3013,18 @@
           "default": null,
           "description": "Custom metadata associated with the Part. Agents using genai.Part as content representation may need to keep track of the additional information. For example it can be name of a file/source from which the Part originates or a way to multiplex multiple Part streams. This field is not supported in Vertex AI.",
           "title": "Partmetadata"
+        },
+        "audioTranscription": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/Transcription"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Output only. The transcription of the audio part."
         }
       },
       "title": "Part",
@@ -4012,20 +3162,6 @@
       "title": "PartialArg",
       "type": "object"
     },
-    "PhishBlockThreshold": {
-      "description": "Sites with confidence level chosen & above this value will be blocked from the search results.\n\nThis enum is not supported in Gemini API.",
-      "enum": [
-        "PHISH_BLOCK_THRESHOLD_UNSPECIFIED",
-        "BLOCK_LOW_AND_ABOVE",
-        "BLOCK_MEDIUM_AND_ABOVE",
-        "BLOCK_HIGH_AND_ABOVE",
-        "BLOCK_HIGHER_AND_ABOVE",
-        "BLOCK_VERY_HIGH_AND_ABOVE",
-        "BLOCK_ONLY_EXTREMELY_HIGH"
-      ],
-      "title": "PhishBlockThreshold",
-      "type": "string"
-    },
     "PrebuiltVoiceConfig": {
       "additionalProperties": false,
       "description": "Configuration for a prebuilt voice.",
@@ -4056,205 +3192,6 @@
       ],
       "title": "ProminentPeople",
       "type": "string"
-    },
-    "RagRetrievalConfig": {
-      "additionalProperties": false,
-      "description": "Specifies the context retrieval config.\n\nThis data type is not supported in Gemini API.",
-      "properties": {
-        "filter": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RagRetrievalConfigFilter"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Config for filters."
-        },
-        "hybridSearch": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RagRetrievalConfigHybridSearch"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Config for Hybrid Search."
-        },
-        "ranking": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RagRetrievalConfigRanking"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Config for ranking and reranking."
-        },
-        "topK": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. The number of contexts to retrieve.",
-          "title": "Topk"
-        }
-      },
-      "title": "RagRetrievalConfig",
-      "type": "object"
-    },
-    "RagRetrievalConfigFilter": {
-      "additionalProperties": false,
-      "description": "Config for filters. This data type is not supported in Gemini API.",
-      "properties": {
-        "metadataFilter": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. String for metadata filtering.",
-          "title": "Metadatafilter"
-        },
-        "vectorDistanceThreshold": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Only returns contexts with vector distance smaller than the threshold.",
-          "title": "Vectordistancethreshold"
-        },
-        "vectorSimilarityThreshold": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Only returns contexts with vector similarity larger than the threshold.",
-          "title": "Vectorsimilaritythreshold"
-        }
-      },
-      "title": "RagRetrievalConfigFilter",
-      "type": "object"
-    },
-    "RagRetrievalConfigHybridSearch": {
-      "additionalProperties": false,
-      "description": "Config for Hybrid Search. This data type is not supported in Gemini API.",
-      "properties": {
-        "alpha": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Alpha value controls the weight between dense and sparse vector search results. The range is [0, 1], while 0 means sparse vector search only and 1 means dense vector search only. The default value is 0.5 which balances sparse and dense vector search equally.",
-          "title": "Alpha"
-        }
-      },
-      "title": "RagRetrievalConfigHybridSearch",
-      "type": "object"
-    },
-    "RagRetrievalConfigRanking": {
-      "additionalProperties": false,
-      "description": "Config for ranking and reranking.\n\nThis data type is not supported in Gemini API.",
-      "properties": {
-        "llmRanker": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RagRetrievalConfigRankingLlmRanker"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Config for LlmRanker."
-        },
-        "rankService": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RagRetrievalConfigRankingRankService"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Config for Rank Service."
-        }
-      },
-      "title": "RagRetrievalConfigRanking",
-      "type": "object"
-    },
-    "RagRetrievalConfigRankingLlmRanker": {
-      "additionalProperties": false,
-      "description": "Config for LlmRanker. This data type is not supported in Gemini API.",
-      "properties": {
-        "modelName": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. The model name used for ranking. See [Supported models](https://cloud.google.com/vertex-ai/generative-ai/docs/model-reference/inference#supported-models).",
-          "title": "Modelname"
-        }
-      },
-      "title": "RagRetrievalConfigRankingLlmRanker",
-      "type": "object"
-    },
-    "RagRetrievalConfigRankingRankService": {
-      "additionalProperties": false,
-      "description": "Config for Rank Service. This data type is not supported in Gemini API.",
-      "properties": {
-        "modelName": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. The model name of the rank service. Format: `semantic-ranker-512@latest`",
-          "title": "Modelname"
-        }
-      },
-      "title": "RagRetrievalConfigRankingRankService",
-      "type": "object"
     },
     "ReplicatedVoiceConfig": {
       "additionalProperties": false,
@@ -4325,63 +3262,6 @@
       "title": "ResourceScope",
       "type": "string"
     },
-    "Retrieval": {
-      "additionalProperties": false,
-      "description": "Defines a retrieval tool that model can call to access external knowledge.\n\nThis data type is not supported in Gemini API.",
-      "properties": {
-        "disableAttribution": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Deprecated. This option is no longer supported.",
-          "title": "Disableattribution"
-        },
-        "externalApi": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ExternalApi"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Use data source powered by external API for grounding."
-        },
-        "vertexAiSearch": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/VertexAISearch"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Set to use data source powered by Vertex AI Search."
-        },
-        "vertexRagStore": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/VertexRagStore"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Set to use data source powered by Vertex RAG store. User data is uploaded via the VertexRagDataService."
-        }
-      },
-      "title": "Retrieval",
-      "type": "object"
-    },
     "RetrievalConfig": {
       "additionalProperties": false,
       "description": "Retrieval config.",
@@ -4396,7 +3276,7 @@
             }
           ],
           "default": null,
-          "description": "Optional. The location of the user."
+          "description": "The location of the user."
         },
         "languageCode": {
           "anyOf": [
@@ -4802,38 +3682,6 @@
       "title": "Schema",
       "type": "object"
     },
-    "SearchTypes": {
-      "additionalProperties": false,
-      "description": "Different types of search that can be enabled on the GoogleSearch tool.",
-      "properties": {
-        "webSearch": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/WebSearch"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Setting this field enables web search. Only text results are returned."
-        },
-        "imageSearch": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ImageSearch"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Setting this field enables image search. Image bytes are returned."
-        }
-      },
-      "title": "SearchTypes",
-      "type": "object"
-    },
     "SequentialAgentConfig": {
       "additionalProperties": false,
       "deprecated": true,
@@ -5000,82 +3848,6 @@
       "title": "SpeechConfig",
       "type": "object"
     },
-    "StreamableHttpTransport": {
-      "additionalProperties": false,
-      "description": "A transport that can stream HTTP requests and responses.\n\nNext ID: 6. This data type is not supported in Vertex AI.",
-      "properties": {
-        "headers": {
-          "anyOf": [
-            {
-              "additionalProperties": {
-                "type": "string"
-              },
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional: Fields for authentication headers, timeouts, etc., if needed.",
-          "title": "Headers"
-        },
-        "sseReadTimeout": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Timeout for SSE read operations.",
-          "title": "Ssereadtimeout"
-        },
-        "terminateOnClose": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Whether to close the client session when the transport closes.",
-          "title": "Terminateonclose"
-        },
-        "timeout": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "HTTP timeout for regular operations.",
-          "title": "Timeout"
-        },
-        "url": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "The full URL for the MCPServer endpoint. Example: \"https://api.example.com/mcp\".",
-          "title": "Url"
-        }
-      },
-      "title": "StreamableHttpTransport",
-      "type": "object"
-    },
     "ThinkingConfig": {
       "additionalProperties": false,
       "description": "The thinking features configuration.",
@@ -5134,74 +3906,6 @@
       "title": "ThinkingLevel",
       "type": "string"
     },
-    "ToolAnnotations": {
-      "additionalProperties": true,
-      "description": "Additional properties describing a Tool to clients.\n\nNOTE: all properties in ToolAnnotations are **hints**.\nThey are not guaranteed to provide a faithful description of\ntool behavior (including descriptive properties like `title`).\n\nClients should never make tool use decisions based on ToolAnnotations\nreceived from untrusted servers.",
-      "properties": {
-        "title": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Title"
-        },
-        "readOnlyHint": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Readonlyhint"
-        },
-        "destructiveHint": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Destructivehint"
-        },
-        "idempotentHint": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Idempotenthint"
-        },
-        "openWorldHint": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Openworldhint"
-        }
-      },
-      "title": "ToolAnnotations",
-      "type": "object"
-    },
     "ToolArgsConfig": {
       "additionalProperties": true,
       "description": "Config to host free key-value pairs for the args in ToolConfig.",
@@ -5254,73 +3958,6 @@
         }
       },
       "title": "ToolCall",
-      "type": "object"
-    },
-    "ToolCodeExecution": {
-      "additionalProperties": false,
-      "description": "Tool that executes code generated by the model, and automatically returns the result to the model.\n\nSee also [ExecutableCode]and [CodeExecutionResult] which are input and output\nto this tool. This data type is not supported in Gemini API.",
-      "properties": {},
-      "title": "ToolCodeExecution",
-      "type": "object"
-    },
-    "ToolExecution": {
-      "additionalProperties": true,
-      "description": "Execution-related properties for a tool.",
-      "properties": {
-        "taskSupport": {
-          "anyOf": [
-            {
-              "enum": [
-                "forbidden",
-                "optional",
-                "required"
-              ],
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Tasksupport"
-        }
-      },
-      "title": "ToolExecution",
-      "type": "object"
-    },
-    "ToolParallelAiSearch": {
-      "additionalProperties": false,
-      "description": "ParallelAiSearch tool type.\n\nA tool that uses the Parallel.ai search engine for grounding. This data type\nis not supported in Gemini API.",
-      "properties": {
-        "apiKey": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. The API key for ParallelAiSearch. If an API key is not provided, the system will attempt to verify access by checking for an active Parallel.ai subscription through the Google Cloud Marketplace. See https://docs.parallel.ai/search/search-quickstart for more details.",
-          "title": "Apikey"
-        },
-        "customConfigs": {
-          "anyOf": [
-            {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Custom configs for ParallelAiSearch. This field can be used to pass any parameter from the Parallel.ai Search API. See the Parallel.ai documentation for the full list of available parameters and their usage: https://docs.parallel.ai/api-reference/search-beta/search Currently only `source_policy`, `excerpts`, `max_results`, `mode`, `fetch_policy` can be set via this field. For example: { \"source_policy\": { \"include_domains\": [\"google.com\", \"wikipedia.org\"], \"exclude_domains\": [\"example.com\"] }, \"fetch_policy\": { \"max_age_seconds\": 3600 } }",
-          "title": "Customconfigs"
-        }
-      },
-      "title": "ToolParallelAiSearch",
       "type": "object"
     },
     "ToolResponse": {
@@ -5383,6 +4020,82 @@
       "title": "ToolType",
       "type": "string"
     },
+    "Transcription": {
+      "additionalProperties": false,
+      "description": "Audio transcription in Server Content.",
+      "properties": {
+        "text": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional. Transcription text.",
+          "title": "Text"
+        },
+        "finished": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Optional. The bool indicates the end of the transcription.",
+          "title": "Finished"
+        },
+        "languageCode": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "The BCP-47 language code of the transcription.",
+          "title": "Languagecode"
+        },
+        "speakerLabel": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "A label identifying the speaker of this audio segment (e.g. \"spk_1\", \"spk_2\").\n      ",
+          "title": "Speakerlabel"
+        },
+        "words": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/$defs/WordInfo"
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Detailed word-level transcriptions and timing details.\n      ",
+          "title": "Words"
+        }
+      },
+      "title": "Transcription",
+      "type": "object"
+    },
     "Type": {
       "description": "Data type of the schema field.",
       "enum": [
@@ -5397,251 +4110,6 @@
       ],
       "title": "Type",
       "type": "string"
-    },
-    "UrlContext": {
-      "additionalProperties": false,
-      "description": "Tool to support URL context.",
-      "properties": {},
-      "title": "UrlContext",
-      "type": "object"
-    },
-    "VertexAISearch": {
-      "additionalProperties": false,
-      "description": "Retrieve from Vertex AI Search datastore or engine for grounding.\n\ndatastore and engine are mutually exclusive. See\nhttps://cloud.google.com/products/agent-builder. This data type is not\nsupported in Gemini API.",
-      "properties": {
-        "dataStoreSpecs": {
-          "anyOf": [
-            {
-              "items": {
-                "$ref": "#/$defs/VertexAISearchDataStoreSpec"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Specifications that define the specific DataStores to be searched, along with configurations for those data stores. This is only considered for Engines with multiple data stores. It should only be set if engine is used.",
-          "title": "Datastorespecs"
-        },
-        "datastore": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Fully-qualified Vertex AI Search data store resource ID. Format: `projects/{project}/locations/{location}/collections/{collection}/dataStores/{dataStore}`",
-          "title": "Datastore"
-        },
-        "engine": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Fully-qualified Vertex AI Search engine resource ID. Format: `projects/{project}/locations/{location}/collections/{collection}/engines/{engine}`",
-          "title": "Engine"
-        },
-        "filter": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Filter strings to be passed to the search API.",
-          "title": "Filter"
-        },
-        "maxResults": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Number of search results to return per query. The default value is 10. The maximumm allowed value is 10.",
-          "title": "Maxresults"
-        }
-      },
-      "title": "VertexAISearch",
-      "type": "object"
-    },
-    "VertexAISearchDataStoreSpec": {
-      "additionalProperties": false,
-      "description": "Define data stores within engine to filter on in a search call and configurations for those data stores.\n\nFor more information, see\nhttps://cloud.google.com/generative-ai-app-builder/docs/reference/rpc/google.cloud.discoveryengine.v1#datastorespec.\nThis data type is not supported in Gemini API.",
-      "properties": {
-        "dataStore": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Full resource name of DataStore, such as Format: `projects/{project}/locations/{location}/collections/{collection}/dataStores/{dataStore}`",
-          "title": "Datastore"
-        },
-        "filter": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Filter specification to filter documents in the data store specified by data_store field. For more information on filtering, see [Filtering](https://cloud.google.com/generative-ai-app-builder/docs/filter-search-metadata)",
-          "title": "Filter"
-        }
-      },
-      "title": "VertexAISearchDataStoreSpec",
-      "type": "object"
-    },
-    "VertexRagStore": {
-      "additionalProperties": false,
-      "description": "Retrieve from Vertex RAG Store for grounding.\n\nThis data type is not supported in Gemini API.",
-      "properties": {
-        "ragCorpora": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Deprecated. Please use rag_resources instead.",
-          "title": "Ragcorpora"
-        },
-        "ragResources": {
-          "anyOf": [
-            {
-              "items": {
-                "$ref": "#/$defs/VertexRagStoreRagResource"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. The representation of the rag source. It can be used to specify corpus only or ragfiles. Currently only support one corpus or multiple files from one corpus. In the future we may open up multiple corpora support.",
-          "title": "Ragresources"
-        },
-        "ragRetrievalConfig": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/RagRetrievalConfig"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. The retrieval config for the Rag query."
-        },
-        "similarityTopK": {
-          "anyOf": [
-            {
-              "type": "integer"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Number of top k results to return from the selected corpora.",
-          "title": "Similaritytopk"
-        },
-        "storeContext": {
-          "anyOf": [
-            {
-              "type": "boolean"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Currently only supported for Gemini Multimodal Live API. In Gemini Multimodal Live API, if `store_context` bool is specified, Gemini will leverage it to automatically memorize the interactions between the client and Gemini, and retrieve context when needed to augment the response generation for users' ongoing and future interactions.",
-          "title": "Storecontext"
-        },
-        "vectorDistanceThreshold": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Only return results with vector distance smaller than the threshold.",
-          "title": "Vectordistancethreshold"
-        }
-      },
-      "title": "VertexRagStore",
-      "type": "object"
-    },
-    "VertexRagStoreRagResource": {
-      "additionalProperties": false,
-      "description": "The definition of the Rag resource.\n\nThis data type is not supported in Gemini API.",
-      "properties": {
-        "ragCorpus": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. RagCorpora resource name. Format: `projects/{project}/locations/{location}/ragCorpora/{rag_corpus}`",
-          "title": "Ragcorpus"
-        },
-        "ragFileIds": {
-          "anyOf": [
-            {
-              "items": {
-                "type": "string"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. rag_file_id. The files should be in the same rag_corpus set in rag_corpus field.",
-          "title": "Ragfileids"
-        }
-      },
-      "title": "VertexRagStoreRagResource",
-      "type": "object"
     },
     "VideoMetadata": {
       "additionalProperties": false,
@@ -5743,11 +4211,51 @@
       "title": "VoiceConsentSignature",
       "type": "object"
     },
-    "WebSearch": {
+    "WordInfo": {
       "additionalProperties": false,
-      "description": "Standard web search for grounding and related configurations.\n\nOnly text results are returned.",
-      "properties": {},
-      "title": "WebSearch",
+      "description": "Information about a single recognized word.",
+      "properties": {
+        "word": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Transcript of the word.\n      ",
+          "title": "Word"
+        },
+        "startOffset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "Start offset in time of the word relative to the start of the audio.\n      ",
+          "title": "Startoffset"
+        },
+        "endOffset": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "description": "End offset in time of the word relative to the start of the audio.\n      ",
+          "title": "Endoffset"
+        }
+      },
+      "title": "WordInfo",
       "type": "object"
     },
     "google__adk__tools__tool_configs__ToolConfig": {
@@ -5776,166 +4284,6 @@
         "name"
       ],
       "title": "ToolConfig",
-      "type": "object"
-    },
-    "google__genai__types__Tool": {
-      "additionalProperties": false,
-      "description": "Tool details of a tool that the model may use to generate a response.",
-      "properties": {
-        "retrieval": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/Retrieval"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Retrieval tool type. System will always execute the provided retrieval tool(s) to get external knowledge to answer the prompt. Retrieval results are presented to the model for generation. This field is not supported in Gemini API."
-        },
-        "computerUse": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ComputerUse"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Tool to support the model interacting directly with the\n      computer. If enabled, it automatically populates computer-use specific\n      Function Declarations."
-        },
-        "fileSearch": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/FileSearch"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. FileSearch tool type. Tool to retrieve knowledge from Semantic Retrieval corpora. This field is not supported in Vertex AI."
-        },
-        "googleSearch": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/GoogleSearch"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. GoogleSearch tool type. Tool to support Google Search in Model. Powered by Google."
-        },
-        "googleMaps": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/GoogleMaps"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Tool that allows grounding the model's response with\n      geospatial context related to the user's query."
-        },
-        "codeExecution": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ToolCodeExecution"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. CodeExecution tool type. Enables the model to execute code as part of generation."
-        },
-        "enterpriseWebSearch": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/EnterpriseWebSearch"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Tool to support searching public web data, powered by Vertex AI Search and Sec4 compliance. This field is not supported in Gemini API."
-        },
-        "functionDeclarations": {
-          "anyOf": [
-            {
-              "items": {
-                "$ref": "#/$defs/FunctionDeclaration"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Function tool type. One or more function declarations to be passed to the model along with the current user query. Model may decide to call a subset of these functions by populating FunctionCall in the response. User should provide a FunctionResponse for each function call in the next turn. Based on the function responses, Model will generate the final response back to the user. Maximum 512 function declarations can be provided.",
-          "title": "Functiondeclarations"
-        },
-        "googleSearchRetrieval": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/GoogleSearchRetrieval"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Specialized retrieval tool that is powered by Google Search."
-        },
-        "parallelAiSearch": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ToolParallelAiSearch"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. If specified, Vertex AI will use Parallel.ai to search for information to answer user queries. The search results will be grounded on Parallel.ai and presented to the model for response generation. This field is not supported in Gemini API."
-        },
-        "urlContext": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/UrlContext"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. Tool to support URL context retrieval."
-        },
-        "mcpServers": {
-          "anyOf": [
-            {
-              "items": {
-                "$ref": "#/$defs/McpServer"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "description": "Optional. MCP Servers to connect to. This field is not supported in Vertex AI.",
-          "title": "Mcpservers"
-        }
-      },
-      "title": "Tool",
       "type": "object"
     },
     "google__genai__types__ToolConfig": {
@@ -5976,119 +4324,11 @@
             }
           ],
           "default": null,
-          "description": "If true, the API response will include the server-side tool calls and responses within the `Content` message. This allows clients to observe the server's tool invocations.",
+          "description": "Optional. If true, the API response will include the server-side tool calls and responses within the `Content` message. This allows clients to observe the server's tool interactions. This field is not supported in Vertex AI.",
           "title": "Includeserversidetoolinvocations"
         }
       },
       "title": "ToolConfig",
-      "type": "object"
-    },
-    "mcp__types__Tool": {
-      "additionalProperties": true,
-      "description": "Definition for a tool the client can call.",
-      "properties": {
-        "name": {
-          "title": "Name",
-          "type": "string"
-        },
-        "title": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Title"
-        },
-        "description": {
-          "anyOf": [
-            {
-              "type": "string"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Description"
-        },
-        "inputSchema": {
-          "additionalProperties": true,
-          "title": "Inputschema",
-          "type": "object"
-        },
-        "outputSchema": {
-          "anyOf": [
-            {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Outputschema"
-        },
-        "icons": {
-          "anyOf": [
-            {
-              "items": {
-                "$ref": "#/$defs/Icon"
-              },
-              "type": "array"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Icons"
-        },
-        "annotations": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ToolAnnotations"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        },
-        "_meta": {
-          "anyOf": [
-            {
-              "additionalProperties": true,
-              "type": "object"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null,
-          "title": "Meta"
-        },
-        "execution": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/ToolExecution"
-            },
-            {
-              "type": "null"
-            }
-          ],
-          "default": null
-        }
-      },
-      "required": [
-        "name",
-        "inputSchema"
-      ],
-      "title": "Tool",
       "type": "object"
     }
   },
