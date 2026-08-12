@@ -19,6 +19,7 @@ from __future__ import annotations
 """Utilities for ADK workflows."""
 
 from collections.abc import Mapping
+import logging
 from typing import Any
 from typing import TYPE_CHECKING
 
@@ -36,6 +37,8 @@ from ...utils._schema_utils import schema_to_json_schema
 if TYPE_CHECKING:
   from ...auth.auth_credential import AuthCredential
   from ...sessions.state import State
+
+logger = logging.getLogger('google_adk.' + __name__)
 
 REQUEST_INPUT_FUNCTION_CALL_NAME = 'adk_request_input'
 REQUEST_CREDENTIAL_FUNCTION_CALL_NAME = 'adk_request_credential'
@@ -233,6 +236,15 @@ async def process_auth_resume(
        auth_config.raw_auth_credential.auth_type determines how the
        value is interpreted.
 
+  The credential is stored and exchanged against the node's own
+  ``auth_config``, so an ``auth_scheme`` in the response is ignored and the
+  client cannot redirect the token exchange. The response only supplies the
+  credential itself, and that credential is refused when its ``auth_type``
+  differs from the one the node declared in ``raw_auth_credential`` -- that
+  is how a client is stopped from substituting, say, an API key for the
+  OAuth2 token the node asked for. A node that declared no
+  ``raw_auth_credential`` states no expectation, so nothing is refused.
+
   The caller is responsible for unwrapping {"result": ...} wrappers
   before calling this function.
 
@@ -241,16 +253,32 @@ async def process_auth_resume(
     auth_config: The original auth configuration for the node.
     state: The session state to store credentials in.
   """
+  credential: AuthCredential | None
   try:
     response_config = AuthConfig.model_validate(response_data)
   except (ValidationError, TypeError):
-    response_config = auth_config.model_copy(deep=True)
-    response_config.exchanged_auth_credential = _build_credential_from_value(
-        auth_config, response_data
-    )
+    credential = _build_credential_from_value(auth_config, response_data)
+  else:
+    credential = response_config.exchanged_auth_credential
 
-  response_config.credential_key = auth_config.credential_key
-  await AuthHandler(auth_config=response_config).parse_and_store_auth_response(
+  requested = auth_config.raw_auth_credential
+  if (
+      credential is not None
+      and requested is not None
+      and credential.auth_type != requested.auth_type
+  ):
+    logger.warning(
+        'Ignoring auth resume response for credential_key %s: it returned a'
+        ' %s credential, but the node requested %s. No credential was stored.',
+        auth_config.credential_key,
+        credential.auth_type.value,
+        requested.auth_type.value,
+    )
+    return
+
+  stored_config = auth_config.model_copy(deep=True)
+  stored_config.exchanged_auth_credential = credential
+  await AuthHandler(auth_config=stored_config).parse_and_store_auth_response(
       state=state
   )
 

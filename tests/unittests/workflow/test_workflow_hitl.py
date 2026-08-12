@@ -1443,6 +1443,81 @@ async def test_function_node_auth_config(
 
 @pytest.mark.parametrize('resumable', [False, True])
 @pytest.mark.asyncio
+async def test_function_node_re_requests_auth_when_resume_credential_is_refused(
+    request: pytest.FixtureRequest, resumable: bool
+):
+  """A refused resume re-asks for credentials instead of running the node."""
+  from fastapi.openapi.models import APIKey
+  from fastapi.openapi.models import APIKeyIn
+  from google.adk.auth.auth_credential import AuthCredential
+  from google.adk.auth.auth_credential import AuthCredentialTypes
+  from google.adk.auth.auth_tool import AuthConfig
+  from google.adk.workflow import FunctionNode
+
+  auth_config = AuthConfig(
+      auth_scheme=APIKey(**{'in': APIKeyIn.header, 'name': 'X-Api-Key'}),
+      raw_auth_credential=AuthCredential(
+          auth_type=AuthCredentialTypes.API_KEY,
+          api_key='placeholder',
+      ),
+      credential_key='test_api_key',
+  )
+
+  call_count = 0
+
+  def do_work(ctx: Context):
+    nonlocal call_count
+    call_count += 1
+    return {'result': 'authed'}
+
+  node_a = FunctionNode(
+      func=do_work, auth_config=auth_config, rerun_on_resume=True
+  )
+  node_b = InputCapturingNode(name='NodeB')
+  app = App(
+      name=request.function.__name__,
+      root_agent=Workflow(
+          name='test_agent',
+          edges=[(START, node_a), (node_a, node_b)],
+      ),
+      resumability_config=(
+          ResumabilityConfig(is_resumable=True) if resumable else None
+      ),
+  )
+  runner = testing_utils.InMemoryRunner(app=app)
+
+  # Run 1: should pause for auth.
+  events1 = await runner.run_async(testing_utils.get_user_content('go'))
+  auth_fc_events = workflow_testing_utils.get_auth_request_events(events1)
+  assert len(auth_fc_events) == 1
+  auth_fc_id = auth_fc_events[0].content.parts[0].function_call.id
+  invocation_id = events1[0].invocation_id
+
+  # Run 2: resume with a credential type the node never requested.
+  auth_response = auth_config.model_dump(exclude_none=True, by_alias=True)
+  auth_response['exchangedAuthCredential'] = {
+      'authType': 'oauth2',
+      'oauth2': {'accessToken': 'attacker_token'},
+  }
+  resume_part = types.Part(
+      function_response=types.FunctionResponse(
+          id=auth_fc_id,
+          name=REQUEST_CREDENTIAL_FUNCTION_CALL_NAME,
+          response=auth_response,
+      )
+  )
+  events2 = await runner.run_async(
+      new_message=testing_utils.UserContent(resume_part),
+      invocation_id=invocation_id,
+  )
+
+  assert call_count == 0
+  assert len(workflow_testing_utils.get_auth_request_events(events2)) == 1
+  assert node_b.received_inputs == []
+
+
+@pytest.mark.parametrize('resumable', [False, True])
+@pytest.mark.asyncio
 async def test_second_auth_node_skips_auth_when_credential_exists(
     request: pytest.FixtureRequest, resumable: bool
 ):
