@@ -1012,6 +1012,170 @@ class TestMCPSessionManager:
     assert client.headers.get("a") == "b"
     assert client.timeout.read == 10.0
 
+  @patch("google.adk.tools.mcp_tool.mcp_session_manager.logger")
+  @patch("google.adk.tools.mcp_tool.mcp_session_manager.sse_client")
+  def test_create_client_custom_factory_overrides_mtls_sse(
+      self, mock_sse_client, mock_logger
+  ):
+    """Test that a custom factory beats the mTLS transport for SSE."""
+    custom_clients = []
+
+    def custom_factory(headers=None, timeout=None, auth=None):
+      client = httpx.AsyncClient(headers=headers, timeout=timeout, auth=auth)
+      custom_clients.append(client)
+      return client
+
+    sse_params = SseConnectionParams(
+        url="https://example.com/mcp",
+        httpx_client_factory=custom_factory,
+    )
+    manager = MCPSessionManager(sse_params)
+
+    manager._create_client(mtls_transport=Mock(spec=httpx.AsyncBaseTransport))
+
+    factory = mock_sse_client.call_args.kwargs["httpx_client_factory"]
+    assert isinstance(factory, _DebugHttpxClientFactory)
+    assert factory._base_factory is custom_factory
+
+    client = factory(headers={"a": "b"}, timeout=httpx.Timeout(10.0))
+    assert client is custom_clients[0]
+    assert not isinstance(client._transport, _SharedAsyncTransport)
+
+  @patch("google.adk.tools.mcp_tool.mcp_session_manager.logger")
+  @patch("google.adk.tools.mcp_tool.mcp_session_manager.sse_client")
+  def test_create_client_custom_factory_overrides_mtls_logs_warning_sse(
+      self, mock_sse_client, mock_logger
+  ):
+    """Test that dropping the mTLS transport for SSE logs one warning."""
+    sse_params = SseConnectionParams(
+        url="https://example.com/mcp",
+        httpx_client_factory=Mock(),
+    )
+    manager = MCPSessionManager(sse_params)
+
+    manager._create_client(mtls_transport=Mock(spec=httpx.AsyncBaseTransport))
+
+    mock_logger.warning.assert_called_once()
+    message, params_name = mock_logger.warning.call_args.args
+    assert "Skipping the ADK mTLS transport" in message
+    assert "httpx_client_factory" in message
+    assert params_name == "SseConnectionParams"
+
+  @patch("google.adk.tools.mcp_tool.mcp_session_manager.logger")
+  @patch("google.adk.tools.mcp_tool.mcp_session_manager.sse_client")
+  def test_create_client_custom_factory_without_mtls_logs_no_warning_sse(
+      self, mock_sse_client, mock_logger
+  ):
+    """Test that a custom factory alone does not log the mTLS warning."""
+    custom_httpx_factory = Mock()
+    sse_params = SseConnectionParams(
+        url="https://example.com/mcp",
+        httpx_client_factory=custom_httpx_factory,
+    )
+    manager = MCPSessionManager(sse_params)
+
+    manager._create_client()
+
+    factory = mock_sse_client.call_args.kwargs["httpx_client_factory"]
+    assert factory._base_factory is custom_httpx_factory
+    mock_logger.warning.assert_not_called()
+
+  @patch("google.adk.tools.mcp_tool.mcp_session_manager.logger")
+  @patch("google.adk.tools.mcp_tool.mcp_session_manager.streamable_http_client")
+  def test_create_client_with_mtls_transport_streamable_http(
+      self, mock_streamable_http_client, mock_logger
+  ):
+    """Test that the default factory yields to mTLS for Streamable HTTP."""
+    http_params = StreamableHTTPConnectionParams(
+        url="https://example.com/mcp", timeout=15.0
+    )
+    manager = MCPSessionManager(http_params)
+    mock_transport = Mock(spec=httpx.AsyncBaseTransport)
+
+    manager._create_client(
+        merged_headers={"a": "b"}, mtls_transport=mock_transport
+    )
+
+    client = mock_streamable_http_client.call_args.kwargs["http_client"]
+    assert isinstance(client, httpx.AsyncClient)
+    assert isinstance(client._transport, _SharedAsyncTransport)
+    assert client._transport._transport is mock_transport
+    assert client.headers.get("a") == "b"
+    mock_logger.warning.assert_not_called()
+
+  @patch("google.adk.tools.mcp_tool.mcp_session_manager.logger")
+  @patch("google.adk.tools.mcp_tool.mcp_session_manager.streamable_http_client")
+  def test_create_client_custom_factory_overrides_mtls_streamable_http(
+      self, mock_streamable_http_client, mock_logger
+  ):
+    """Test that a custom factory beats mTLS for Streamable HTTP."""
+    custom_client = httpx.AsyncClient()
+    custom_httpx_factory = Mock(return_value=custom_client)
+    http_params = StreamableHTTPConnectionParams(
+        url="https://example.com/mcp",
+        timeout=15.0,
+        sse_read_timeout=45.0,
+        httpx_client_factory=custom_httpx_factory,
+    )
+    manager = MCPSessionManager(http_params)
+
+    manager._create_client(
+        merged_headers={"a": "b"},
+        mtls_transport=Mock(spec=httpx.AsyncBaseTransport),
+    )
+
+    custom_httpx_factory.assert_called_once_with(
+        headers={"a": "b"},
+        timeout=httpx.Timeout(15.0, read=45.0),
+        auth=None,
+    )
+    client = mock_streamable_http_client.call_args.kwargs["http_client"]
+    assert client is custom_client
+    assert not isinstance(client._transport, _SharedAsyncTransport)
+    mock_logger.warning.assert_called_once()
+    assert (
+        mock_logger.warning.call_args.args[1]
+        == "StreamableHTTPConnectionParams"
+    )
+
+  @pytest.mark.asyncio
+  async def test_create_client_custom_factory_serves_requests_streamable_http(
+      self,
+  ):
+    """Test that the client an mTLS connection uses is really the caller's."""
+    seen_responses = []
+
+    async def record_response(response):
+      seen_responses.append(response.status_code)
+
+    def custom_factory(headers=None, timeout=None, auth=None):
+      return httpx.AsyncClient(
+          headers=headers,
+          timeout=timeout,
+          auth=auth,
+          transport=httpx.MockTransport(lambda request: httpx.Response(204)),
+          event_hooks={"response": [record_response]},
+      )
+
+    http_params = StreamableHTTPConnectionParams(
+        url="https://example.com/mcp",
+        httpx_client_factory=custom_factory,
+    )
+    manager = MCPSessionManager(http_params)
+
+    client = manager._create_client(
+        merged_headers={"x-test": "1"},
+        mtls_transport=httpx.MockTransport(lambda request: httpx.Response(418)),
+    )
+
+    assert isinstance(client, _StreamableHttpClientWrapper)
+    async with client.http_client as http_client:
+      response = await http_client.get("https://example.com/mcp")
+
+    assert response.status_code == 204
+    assert seen_responses == [204]
+    assert response.request.headers["x-test"] == "1"
+
   @pytest.mark.asyncio
   async def test_google_auth_async_transport_handle_request(self):
     """Test that _GoogleAuthAsyncTransport correctly forwards request and returns response."""

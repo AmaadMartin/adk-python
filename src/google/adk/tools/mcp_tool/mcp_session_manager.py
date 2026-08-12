@@ -207,7 +207,9 @@ class SseConnectionParams(BaseModel):
       sse_read_timeout: Timeout in seconds for reading data from the MCP SSE
         server.
       httpx_client_factory: Factory function to create a custom HTTPX client. If
-        not provided, a default factory will be used.
+        not provided, a default factory will be used. Supplying a factory also
+        disables the built-in mTLS transport for this connection: the factory is
+        used as-is, so configure client certificates inside it if you need mTLS.
   """
 
   model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -325,7 +327,9 @@ class StreamableHTTPConnectionParams(BaseModel):
       terminate_on_close: Whether to terminate the MCP Streamable HTTP server
         when the connection is closed.
       httpx_client_factory: Factory function to create a custom HTTPX client. If
-        not provided, a default factory will be used.
+        not provided, a default factory will be used. Supplying a factory also
+        disables the built-in mTLS transport for this connection: the factory is
+        used as-is, so configure client certificates inside it if you need mTLS.
   """
 
   model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -835,6 +839,40 @@ class MCPSessionManager:
       if session_key in self._active_debug_lists:
         del self._active_debug_lists[session_key]
 
+  def _select_httpx_client_factory(
+      self,
+      factory: CheckableMcpHttpClientFactory,
+      mtls_transport: httpx.AsyncBaseTransport | None,
+  ) -> CheckableMcpHttpClientFactory:
+    """Picks the HTTP client factory to build this connection's client with.
+
+    A factory the caller supplied wins over the mTLS transport ADK derives from
+    the ambient environment. Replacing it drops the caller's proxy, CA bundle,
+    limits, retry and event-hook configuration, and nothing else reports that
+    loss.
+
+    Args:
+        factory: The factory held by the connection params. Pydantic returns the
+          field default object itself, so an identity check against
+          `create_mcp_http_client` says whether the caller supplied their own.
+        mtls_transport: The mTLS transport, if one was configured.
+
+    Returns:
+        The factory to use for this connection.
+    """
+    if not mtls_transport:
+      return factory
+    if factory is not create_mcp_http_client:
+      logger.warning(
+          'Skipping the ADK mTLS transport for %s because a custom'
+          ' httpx_client_factory was supplied. The custom factory is used'
+          ' as-is; configure client certificates inside it if this connection'
+          ' needs mTLS.',
+          type(self._connection_params).__name__,
+      )
+      return factory
+    return _create_mtls_client_factory(mtls_transport)
+
   def _create_client(
       self,
       merged_headers: dict[str, str] | None = None,
@@ -848,7 +886,9 @@ class MCPSessionManager:
         session_key: Optional session key for this client.
         merged_headers: Optional headers to include in the connection. Only
           applicable for SSE and StreamableHTTP connections.
-        mtls_transport: Optional mTLS transport for the HTTP client.
+        mtls_transport: Optional mTLS transport for the HTTP client. It is
+          ignored when the connection params carry a custom
+          `httpx_client_factory`, which takes precedence over it.
 
     Returns:
         The appropriate MCP client instance.
@@ -862,9 +902,9 @@ class MCPSessionManager:
           errlog=self._errlog,
       )
     elif isinstance(self._connection_params, SseConnectionParams):
-      factory = self._connection_params.httpx_client_factory
-      if mtls_transport:
-        factory = _create_mtls_client_factory(mtls_transport)
+      factory = self._select_httpx_client_factory(
+          self._connection_params.httpx_client_factory, mtls_transport
+      )
       debug_factory = _DebugHttpxClientFactory(
           factory,
           session_manager=self,
@@ -881,9 +921,9 @@ class MCPSessionManager:
           on_session_created=on_session_created,
       )
     elif isinstance(self._connection_params, StreamableHTTPConnectionParams):
-      factory = self._connection_params.httpx_client_factory
-      if mtls_transport:
-        factory = _create_mtls_client_factory(mtls_transport)
+      factory = self._select_httpx_client_factory(
+          self._connection_params.httpx_client_factory, mtls_transport
+      )
       debug_factory = _DebugHttpxClientFactory(
           factory,
           session_manager=self,
