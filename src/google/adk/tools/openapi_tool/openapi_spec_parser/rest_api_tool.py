@@ -422,7 +422,10 @@ class RestApiTool(BaseTool):
         schema = media_type_object.schema_
         body_data = None
 
-        if schema.type == "object":
+        # media_type_object.schema_ is typed Schema | Reference | None, and
+        # every $ref is resolved before a tool is built, so narrowing here
+        # lets the branch read schema.properties.
+        if isinstance(schema, Schema) and schema.type == "object":
           body_data = {}
           if schema.properties:
             for param in parameters:
