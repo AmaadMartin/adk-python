@@ -558,6 +558,91 @@ def test_cli_run_options_with_query(
   assert called_kwargs.get("jsonl") is True
 
 
+def test_cli_run_help_documents_otel_to_cloud() -> None:
+  """`adk run --help` should document the new flag."""
+  # Act
+  result = CliRunner().invoke(cli_tools_click.main, ["run", "--help"])
+
+  # Assert
+  assert result.exit_code == 0, (result.output, repr(result.exception))
+  assert "--otel_to_cloud" in result.output
+  assert "Optional. Whether to write OTel data to Google" in result.output
+
+
+@pytest.mark.parametrize(
+    "cli_args,expected_otel_to_cloud",
+    [
+        pytest.param(["--otel_to_cloud"], True, id="flag_present"),
+        pytest.param([], False, id="flag_absent"),
+    ],
+)
+def test_cli_run_forwards_otel_to_cloud_with_query(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cli_args: List[str],
+    expected_otel_to_cloud: bool,
+) -> None:
+  """`adk run <dir> <query>` should forward --otel_to_cloud to run_once_cli."""
+  # Arrange
+  agent_dir = tmp_path / "agent_otel_query"
+  agent_dir.mkdir()
+  (agent_dir / "__init__.py").touch()
+
+  mock_run_once = mock.AsyncMock(return_value=0)
+  monkeypatch.setattr("google.adk.cli.cli.run_once_cli", mock_run_once)
+
+  runner = CliRunner()
+
+  # Act
+  result = runner.invoke(
+      cli_tools_click.main,
+      ["run", str(agent_dir), "hello", *cli_args],
+  )
+
+  # Assert
+  assert result.exit_code == 0, (result.output, repr(result.exception))
+  assert mock_run_once.called
+  called_kwargs = mock_run_once.call_args.kwargs
+  assert called_kwargs["otel_to_cloud"] is expected_otel_to_cloud
+
+
+@pytest.mark.parametrize(
+    "cli_args,expected_otel_to_cloud",
+    [
+        pytest.param(["--otel_to_cloud"], True, id="flag_present"),
+        pytest.param([], False, id="flag_absent"),
+    ],
+)
+def test_cli_run_forwards_otel_to_cloud_interactive(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    cli_args: List[str],
+    expected_otel_to_cloud: bool,
+) -> None:
+  """`adk run <dir>` should forward --otel_to_cloud to run_cli."""
+  # Arrange
+  agent_dir = tmp_path / "agent_otel_interactive"
+  agent_dir.mkdir()
+  (agent_dir / "__init__.py").touch()
+
+  mock_run_cli = mock.AsyncMock()
+  monkeypatch.setattr("google.adk.cli.cli.run_cli", mock_run_cli)
+
+  runner = CliRunner()
+
+  # Act
+  result = runner.invoke(
+      cli_tools_click.main,
+      ["run", str(agent_dir), *cli_args],
+  )
+
+  # Assert
+  assert result.exit_code == 0, (result.output, repr(result.exception))
+  assert mock_run_cli.called
+  called_kwargs = mock_run_cli.call_args.kwargs
+  assert called_kwargs["otel_to_cloud"] is expected_otel_to_cloud
+
+
 def test_cli_run_auto_resume_with_query(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

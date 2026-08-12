@@ -525,3 +525,207 @@ async def test_run_interactively_whitespace_and_exit(
 
   # verify: assistant echoed once with 'echo:hello'
   assert any("echo:hello" in m for m in echoed)
+
+
+# OTel bootstrap and flush
+@pytest.fixture()
+def telemetry_calls(monkeypatch: pytest.MonkeyPatch) -> List[Tuple[str, Any]]:
+  """Records the OTel setup and flush calls in one ordered list."""
+  calls: List[Tuple[str, Any]] = []
+  monkeypatch.setattr(
+      cli,
+      "setup_telemetry",
+      lambda **kwargs: calls.append(("setup", kwargs)),
+  )
+  monkeypatch.setattr(
+      cli, "flush_telemetry", lambda: calls.append(("flush", {}))
+  )
+  return calls
+
+
+@pytest.fixture()
+def failing_runner(monkeypatch: pytest.MonkeyPatch) -> None:
+  """Replaces the runner with one that raises as soon as it is consumed."""
+
+  class _FailingRunner:
+
+    def __init__(self, *a: Any, **k: Any) -> None:
+      ...
+
+    async def run_async(self, *a: Any, **k: Any):
+      raise RuntimeError("model exploded")
+      yield  # Unreachable; makes run_async an async generator.
+
+    async def close(self, *a: Any, **k: Any) -> None:
+      ...
+
+  monkeypatch.setattr(cli, "Runner", _FailingRunner)
+
+
+@pytest.mark.asyncio
+async def test_run_cli_otel_to_cloud_sets_up_then_flushes(
+    fake_agent, tmp_path: Path, telemetry_calls: List[Tuple[str, Any]]
+) -> None:
+  """run_cli should install the Cloud exporters and flush them on exit."""
+  parent_dir, folder_name = fake_agent
+  input_path = tmp_path / "in.json"
+  input_path.write_text(json.dumps({"state": {}, "queries": ["ping"]}))
+
+  await cli.run_cli(
+      agent_parent_dir=str(parent_dir),
+      agent_folder_name=folder_name,
+      input_file=str(input_path),
+      saved_session_file=None,
+      save_session=False,
+      otel_to_cloud=True,
+  )
+
+  assert telemetry_calls == [("setup", {"otel_to_cloud": True}), ("flush", {})]
+
+
+@pytest.mark.asyncio
+async def test_run_cli_without_otel_to_cloud_skips_telemetry(
+    fake_agent, tmp_path: Path, telemetry_calls: List[Tuple[str, Any]]
+) -> None:
+  """Without the flag, run_cli must not touch the global OTel providers."""
+  parent_dir, folder_name = fake_agent
+  input_path = tmp_path / "in.json"
+  input_path.write_text(json.dumps({"state": {}, "queries": ["ping"]}))
+
+  await cli.run_cli(
+      agent_parent_dir=str(parent_dir),
+      agent_folder_name=folder_name,
+      input_file=str(input_path),
+      saved_session_file=None,
+      save_session=False,
+  )
+
+  assert telemetry_calls == []
+
+
+@pytest.mark.asyncio
+async def test_run_cli_flushes_telemetry_when_the_run_raises(
+    fake_agent,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    telemetry_calls: List[Tuple[str, Any]],
+) -> None:
+  """A failed run still exports the spans it produced before it failed."""
+  parent_dir, folder_name = fake_agent
+  input_path = tmp_path / "in.json"
+  input_path.write_text(json.dumps({"state": {}, "queries": ["ping"]}))
+
+  async def _raise(*a: Any, **k: Any) -> None:
+    raise RuntimeError("boom")
+
+  monkeypatch.setattr(cli, "run_input_file", _raise)
+
+  with pytest.raises(RuntimeError, match="boom"):
+    await cli.run_cli(
+        agent_parent_dir=str(parent_dir),
+        agent_folder_name=folder_name,
+        input_file=str(input_path),
+        saved_session_file=None,
+        save_session=False,
+        otel_to_cloud=True,
+    )
+
+  assert telemetry_calls == [("setup", {"otel_to_cloud": True}), ("flush", {})]
+
+
+@pytest.mark.asyncio
+async def test_run_once_cli_otel_to_cloud_sets_up_then_flushes(
+    fake_agent, telemetry_calls: List[Tuple[str, Any]]
+) -> None:
+  """run_once_cli should install the Cloud exporters and flush them."""
+  parent_dir, folder_name = fake_agent
+
+  exit_code = await cli.run_once_cli(
+      agent_parent_dir=str(parent_dir),
+      agent_folder_name=folder_name,
+      query="ping",
+      in_memory=True,
+      otel_to_cloud=True,
+  )
+
+  assert exit_code == 0
+  assert telemetry_calls == [("setup", {"otel_to_cloud": True}), ("flush", {})]
+
+
+@pytest.mark.asyncio
+async def test_run_once_cli_without_otel_to_cloud_skips_telemetry(
+    fake_agent, telemetry_calls: List[Tuple[str, Any]]
+) -> None:
+  """Without the flag, run_once_cli must not touch the OTel providers."""
+  parent_dir, folder_name = fake_agent
+
+  exit_code = await cli.run_once_cli(
+      agent_parent_dir=str(parent_dir),
+      agent_folder_name=folder_name,
+      query="ping",
+      in_memory=True,
+  )
+
+  assert exit_code == 0
+  assert telemetry_calls == []
+
+
+@pytest.mark.asyncio
+async def test_run_once_cli_flushes_telemetry_when_the_query_fails(
+    fake_agent,
+    failing_runner,  # pylint: disable=unused-argument
+    telemetry_calls: List[Tuple[str, Any]],
+) -> None:
+  """The spans of a failed query are the ones worth keeping."""
+  parent_dir, folder_name = fake_agent
+
+  exit_code = await cli.run_once_cli(
+      agent_parent_dir=str(parent_dir),
+      agent_folder_name=folder_name,
+      query="ping",
+      in_memory=True,
+      otel_to_cloud=True,
+  )
+
+  assert exit_code == 1
+  assert telemetry_calls == [("setup", {"otel_to_cloud": True}), ("flush", {})]
+
+
+@pytest.mark.asyncio
+async def test_run_once_cli_flushes_telemetry_on_an_early_return(
+    fake_agent, telemetry_calls: List[Tuple[str, Any]]
+) -> None:
+  """Invalid --state returns 1 before the run starts, and still flushes."""
+  parent_dir, folder_name = fake_agent
+
+  exit_code = await cli.run_once_cli(
+      agent_parent_dir=str(parent_dir),
+      agent_folder_name=folder_name,
+      query="ping",
+      state_str="{",
+      in_memory=True,
+      otel_to_cloud=True,
+  )
+
+  assert exit_code == 1
+  assert telemetry_calls == [("setup", {"otel_to_cloud": True}), ("flush", {})]
+
+
+@pytest.mark.asyncio
+async def test_run_once_cli_flushes_telemetry_when_the_timeout_fires(
+    fake_agent, telemetry_calls: List[Tuple[str, Any]]
+) -> None:
+  """A query that runs out of time still exports what it recorded."""
+  parent_dir, folder_name = fake_agent
+
+  exit_code = await cli.run_once_cli(
+      agent_parent_dir=str(parent_dir),
+      agent_folder_name=folder_name,
+      query="ping",
+      timeout="0s",
+      in_memory=True,
+      otel_to_cloud=True,
+  )
+
+  assert exit_code == 1
+  assert telemetry_calls == [("setup", {"otel_to_cloud": True}), ("flush", {})]
