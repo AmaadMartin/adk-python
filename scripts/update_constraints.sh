@@ -18,6 +18,15 @@
 # Usage:
 #   ./scripts/update_constraints.sh          # Updates constraints.txt in-place if out of date
 #   ./scripts/update_constraints.sh --check  # Check only, exits with 1 if out of date (for CI)
+#
+# Exit codes:
+#   0  Every constraints file is already up to date.
+#   1  Files are out of date: rewritten in update mode, reported in --check.
+#   2  A resolution failed, so the constraints files cannot be trusted. A
+#      failed resolution leaves its own target file untouched while the other
+#      versions are rewritten, so a caller cannot detect one by inspecting the
+#      files. This code is sticky: one failed version wins over any number of
+#      successful ones.
 
 set -e
 
@@ -42,6 +51,7 @@ trap cleanup EXIT
 
 PYTHON_VERSIONS=("3.10" "3.11" "3.12" "3.13" "3.14")
 EXIT_CODE=0
+RESOLUTION_FAILED=false
 
 # Calculate 4 days ago date
 if [ "$CHECK_ONLY" = false ]; then
@@ -107,7 +117,7 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
       echo "   To fix this, run the update script locally to resolve conflicts and update constraints:"
       echo "   $ ./scripts/update_constraints.sh"
       rm -f "$STABLE_FILE" "$NEW_FILE"
-      EXIT_CODE=1
+      RESOLUTION_FAILED=true
       continue
     else
       echo "⚠️ Resolution failed with stable constraints. Retrying without constraints to allow upgrades..."
@@ -115,7 +125,7 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
       if ! eval "$RUN_CMD"; then
         echo "❌ Resolution failed even without constraints."
         rm -f "$STABLE_FILE" "$NEW_FILE"
-        EXIT_CODE=1
+        RESOLUTION_FAILED=true
         continue
       fi
     fi
@@ -150,5 +160,9 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
     fi
   fi
 done
+
+if [ "$RESOLUTION_FAILED" = true ]; then
+  exit 2
+fi
 
 exit $EXIT_CODE
