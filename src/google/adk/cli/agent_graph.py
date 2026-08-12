@@ -205,7 +205,7 @@ async def build_graph(
       for edge in agent.graph.edges:
         if edge.from_node.name == START.name:
           continue
-        label = str(edge.route) if edge.route is not None else ''
+        label = str(edge.route) if edge.route is not None else None
         draw_edge(edge.from_node.name, edge.to_node.name, label)
     else:
       for sub_agent in agent.sub_agents:
@@ -265,19 +265,14 @@ async def build_graph(
 
       return
 
-  def draw_edge(from_name: str, to_name: str, label: str = '') -> None:
-    # Only pass label= when there is one, so unlabeled edges keep rendering
-    # exactly as before.
-    label_attr = {'label': label} if label else {}
+  def draw_edge(from_name: str, to_name: str, label: str | None = None) -> None:
     if highlight_pairs:
       for highlight_from, highlight_to in highlight_pairs:
         if from_name == highlight_from and to_name == highlight_to:
-          graph.edge(from_name, to_name, color=light_green, **label_attr)
+          graph.edge(from_name, to_name, label, color=light_green)
           return
         elif from_name == highlight_to and to_name == highlight_from:
-          graph.edge(
-              from_name, to_name, color=light_green, dir='back', **label_attr
-          )
+          graph.edge(from_name, to_name, label, color=light_green, dir='back')
           return
     # if no need to highlight, color gray
     if should_build_agent_cluster(agent):
@@ -285,13 +280,11 @@ async def build_graph(
       graph.edge(
           from_name,
           to_name,
+          label,
           color=light_gray,
-          **label_attr,
       )
     else:
-      graph.edge(
-          from_name, to_name, arrowhead='none', color=light_gray, **label_attr
-      )
+      graph.edge(from_name, to_name, label, arrowhead='none', color=light_gray)
 
   await draw_node(agent)
   if hasattr(agent, 'sub_agents'):
