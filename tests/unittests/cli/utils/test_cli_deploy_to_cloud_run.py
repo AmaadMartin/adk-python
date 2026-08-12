@@ -170,6 +170,18 @@ def test_to_cloud_run_happy_path(
       in dockerfile_content
   )
 
+  # The URIs travel as env vars, never in the image.
+  for uri in ("sqlite://", "gs://bucket", "rag://"):
+    assert uri not in dockerfile_content
+  assert (
+      '--session_service_uri="$ADK_SESSION_SERVICE_URI"' in dockerfile_content
+  )
+  assert (
+      '--artifact_service_uri="$ADK_ARTIFACT_SERVICE_URI"' in dockerfile_content
+  )
+  assert '--memory_service_uri="$ADK_MEMORY_SERVICE_URI"' in dockerfile_content
+  assert "ENV ADK_" not in dockerfile_content
+
   assert len(run_recorder.calls) == 1
   gcloud_args = run_recorder.get_last_call_args()[0]
 
@@ -190,6 +202,12 @@ def test_to_cloud_run_happy_path(
       "info",
       "--labels",
       "created-by=adk",
+      "--update-env-vars",
+      (
+          "ADK_SESSION_SERVICE_URI=sqlite://,"
+          "ADK_ARTIFACT_SERVICE_URI=gs://bucket,"
+          "ADK_MEMORY_SERVICE_URI=rag://"
+      ),
   ]
   assert gcloud_args == expected_gcloud_command
 
@@ -425,3 +443,191 @@ def test_cloud_run_label_merging(
   actual_labels = gcloud_args[labels_idx + 1]
 
   assert actual_labels == expected_labels
+
+
+# Service URI environment variable tests
+def _deploy_and_capture(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+    *,
+    adk_version: str = "1.0.0",
+    session_service_uri: str | None = None,
+    artifact_service_uri: str | None = None,
+    memory_service_uri: str | None = None,
+    extra_gcloud_args: Tuple[str, ...] | None = None,
+) -> Tuple[List[str], str]:
+  """Deploys with a faked gcloud and returns its argv and the Dockerfile."""
+  src_dir = agent_dir(include_requirements=False, include_env=False)
+  run_recorder = _Recorder()
+  monkeypatch.setattr(subprocess, "run", run_recorder)
+  monkeypatch.setattr(shutil, "rmtree", lambda _x: None)
+
+  cli_deploy.to_cloud_run(
+      agent_folder=str(src_dir),
+      project="proj",
+      region="us-central1",
+      service_name="svc",
+      app_name="agent",
+      temp_folder=str(tmp_path),
+      port=8080,
+      trace_to_cloud=False,
+      otel_to_cloud=False,
+      with_ui=False,
+      log_level="info",
+      verbosity="info",
+      adk_version=adk_version,
+      session_service_uri=session_service_uri,
+      artifact_service_uri=artifact_service_uri,
+      memory_service_uri=memory_service_uri,
+      extra_gcloud_args=extra_gcloud_args,
+  )
+
+  assert len(run_recorder.calls) == 1
+  return (
+      run_recorder.get_last_call_args()[0],
+      (tmp_path / "Dockerfile").read_text(),
+  )
+
+
+def test_to_cloud_run_keeps_a_credentialed_uri_out_of_the_dockerfile(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+) -> None:
+  """The password reaches gcloud once and never reaches the image."""
+  uri = "postgresql://adk:s3cr3t@db/sessions"
+
+  gcloud_args, dockerfile_content = _deploy_and_capture(
+      monkeypatch, agent_dir, tmp_path, session_service_uri=uri
+  )
+
+  assert "s3cr3t" not in dockerfile_content
+  assert (
+      '--session_service_uri="$ADK_SESSION_SERVICE_URI"' in dockerfile_content
+  )
+  assert sum("s3cr3t" in arg for arg in gcloud_args) == 1
+  env_vars_idx = gcloud_args.index("--update-env-vars")
+  assert gcloud_args[env_vars_idx + 1] == f"ADK_SESSION_SERVICE_URI={uri}"
+
+
+def test_to_cloud_run_encodes_a_uri_containing_a_comma(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+) -> None:
+  """A comma in the URI switches gcloud to its alternate delimiter."""
+  uri = "postgresql://adk:s3c,r3t@db/sessions"
+
+  gcloud_args, dockerfile_content = _deploy_and_capture(
+      monkeypatch, agent_dir, tmp_path, session_service_uri=uri
+  )
+
+  assert "s3c,r3t" not in dockerfile_content
+  env_vars_value = gcloud_args[gcloud_args.index("--update-env-vars") + 1]
+  assert env_vars_value.startswith("^|^")
+  assert env_vars_value == f"^|^ADK_SESSION_SERVICE_URI={uri}"
+
+
+def test_to_cloud_run_without_service_uris_leaves_env_flags_to_the_user(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+) -> None:
+  """With no URI in play ADK injects nothing and claims no env-var flag."""
+  gcloud_args, dockerfile_content = _deploy_and_capture(
+      monkeypatch,
+      agent_dir,
+      tmp_path,
+      adk_version="1.0.0",
+      extra_gcloud_args=("--set-env-vars=FOO=bar",),
+  )
+
+  assert "--update-env-vars" not in gcloud_args
+  assert "--set-env-vars=FOO=bar" in gcloud_args
+  assert "_SERVICE_URI" not in dockerfile_content
+
+
+def test_to_cloud_run_env_vars_carry_the_memory_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+) -> None:
+  """From 1.3.0 the memory:// defaults flow through the env vars too."""
+  gcloud_args, dockerfile_content = _deploy_and_capture(
+      monkeypatch, agent_dir, tmp_path, adk_version="1.3.0"
+  )
+
+  env_vars_value = gcloud_args[gcloud_args.index("--update-env-vars") + 1]
+  assert env_vars_value == (
+      "ADK_SESSION_SERVICE_URI=memory://,ADK_ARTIFACT_SERVICE_URI=memory://"
+  )
+  assert "memory://" not in dockerfile_content
+  assert '--memory_service_uri="$ADK_MEMORY_SERVICE_URI"' not in (
+      dockerfile_content
+  )
+
+
+@pytest.mark.parametrize(
+    "conflicting_arg",
+    [
+        "--update-env-vars=FOO=bar",
+        "--set-env-vars=FOO=bar",
+        "--clear-env-vars",
+        "--env-vars-file=env.yaml",
+    ],
+)
+def test_to_cloud_run_rejects_a_user_env_var_flag_while_injecting(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+    conflicting_arg: str,
+) -> None:
+  """A user env-var flag would drop ADK's variables, so the deploy fails."""
+  src_dir = agent_dir(include_requirements=False, include_env=False)
+  run_recorder = _Recorder()
+  monkeypatch.setattr(subprocess, "run", run_recorder)
+  monkeypatch.setattr(shutil, "rmtree", lambda _x: None)
+
+  with pytest.raises(
+      click.ClickException, match="conflicts with ADK's automatic configuration"
+  ):
+    cli_deploy.to_cloud_run(
+        agent_folder=str(src_dir),
+        project="proj",
+        region="us-central1",
+        service_name="svc",
+        app_name="agent",
+        temp_folder=str(tmp_path),
+        port=8080,
+        trace_to_cloud=False,
+        otel_to_cloud=False,
+        with_ui=False,
+        log_level="info",
+        verbosity="info",
+        adk_version="1.0.0",
+        session_service_uri="sqlite://",
+        extra_gcloud_args=(conflicting_arg,),
+    )
+
+  assert not run_recorder.calls
+
+
+def test_to_cloud_run_keeps_a_user_remove_env_vars_flag(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+) -> None:
+  """gcloud applies --remove-env-vars first, so it cannot drop ADK's vars."""
+  gcloud_args, _ = _deploy_and_capture(
+      monkeypatch,
+      agent_dir,
+      tmp_path,
+      session_service_uri="sqlite://",
+      extra_gcloud_args=("--remove-env-vars=FOO",),
+  )
+
+  assert "--remove-env-vars=FOO" in gcloud_args
+  assert gcloud_args[gcloud_args.index("--update-env-vars") + 1] == (
+      "ADK_SESSION_SERVICE_URI=sqlite://"
+  )
