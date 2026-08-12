@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Optional
+
 from fastapi.openapi.models import MediaType
 from fastapi.openapi.models import Operation
 from fastapi.openapi.models import Parameter
@@ -252,6 +254,125 @@ def test_process_request_body_empty_object():
   parser = OperationParser(operation, should_parse=False)
   parser._process_request_body()
   assert len(parser._params) == 0
+
+
+def _array_body_operation(body_required: Optional[bool]) -> Operation:
+  """Builds an operation whose request body is a bare array of strings."""
+  return Operation(
+      operationId='bulk_create',
+      requestBody=RequestBody(
+          required=body_required,
+          content={
+              'application/json': MediaType(
+                  schema=Schema(type='array', items=Schema(type='string'))
+              )
+          },
+      ),
+  )
+
+
+def test_required_array_request_body_is_required_parameter():
+  """A 'requestBody.required: true' array body is a required argument."""
+  parser = OperationParser(_array_body_operation(True))
+
+  assert parser.get_json_schema()['required'] == ['array']
+
+
+def test_array_request_body_without_required_flag_is_optional():
+  """An omitted 'requestBody.required' defaults to false, as OpenAPI says."""
+  parser = OperationParser(_array_body_operation(None))
+
+  assert parser.get_json_schema()['required'] == []
+
+
+def test_array_request_body_with_required_false_is_optional():
+  """An explicit 'requestBody.required: false' keeps the argument optional."""
+  parser = OperationParser(_array_body_operation(False))
+
+  assert parser.get_json_schema()['required'] == []
+
+
+def test_required_scalar_request_body_is_required_parameter():
+  """A 'requestBody.required: true' scalar body is a required argument."""
+  operation = Operation(
+      operationId='set_note',
+      requestBody=RequestBody(
+          required=True,
+          content={'application/json': MediaType(schema=Schema(type='string'))},
+      ),
+  )
+
+  parser = OperationParser(operation)
+
+  assert parser.get_json_schema()['required'] == ['body']
+  assert parser.get_parameters()[0].original_name == ''
+
+
+def test_required_one_of_request_body_is_required_parameter():
+  """A 'requestBody.required: true' composed body is a required argument."""
+  operation = Operation(
+      operationId='one_of_request',
+      requestBody=RequestBody(
+          required=True,
+          content={
+              'application/json': MediaType(
+                  schema=Schema(
+                      oneOf=[
+                          Schema(
+                              type='object',
+                              properties={'type': Schema(type='string')},
+                          )
+                      ]
+                  )
+              )
+          },
+      ),
+  )
+
+  schema = OperationParser(operation).get_json_schema()
+
+  assert schema['required'] == ['body']
+  assert 'body' in schema['properties']
+
+
+def test_request_body_required_does_not_affect_object_properties():
+  """The body-level flag never promotes an optional object property."""
+  operation = Operation(
+      operationId='createSpace',
+      requestBody=RequestBody(
+          required=True,
+          content={
+              'application/json': MediaType(
+                  schema=Schema(
+                      type='object',
+                      required=['spaceName'],
+                      properties={
+                          'spaceName': Schema(type='string'),
+                          'description': Schema(type='string'),
+                      },
+                  )
+              )
+          },
+      ),
+  )
+
+  schema = OperationParser(operation).get_json_schema()
+
+  assert schema['required'] == ['space_name']
+  assert 'body' not in schema['properties']
+
+
+def test_request_body_required_does_not_add_param_for_empty_object():
+  """An object body with no properties still yields no parameters."""
+  operation = Operation(
+      operationId='ping',
+      requestBody=RequestBody(
+          required=True,
+          content={'application/json': MediaType(schema=Schema(type='object'))},
+      ),
+  )
+
+  assert OperationParser(operation).get_parameters() == []
 
 
 def test_process_request_body_unresolved_reference_raises():

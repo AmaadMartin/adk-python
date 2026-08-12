@@ -108,6 +108,26 @@ def sample_operation():
 
 
 @pytest.fixture
+def required_array_body_operation():
+  """An operation whose array request body is declared required."""
+  return Operation(
+      operationId="bulkCreate",
+      description="Bulk create",
+      parameters=[],
+      requestBody=RequestBody(
+          required=True,
+          content={
+              "application/json": MediaType(
+                  schema=OpenAPISchema(
+                      type="array", items=OpenAPISchema(type="string")
+                  )
+              )
+          },
+      ),
+  )
+
+
+@pytest.fixture
 def sample_api_parameters():
   return [
       ApiParameter(
@@ -181,6 +201,21 @@ class TestRestApiToolLegacy:
     assert declaration.description == "Test description"
     assert isinstance(declaration.parameters, Schema)
 
+  def test_get_declaration_marks_required_array_body_as_required(
+      self, sample_endpoint, required_array_body_operation
+  ):
+    """The Gemini schema advertises a required array body as required."""
+    tool = RestApiTool(
+        name="test_tool",
+        description="Test description",
+        endpoint=sample_endpoint,
+        operation=required_array_body_operation,
+    )
+
+    declaration = tool._get_declaration()
+
+    assert declaration.parameters.required == ["array"]
+
 
 class TestRestApiToolWithJsonSchema:
 
@@ -229,6 +264,21 @@ class TestRestApiToolWithJsonSchema:
         },
         "required": ["test_param"],
     }
+
+  def test_json_schema_declaration_marks_required_array_body_as_required(
+      self, sample_endpoint, required_array_body_operation
+  ):
+    """The JSON schema advertises a required array body as required."""
+    tool = RestApiTool(
+        name="test_tool",
+        description="Test description",
+        endpoint=sample_endpoint,
+        operation=required_array_body_operation,
+    )
+
+    declaration = tool._get_declaration()
+
+    assert declaration.parameters_json_schema["required"] == ["array"]
 
 
 class TestRestApiTool:
