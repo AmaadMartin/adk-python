@@ -65,14 +65,6 @@ def clean_core_venv(tmp_path_factory):
 # =============================================================================
 
 
-def test_pydantic_version():
-  """Print the installed Pydantic version."""
-  import pydantic
-
-  print(f"Pydantic version: {pydantic.__version__}")
-  assert True
-
-
 def test_a2a_remote_agent_config_raises_importerror():
   """Verify that accessing A2aRemoteAgentConfig without extra raises ImportError using mocks."""
   with mock.patch.dict("sys.modules", {"a2a": None}):
