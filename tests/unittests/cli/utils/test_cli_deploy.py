@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -33,12 +34,20 @@ from unittest import mock
 import click
 from click.testing import CliRunner
 import pytest
+import yaml
 
 import src.google.adk.cli.cli_deploy as cli_deploy
 import src.google.adk.cli.cli_tools_click as cli_tools_click
 
 
 # Helpers
+def _gke_containers(deployment_yaml: str) -> List[Dict[str, Any]]:
+  """Parses the generated manifest and returns the Deployment's containers."""
+  documents = list(yaml.safe_load_all(deployment_yaml))
+  deployment = next(d for d in documents if d["kind"] == "Deployment")
+  return deployment["spec"]["template"]["spec"]["containers"]
+
+
 class _Recorder:
   """A callable object that records every invocation."""
 
@@ -130,6 +139,13 @@ def test_resolve_project_from_gcloud_fails(
     cli_deploy._resolve_project(None)
 
 
+_ALL_SERVICE_OPTIONS = (
+    '--session_service_uri="$ADK_SESSION_SERVICE_URI"'
+    ' --artifact_service_uri="$ADK_ARTIFACT_SERVICE_URI"'
+    ' --memory_service_uri="$ADK_MEMORY_SERVICE_URI"'
+)
+
+
 @pytest.mark.parametrize(
     "adk_version, session_uri, artifact_uri, memory_uri, use_local_storage, "
     "expected",
@@ -140,10 +156,7 @@ def test_resolve_project_from_gcloud_fails(
             "gs://a",
             "rag://m",
             None,
-            (
-                "--session_service_uri=sqlite://s --artifact_service_uri=gs://a"
-                " --memory_service_uri=rag://m"
-            ),
+            _ALL_SERVICE_OPTIONS,
         ),
         (
             "1.2.5",
@@ -151,10 +164,7 @@ def test_resolve_project_from_gcloud_fails(
             "gs://a",
             "rag://m",
             None,
-            (
-                "--session_service_uri=sqlite://s --artifact_service_uri=gs://a"
-                " --memory_service_uri=rag://m"
-            ),
+            _ALL_SERVICE_OPTIONS,
         ),
         (
             "0.5.0",
@@ -162,10 +172,7 @@ def test_resolve_project_from_gcloud_fails(
             "gs://a",
             "rag://m",
             None,
-            (
-                "--session_service_uri=sqlite://s --artifact_service_uri=gs://a"
-                " --memory_service_uri=rag://m"
-            ),
+            _ALL_SERVICE_OPTIONS,
         ),
         (
             "1.3.0",
@@ -173,7 +180,7 @@ def test_resolve_project_from_gcloud_fails(
             None,
             None,
             None,
-            "--session_service_uri=sqlite://s",
+            '--session_service_uri="$ADK_SESSION_SERVICE_URI"',
         ),
         (
             "1.3.0",
@@ -181,7 +188,10 @@ def test_resolve_project_from_gcloud_fails(
             "gs://a",
             "rag://m",
             None,
-            "--artifact_service_uri=gs://a --memory_service_uri=rag://m",
+            (
+                '--artifact_service_uri="$ADK_ARTIFACT_SERVICE_URI"'
+                ' --memory_service_uri="$ADK_MEMORY_SERVICE_URI"'
+            ),
         ),
         (
             "1.2.0",
@@ -189,7 +199,7 @@ def test_resolve_project_from_gcloud_fails(
             "gs://a",
             None,
             None,
-            "--artifact_service_uri=gs://a",
+            '--artifact_service_uri="$ADK_ARTIFACT_SERVICE_URI"',
         ),
         (
             "1.21.0",
@@ -213,7 +223,10 @@ def test_resolve_project_from_gcloud_fails(
             "gs://a",
             None,
             False,
-            "--session_service_uri=sqlite://s --artifact_service_uri=gs://a",
+            (
+                '--session_service_uri="$ADK_SESSION_SERVICE_URI"'
+                ' --artifact_service_uri="$ADK_ARTIFACT_SERVICE_URI"'
+            ),
         ),
     ],
 )
@@ -234,6 +247,137 @@ def test_get_service_option_by_adk_version(
       use_local_storage=use_local_storage,
   )
   assert actual.rstrip() == expected.rstrip()
+
+
+@pytest.mark.parametrize(
+    "session_uri, artifact_uri, memory_uri, expected",
+    [
+        (
+            "sqlite://s",
+            "gs://a",
+            "rag://m",
+            {
+                "ADK_SESSION_SERVICE_URI": "sqlite://s",
+                "ADK_ARTIFACT_SERVICE_URI": "gs://a",
+                "ADK_MEMORY_SERVICE_URI": "rag://m",
+            },
+        ),
+        ("sqlite://s", None, None, {"ADK_SESSION_SERVICE_URI": "sqlite://s"}),
+        (None, "gs://a", None, {"ADK_ARTIFACT_SERVICE_URI": "gs://a"}),
+        (None, None, "rag://m", {"ADK_MEMORY_SERVICE_URI": "rag://m"}),
+        (None, None, None, {}),
+    ],
+)
+def test_get_service_env_vars(
+    session_uri: str | None,
+    artifact_uri: str | None,
+    memory_uri: str | None,
+    expected: Dict[str, str],
+) -> None:
+  """It should map every set URI onto its environment variable."""
+  actual = cli_deploy._get_service_env_vars(
+      session_uri, artifact_uri, memory_uri
+  )
+
+  assert actual == expected
+  assert list(actual) == list(expected), "session, artifact, memory order"
+
+
+@pytest.mark.parametrize(
+    "env_vars, expected",
+    [
+        ({}, ""),
+        (
+            {"ADK_SESSION_SERVICE_URI": "sqlite://s"},
+            "ADK_SESSION_SERVICE_URI=sqlite://s",
+        ),
+        (
+            {"A": "one", "B": "two"},
+            "A=one,B=two",
+        ),
+        # A comma in a value forces gcloud's alternate delimiter form.
+        ({"A": "on,e", "B": "two"}, "^|^A=on,e|B=two"),
+        # '|' is taken, so the next candidate wins.
+        ({"A": "on,e", "B": "t|wo"}, "^#^A=on,e#B=t|wo"),
+    ],
+)
+def test_format_env_vars_flag_value(
+    env_vars: Dict[str, str], expected: str
+) -> None:
+  """It should encode the pairs so gcloud cannot split a value."""
+  assert cli_deploy._format_env_vars_flag_value(env_vars) == expected
+
+
+def _run_service_option_in_shell(env: Dict[str, str]) -> List[str]:
+  """Runs the generated CMD fragment in /bin/sh and returns its arguments.
+
+  Docker runs the shell form of CMD as `/bin/sh -c <command>`, so this is what
+  the container really does with the fragment at start-up.
+  """
+  service_option = cli_deploy._get_service_option_by_adk_version(
+      "1.3.0", "sqlite://s", "gs://a", "rag://m"
+  )
+  result = subprocess.run(
+      ["/bin/sh", "-c", f"printf '%s\\n' {service_option}"],
+      capture_output=True,
+      text=True,
+      check=True,
+      env=env,
+  )
+  return result.stdout.splitlines()
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="Docker runs the shell form of CMD in /bin/sh."
+)
+def test_service_option_reads_the_uris_from_the_container_environment() -> None:
+  """The container shell substitutes the values, one argument each."""
+  # A space, a ';' and a '$(...)' must survive as literal text.
+  session_uri = "postgresql://adk:p w;$(id)@db/sessions"
+
+  arguments = _run_service_option_in_shell({
+      "ADK_SESSION_SERVICE_URI": session_uri,
+      "ADK_ARTIFACT_SERVICE_URI": "gs://a",
+      "ADK_MEMORY_SERVICE_URI": "rag://m",
+  })
+
+  assert arguments == [
+      f"--session_service_uri={session_uri}",
+      "--artifact_service_uri=gs://a",
+      "--memory_service_uri=rag://m",
+  ]
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="Docker runs the shell form of CMD in /bin/sh."
+)
+def test_service_option_falls_back_to_empty_when_the_variables_are_unset() -> (
+    None
+):
+  """An image run outside the deploy path degrades to the default services."""
+  arguments = _run_service_option_in_shell({})
+
+  assert arguments == [
+      "--session_service_uri=",
+      "--artifact_service_uri=",
+      "--memory_service_uri=",
+  ]
+
+
+def test_format_env_vars_flag_value_raises_when_no_delimiter_is_free() -> None:
+  """It should refuse to emit a value gcloud would truncate."""
+  env_vars = {
+      "ADK_SESSION_SERVICE_URI": "postgresql://u:a,b|c#d~e!f+g@h/db",
+      "ADK_MEMORY_SERVICE_URI": "rag://m",
+  }
+
+  with pytest.raises(
+      click.ClickException, match="ADK_SESSION_SERVICE_URI"
+  ) as exc_info:
+    cli_deploy._format_env_vars_flag_value(env_vars)
+
+  assert "Secret Manager" in str(exc_info.value)
+  assert "ADK_MEMORY_SERVICE_URI" not in str(exc_info.value)
 
 
 def test_print_agent_engine_url() -> None:
@@ -439,8 +583,64 @@ def test_to_gke_happy_path(
   assert f"targetPort: 9090" in yaml_content
   assert "type: ClusterIP" in yaml_content
 
+  # The URIs travel in the pod template, never in the image.
+  assert "sqlite:///" not in dockerfile_content
+  assert "gs://gke-bucket" not in dockerfile_content
+  assert (
+      '--session_service_uri="$ADK_SESSION_SERVICE_URI"' in dockerfile_content
+  )
+  assert (
+      '--artifact_service_uri="$ADK_ARTIFACT_SERVICE_URI"' in dockerfile_content
+  )
+  assert "ENV ADK_" not in dockerfile_content
+  containers = _gke_containers(yaml_content)
+  assert containers[0]["env"] == [
+      {"name": "ADK_SESSION_SERVICE_URI", "value": "sqlite:///"},
+      {"name": "ADK_ARTIFACT_SERVICE_URI", "value": "gs://gke-bucket"},
+  ]
+
   # 4. Verify cleanup
   assert str(rmtree_recorder.get_last_call_args()[0]) == str(tmp_path)
+
+
+def test_to_gke_without_service_uris_emits_no_env_block(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: Callable[[bool, bool], Path],
+    tmp_path: Path,
+) -> None:
+  """Without a service URI the manifest keeps its original shape."""
+  src_dir = agent_dir(False, False)
+
+  def mock_subprocess_run(*args: Any, **kwargs: Any) -> Any:
+    del kwargs
+    if args[0][0:2] == ["kubectl", "apply"]:
+      return types.SimpleNamespace(stdout="deployment.apps/gke-svc created")
+    return None
+
+  monkeypatch.setattr(subprocess, "run", mock_subprocess_run)
+  monkeypatch.setattr(shutil, "rmtree", lambda *a, **k: None)
+
+  cli_deploy.to_gke(
+      agent_folder=str(src_dir),
+      project="gke-proj",
+      region="us-east1",
+      cluster_name="my-gke-cluster",
+      service_name="gke-svc",
+      app_name="agent",
+      temp_folder=str(tmp_path),
+      port=9090,
+      trace_to_cloud=False,
+      otel_to_cloud=False,
+      with_ui=False,
+      log_level="debug",
+      adk_version="1.2.0",
+  )
+
+  yaml_content = (tmp_path / "deployment.yaml").read_text()
+  assert "env:" not in yaml_content
+  assert "containerPort: 9090\n---" in yaml_content
+  containers = _gke_containers(yaml_content)
+  assert "env" not in containers[0]
 
 
 # _validate_agent_import tests
@@ -1113,3 +1313,109 @@ def test_to_agent_engine_extra_packages_requirements_txt_is_not_clobbered(
   assert (tmp_dir / "requirements.txt").read_text() == (
       "some-unrelated-package\n"
   )
+
+
+def test_to_agent_engine_env_vars_carry_the_agent_engine_uris(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: Callable[[bool, bool], Path],
+) -> None:
+  """The agentengine:// fallback URIs travel as env vars, not in the image."""
+  monkeypatch.setattr(shutil, "rmtree", _Recorder())
+  captured: List[Dict[str, Any]] = []
+  monkeypatch.setitem(
+      sys.modules, "vertexai", _make_recording_vertexai(captured)
+  )
+  src_dir = agent_dir(False, False)
+  tmp_dir = src_dir.parent / "tmp"
+
+  cli_deploy.to_agent_engine(
+      agent_folder=str(src_dir),
+      temp_folder="tmp",
+      project="my-gcp-project",
+      region="us-central1",
+      adk_version="1.2.0",
+  )
+
+  assert len(captured) == 1
+  env_vars = captured[0]["env_vars"]
+  agent_engine_uri = "agentengine://projects/p/locations/l/reasoningEngines/e"
+  assert env_vars["ADK_SESSION_SERVICE_URI"] == agent_engine_uri
+  assert env_vars["ADK_MEMORY_SERVICE_URI"] == agent_engine_uri
+  assert "ADK_ARTIFACT_SERVICE_URI" not in env_vars
+
+  dockerfile_content = (tmp_dir / "Dockerfile").read_text()
+  assert '--session_service_uri="$ADK_SESSION_SERVICE_URI"' in (
+      dockerfile_content
+  )
+  assert '--memory_service_uri="$ADK_MEMORY_SERVICE_URI"' in dockerfile_content
+  assert "--artifact_service_uri" not in dockerfile_content
+  assert "agentengine://" not in dockerfile_content
+
+
+def test_to_agent_engine_keeps_a_credentialed_uri_out_of_the_dockerfile(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: Callable[[bool, bool], Path],
+) -> None:
+  """An explicit credentialed URI reaches the deploy config, not the image."""
+  monkeypatch.setattr(shutil, "rmtree", _Recorder())
+  captured: List[Dict[str, Any]] = []
+  monkeypatch.setitem(
+      sys.modules, "vertexai", _make_recording_vertexai(captured)
+  )
+  src_dir = agent_dir(False, False)
+  tmp_dir = src_dir.parent / "tmp"
+
+  cli_deploy.to_agent_engine(
+      agent_folder=str(src_dir),
+      temp_folder="tmp",
+      project="my-gcp-project",
+      region="us-central1",
+      adk_version="1.2.0",
+      session_service_uri="postgresql://adk:s3cr3t@db/sessions",
+  )
+
+  assert len(captured) == 1
+  assert captured[0]["env_vars"]["ADK_SESSION_SERVICE_URI"] == (
+      "postgresql://adk:s3cr3t@db/sessions"
+  )
+  assert "s3cr3t" not in (tmp_dir / "Dockerfile").read_text()
+
+
+def test_to_agent_engine_service_uri_overrides_the_env_file(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: Callable[[bool, bool], Path],
+) -> None:
+  """The deploy-time URI wins over the same key in .env, and warns."""
+  monkeypatch.setattr(shutil, "rmtree", _Recorder())
+  captured: List[Dict[str, Any]] = []
+  monkeypatch.setitem(
+      sys.modules, "vertexai", _make_recording_vertexai(captured)
+  )
+  src_dir = agent_dir(False, False)
+  (src_dir / ".env").write_text(
+      'ADK_SESSION_SERVICE_URI="sqlite:///from-env-file"\nTEST_VAR="kept"\n'
+  )
+
+  with mock.patch("click.secho") as mocked_secho:
+    cli_deploy.to_agent_engine(
+        agent_folder=str(src_dir),
+        temp_folder="tmp",
+        project="my-gcp-project",
+        region="us-central1",
+        adk_version="1.2.0",
+        session_service_uri="postgresql://adk:s3cr3t@db/sessions",
+    )
+
+  assert len(captured) == 1
+  env_vars = captured[0]["env_vars"]
+  assert env_vars["ADK_SESSION_SERVICE_URI"] == (
+      "postgresql://adk:s3cr3t@db/sessions"
+  )
+  assert env_vars["TEST_VAR"] == "kept"
+  warned = [
+      call.args[0]
+      for call in mocked_secho.call_args_list
+      if call.args and "ADK_SESSION_SERVICE_URI" in call.args[0]
+  ]
+  assert len(warned) == 1
+  assert "takes precedence" in warned[0]
