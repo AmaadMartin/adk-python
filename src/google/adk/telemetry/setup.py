@@ -16,8 +16,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from dataclasses import field
+import logging
 import os
 
+import google.auth
 from opentelemetry import _logs
 from opentelemetry import metrics
 from opentelemetry import trace
@@ -33,6 +35,8 @@ from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import SpanProcessor
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
+logger = logging.getLogger("google_adk." + __name__)
 
 
 @dataclass
@@ -115,6 +119,66 @@ def maybe_set_otel_providers(
     _logs.set_logger_provider(new_logger_provider)
 
 
+def setup_telemetry(
+    otel_to_cloud: bool = False,
+    internal_exporters: list[SpanProcessor] | None = None,
+) -> None:
+  """Installs the global OTel providers for this process.
+
+  Args:
+    otel_to_cloud: whether to export to Google Cloud Observability.
+    internal_exporters: ADK-specific span processors to register on the tracer
+      provider in addition to the exporters selected by `otel_to_cloud` and by
+      the OTel environment variables.
+  """
+  # TODO - remove the else branch here once maybe_set_otel_providers is no
+  # longer experimental.
+  if otel_to_cloud:
+    _setup_gcp_telemetry(internal_exporters=internal_exporters)
+  elif _otel_env_vars_enabled():
+    _setup_telemetry_from_env(internal_exporters=internal_exporters)
+  else:
+    # Old logic - to be removed when above leaves experimental.
+    tracer_provider = TracerProvider()
+    if internal_exporters is not None:
+      for exporter in internal_exporters:
+        tracer_provider.add_span_processor(exporter)
+    trace.set_tracer_provider(tracer_provider=tracer_provider)
+
+
+def flush_telemetry(timeout_millis: int = 30_000) -> None:
+  """Force-flushes the globally installed OTel providers.
+
+  Short-lived processes such as `adk run` must call this before exiting: the
+  Cloud exporters buffer through a BatchSpanProcessor, a
+  PeriodicExportingMetricReader and a BatchLogRecordProcessor, and the
+  MeterProvider installed by `maybe_set_otel_providers` is built with
+  `shutdown_on_exit=False`, so anything still buffered at exit is dropped.
+
+  Providers that are not SDK providers - the API's no-op defaults when no
+  provider was installed - have no `force_flush` and are skipped.
+
+  Args:
+    timeout_millis: per-provider flush budget, in milliseconds.
+  """
+  providers = {
+      "tracer": trace.get_tracer_provider(),
+      "meter": metrics.get_meter_provider(),
+      "logger": _logs.get_logger_provider(),
+  }
+  for name, provider in providers.items():
+    force_flush = getattr(provider, "force_flush", None)
+    if force_flush is None:
+      continue
+    if not force_flush(timeout_millis):
+      logger.warning(
+          "OTel %s provider did not flush within %d ms - some telemetry was"
+          " dropped.",
+          name,
+          timeout_millis,
+      )
+
+
 def _get_otel_resource() -> Resource:
   # The OTELResourceDetector populates resource labels from
   # environment variables like OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES.
@@ -163,3 +227,98 @@ def _get_otel_logs_exporter() -> LogRecordProcessor:
   from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
 
   return BatchLogRecordProcessor(OTLPLogExporter())
+
+
+def _otel_env_vars_enabled() -> bool:
+  return any([
+      os.getenv(endpoint_var)
+      for endpoint_var in [
+          otel_env.OTEL_EXPORTER_OTLP_ENDPOINT,
+          otel_env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
+          otel_env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
+          otel_env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT,
+      ]
+  ])
+
+
+def _setup_gcp_telemetry(
+    internal_exporters: list[SpanProcessor] | None = None,
+) -> None:
+  # Imported here to break the import cycle: google_cloud imports OTelHooks
+  # from this module.
+  from .google_cloud import get_gcp_exporters
+  from .google_cloud import get_gcp_resource
+
+  otel_hooks_to_add: list[OTelHooks] = []
+
+  if internal_exporters:
+    # Register ADK-specific exporters in trace provider.
+    otel_hooks_to_add.append(OTelHooks(span_processors=internal_exporters))
+
+  credentials, project_id = google.auth.default()
+
+  otel_hooks_to_add.append(
+      get_gcp_exporters(
+          # TODO - use trace_to_cloud here as well once otel_to_cloud is no
+          # longer experimental.
+          enable_cloud_tracing=True,
+          enable_cloud_metrics=True,
+          enable_cloud_logging=True,
+          google_auth=(credentials, project_id),
+      )
+  )
+  otel_resource = get_gcp_resource(project_id)
+
+  maybe_set_otel_providers(
+      otel_hooks_to_setup=otel_hooks_to_add,
+      otel_resource=otel_resource,
+  )
+  _setup_instrumentation_lib_if_installed()
+
+
+def _setup_telemetry_from_env(
+    internal_exporters: list[SpanProcessor] | None = None,
+) -> None:
+  otel_hooks_to_add: list[OTelHooks] = []
+
+  if internal_exporters:
+    # Register ADK-specific exporters in trace provider.
+    otel_hooks_to_add.append(OTelHooks(span_processors=internal_exporters))
+
+  maybe_set_otel_providers(otel_hooks_to_setup=otel_hooks_to_add)
+  _setup_instrumentation_lib_if_installed()
+
+
+def _setup_instrumentation_lib_if_installed() -> None:
+  # Set instrumentation to enable emitting OTel data from GenAISDK
+  # Currently the instrumentation lib is in extras dependencies, make sure to
+  # warn the user if it's not installed.
+  try:
+    from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
+
+    GoogleGenAiSdkInstrumentor().instrument()
+  except ImportError:
+    logger.warning(
+        "Unable to import GoogleGenAiSdkInstrumentor - some"
+        " telemetry will be disabled. Make sure to install google-adk[otel-gcp]"
+    )
+  if os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID"):
+    # Set up HTTPX and gRPC instrumentation for A2A multi-agent observability.
+    try:
+      from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
+
+      HTTPXClientInstrumentor().instrument()
+    except (ImportError, AttributeError):
+      logger.warning(
+          "telemetry enabled but proceeding without HTTPX instrumentation,"
+          " because google-adk[otel-gcp] has not been installed"
+      )
+    try:
+      from opentelemetry.instrumentation.grpc import GrpcInstrumentorClient
+
+      GrpcInstrumentorClient().instrument()
+    except (ImportError, AttributeError):
+      logger.warning(
+          "telemetry enabled but proceeding without gRPC instrumentation,"
+          " because google-adk[otel-gcp] has not been installed"
+      )

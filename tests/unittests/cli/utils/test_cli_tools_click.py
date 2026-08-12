@@ -558,6 +558,194 @@ def test_cli_run_options_with_query(
   assert called_kwargs.get("jsonl") is True
 
 
+# `adk run --otel_to_cloud`
+@pytest.fixture()
+def agent_dir(tmp_path: Path) -> Path:
+  """A minimal agent folder that `adk run` accepts as its AGENT argument."""
+  path = tmp_path / "agent_otel"
+  path.mkdir()
+  (path / "__init__.py").touch()
+  return path
+
+
+@pytest.fixture(name="telemetry_calls")
+def telemetry_calls_fixture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> List[Tuple[str, Any]]:
+  """Records the OTel bootstrap and flush calls in one ordered list.
+
+  `cli_run` imports both helpers from `google.adk.telemetry.setup` when it
+  runs, so patching them on that module is what the command sees.
+  """
+  calls: List[Tuple[str, Any]] = []
+  monkeypatch.setattr(
+      "google.adk.telemetry.setup.setup_telemetry",
+      lambda **kwargs: calls.append(("setup", kwargs)),
+  )
+  monkeypatch.setattr(
+      "google.adk.telemetry.setup.flush_telemetry",
+      lambda: calls.append(("flush", None)),
+  )
+  return calls
+
+
+def _record_run(
+    monkeypatch: pytest.MonkeyPatch,
+    calls: List[Tuple[str, Any]],
+    name: str,
+    result: Optional[int] = None,
+    error: Optional[Exception] = None,
+) -> None:
+  """Replaces one of the two run entry points with a recording stub."""
+
+  async def _run(**kwargs: Any) -> Optional[int]:
+    calls.append(("run", None))
+    if error is not None:
+      raise error
+    return result
+
+  monkeypatch.setattr(f"google.adk.cli.cli.{name}", _run)
+
+
+def test_cli_run_help_documents_otel_to_cloud() -> None:
+  """`adk run --help` should document the new flag."""
+  # Act
+  result = CliRunner().invoke(cli_tools_click.main, ["run", "--help"])
+
+  # Assert
+  assert result.exit_code == 0, (result.output, repr(result.exception))
+  assert "--otel_to_cloud" in result.output
+  assert "Optional. Whether to write OTel data to Google" in result.output
+
+
+def test_cli_run_otel_to_cloud_sets_up_then_flushes_with_query(
+    agent_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    telemetry_calls: List[Tuple[str, Any]],
+) -> None:
+  """A single-query run installs the exporters, runs, then flushes them."""
+  # Arrange
+  _record_run(monkeypatch, telemetry_calls, "run_once_cli", result=0)
+
+  # Act
+  result = CliRunner().invoke(
+      cli_tools_click.main,
+      ["run", str(agent_dir), "hello", "--otel_to_cloud"],
+  )
+
+  # Assert
+  assert result.exit_code == 0, (result.output, repr(result.exception))
+  assert telemetry_calls == [
+      ("setup", {"otel_to_cloud": True}),
+      ("run", None),
+      ("flush", None),
+  ]
+
+
+def test_cli_run_otel_to_cloud_sets_up_then_flushes_interactive(
+    agent_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    telemetry_calls: List[Tuple[str, Any]],
+) -> None:
+  """An interactive run installs the exporters, runs, then flushes them."""
+  # Arrange
+  _record_run(monkeypatch, telemetry_calls, "run_cli")
+
+  # Act
+  result = CliRunner().invoke(
+      cli_tools_click.main, ["run", str(agent_dir), "--otel_to_cloud"]
+  )
+
+  # Assert
+  assert result.exit_code == 0, (result.output, repr(result.exception))
+  assert telemetry_calls == [
+      ("setup", {"otel_to_cloud": True}),
+      ("run", None),
+      ("flush", None),
+  ]
+
+
+@pytest.mark.parametrize(
+    "cli_args,entry_point",
+    [
+        pytest.param(["hello"], "run_once_cli", id="with_query"),
+        pytest.param([], "run_cli", id="interactive"),
+    ],
+)
+def test_cli_run_without_otel_to_cloud_skips_telemetry(
+    agent_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    telemetry_calls: List[Tuple[str, Any]],
+    cli_args: List[str],
+    entry_point: str,
+) -> None:
+  """Without the flag, `adk run` must not touch the global OTel providers."""
+  # Arrange
+  _record_run(monkeypatch, telemetry_calls, entry_point, result=0)
+
+  # Act
+  result = CliRunner().invoke(
+      cli_tools_click.main, ["run", str(agent_dir), *cli_args]
+  )
+
+  # Assert
+  assert result.exit_code == 0, (result.output, repr(result.exception))
+  assert telemetry_calls == [("run", None)]
+
+
+def test_cli_run_flushes_telemetry_when_the_run_raises(
+    agent_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    telemetry_calls: List[Tuple[str, Any]],
+) -> None:
+  """A failed run still exports the spans it produced before it failed."""
+  # Arrange
+  _record_run(
+      monkeypatch,
+      telemetry_calls,
+      "run_once_cli",
+      error=RuntimeError("model exploded"),
+  )
+
+  # Act / Assert
+  with pytest.raises(RuntimeError, match="model exploded"):
+    CliRunner().invoke(
+        cli_tools_click.main,
+        ["run", str(agent_dir), "hello", "--otel_to_cloud"],
+        catch_exceptions=False,
+    )
+
+  assert telemetry_calls == [
+      ("setup", {"otel_to_cloud": True}),
+      ("run", None),
+      ("flush", None),
+  ]
+
+
+def test_cli_run_flushes_telemetry_on_a_non_zero_exit_code(
+    agent_dir: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    telemetry_calls: List[Tuple[str, Any]],
+) -> None:
+  """`sys.exit(exit_code)` must not skip the flush, and must keep the code."""
+  # Arrange
+  _record_run(monkeypatch, telemetry_calls, "run_once_cli", result=2)
+
+  # Act
+  result = CliRunner().invoke(
+      cli_tools_click.main,
+      ["run", str(agent_dir), "hello", "--otel_to_cloud"],
+  )
+
+  # Assert
+  assert result.exit_code == 2
+  assert telemetry_calls == [
+      ("setup", {"otel_to_cloud": True}),
+      ("run", None),
+      ("flush", None),
+  ]
+
+
 def test_cli_run_auto_resume_with_query(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

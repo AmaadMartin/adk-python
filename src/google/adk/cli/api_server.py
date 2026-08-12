@@ -50,10 +50,8 @@ from fastapi.websockets import WebSocket
 from fastapi.websockets import WebSocketDisconnect
 from google.genai import types
 from opentelemetry import trace
-import opentelemetry.sdk.environment_variables as otel_env
 from opentelemetry.sdk.trace import export as export_lib
 from opentelemetry.sdk.trace import ReadableSpan
-from opentelemetry.sdk.trace import SpanProcessor
 from opentelemetry.sdk.trace import TracerProvider
 from pydantic import Field
 from pydantic import ValidationError
@@ -82,6 +80,7 @@ from ..plugins.base_plugin import BasePlugin
 from ..runners import Runner
 from ..sessions.base_session_service import BaseSessionService
 from ..sessions.session import Session
+from ..telemetry.setup import setup_telemetry
 from ..utils._telemetry_config import read_telemetry_consent
 from ..utils.agent_info import AgentInfo
 from ..utils.agent_info import get_agents_dict
@@ -529,130 +528,6 @@ class ListAppsResponse(common.BaseModel):
   apps: list[AppInfo]
 
 
-def _setup_telemetry(
-    otel_to_cloud: bool = False,
-    internal_exporters: Optional[list[SpanProcessor]] = None,
-):
-  # TODO - remove the else branch here once maybe_set_otel_providers is no
-  # longer experimental.
-  if otel_to_cloud:
-    _setup_gcp_telemetry(internal_exporters=internal_exporters)
-  elif _otel_env_vars_enabled():
-    _setup_telemetry_from_env(internal_exporters=internal_exporters)
-  else:
-    # Old logic - to be removed when above leaves experimental.
-    tracer_provider = TracerProvider()
-    if internal_exporters is not None:
-      for exporter in internal_exporters:
-        tracer_provider.add_span_processor(exporter)
-    trace.set_tracer_provider(tracer_provider=tracer_provider)
-
-
-def _otel_env_vars_enabled() -> bool:
-  return any([
-      os.getenv(endpoint_var)
-      for endpoint_var in [
-          otel_env.OTEL_EXPORTER_OTLP_ENDPOINT,
-          otel_env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
-          otel_env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
-          otel_env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT,
-      ]
-  ])
-
-
-def _setup_gcp_telemetry(
-    internal_exporters: list[SpanProcessor] = None,
-):
-  if typing.TYPE_CHECKING:
-    from ..telemetry.setup import OTelHooks
-
-  otel_hooks_to_add: list[OTelHooks] = []
-
-  if internal_exporters:
-    from ..telemetry.setup import OTelHooks
-
-    # Register ADK-specific exporters in trace provider.
-    otel_hooks_to_add.append(OTelHooks(span_processors=internal_exporters))
-
-  import google.auth
-
-  from ..telemetry.google_cloud import get_gcp_exporters
-  from ..telemetry.google_cloud import get_gcp_resource
-  from ..telemetry.setup import maybe_set_otel_providers
-
-  credentials, project_id = google.auth.default()
-
-  otel_hooks_to_add.append(
-      get_gcp_exporters(
-          # TODO - use trace_to_cloud here as well once otel_to_cloud is no
-          # longer experimental.
-          enable_cloud_tracing=True,
-          enable_cloud_metrics=True,
-          enable_cloud_logging=True,
-          google_auth=(credentials, project_id),
-      )
-  )
-  otel_resource = get_gcp_resource(project_id)
-
-  maybe_set_otel_providers(
-      otel_hooks_to_setup=otel_hooks_to_add,
-      otel_resource=otel_resource,
-  )
-  _setup_instrumentation_lib_if_installed()
-
-
-def _setup_telemetry_from_env(
-    internal_exporters: list[SpanProcessor] = None,
-):
-  from ..telemetry.setup import maybe_set_otel_providers
-
-  otel_hooks_to_add = []
-
-  if internal_exporters:
-    from ..telemetry.setup import OTelHooks
-
-    # Register ADK-specific exporters in trace provider.
-    otel_hooks_to_add.append(OTelHooks(span_processors=internal_exporters))
-
-  maybe_set_otel_providers(otel_hooks_to_setup=otel_hooks_to_add)
-  _setup_instrumentation_lib_if_installed()
-
-
-def _setup_instrumentation_lib_if_installed():
-  # Set instrumentation to enable emitting OTel data from GenAISDK
-  # Currently the instrumentation lib is in extras dependencies, make sure to
-  # warn the user if it's not installed.
-  try:
-    from opentelemetry.instrumentation.google_genai import GoogleGenAiSdkInstrumentor
-
-    GoogleGenAiSdkInstrumentor().instrument()
-  except ImportError:
-    logger.warning(
-        "Unable to import GoogleGenAiSdkInstrumentor - some"
-        " telemetry will be disabled. Make sure to install google-adk[otel-gcp]"
-    )
-  if os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID"):
-    # Set up HTTPX and gRPC instrumentation for A2A multi-agent observability.
-    try:
-      from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
-
-      HTTPXClientInstrumentor().instrument()
-    except (ImportError, AttributeError):
-      logger.warning(
-          "telemetry enabled but proceeding without HTTPX instrumentation,"
-          " because google-adk[otel-gcp] has not been installed"
-      )
-    try:
-      from opentelemetry.instrumentation.grpc import GrpcInstrumentorClient
-
-      GrpcInstrumentorClient().instrument()
-    except (ImportError, AttributeError):
-      logger.warning(
-          "telemetry enabled but proceeding without gRPC instrumentation,"
-          " because google-adk[otel-gcp] has not been installed"
-      )
-
-
 def _get_app_basename(name: str) -> str:
   """Returns the last segment of a dot-delimited app name."""
   return name.split(".")[-1]
@@ -1048,7 +923,7 @@ class ApiServer:
     memory_exporter = InMemoryExporter(session_trace_dict)
     self._memory_exporter = memory_exporter
 
-    _setup_telemetry(
+    setup_telemetry(
         otel_to_cloud=otel_to_cloud,
         internal_exporters=[
             export_lib.SimpleSpanProcessor(ApiServerSpanExporter(trace_dict)),
