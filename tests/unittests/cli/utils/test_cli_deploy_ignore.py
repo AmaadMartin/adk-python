@@ -23,9 +23,8 @@ import subprocess
 from unittest import mock
 
 import click
+from google.adk.cli import cli_deploy
 import pytest
-
-import src.google.adk.cli.cli_deploy as cli_deploy
 
 
 @pytest.fixture(autouse=True)
