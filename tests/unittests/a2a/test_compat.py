@@ -27,6 +27,7 @@ expects. Branches that import 1.x-only SDK symbols are not reachable here.
 from __future__ import annotations
 
 import json
+from typing import TYPE_CHECKING
 
 from a2a.client.client_factory import ClientFactory
 from a2a.types import AgentCapabilities
@@ -37,17 +38,20 @@ from a2a.types import TaskArtifactUpdateEvent
 from google.adk.a2a import _compat
 import pytest
 
+if TYPE_CHECKING:
+  from google.protobuf.struct_pb2 import Struct
+
 v03_only = pytest.mark.skipif(
     _compat.IS_A2A_V1, reason='0.3-only SDK object shapes'
 )
 
 
-def _struct(payload: dict):
+def _struct(payload: dict) -> Struct:
   """Builds a proto ``Struct`` for the 1.x metadata shapes.
 
-  protobuf is a 1.x-only dependency of the shim, so the well-known types are
-  imported here rather than at module scope -- the 0.3-only tests in this
-  module must be collectible without them.
+  ``struct_pb2`` is a generated well-known type that only the 1.x branch of
+  the shim uses, so it is imported here rather than at module scope, as
+  ``_compat._make_proto_value_from_dict`` does.
   """
   from google.protobuf.json_format import ParseDict
   from google.protobuf.struct_pb2 import Struct
@@ -75,10 +79,7 @@ class _FakeStructEvent:
   """Stand-in for a 1.x event whose ``metadata`` is a proto ``Struct``."""
 
   def __init__(self):
-    # Imported here, not at module scope: see ``_struct``.
-    from google.protobuf.struct_pb2 import Struct
-
-    self.metadata = Struct()
+    self.metadata = _struct({})
 
 
 def _task():
