@@ -31,6 +31,14 @@ repos:
       - id: ruff
         args: [--fix]
         files: ^src/
+      # tests/ and contributing/ are outside the src/ hook above and outside
+      # mypy's scope, so nothing checked them for undefined names. Only F821:
+      # the repo-wide select is tuned for src/ and would flag far more here.
+      # No --fix — F821 has no autofix.
+      - id: ruff
+        name: ruff undefined-name check (tests, contributing)
+        args: [--select, F821]
+        files: ^(tests|contributing)/
   - repo: https://github.com/PyCQA/isort
     rev: 8.0.1
     hooks:

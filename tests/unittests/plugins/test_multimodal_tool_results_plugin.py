@@ -37,7 +37,7 @@ def plugin() -> MultimodalToolResultsPlugin:
 
 
 @pytest.fixture
-def mock_tool() -> MockTool:
+def mock_tool() -> Mock:
   """Create a mock tool for testing."""
   return Mock(spec=BaseTool)
 
@@ -55,7 +55,7 @@ async def tool_context() -> ToolContext:
 @pytest.mark.asyncio
 async def test_tool_returning_parts_are_added_to_llm_request(
     plugin: MultimodalToolResultsPlugin,
-    mock_tool: MockTool,
+    mock_tool: Mock,
     tool_context: ToolContext,
 ):
   """Test that parts returned by a tool are present in the llm_request later."""
@@ -86,7 +86,7 @@ async def test_tool_returning_parts_are_added_to_llm_request(
 @pytest.mark.asyncio
 async def test_tool_returning_non_list_of_parts_is_unchanged(
     plugin: MultimodalToolResultsPlugin,
-    mock_tool: MockTool,
+    mock_tool: Mock,
     tool_context: ToolContext,
 ):
   """Test where tool returning non list of parts, has this result unchanged."""
@@ -119,7 +119,7 @@ async def test_tool_returning_non_list_of_parts_is_unchanged(
 @pytest.mark.asyncio
 async def test_empty_contents_leaves_saved_parts_pending(
     plugin: MultimodalToolResultsPlugin,
-    mock_tool: MockTool,
+    mock_tool: Mock,
     tool_context: ToolContext,
 ):
   """Test that an empty request is a no-op and the parts stay for later."""
@@ -146,8 +146,8 @@ async def test_empty_contents_leaves_saved_parts_pending(
 
 @pytest.mark.asyncio
 async def test_multiple_tools_returning_parts_are_accumulated(
-    plugin: ToolReturningGenAiPartsPlugin,
-    mock_tool: MockTool,
+    plugin: MultimodalToolResultsPlugin,
+    mock_tool: Mock,
     tool_context: ToolContext,
 ):
   """Test that parts from multiple tool calls are accumulated."""

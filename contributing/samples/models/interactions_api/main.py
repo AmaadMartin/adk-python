@@ -372,7 +372,7 @@ async def interactive_mode():
   print("\nInteractive mode with Interactions API")
   print("Type 'quit' to exit, 'new' for a new session\n")
 
-  test_agent = agent.root_agent
+  test_agent = root_agent
 
   runner = InMemoryRunner(
       agent=test_agent,
