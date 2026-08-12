@@ -15,7 +15,17 @@
 from __future__ import annotations
 
 import json
+import logging
+from unittest import mock
 
+from fastapi.openapi.models import OAuth2
+from fastapi.openapi.models import OAuthFlowAuthorizationCode
+from fastapi.openapi.models import OAuthFlows
+from google.adk.auth.auth_credential import AuthCredential
+from google.adk.auth.auth_credential import AuthCredentialTypes
+from google.adk.auth.auth_credential import OAuth2Auth
+from google.adk.auth.auth_schemes import OpenIdConnectWithConfig
+from google.adk.auth.auth_tool import AuthConfig
 from google.adk.events.event import Event
 from google.adk.events.event import NodeInfo
 from google.adk.events.request_input import RequestInput
@@ -333,4 +343,272 @@ class TestHasAuthCredential:
     assert has_auth_credential(other_config, state) is False
 
 
-#
+# --- process_auth_resume: the resume payload cannot pick the auth scheme ---
+
+_FROZEN_TOKEN_URL = "https://provider.example/token"
+_ATTACKER_TOKEN_URL = "https://evil.example/token"
+
+
+def _oauth2_auth_config(credential_key: str = "oauth-cred") -> AuthConfig:
+  """An OAuth2 AuthConfig whose token exchange targets a known endpoint."""
+  return AuthConfig(
+      auth_scheme=OAuth2(
+          flows=OAuthFlows(
+              authorizationCode=OAuthFlowAuthorizationCode(
+                  authorizationUrl="https://provider.example/auth",
+                  tokenUrl=_FROZEN_TOKEN_URL,
+                  scopes={"read": "Read access"},
+              )
+          )
+      ),
+      raw_auth_credential=AuthCredential(
+          auth_type=AuthCredentialTypes.OAUTH2,
+          oauth2=OAuth2Auth(
+              client_id="oauth_client_id",
+              client_secret="oauth_client_secret",
+          ),
+      ),
+      credential_key=credential_key,
+  )
+
+
+def _oidc_auth_config(credential_key: str = "oidc-cred") -> AuthConfig:
+  """An OpenID Connect AuthConfig, the non-fastapi member of AuthScheme."""
+  return AuthConfig(
+      auth_scheme=OpenIdConnectWithConfig(
+          authorization_endpoint="https://provider.example/auth",
+          token_endpoint=_FROZEN_TOKEN_URL,
+          scopes=["read"],
+      ),
+      raw_auth_credential=AuthCredential(
+          auth_type=AuthCredentialTypes.OPEN_ID_CONNECT,
+          oauth2=OAuth2Auth(
+              client_id="oauth_client_id",
+              client_secret="oauth_client_secret",
+          ),
+      ),
+      credential_key=credential_key,
+  )
+
+
+def _authorization_code_credential(
+    auth_type: AuthCredentialTypes = AuthCredentialTypes.OAUTH2,
+) -> AuthCredential:
+  """The credential an honest client returns after the consent redirect.
+
+  ADK builds it by copying the node's raw credential, so an honest echo
+  always carries the node's own ``auth_type``.
+  """
+  return AuthCredential(
+      auth_type=auth_type,
+      oauth2=OAuth2Auth(
+          client_id="oauth_client_id",
+          client_secret="oauth_client_secret",
+          auth_code="the-authorization-code",
+          auth_response_uri=(
+              "https://app.example/callback?code=the-authorization-code"
+          ),
+      ),
+  )
+
+
+@pytest.fixture(name="oauth2_session")
+def oauth2_session_fixture():
+  """Patches the only HTTP boundary the token exchange goes through."""
+  with mock.patch(
+      "google.adk.auth.oauth2_credential_util.OAuth2Session"
+  ) as session:
+    session.return_value.fetch_token.return_value = {
+        "access_token": "at",
+        "expires_in": 3600,
+    }
+    yield session
+
+
+def _fetched_token_endpoint(oauth2_session: mock.MagicMock) -> str:
+  """The endpoint the exchange actually posted the client secret to."""
+  oauth2_session.return_value.fetch_token.assert_called_once()
+  return oauth2_session.return_value.fetch_token.call_args.args[0]
+
+
+class TestProcessAuthResumeSchemeBinding:
+  """The node's own auth_config, not the payload, drives storage and exchange.
+
+  The payload contributes the credential and nothing else, and that credential
+  is refused when its type is not the one the node asked for.
+  """
+
+  @pytest.mark.asyncio
+  async def test_refuses_an_oauth2_upgrade_of_an_api_key_node(
+      self, oauth2_session: mock.MagicMock
+  ):
+    """An apiKey node must never be talked into a token exchange."""
+    auth_config = _api_key_auth_config()
+    state = _empty_state()
+    response = auth_config.model_copy(deep=True)
+    response.exchanged_auth_credential = _authorization_code_credential()
+    payload = response.model_dump(mode="json", exclude_none=True, by_alias=True)
+    payload["authScheme"] = _oauth2_auth_config().auth_scheme.model_dump(
+        mode="json", exclude_none=True, by_alias=True
+    )
+    payload["authScheme"]["flows"]["authorizationCode"][
+        "tokenUrl"
+    ] = _ATTACKER_TOKEN_URL
+
+    await process_auth_resume(payload, auth_config, state)
+
+    assert "temp:node-cred" not in state
+    assert has_auth_credential(auth_config, state) is False
+    assert oauth2_session.call_count == 0
+
+  @pytest.mark.asyncio
+  async def test_a_redirected_token_endpoint_in_the_payload_is_ignored(
+      self, oauth2_session: mock.MagicMock
+  ):
+    """A client-edited tokenUrl must not receive the client secret."""
+    auth_config = _oauth2_auth_config()
+    state = _empty_state()
+    response = auth_config.model_copy(deep=True)
+    response.exchanged_auth_credential = _authorization_code_credential()
+    payload = response.model_dump(mode="json", exclude_none=True, by_alias=True)
+    payload["authScheme"]["flows"]["authorizationCode"][
+        "tokenUrl"
+    ] = _ATTACKER_TOKEN_URL
+
+    await process_auth_resume(payload, auth_config, state)
+
+    assert _fetched_token_endpoint(oauth2_session) == _FROZEN_TOKEN_URL
+    assert state["temp:oauth-cred"].oauth2.access_token == "at"
+
+  @pytest.mark.asyncio
+  async def test_refuses_an_api_key_credential_for_an_oauth2_node(
+      self, oauth2_session: mock.MagicMock, caplog: pytest.LogCaptureFixture
+  ):
+    """A downgraded credential must not be stored unexchanged."""
+    auth_config = _oauth2_auth_config()
+    state = _empty_state()
+    response = auth_config.model_copy(deep=True)
+    payload = response.model_dump(mode="json", exclude_none=True, by_alias=True)
+    payload["authScheme"] = {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Api-Key",
+    }
+    payload["exchangedAuthCredential"] = {
+        "authType": "apiKey",
+        "apiKey": "attacker-key",
+    }
+
+    with caplog.at_level(logging.WARNING):
+      await process_auth_resume(payload, auth_config, state)
+
+    assert "temp:oauth-cred" not in state
+    assert has_auth_credential(auth_config, state) is False
+    assert oauth2_session.call_count == 0
+    assert "attacker-key" not in str(state.to_dict())
+    assert "oauth-cred" in caplog.text
+    assert "attacker-key" not in caplog.text
+
+  @pytest.mark.asyncio
+  async def test_refuses_a_bare_api_key_credential_for_an_oauth2_node(
+      self, oauth2_session: mock.MagicMock
+  ):
+    """The same downgrade, with the auth_scheme simply left out.
+
+    ``AuthConfig`` validation fails without an ``auth_scheme``, so this
+    payload takes the credential branch. Both branches meet the same check.
+    """
+    auth_config = _oauth2_auth_config()
+    state = _empty_state()
+
+    await process_auth_resume(
+        {"authType": "apiKey", "apiKey": "attacker-key"}, auth_config, state
+    )
+
+    assert "temp:oauth-cred" not in state
+    assert has_auth_credential(auth_config, state) is False
+    assert oauth2_session.call_count == 0
+    assert "attacker-key" not in str(state.to_dict())
+
+  @pytest.mark.asyncio
+  async def test_oauth2_echo_exchanges_against_the_requested_endpoint(
+      self, oauth2_session: mock.MagicMock
+  ):
+    """The honest dev UI payload is accepted and hits the frozen endpoint."""
+    auth_config = _oauth2_auth_config()
+    state = _empty_state()
+    response = auth_config.model_copy(deep=True)
+    response.exchanged_auth_credential = _authorization_code_credential()
+
+    await process_auth_resume(
+        response.model_dump(mode="json", exclude_none=True, by_alias=True),
+        auth_config,
+        state,
+    )
+
+    assert _fetched_token_endpoint(oauth2_session) == _FROZEN_TOKEN_URL
+    assert state["temp:oauth-cred"].oauth2.access_token == "at"
+    assert has_auth_credential(auth_config, state) is True
+
+  @pytest.mark.asyncio
+  async def test_payload_with_explicit_nulls_is_accepted(
+      self, oauth2_session: mock.MagicMock
+  ):
+    """A client that echoes unset scheme fields back as nulls still resumes."""
+    auth_config = _oauth2_auth_config()
+    state = _empty_state()
+    response = auth_config.model_copy(deep=True)
+    response.exchanged_auth_credential = _authorization_code_credential()
+
+    await process_auth_resume(
+        response.model_dump(mode="json", by_alias=True),
+        auth_config,
+        state,
+    )
+
+    assert _fetched_token_endpoint(oauth2_session) == _FROZEN_TOKEN_URL
+    assert state["temp:oauth-cred"].oauth2.access_token == "at"
+
+  @pytest.mark.asyncio
+  async def test_openid_connect_round_trip_is_accepted(
+      self, oauth2_session: mock.MagicMock
+  ):
+    """The OpenIdConnectWithConfig member of the union round-trips too."""
+    auth_config = _oidc_auth_config()
+    state = _empty_state()
+    response = auth_config.model_copy(deep=True)
+    response.exchanged_auth_credential = _authorization_code_credential(
+        AuthCredentialTypes.OPEN_ID_CONNECT
+    )
+
+    await process_auth_resume(
+        response.model_dump(mode="json", exclude_none=True, by_alias=True),
+        auth_config,
+        state,
+    )
+
+    assert _fetched_token_endpoint(oauth2_session) == _FROZEN_TOKEN_URL
+    assert state["temp:oidc-cred"].oauth2.access_token == "at"
+
+  @pytest.mark.asyncio
+  async def test_credential_shaped_payload_still_uses_the_frozen_scheme(
+      self, oauth2_session: mock.MagicMock
+  ):
+    """A bare AuthCredential of the requested type is accepted.
+
+    It carries no auth_scheme, and the exchange runs against the frozen
+    config.
+    """
+    auth_config = _oauth2_auth_config()
+    state = _empty_state()
+
+    await process_auth_resume(
+        _authorization_code_credential().model_dump(
+            mode="json", exclude_none=True, by_alias=True
+        ),
+        auth_config,
+        state,
+    )
+
+    assert _fetched_token_endpoint(oauth2_session) == _FROZEN_TOKEN_URL
+    assert state["temp:oauth-cred"].oauth2.access_token == "at"

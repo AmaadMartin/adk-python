@@ -516,7 +516,10 @@ class FunctionNode(BaseNode):
       auth_response = ctx.resume_inputs.get(interrupt_id)
       if auth_response is not None:
         await process_auth_resume(auth_response, self.auth_config, ctx.state)
-      elif not has_auth_credential(self.auth_config, ctx.state):
+      # A resume may store no credential (e.g. a null exchanged credential);
+      # re-check rather than run the body unauthenticated -- re-emitting the
+      # deterministic interrupt_id re-asks the client.
+      if not has_auth_credential(self.auth_config, ctx.state):
         yield create_auth_request_event(self.auth_config, interrupt_id)
         return
 
