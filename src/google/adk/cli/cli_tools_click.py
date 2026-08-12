@@ -946,54 +946,67 @@ def cli_run(
   agent_parent_folder = os.path.dirname(agent)
   agent_folder_name = os.path.basename(agent)
 
-  # If query is provided, we run in single-step mode (JSONL output)
-  if query is not None:
-    from .cli import run_once_cli
+  if otel_to_cloud:
+    # Imported here, like the `.cli` imports below: telemetry.setup pulls in
+    # google.auth and the OTel SDK, which cost about a second of startup for
+    # every `adk` command that never needs them.
+    from ..telemetry.setup import flush_telemetry
+    from ..telemetry.setup import setup_telemetry
 
-    exit_code = asyncio.run(
-        run_once_cli(
-            agent_parent_dir=agent_parent_folder,
-            agent_folder_name=agent_folder_name,
-            query=query,
-            state_str=state,
-            session_id=session_id,
-            replay=replay,
-            timeout=timeout,
-            in_memory=in_memory,
-            jsonl=jsonl,
-            session_service_uri=session_service_uri,
-            artifact_service_uri=artifact_service_uri,
-            memory_service_uri=memory_service_uri,
-            use_local_storage=use_local_storage,
-            default_llm_model=default_llm_model,
-            otel_to_cloud=otel_to_cloud,
-        )
-    )
-    sys.exit(exit_code)
-  else:
-    # Legacy interactive mode
-    from .cli import run_cli
+    setup_telemetry(otel_to_cloud=True)
 
-    asyncio.run(
-        run_cli(
-            agent_parent_dir=agent_parent_folder,
-            agent_folder_name=agent_folder_name,
-            input_file=replay,
-            saved_session_file=resume,
-            save_session=save_session,
-            session_id=session_id,
-            state_str=state,
-            timeout=timeout,
-            in_memory=in_memory,
-            jsonl=jsonl,
-            session_service_uri=session_service_uri,
-            artifact_service_uri=artifact_service_uri,
-            memory_service_uri=memory_service_uri,
-            use_local_storage=use_local_storage,
-            default_llm_model=default_llm_model,
-            otel_to_cloud=otel_to_cloud,
-        )
-    )
+  try:
+    # If query is provided, we run in single-step mode (JSONL output)
+    if query is not None:
+      from .cli import run_once_cli
+
+      exit_code = asyncio.run(
+          run_once_cli(
+              agent_parent_dir=agent_parent_folder,
+              agent_folder_name=agent_folder_name,
+              query=query,
+              state_str=state,
+              session_id=session_id,
+              replay=replay,
+              timeout=timeout,
+              in_memory=in_memory,
+              jsonl=jsonl,
+              session_service_uri=session_service_uri,
+              artifact_service_uri=artifact_service_uri,
+              memory_service_uri=memory_service_uri,
+              use_local_storage=use_local_storage,
+              default_llm_model=default_llm_model,
+          )
+      )
+      sys.exit(exit_code)
+    else:
+      # Legacy interactive mode
+      from .cli import run_cli
+
+      asyncio.run(
+          run_cli(
+              agent_parent_dir=agent_parent_folder,
+              agent_folder_name=agent_folder_name,
+              input_file=replay,
+              saved_session_file=resume,
+              save_session=save_session,
+              session_id=session_id,
+              state_str=state,
+              timeout=timeout,
+              in_memory=in_memory,
+              jsonl=jsonl,
+              session_service_uri=session_service_uri,
+              artifact_service_uri=artifact_service_uri,
+              memory_service_uri=memory_service_uri,
+              use_local_storage=use_local_storage,
+              default_llm_model=default_llm_model,
+          )
+      )
+  finally:
+    if otel_to_cloud:
+      # The run is over and the process is about to exit, so blocking here
+      # costs nothing and is what gets the buffered telemetry exported.
+      flush_telemetry()
 
 
 @main.command(
