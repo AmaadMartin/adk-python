@@ -211,15 +211,11 @@ class LLMRegistry:
 
     # Name every provider that advertised this model but could not be imported,
     # including entries dropped by an earlier call.
-    for failed_regex, (
-        failed_module,
-        import_error,
-    ) in _failed_lazy_imports.items():
+    for failed_regex, (module_path, error) in _failed_lazy_imports.items():
       if re.compile(failed_regex).fullmatch(model):
         error_msg += (
             f'\n\nA provider registered for pattern {failed_regex!r} was'
-            f' dropped because importing {failed_module} failed:'
-            f' {import_error}'
+            f' dropped because importing {module_path} failed: {error}'
         )
 
     # Check if it matches known patterns that require optional dependencies
