@@ -346,9 +346,12 @@ def get_eval_sets_manager(
     raise click.ClickException(MISSING_EVAL_DEPENDENCIES_MESSAGE) from mnf
 
   if eval_storage_uri:
-    gcs_eval_managers = evals.create_gcs_eval_managers_from_uri(
-        eval_storage_uri
-    )
+    try:
+      gcs_eval_managers = evals.create_gcs_eval_managers_from_uri(
+          eval_storage_uri
+      )
+    except (ValueError, RuntimeError) as e:
+      raise click.ClickException(str(e)) from e
     return gcs_eval_managers.eval_sets_manager
   else:
     return LocalEvalSetsManager(agents_dir=agents_dir)

@@ -33,6 +33,7 @@ from unittest import mock
 
 import click
 from click.testing import CliRunner
+from click.testing import Result
 from google.adk.agents.base_agent import BaseAgent
 from google.adk.agents.run_config import StreamingMode
 from google.adk.cli import cli_tools_click
@@ -3017,3 +3018,141 @@ def test_cli_migrate_session_reports_the_underlying_failure(
   )
 
   assert "Migration failed: destination schema is newer" in result.output
+
+
+# --eval_storage_uri error boundary
+def _make_agent_dir(tmp_path: Path, name: str) -> Path:
+  agent_path = tmp_path / name
+  agent_path.mkdir()
+  (agent_path / "__init__.py").touch()
+  return agent_path
+
+
+def _assert_clean_cli_error(result: Result, message: str) -> None:
+  assert result.exit_code == 1
+  assert isinstance(result.exception, SystemExit)
+  assert result.output.startswith("Error: ")
+  assert message in result.output
+
+
+def test_cli_eval_unsupported_eval_storage_uri_raises_click_exception(
+    mock_get_root_agent, tmp_path: Path
+) -> None:
+  """`adk eval` reports an unsupported storage URI without a traceback."""
+  agent_path = _make_agent_dir(tmp_path, "test_app")
+
+  result = CliRunner().invoke(
+      cli_tools_click.cli_eval,
+      [str(agent_path), "some_set", "--eval_storage_uri", "bad-uri"],
+  )
+
+  _assert_clean_cli_error(result, "Unsupported evals storage URI: bad-uri")
+
+
+def test_cli_eval_missing_gcp_extras_raises_click_exception(
+    mock_get_root_agent, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """`adk eval` reports missing Google Cloud extras without a traceback."""
+  agent_path = _make_agent_dir(tmp_path, "test_app")
+
+  def _raise_runtime_error(_eval_storage_uri: str) -> None:
+    raise RuntimeError("GCS evaluation managers require Google Cloud")
+
+  monkeypatch.setattr(
+      "google.adk.cli.utils.evals.create_gcs_eval_managers_from_uri",
+      _raise_runtime_error,
+  )
+
+  result = CliRunner().invoke(
+      cli_tools_click.cli_eval,
+      [str(agent_path), "some_set", "--eval_storage_uri", "gs://bucket"],
+  )
+
+  _assert_clean_cli_error(result, "GCS evaluation managers require")
+
+
+def test_cli_web_unsupported_eval_storage_uri_raises_click_exception(
+    tmp_path: Path, _patch_uvicorn: _Recorder
+) -> None:
+  """`adk web` reports an unsupported storage URI without a traceback."""
+  agents_dir = tmp_path / "agents"
+  agents_dir.mkdir()
+
+  result = CliRunner().invoke(
+      cli_tools_click.main,
+      ["web", "--eval_storage_uri", "bad-uri", str(agents_dir)],
+  )
+
+  _assert_clean_cli_error(result, "Unsupported evals storage URI: bad-uri")
+  assert not _patch_uvicorn.calls
+
+
+def test_cli_api_server_unsupported_eval_storage_uri_raises_click_exception(
+    tmp_path: Path, _patch_uvicorn: _Recorder
+) -> None:
+  """`adk api_server` reports an unsupported storage URI cleanly."""
+  agents_dir = tmp_path / "agents"
+  agents_dir.mkdir()
+
+  result = CliRunner().invoke(
+      cli_tools_click.main,
+      ["api_server", "--eval_storage_uri", "bad-uri", str(agents_dir)],
+  )
+
+  _assert_clean_cli_error(result, "Unsupported evals storage URI: bad-uri")
+  assert not _patch_uvicorn.calls
+
+
+def test_cli_eval_set_create_unsupported_eval_storage_uri_raises_click_exception(
+    tmp_path: Path,
+) -> None:
+  """`adk eval_set create` reports an unsupported storage URI cleanly."""
+  agent_path = _make_agent_dir(tmp_path, "test_app")
+
+  result = CliRunner().invoke(
+      cli_tools_click.main,
+      [
+          "eval_set",
+          "create",
+          str(agent_path),
+          "my_set",
+          "--eval_storage_uri",
+          "bad-uri",
+      ],
+  )
+
+  _assert_clean_cli_error(result, "Unsupported evals storage URI: bad-uri")
+
+
+def test_cli_eval_set_add_eval_case_unsupported_eval_storage_uri_raises_click_exception(
+    tmp_path: Path,
+) -> None:
+  """`adk eval_set add_eval_case` reports an unsupported storage URI cleanly."""
+  agent_path = _make_agent_dir(tmp_path, "test_app")
+  scenarios_file = tmp_path / "scenarios.json"
+  scenarios_file.write_text(
+      '{"scenarios": [{"starting_prompt": "hello", "conversation_plan":'
+      ' "world"}]}'
+  )
+  session_input_file = tmp_path / "session.json"
+  session_input_file.write_text(
+      '{"app_name": "test_app", "user_id": "test_user", "state": {}}'
+  )
+
+  result = CliRunner().invoke(
+      cli_tools_click.main,
+      [
+          "eval_set",
+          "add_eval_case",
+          str(agent_path),
+          "my_set",
+          "--scenarios_file",
+          str(scenarios_file),
+          "--session_input_file",
+          str(session_input_file),
+          "--eval_storage_uri",
+          "bad-uri",
+      ],
+  )
+
+  _assert_clean_cli_error(result, "Unsupported evals storage URI: bad-uri")

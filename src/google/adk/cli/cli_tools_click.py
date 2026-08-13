@@ -1243,9 +1243,12 @@ def cli_eval(
   if eval_storage_uri:
     from .utils import evals
 
-    gcs_eval_managers = evals.create_gcs_eval_managers_from_uri(
-        eval_storage_uri
-    )
+    try:
+      gcs_eval_managers = evals.create_gcs_eval_managers_from_uri(
+          eval_storage_uri
+      )
+    except (ValueError, RuntimeError) as e:
+      raise click.ClickException(str(e)) from e
     eval_sets_manager = gcs_eval_managers.eval_sets_manager
     eval_set_results_manager = gcs_eval_managers.eval_set_results_manager
   else:
