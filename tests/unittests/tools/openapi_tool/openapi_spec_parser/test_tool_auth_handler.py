@@ -38,12 +38,12 @@ import pytest
 
 
 # Helper function to create a mock ToolContext
-def create_mock_tool_context():
+def create_mock_tool_context(session: Optional[Session] = None):
   return ToolContext(
       function_call_id='test-fc-id',
       invocation_context=InvocationContext(
           agent=LlmAgent(name='test'),
-          session=Session(app_name='test', user_id='123', id='123'),
+          session=session or Session(app_name='test', user_id='123', id='123'),
           invocation_id='123',
           session_service=InMemorySessionService(),
       ),
@@ -145,7 +145,7 @@ async def test_openid_connect_uses_explicit_credential_key(
     openid_connect_scheme, openid_connect_credential
 ):
   tool_context = create_mock_tool_context()
-  handler = ToolAuthHandler(
+  handler = ToolAuthHandler.from_tool_context(
       tool_context,
       openid_connect_scheme,
       openid_connect_credential,
@@ -155,6 +155,223 @@ async def test_openid_connect_uses_explicit_credential_key(
   assert result.state == 'pending'
   requested = tool_context.actions.requested_auth_configs['test-fc-id']
   assert requested.credential_key == 'my_tool_tokens'
+  # A pending request must not create a cache slot.
+  assert not tool_context.state.to_dict()
+
+
+@pytest.mark.asyncio
+async def test_exchanged_credential_is_cached_under_the_configured_key():
+  api_key_scheme, api_key_credential = token_to_scheme_credential(
+      'apikey', 'header', 'X-API-Key', 'test_api_key'
+  )
+  tool_context = create_mock_tool_context()
+  tool_context.state['temp:my_tool_tokens'] = api_key_credential.model_dump(
+      exclude_none=True
+  )
+
+  handler = ToolAuthHandler.from_tool_context(
+      tool_context,
+      api_key_scheme,
+      None,
+      credential_key='my_tool_tokens',
+  )
+  result = await handler.prepare_auth_credentials()
+
+  assert result.state == 'done'
+  cached = AuthCredential.model_validate(tool_context.state['my_tool_tokens'])
+  assert cached.api_key == 'test_api_key'
+  # The named slot is the only cache slot: no digest-derived key was written.
+  assert set(tool_context.state.to_dict()) == {
+      'temp:my_tool_tokens',
+      'my_tool_tokens',
+  }
+
+
+@pytest.mark.asyncio
+async def test_second_handler_with_same_key_reads_back_across_schemes(
+    openid_connect_scheme,
+):
+  session = Session(app_name='test', user_id='123', id='123')
+  api_key_scheme, api_key_credential = token_to_scheme_credential(
+      'apikey', 'header', 'X-API-Key', 'shared_api_key'
+  )
+  first_context = create_mock_tool_context(session)
+  first_context.state['temp:shared_tool_tokens'] = (
+      api_key_credential.model_dump(exclude_none=True)
+  )
+  first_handler = ToolAuthHandler.from_tool_context(
+      first_context,
+      api_key_scheme,
+      None,
+      credential_key='shared_tool_tokens',
+  )
+  await first_handler.prepare_auth_credentials()
+
+  second_context = create_mock_tool_context(session)
+  second_handler = ToolAuthHandler.from_tool_context(
+      second_context,
+      openid_connect_scheme,
+      None,
+      credential_key='shared_tool_tokens',
+  )
+  result = await second_handler.prepare_auth_credentials()
+
+  assert result.state == 'done'
+  assert result.auth_credential.api_key == 'shared_api_key'
+  cache_slots = [key for key in session.state if not key.startswith('temp:')]
+  assert cache_slots == ['shared_tool_tokens']
+
+
+@pytest.mark.asyncio
+async def test_two_credential_keys_get_two_cache_slots():
+  session = Session(app_name='test', user_id='123', id='123')
+  api_key_scheme, _ = token_to_scheme_credential(
+      'apikey', 'header', 'X-API-Key', 'unused'
+  )
+  keys_to_api_keys = {
+      'tool_a_tokens': 'api_key_a',
+      'tool_b_tokens': 'api_key_b',
+  }
+
+  for credential_key, api_key in keys_to_api_keys.items():
+    tool_context = create_mock_tool_context(session)
+    tool_context.state[f'temp:{credential_key}'] = AuthCredential(
+        auth_type=AuthCredentialTypes.API_KEY, api_key=api_key
+    ).model_dump(exclude_none=True)
+    handler = ToolAuthHandler.from_tool_context(
+        tool_context,
+        api_key_scheme,
+        None,
+        credential_key=credential_key,
+    )
+    assert (await handler.prepare_auth_credentials()).state == 'done'
+
+  for credential_key, api_key in keys_to_api_keys.items():
+    cached = AuthCredential.model_validate(session.state[credential_key])
+    assert cached.api_key == api_key
+
+
+@pytest.mark.asyncio
+async def test_credential_key_on_the_credential_selects_the_cache_slot(
+    openid_connect_scheme,
+):
+  _, openid_credential = get_mock_openid_scheme_credential()
+  openid_credential = openid_credential.model_copy(
+      update={'credential_key': 'extra_named_slot'}
+  )
+  tool_context = create_mock_tool_context()
+  tool_context.state['temp:extra_named_slot'] = AuthCredential(
+      auth_type=AuthCredentialTypes.API_KEY, api_key='extra_api_key'
+  ).model_dump(exclude_none=True)
+
+  handler = ToolAuthHandler.from_tool_context(
+      tool_context, openid_connect_scheme, openid_credential
+  )
+  result = await handler.prepare_auth_credentials()
+
+  assert result.state == 'done'
+  cached = AuthCredential.model_validate(tool_context.state['extra_named_slot'])
+  assert cached.api_key == 'extra_api_key'
+
+
+@pytest.mark.asyncio
+async def test_credential_key_on_the_scheme_selects_the_cache_slot():
+  api_key_scheme, _ = token_to_scheme_credential(
+      'apikey', 'header', 'X-API-Key', 'unused'
+  )
+  api_key_scheme = api_key_scheme.model_copy(
+      update={'credentialKey': 'scheme_named_slot'}
+  )
+  tool_context = create_mock_tool_context()
+  tool_context.state['temp:scheme_named_slot'] = AuthCredential(
+      auth_type=AuthCredentialTypes.API_KEY, api_key='scheme_api_key'
+  ).model_dump(exclude_none=True)
+
+  handler = ToolAuthHandler.from_tool_context(
+      tool_context, api_key_scheme, None
+  )
+  result = await handler.prepare_auth_credentials()
+
+  assert result.state == 'done'
+  cached = AuthCredential.model_validate(
+      tool_context.state['scheme_named_slot']
+  )
+  assert cached.api_key == 'scheme_api_key'
+
+
+def test_empty_credential_key_falls_back_to_the_derived_key(
+    openid_connect_scheme, openid_connect_credential
+):
+  tool_context = create_mock_tool_context()
+  derived_key = ToolContextCredentialStore(tool_context).get_credential_key(
+      openid_connect_scheme, openid_connect_credential
+  )
+
+  empty_key_store = ToolContextCredentialStore(tool_context, credential_key='')
+
+  assert (
+      empty_key_store.get_credential_key(
+          openid_connect_scheme, openid_connect_credential
+      )
+      == derived_key
+  )
+
+
+def test_configured_key_does_not_adopt_a_legacy_keyed_credential(
+    openid_connect_scheme, openid_connect_credential
+):
+  _, legacy_credential = token_to_scheme_credential(
+      'oauth2Token', 'header', 'bearer', '123123123'
+  )
+  tool_context = create_mock_tool_context()
+  legacy_key = ToolContextCredentialStore(
+      tool_context
+  )._get_legacy_credential_key(openid_connect_scheme, openid_connect_credential)
+  tool_context.state[legacy_key] = legacy_credential.model_dump(
+      exclude_none=True
+  )
+
+  named_store = ToolContextCredentialStore(
+      tool_context, credential_key='named_slot'
+  )
+
+  assert (
+      named_store.get_credential(
+          openid_connect_scheme, openid_connect_credential
+      )
+      is None
+  )
+  assert 'named_slot' not in tool_context.state
+
+
+def test_legacy_keyed_credential_is_migrated_when_no_key_is_configured(
+    openid_connect_scheme, openid_connect_credential
+):
+  _, legacy_credential = token_to_scheme_credential(
+      'oauth2Token', 'header', 'bearer', '123123123'
+  )
+  tool_context = create_mock_tool_context()
+  store = ToolContextCredentialStore(tool_context)
+  legacy_key = store._get_legacy_credential_key(
+      openid_connect_scheme, openid_connect_credential
+  )
+  current_key = store.get_credential_key(
+      openid_connect_scheme, openid_connect_credential
+  )
+  assert legacy_key != current_key
+  tool_context.state[legacy_key] = legacy_credential.model_dump(
+      exclude_none=True
+  )
+
+  migrated = store.get_credential(
+      openid_connect_scheme, openid_connect_credential
+  )
+
+  assert migrated == legacy_credential
+  assert (
+      AuthCredential.model_validate(tool_context.state[current_key])
+      == legacy_credential
+  )
 
 
 @pytest.mark.asyncio
