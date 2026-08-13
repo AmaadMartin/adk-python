@@ -14,8 +14,6 @@
 # limitations under the License.
 
 
-import os
-import unittest
 from unittest import mock
 
 from google.adk.integrations.eventarc import _client as client
@@ -26,9 +24,10 @@ import google.auth.impersonated_credentials
 import google.auth.pluggable
 import google.oauth2.credentials
 import google.oauth2.service_account
+import pytest
 
 
-class TestEventarcClient(unittest.IsolatedAsyncioTestCase):
+class TestEventarcClient:
 
   def test_get_credential_id(self):
     # Service Account
@@ -37,7 +36,7 @@ class TestEventarcClient(unittest.IsolatedAsyncioTestCase):
         service_account_email="test@test.com",
         token_uri="https://oauth2.mtls.googleapis.com/token",
     )
-    self.assertEqual(client._get_credential_id(sa_creds), "test@test.com")
+    assert client._get_credential_id(sa_creds) == "test@test.com"
 
     # Impersonated (Uses service_account_email under the hood in google-auth)
     imp_creds = google.auth.impersonated_credentials.Credentials(
@@ -45,13 +44,11 @@ class TestEventarcClient(unittest.IsolatedAsyncioTestCase):
         target_principal="imp@test.com",
         target_scopes=[],
     )
-    self.assertEqual(client._get_credential_id(imp_creds), "imp@test.com")
+    assert client._get_credential_id(imp_creds) == "imp@test.com"
 
     # Compute Engine (ADC)
     gce_creds = google.auth.compute_engine.credentials.Credentials()
-    self.assertEqual(
-        client._get_credential_id(gce_creds), "ComputeEngineCredentials"
-    )
+    assert client._get_credential_id(gce_creds) == "ComputeEngineCredentials"
 
     # Fallback
     fallback_creds = mock.create_autospec(
@@ -59,9 +56,7 @@ class TestEventarcClient(unittest.IsolatedAsyncioTestCase):
     )
     # create_autospec dynamically configures the mock class __module__, but we ensure
     # it doesn't accidentally match Compute Engine.
-    self.assertEqual(
-        client._get_credential_id(fallback_creds), str(id(fallback_creds))
-    )
+    assert client._get_credential_id(fallback_creds) == str(id(fallback_creds))
 
     # Identity Pool (File)
     ip_file_creds1 = google.auth.identity_pool.Credentials(
@@ -79,18 +74,14 @@ class TestEventarcClient(unittest.IsolatedAsyncioTestCase):
         subject_token_type="urn:ietf:params:oauth:token-type:jwt",
         credential_source={"file": "path2"},
     )
-    self.assertEqual(
-        client._get_credential_id(ip_file_creds1),
-        client._get_credential_id(ip_file_creds2),
-    )
-    self.assertNotEqual(
-        client._get_credential_id(ip_file_creds1),
-        client._get_credential_id(ip_file_creds_diff),
-    )
-    self.assertTrue(
-        client._get_credential_id(ip_file_creds1).startswith(
-            "ExternalAccount:aud1:"
-        )
+    assert client._get_credential_id(
+        ip_file_creds1
+    ) == client._get_credential_id(ip_file_creds2)
+    assert client._get_credential_id(
+        ip_file_creds1
+    ) != client._get_credential_id(ip_file_creds_diff)
+    assert client._get_credential_id(ip_file_creds1).startswith(
+        "ExternalAccount:aud1:"
     )
 
     # Identity Pool (Supplier)
@@ -111,14 +102,12 @@ class TestEventarcClient(unittest.IsolatedAsyncioTestCase):
         subject_token_type="urn:ietf:params:oauth:token-type:jwt",
         subject_token_supplier=supplier2,
     )
-    self.assertEqual(
-        client._get_credential_id(ip_sup_creds1),
-        client._get_credential_id(ip_sup_creds2),
-    )
-    self.assertNotEqual(
-        client._get_credential_id(ip_sup_creds1),
-        client._get_credential_id(ip_sup_creds_diff),
-    )
+    assert client._get_credential_id(
+        ip_sup_creds1
+    ) == client._get_credential_id(ip_sup_creds2)
+    assert client._get_credential_id(
+        ip_sup_creds1
+    ) != client._get_credential_id(ip_sup_creds_diff)
 
     # Pluggable
     plug_creds1 = google.auth.pluggable.Credentials(
@@ -139,13 +128,11 @@ class TestEventarcClient(unittest.IsolatedAsyncioTestCase):
         token_url="https://sts.mtls.googleapis.com/v1/token",
         credential_source={"executable": {"command": "cmd2"}},
     )
-    self.assertEqual(
-        client._get_credential_id(plug_creds1),
-        client._get_credential_id(plug_creds2),
+    assert client._get_credential_id(plug_creds1) == client._get_credential_id(
+        plug_creds2
     )
-    self.assertNotEqual(
-        client._get_credential_id(plug_creds1),
-        client._get_credential_id(plug_creds_diff),
+    assert client._get_credential_id(plug_creds1) != client._get_credential_id(
+        plug_creds_diff
     )
 
     # User Credentials (with refresh token)
@@ -170,17 +157,13 @@ class TestEventarcClient(unittest.IsolatedAsyncioTestCase):
         client_id="client1",
         client_secret="secret1",
     )
-    self.assertEqual(
-        client._get_credential_id(user_creds1),
-        client._get_credential_id(user_creds2),
+    assert client._get_credential_id(user_creds1) == client._get_credential_id(
+        user_creds2
     )
-    self.assertNotEqual(
-        client._get_credential_id(user_creds1),
-        client._get_credential_id(user_creds_diff),
+    assert client._get_credential_id(user_creds1) != client._get_credential_id(
+        user_creds_diff
     )
-    self.assertTrue(
-        client._get_credential_id(user_creds1).startswith("UserCredentials:")
-    )
+    assert client._get_credential_id(user_creds1).startswith("UserCredentials:")
 
     # Downscoped Credentials (Mocked to avoid build dependency on google.auth.downscoped)
     class DownscopedCredentialsForTest:
@@ -211,19 +194,16 @@ class TestEventarcClient(unittest.IsolatedAsyncioTestCase):
     ds_creds_diff._source_credentials = source_creds
     ds_creds_diff._credential_access_boundary = boundary_diff
 
-    self.assertEqual(
-        client._get_credential_id(ds_creds1),
-        client._get_credential_id(ds_creds2),
+    assert client._get_credential_id(ds_creds1) == client._get_credential_id(
+        ds_creds2
     )
-    self.assertNotEqual(
-        client._get_credential_id(ds_creds1),
-        client._get_credential_id(ds_creds_diff),
+    assert client._get_credential_id(ds_creds1) != client._get_credential_id(
+        ds_creds_diff
     )
     cred_id = client._get_credential_id(ds_creds1)
-    self.assertTrue(
-        cred_id.startswith("Downscoped:sa1@p1.iam.gserviceaccount.com:")
-    )
+    assert cred_id.startswith("Downscoped:sa1@p1.iam.gserviceaccount.com:")
 
+  @pytest.mark.asyncio
   @mock.patch.object(client, "eventarc_publishing_v1", autospec=True)
   async def test_get_publisher_client_cache(self, mock_eventarc_publishing):
     # Reset cache
@@ -246,13 +226,14 @@ class TestEventarcClient(unittest.IsolatedAsyncioTestCase):
     # Second call returns cached client
     c2 = await client.get_publisher_client(credentials=creds, project_id="p1")
     mock_client_cls.assert_called_once()
-    self.assertIs(c1, c2)
+    assert c1 is c2
 
     # Different project creates new client
     c3 = await client.get_publisher_client(credentials=creds, project_id="p2")
-    self.assertEqual(mock_client_cls.call_count, 2)
-    self.assertIsNot(c1, c3)
+    assert mock_client_cls.call_count == 2
+    assert c1 is not c3
 
+  @pytest.mark.asyncio
   @mock.patch.object(client, "eventarc_publishing_v1", autospec=True)
   async def test_remove_publisher_client(self, mock_eventarc_publishing):
     client._publisher_client_cache.clear()
@@ -267,16 +248,17 @@ class TestEventarcClient(unittest.IsolatedAsyncioTestCase):
         google.auth.credentials.Credentials, instance=True
     )
     c1 = await client.get_publisher_client(credentials=creds, project_id="p1")
-    self.assertEqual(len(client._publisher_client_cache), 1)
+    assert len(client._publisher_client_cache) == 1
 
     # Remove client
     await client.remove_publisher_client(credentials=creds, project_id="p1")
-    self.assertEqual(len(client._publisher_client_cache), 0)
+    assert len(client._publisher_client_cache) == 0
     mock_client.transport.close.assert_called_once()
 
     # Remove again is safe
     await client.remove_publisher_client(credentials=creds, project_id="p1")
 
+  @pytest.mark.asyncio
   @mock.patch.object(client, "eventarc_publishing_v1", autospec=True)
   async def test_publisher_client_cache_lru_eviction(
       self, mock_eventarc_publishing
@@ -316,9 +298,7 @@ class TestEventarcClient(unittest.IsolatedAsyncioTestCase):
     next_proj = f"project-{client._CACHE_MAX_SIZE}"
     await client.get_publisher_client(credentials=creds, project_id=next_proj)
 
-    self.assertEqual(
-        len(client._publisher_client_cache), client._CACHE_MAX_SIZE
-    )
+    assert len(client._publisher_client_cache) == client._CACHE_MAX_SIZE
 
     # project-1 client should be evicted (which is index 1 in clients_list)
     clients_list[1].transport.close.assert_called_once()
@@ -333,6 +313,7 @@ class TestEventarcClient(unittest.IsolatedAsyncioTestCase):
     await client.get_publisher_client(credentials=creds, project_id="project-0")
     mock_client_cls.assert_not_called()
 
+  @pytest.mark.asyncio
   @mock.patch.object(client, "eventarc_publishing_v1", autospec=True)
   async def test_get_publisher_client_cache_external_account(
       self, mock_eventarc_publishing
@@ -359,8 +340,9 @@ class TestEventarcClient(unittest.IsolatedAsyncioTestCase):
     c2 = await client.get_publisher_client(credentials=creds2, project_id="p1")
     # Should be a cache hit, so call count remains 1
     mock_client_cls.assert_called_once()
-    self.assertIs(c1, c2)
+    assert c1 is c2
 
+  @pytest.mark.asyncio
   @mock.patch.object(client, "eventarc_publishing_v1", autospec=True)
   async def test_get_publisher_client_cache_user_credentials(
       self, mock_eventarc_publishing
@@ -391,8 +373,4 @@ class TestEventarcClient(unittest.IsolatedAsyncioTestCase):
     c2 = await client.get_publisher_client(credentials=creds2, project_id="p1")
     # Should be a cache hit, so call count remains 1
     mock_client_cls.assert_called_once()
-    self.assertIs(c1, c2)
-
-
-if __name__ == "__main__":
-  unittest.main()
+    assert c1 is c2

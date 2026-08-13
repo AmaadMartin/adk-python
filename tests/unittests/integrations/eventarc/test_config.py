@@ -14,25 +14,20 @@
 # limitations under the License.
 
 
-import unittest
-
 from google.adk.integrations.eventarc import EventarcToolConfig
 from pydantic import ValidationError
+import pytest
 
 
-class TestEventarcToolConfig(unittest.TestCase):
+class TestEventarcToolConfig:
 
   def test_valid_config(self):
     config = EventarcToolConfig(project_id="my-project")
-    self.assertEqual(config.project_id, "my-project")
+    assert config.project_id == "my-project"
 
     config2 = EventarcToolConfig()
-    self.assertIsNone(config2.project_id)
+    assert config2.project_id is None
 
   def test_invalid_config(self):
-    with self.assertRaises(ValidationError):
+    with pytest.raises(ValidationError):
       EventarcToolConfig(project_id=123)
-
-
-if __name__ == "__main__":
-  unittest.main()
