@@ -29,12 +29,12 @@ if TYPE_CHECKING:
 
 _DISABLE_GEMINI_MODEL_ID_CHECK_ENV_VAR = 'ADK_DISABLE_GEMINI_MODEL_ID_CHECK'
 
-# The version token of a Gemini id, e.g. '2.5' in 'gemini-2.5-flash'. The
+# The major version of a Gemini id, e.g. '2' in 'gemini-2.5-flash'. The
 # Gemini 2.5 Live ids place a 'live' marker before the version
 # ('gemini-live-2.5-flash-native-audio'), so that marker is skipped; Gemini 3.x
 # Live ids ('gemini-3.5-live-translate-*') already put the version first.
-_GEMINI_VERSION_PATTERN = re.compile(
-    r'^gemini-(?:live-)?(\d+(?:\.\d+)*)(?:-|$)'
+_GEMINI_MAJOR_VERSION_PATTERN = re.compile(
+    r'^gemini-(?:live-)?(\d+)(?:\.\d+)*(?:-|$)'
 )
 
 
@@ -116,12 +116,9 @@ def is_gemini_model(model_string: Optional[str]) -> bool:
 def is_gemini_2_or_above(model_string: Optional[str]) -> bool:
   """Check if the model is a Gemini model of major version 2 or above.
 
-  The id is normalized with ``extract_model_name`` first, so wrapped forms
-  such as ``projects/.../publishers/google/models/gemini-2.5-flash``,
-  ``apigee/gemini-2.5-flash``, ``models/gemini-2.5-pro`` and
-  ``gemini/gemini-2.5-flash`` are recognized. Unlike the deprecated
-  ``is_gemini_eap_or_2_or_above``, this does not admit unversioned Early
-  Access ids: a parseable numeric version is required.
+  The id is normalized with ``extract_model_name`` first. Unlike the
+  deprecated ``is_gemini_eap_or_2_or_above``, this does not admit unversioned
+  Early Access ids: a parseable numeric version is required.
 
   Args:
     model_string: Either a simple model name or a path-based model name.
@@ -132,11 +129,11 @@ def is_gemini_2_or_above(model_string: Optional[str]) -> bool:
   if not model_string:
     return False
 
-  match = _GEMINI_VERSION_PATTERN.match(extract_model_name(model_string))
+  match = _GEMINI_MAJOR_VERSION_PATTERN.match(extract_model_name(model_string))
   if not match:
     return False
 
-  return int(match.group(1).split('.', 1)[0]) >= 2
+  return int(match.group(1)) >= 2
 
 
 @deprecated(
