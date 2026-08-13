@@ -13,13 +13,22 @@
 # limitations under the License.
 
 
+import datetime
+import http.server
 import json
 import ssl
+import threading
 from unittest import mock
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
+import warnings
 
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 from fastapi.openapi.models import APIKey
 from fastapi.openapi.models import MediaType
 from fastapi.openapi.models import Operation
@@ -62,6 +71,122 @@ def mock_tool_context():
 def mock_ssl_context():
   """Fixture for a mock ssl.SSLContext."""
   return mock.create_autospec(ssl.SSLContext)
+
+
+def _write_self_signed_certificate(
+    directory, common_name, subject_alternative_names=()
+):
+  """Writes a throwaway self-signed CA certificate and its private key.
+
+  Args:
+      directory: Directory to write the PEM files into.
+      common_name: Subject and issuer common name, also the file stem.
+      subject_alternative_names: Optional SAN entries, needed when the
+        certificate is served by a TLS server the client must accept.
+
+  Returns:
+      A ``(certificate_path, key_path)`` tuple of ``pathlib.Path`` objects.
+  """
+  key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+  name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, common_name)])
+  now = datetime.datetime.now(datetime.timezone.utc)
+  builder = (
+      x509.CertificateBuilder()
+      .subject_name(name)
+      .issuer_name(name)
+      .public_key(key.public_key())
+      .serial_number(x509.random_serial_number())
+      .not_valid_before(now - datetime.timedelta(days=1))
+      .not_valid_after(now + datetime.timedelta(days=1))
+      .add_extension(
+          x509.BasicConstraints(ca=True, path_length=None), critical=True
+      )
+  )
+  if subject_alternative_names:
+    builder = builder.add_extension(
+        x509.SubjectAlternativeName(subject_alternative_names), critical=False
+    )
+  certificate_path = directory / f"{common_name}.pem"
+  certificate_path.write_bytes(
+      builder.sign(key, hashes.SHA256()).public_bytes(
+          serialization.Encoding.PEM
+      )
+  )
+  key_path = directory / f"{common_name}-key.pem"
+  key_path.write_bytes(
+      key.private_bytes(
+          encoding=serialization.Encoding.PEM,
+          format=serialization.PrivateFormat.PKCS8,
+          encryption_algorithm=serialization.NoEncryption(),
+      )
+  )
+  return certificate_path, key_path
+
+
+@pytest.fixture
+def ca_bundle_file(tmp_path):
+  """Writes a throwaway self-signed CA certificate and returns its path."""
+  certificate_path, _ = _write_self_signed_certificate(
+      tmp_path, "adk-ssl-verify-test"
+  )
+  return str(certificate_path)
+
+
+@pytest.fixture
+def https_server(tmp_path):
+  """Serves one JSON document over TLS.
+
+  Yields:
+      A ``(base_url, ca_bundle_path)`` tuple. The CA bundle is the server's
+      own self-signed certificate, so a client that trusts it connects and a
+      client that does not is rejected.
+  """
+  certificate_path, key_path = _write_self_signed_certificate(
+      tmp_path, "localhost", [x509.DNSName("localhost")]
+  )
+
+  class _JsonHandler(http.server.BaseHTTPRequestHandler):
+
+    def do_GET(self):
+      body = json.dumps({"result": "success"}).encode()
+      self.send_response(200)
+      self.send_header("Content-Type", "application/json")
+      self.send_header("Content-Length", str(len(body)))
+      self.end_headers()
+      self.wfile.write(body)
+
+    def log_message(self, *args):
+      """Keeps per-request server logs out of the test output."""
+
+  server = http.server.ThreadingHTTPServer(("localhost", 0), _JsonHandler)
+  server_context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+  server_context.load_cert_chain(certificate_path, key_path)
+  server.socket = server_context.wrap_socket(server.socket, server_side=True)
+  thread = threading.Thread(target=server.serve_forever, daemon=True)
+  thread.start()
+  try:
+    yield f"https://localhost:{server.server_port}", str(certificate_path)
+  finally:
+    server.shutdown()
+    server.server_close()
+    thread.join()
+
+
+@pytest.fixture
+def mock_api_response():
+  """Fixture for a successful JSON API response."""
+  response = mock.create_autospec(requests.Response, instance=True)
+  response.json.return_value = {"result": "success"}
+  response.configure_mock(status_code=200)
+  return response
+
+
+@pytest.fixture
+def mock_httpx_client(mock_api_response):
+  """Fixture for an httpx.AsyncClient that returns mock_api_response."""
+  client = mock.create_autospec(httpx.AsyncClient, instance=True, spec_set=True)
+  client.request = AsyncMock(return_value=mock_api_response)
+  return client
 
 
 @pytest.fixture
@@ -1167,10 +1292,6 @@ class TestRestApiTool:
           (True, True),
           (False, False),
           (
-              "/path/to/enterprise-ca-bundle.crt",
-              "/path/to/enterprise-ca-bundle.crt",
-          ),
-          (
               "USE_SSL_FIXTURE",
               "USE_SSL_FIXTURE",
           ),
@@ -1224,7 +1345,157 @@ class TestRestApiTool:
       if expected_verify_in_call is None:
         assert "verify" not in call_kwargs or call_kwargs["verify"] is True
       else:
-        assert call_kwargs["verify"] == expected_verify_in_call
+        assert call_kwargs["verify"] is expected_verify_in_call
+
+  async def test_call_with_ca_bundle_file_builds_ssl_context(
+      self,
+      mock_tool_context,
+      sample_endpoint,
+      sample_operation,
+      sample_auth_scheme,
+      sample_auth_credential,
+      mock_httpx_client,
+      ca_bundle_file,
+  ):
+    """A CA bundle file reaches httpx as a context loaded from that file."""
+    tool = RestApiTool(
+        name="test_tool",
+        description="Test Tool",
+        endpoint=sample_endpoint,
+        operation=sample_operation,
+        auth_scheme=sample_auth_scheme,
+        auth_credential=sample_auth_credential,
+        ssl_verify=ca_bundle_file,
+    )
+
+    with patch.object(
+        httpx, "AsyncClient", return_value=mock_httpx_client, autospec=True
+    ) as mock_async_client:
+      await tool.call(args={}, tool_context=mock_tool_context)
+
+    verify = mock_async_client.call_args[1]["verify"]
+    assert isinstance(verify, ssl.SSLContext)
+    subjects = [
+        value
+        for certificate in verify.get_ca_certs()
+        for rdn in certificate["subject"]
+        for _, value in rdn
+    ]
+    assert "adk-ssl-verify-test" in subjects
+
+  async def test_call_with_ca_bundle_directory_builds_ssl_context(
+      self,
+      mock_tool_context,
+      sample_endpoint,
+      sample_operation,
+      sample_auth_scheme,
+      sample_auth_credential,
+      mock_httpx_client,
+      tmp_path,
+  ):
+    """A CA bundle directory is loaded as capath, the way httpx loads it."""
+    ca_bundle_directory = str(tmp_path)
+    tool = RestApiTool(
+        name="test_tool",
+        description="Test Tool",
+        endpoint=sample_endpoint,
+        operation=sample_operation,
+        auth_scheme=sample_auth_scheme,
+        auth_credential=sample_auth_credential,
+        ssl_verify=ca_bundle_directory,
+    )
+
+    with mock.patch.object(
+        ssl, "create_default_context", wraps=ssl.create_default_context
+    ) as mock_create_default_context:
+      with patch.object(
+          httpx, "AsyncClient", return_value=mock_httpx_client, autospec=True
+      ) as mock_async_client:
+        await tool.call(args={}, tool_context=mock_tool_context)
+
+    mock_create_default_context.assert_called_once_with(
+        capath=ca_bundle_directory
+    )
+    assert isinstance(mock_async_client.call_args[1]["verify"], ssl.SSLContext)
+
+  async def test_call_with_missing_ca_bundle_raises_file_not_found(
+      self,
+      mock_tool_context,
+      sample_endpoint,
+      sample_operation,
+      sample_auth_scheme,
+      sample_auth_credential,
+      mock_httpx_client,
+      tmp_path,
+  ):
+    """A CA bundle path that does not exist fails the way httpx fails today."""
+    tool = RestApiTool(
+        name="test_tool",
+        description="Test Tool",
+        endpoint=sample_endpoint,
+        operation=sample_operation,
+        auth_scheme=sample_auth_scheme,
+        auth_credential=sample_auth_credential,
+        ssl_verify=str(tmp_path / "does-not-exist.pem"),
+    )
+
+    with patch.object(
+        httpx, "AsyncClient", return_value=mock_httpx_client, autospec=True
+    ):
+      with pytest.raises(FileNotFoundError):
+        await tool.call(args={}, tool_context=mock_tool_context)
+
+  async def test_call_over_tls_trusts_the_configured_ca_bundle(
+      self,
+      mock_tool_context,
+      sample_operation,
+      https_server,
+  ):
+    """A real TLS request succeeds, and httpx does not warn about the path."""
+    base_url, ca_bundle_path = https_server
+    tool = RestApiTool(
+        name="test_tool",
+        description="Test Tool",
+        endpoint=OperationEndpoint(
+            base_url=base_url, path="/test", method="GET"
+        ),
+        operation=sample_operation,
+        ssl_verify=ca_bundle_path,
+    )
+
+    with warnings.catch_warnings(record=True) as caught:
+      warnings.simplefilter("always")
+      response = await tool.call(args={}, tool_context=mock_tool_context)
+
+    assert response == {"result": "success"}
+    assert not [
+        warning
+        for warning in caught
+        if issubclass(warning.category, DeprecationWarning)
+        and "verify=<str>" in str(warning.message)
+    ]
+
+  async def test_call_over_tls_rejects_a_server_the_ca_bundle_does_not_sign(
+      self,
+      mock_tool_context,
+      sample_operation,
+      https_server,
+      ca_bundle_file,
+  ):
+    """Verification stays enforced: an unrelated CA bundle fails the handshake."""
+    base_url, _ = https_server
+    tool = RestApiTool(
+        name="test_tool",
+        description="Test Tool",
+        endpoint=OperationEndpoint(
+            base_url=base_url, path="/test", method="GET"
+        ),
+        operation=sample_operation,
+        ssl_verify=ca_bundle_file,
+    )
+
+    with pytest.raises(httpx.ConnectError, match="CERTIFICATE_VERIFY_FAILED"):
+      await tool.call(args={}, tool_context=mock_tool_context)
 
   async def test_request_uses_no_default_timeout(
       self,
@@ -1274,17 +1545,10 @@ class TestRestApiTool:
       sample_operation,
       sample_auth_scheme,
       sample_auth_credential,
+      mock_httpx_client,
+      ca_bundle_file,
   ):
     """Test that configure_verify updates the verify setting."""
-    mock_response = mock.create_autospec(requests.Response, instance=True)
-    mock_response.json.return_value = {"result": "success"}
-    mock_response.configure_mock(status_code=200)
-
-    mock_client = mock.create_autospec(
-        httpx.AsyncClient, instance=True, spec_set=True
-    )
-    mock_client.request = AsyncMock(return_value=mock_response)
-
     tool = RestApiTool(
         name="test_tool",
         description="Test Tool",
@@ -1294,17 +1558,18 @@ class TestRestApiTool:
         auth_credential=sample_auth_credential,
     )
 
-    ca_bundle_path = "/path/to/custom-ca.crt"
-    tool.configure_ssl_verify(ca_bundle_path)
+    tool.configure_ssl_verify(ca_bundle_file)
 
     with patch.object(
-        httpx, "AsyncClient", return_value=mock_client, autospec=True
+        httpx, "AsyncClient", return_value=mock_httpx_client, autospec=True
     ) as mock_request:
       await tool.call(args={}, tool_context=mock_tool_context)
 
       assert mock_request.called
       call_kwargs = mock_request.call_args[1]
-      assert call_kwargs["verify"] == ca_bundle_path
+      assert isinstance(call_kwargs["verify"], ssl.SSLContext)
+      # Normalization happens per request; the instance keeps the raw value.
+      assert tool._ssl_verify == ca_bundle_file
 
   def test_init_with_header_provider(
       self,
