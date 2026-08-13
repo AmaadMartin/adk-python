@@ -94,6 +94,3 @@ repos:
     rev: v0.11.0.1
     hooks:
       - id: shellcheck
-        # The upstream hook already selects on `types: [shell]`; pinning to the
-        # .sh extension keeps it off shell-like files that are not scripts.
-        files: \.sh$
