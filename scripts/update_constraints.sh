@@ -19,7 +19,7 @@
 #   ./scripts/update_constraints.sh          # Updates constraints.txt in-place if out of date
 #   ./scripts/update_constraints.sh --check  # Check only, exits with 1 if out of date (for CI)
 
-set -e
+set -euo pipefail
 
 # Parse arguments
 CHECK_ONLY=false
@@ -42,6 +42,9 @@ trap cleanup EXIT
 
 PYTHON_VERSIONS=("3.10" "3.11" "3.12" "3.13" "3.14")
 EXIT_CODE=0
+
+# Must be defined: set -u would abort the unconditional read below in check mode.
+EXCLUDE_NEWER_DATE=""
 
 # Calculate 4 days ago date
 if [ "$CHECK_ONLY" = false ]; then
@@ -69,7 +72,7 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
 
   if [ -f "$TARGET_FILE" ]; then
     if [ "$CHECK_ONLY" = true ]; then
-      # In check mode, extract the date used when it was generated
+      # `|| true`: pipefail now propagates grep's no-match exit; an undated header must leave this empty.
       date_to_use=$(grep -h "#    uv pip compile" "$TARGET_FILE" | grep -oE -- '--exclude-newer [0-9]{4}-[0-9]{2}-[0-9]{2}' | cut -d' ' -f2 || true)
     fi
   fi
