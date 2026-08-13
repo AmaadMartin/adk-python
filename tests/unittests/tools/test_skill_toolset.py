@@ -19,6 +19,7 @@ import json
 import logging
 from pathlib import Path
 from pathlib import PurePosixPath
+import socket
 import sys
 from unittest import mock
 
@@ -2757,6 +2758,164 @@ async def test_close_cancels_futures_and_clears_cache():
   assert fut1.cancelled()
   assert not fut2.cancelled()  # Done futures shouldn't/can't be cancelled
   assert not toolset._fetched_skill_cache
+
+
+@pytest.mark.asyncio
+async def test_close_closes_provided_toolsets():
+  """Every BaseToolset given via additional_tools is closed, and only those."""
+  sub_a = mock.create_autospec(skill_toolset.BaseToolset, instance=True)
+  sub_b = mock.create_autospec(skill_toolset.BaseToolset, instance=True)
+  plain_tool = mock.create_autospec(skill_toolset.BaseTool, instance=True)
+  plain_tool.name = "plain_tool"
+
+  def plain_fn():
+    """A plain function tool."""
+
+  toolset = skill_toolset.SkillToolset(
+      additional_tools=[sub_a, plain_tool, sub_b, plain_fn]
+  )
+
+  await toolset.close()
+
+  sub_a.close.assert_awaited_once()
+  sub_b.close.assert_awaited_once()
+  # BaseTool has no close(); it must be left alone.
+  assert not plain_tool.method_calls
+
+
+@pytest.mark.asyncio
+async def test_close_continues_when_a_provided_toolset_fails(caplog):
+  """A failing sub-toolset is logged and the remaining ones still close."""
+  failing = mock.create_autospec(skill_toolset.BaseToolset, instance=True)
+  failing.close.side_effect = RuntimeError("boom")
+  sub_b = mock.create_autospec(skill_toolset.BaseToolset, instance=True)
+
+  toolset = skill_toolset.SkillToolset(additional_tools=[failing, sub_b])
+
+  with caplog.at_level(logging.WARNING):
+    await toolset.close()
+
+  sub_b.close.assert_awaited_once()
+  assert "Error closing toolset" in caplog.text
+  assert type(failing).__name__ in caplog.text
+  assert "boom" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_close_still_cleans_up_env_and_cache_when_a_toolset_fails():
+  """A failing sub-toolset does not skip the environment and cache cleanup."""
+  # pylint: disable=protected-access
+  failing = mock.create_autospec(skill_toolset.BaseToolset, instance=True)
+  failing.close.side_effect = RuntimeError("boom")
+  mock_env = mock.create_autospec(BaseEnvironment, instance=True)
+
+  toolset = skill_toolset.SkillToolset(
+      environment=mock_env, additional_tools=[failing]
+  )
+  loop = asyncio.get_running_loop()
+  fut = loop.create_future()
+  toolset._fetched_skill_cache = collections.OrderedDict(
+      {"turn1": {"skill1": fut}}
+  )
+
+  await toolset.close()
+
+  mock_env.close.assert_awaited_once()
+  assert fut.cancelled()
+  assert not toolset._fetched_skill_cache
+
+
+@pytest.mark.asyncio
+async def test_close_closes_provided_toolsets_before_environment():
+  """Sub-toolsets hold external resources, so they are released first."""
+  closed: list[str] = []
+  sub = mock.create_autospec(skill_toolset.BaseToolset, instance=True)
+  sub.close.side_effect = lambda: closed.append("sub")
+  mock_env = mock.create_autospec(BaseEnvironment, instance=True)
+  mock_env.close.side_effect = lambda: closed.append("env")
+
+  toolset = skill_toolset.SkillToolset(
+      environment=mock_env, additional_tools=[sub]
+  )
+
+  await toolset.close()
+
+  assert closed == ["sub", "env"]
+
+
+@pytest.mark.asyncio
+async def test_close_twice_on_shared_toolset_from_clone_is_safe(mock_skill1):
+  """A clone shares the sub-toolset, so close() may run twice on it."""
+  sub = mock.create_autospec(skill_toolset.BaseToolset, instance=True)
+  toolset = skill_toolset.SkillToolset(additional_tools=[sub])
+  clone = toolset.clone_with_updated_skills([mock_skill1])
+
+  await toolset.close()
+  await clone.close()
+
+  assert sub.close.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_close_swallows_a_second_close_rejected_by_a_shared_toolset(
+    mock_skill1, caplog
+):
+  """A sub-toolset that rejects the second close is logged, not propagated."""
+  sub = mock.create_autospec(skill_toolset.BaseToolset, instance=True)
+  sub.close.side_effect = [None, RuntimeError("already closed")]
+  toolset = skill_toolset.SkillToolset(additional_tools=[sub])
+  clone = toolset.clone_with_updated_skills([mock_skill1])
+
+  with caplog.at_level(logging.WARNING):
+    await toolset.close()
+    assert not caplog.text
+    await clone.close()
+
+  assert sub.close.await_count == 2
+  assert "already closed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_close_propagates_base_exception_from_provided_toolset():
+  """Cancellation from a sub-toolset must unwind instead of being swallowed."""
+  sub = mock.create_autospec(skill_toolset.BaseToolset, instance=True)
+  sub.close.side_effect = asyncio.CancelledError()
+
+  toolset = skill_toolset.SkillToolset(additional_tools=[sub])
+
+  with pytest.raises(asyncio.CancelledError):
+    await toolset.close()
+
+
+class _SocketOwningToolset(skill_toolset.BaseToolset):
+  """A real toolset that owns a socket, like an MCP toolset owns a session."""
+
+  def __init__(self, sock: socket.socket):
+    super().__init__()
+    self._sock = sock
+
+  async def get_tools(
+      self, readonly_context: ReadonlyContext | None = None
+  ) -> list[skill_toolset.BaseTool]:
+    return []
+
+  async def close(self) -> None:
+    self._sock.close()
+
+
+@pytest.mark.asyncio
+async def test_close_releases_the_resource_of_a_real_provided_toolset():
+  """Without mocks: closing the SkillToolset closes the sub-toolset's socket."""
+  sock, peer = socket.socketpair()
+  peer.close()
+  toolset = skill_toolset.SkillToolset(
+      additional_tools=[_SocketOwningToolset(sock)]
+  )
+  assert sock.fileno() != -1
+
+  await toolset.close()
+
+  assert sock.fileno() == -1
 
 
 @pytest.mark.asyncio

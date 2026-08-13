@@ -1183,6 +1183,10 @@ class SkillToolset(BaseToolset):
         scripts executed via exec().
       additional_tools: Optional list of `BaseTool` or `BaseToolset` instances
         to be made available to the agent when certain skills are activated.
+        `close()` closes any `BaseToolset` passed here, so the toolset should
+        not be reused after this one is closed. A toolset shared with a clone
+        created by `clone_with_updated_skills` may be closed more than once and
+        should therefore be idempotent.
       tool_name_prefix: Optional prefix to prepend to tool names.
       tool_filter: Optional filter to select specific tools.
     """
@@ -1442,6 +1446,21 @@ class SkillToolset(BaseToolset):
   @override
   async def close(self) -> None:
     """Performs cleanup and releases resources held by the toolset."""
+    # Close the provided toolsets first: they hold external resources such as
+    # network sessions and subprocesses, and the unguarded environment close
+    # below would skip them if it raised. Each close is awaited in the caller's
+    # task, because running it in a new task breaks the anyio cancel scope of
+    # MCP toolsets on Python 3.10 and 3.11.
+    for toolset in self._provided_toolsets:
+      try:
+        await toolset.close()
+      except Exception as e:  # pylint: disable=broad-except
+        logger.warning(
+            "Error closing toolset %s provided via additional_tools: %s",
+            type(toolset).__name__,
+            e,
+            exc_info=e,
+        )
     if self._env is not None and self._env.is_initialized:
       await self._env.close()
     for turn_cache in self._fetched_skill_cache.values():
