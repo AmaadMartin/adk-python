@@ -136,6 +136,32 @@ class TestValidateCommand:
         == "Command contains blocked operator: ;"
     )
 
+  def test_prefix_requires_token_boundary(self):
+    ls_policy = bash_tool.BashToolPolicy(allowed_command_prefixes=("ls",))
+    cat_policy = bash_tool.BashToolPolicy(allowed_command_prefixes=("cat",))
+
+    error = bash_tool._validate_command("lsof -i", ls_policy)
+    assert error is not None
+    assert "Permitted prefixes are: ls" in error
+    assert bash_tool._validate_command("catnip", cat_policy) is not None
+
+  def test_prefix_allows_exact_command_and_arguments(self):
+    policy = bash_tool.BashToolPolicy(allowed_command_prefixes=("ls",))
+    assert bash_tool._validate_command("ls", policy) is None
+    assert bash_tool._validate_command("ls -la", policy) is None
+    assert bash_tool._validate_command("ls\t-la", policy) is None
+    assert bash_tool._validate_command("  ls -la  ", policy) is None
+
+  def test_multi_word_prefix_matches_whole_prefix(self):
+    policy = bash_tool.BashToolPolicy(allowed_command_prefixes=("git log",))
+    assert bash_tool._validate_command("git log", policy) is None
+    assert bash_tool._validate_command("git log --oneline", policy) is None
+    assert bash_tool._validate_command("git logs", policy) is not None
+
+  def test_wildcard_policy_unaffected_by_boundary_rule(self):
+    policy = bash_tool.BashToolPolicy()
+    assert bash_tool._validate_command("lsof -i", policy) is None
+
 
 class TestExecuteBashTool:
 
@@ -206,6 +232,33 @@ class TestExecuteBashTool:
     assert "error" in result
     assert "Permitted prefixes are: ls" in result["error"]
     tool_context_no_confirmation.request_confirmation.assert_not_called()
+
+  @pytest.mark.asyncio
+  async def test_blocks_prefix_fragment_through_run_async(
+      self, workspace, tool_context_no_confirmation
+  ):
+    policy = bash_tool.BashToolPolicy(allowed_command_prefixes=("ls",))
+    tool = bash_tool.ExecuteBashTool(workspace=workspace, policy=policy)
+    result = await tool.run_async(
+        args={"command": "lsof -i"},
+        tool_context=tool_context_no_confirmation,
+    )
+    assert "error" in result
+    assert "Permitted prefixes are: ls" in result["error"]
+    tool_context_no_confirmation.request_confirmation.assert_not_called()
+
+  @pytest.mark.asyncio
+  async def test_runs_allowed_prefix_with_arguments(
+      self, workspace, tool_context_confirmed
+  ):
+    policy = bash_tool.BashToolPolicy(allowed_command_prefixes=("ls",))
+    tool = bash_tool.ExecuteBashTool(workspace=workspace, policy=policy)
+    result = await tool.run_async(
+        args={"command": "ls -la"},
+        tool_context=tool_context_confirmed,
+    )
+    assert result["returncode"] == 0
+    assert "pdf" in result["stdout"]
 
   @pytest.mark.asyncio
   async def test_captures_stderr(self, workspace, tool_context_confirmed):
