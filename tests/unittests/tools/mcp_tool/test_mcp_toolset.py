@@ -1122,6 +1122,20 @@ class TestMcpToolsetConfig:
 
     assert config.use_mcp_resources is False
 
+  def test_model_json_schema_generates(self):
+    """Config tooling dumps this schema, so every transport must render."""
+    schema = McpToolsetConfig.model_json_schema()
+
+    for transport in (
+        "SseConnectionParams",
+        "StdioConnectionParams",
+        "StreamableHTTPConnectionParams",
+    ):
+      assert transport in schema["$defs"]
+      assert (
+          "httpx_client_factory" not in schema["$defs"][transport]["properties"]
+      )
+
 
 class TestMcpToolsetToolListCache:
   """Test suite for reusing the MCP server's tools/list response."""
