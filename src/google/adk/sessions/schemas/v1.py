@@ -109,7 +109,7 @@ class StorageSession(Base):
   def update_timestamp_tz(self) -> float:
     """Returns the update timestamp as a POSIX timestamp.
 
-    This is a compatibility alias for callers that used the pre-`main` API.
+    This is a compatibility alias for callers that used the pre-``main`` API.
     """
     sqlalchemy_session = inspect(self).session
     is_sqlite = bool(

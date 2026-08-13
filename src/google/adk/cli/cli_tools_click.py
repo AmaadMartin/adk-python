@@ -1107,9 +1107,9 @@ def _resolve_eval_config_file_path(
 ) -> Optional[str]:
   """Returns config file path for eval command.
 
-  If `config_file_path` is provided, it is used as-is. If omitted and evals are
-  loaded from a single file, this returns
-  `<eval_set_file_dir>/test_config.json`. Otherwise, returns None.
+  If ``config_file_path`` is provided, it is used as-is. If omitted and evals
+  are loaded from a single file, this returns
+  ``<eval_set_file_dir>/test_config.json``. Otherwise, returns None.
   """
   if config_file_path:
     return config_file_path
@@ -1169,9 +1169,9 @@ def cli_eval(
 
   If you want to run only specific evals from an eval set, first create a comma
   separated list of eval names and then add that as a suffix to the eval set
-  file name, demarcated by a `:`.
+  file name, demarcated by a ``:``.
 
-  For example, we have `sample_eval_set_file.json` file that has following the
+  For example, we have ``sample_eval_set_file.json`` file that has following the
   eval cases:
   sample_eval_set_file.json:
     |....... eval_1
@@ -1189,9 +1189,9 @@ def cli_eval(
 
   If you want to run only specific evals from an eval set, first create a comma
   separated list of eval names and then add that as a suffix to the eval set
-  file name, demarcated by a `:`.
+  file name, demarcated by a ``:``.
 
-  For example, we have `sample_eval_set_id` that has following the eval cases:
+  For example, we have ``sample_eval_set_id`` that has following the eval cases:
   sample_eval_set_id:
     |....... eval_1
     |....... eval_2
@@ -2012,8 +2012,8 @@ def cli_web(
   """Starts a FastAPI server with Web UI for agents.
 
   AGENTS_DIR: The directory of agents (where each subdirectory is a single
-  agent containing `agent.py`, `__init__.py`, or `root_agent.yaml`) or a path
-  pointing directly to a single agent folder.
+  agent containing ``agent.py``, ``__init__.py``, or ``root_agent.yaml``) or a
+  path pointing directly to a single agent folder.
 
   This server is intended for local development. Its endpoints are
   unauthenticated, so run it on a trusted network only and do not expose it to
@@ -2162,8 +2162,8 @@ def cli_api_server(
   """Starts a FastAPI server for agents.
 
   AGENTS_DIR: The directory of agents (where each subdirectory is a single
-  agent containing `agent.py`, `__init__.py`, or `root_agent.yaml`) or a path
-  pointing directly to a single agent folder.
+  agent containing ``agent.py``, ``__init__.py``, or ``root_agent.yaml``) or a
+  path pointing directly to a single agent folder.
 
   This server's endpoints are unauthenticated. Run it on a trusted network
   only, and put it behind your own authentication and authorization layer

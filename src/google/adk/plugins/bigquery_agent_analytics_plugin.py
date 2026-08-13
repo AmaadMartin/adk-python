@@ -4437,7 +4437,7 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
     Args:
         claimed_generation: The lifecycle generation the caller claimed BEFORE
           its own awaits (setup passes the generation captured by
-          `_ensure_started`). Without it, a setup blocked ahead of this call
+          ``_ensure_started``). Without it, a setup blocked ahead of this call
           sampled the post-shutdown generation on resume and published a writer
           that shutdown's snapshot could never see .
 
@@ -4674,9 +4674,9 @@ class BigQueryAgentAnalyticsPlugin(BasePlugin):
 
     Args:
         claimed_generation: The lifecycle generation claimed by the owning
-          `_ensure_started` before any await; forwarded to `_get_loop_state` so
-          a shutdown that completes mid-setup is detected even when it finishes
-          before the loop-state phase begins.
+          ``_ensure_started`` before any await; forwarded to ``_get_loop_state``
+          so a shutdown that completes mid-setup is detected even when it
+          finishes before the loop-state phase begins.
     """
     if self._started:
       return

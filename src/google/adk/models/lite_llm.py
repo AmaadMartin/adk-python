@@ -273,8 +273,8 @@ _LITELLM_GLOBAL_SYMBOLS = (
 def _ensure_litellm_imported() -> None:
   """Imports LiteLLM with safe defaults.
 
-  LiteLLM defaults to DEV mode, which autoloads a local `.env` at import time.
-  ADK should not implicitly load `.env` just because LiteLLM is installed.
+  LiteLLM defaults to DEV mode, which autoloads a local ``.env`` at import time.
+  ADK should not implicitly load ``.env`` just because LiteLLM is installed.
 
   Users can opt into LiteLLM's default behavior by setting LITELLM_MODE=DEV.
   """
@@ -406,7 +406,7 @@ def _looks_like_openai_file_id(file_uri: str) -> bool:
 
 
 def _is_http_url(uri: str) -> bool:
-  """Returns True when `uri` is an HTTP(S) URL."""
+  """Returns True when ``uri`` is an HTTP(S) URL."""
   try:
     parsed = urlparse(uri)
   except ValueError:
@@ -439,7 +439,7 @@ def _redact_file_uri_for_log(
 
 
 def _is_file_uri_supported(provider: str, model: str, file_uri: str) -> bool:
-  """Returns True when `file_uri` can be sent as a file content block."""
+  """Returns True when ``file_uri`` can be sent as a file content block."""
   if provider in _FILE_ID_REQUIRED_PROVIDERS:
     return _looks_like_openai_file_id(file_uri)
   if provider == "anthropic":
@@ -472,7 +472,7 @@ def _media_url_content_type(
 
 
 def _audio_format_from_mime_type(mime_type: str) -> str:
-  """Maps an audio MIME type to the format string for `input_audio` blocks."""
+  """Maps an audio MIME type to the format string for ``input_audio`` blocks."""
   subtype = _normalize_mime_type(mime_type).split("/", 1)[1]
   if subtype.startswith("x-"):
     subtype = subtype[2:]
@@ -1585,11 +1585,11 @@ def _flatten_ollama_content(
 ) -> OpenAIMessageContent | str | None:
   """Flattens multipart content to text for ollama_chat compatibility.
 
-  Ollama's chat endpoint rejects arrays for `content` when it is text-only, so
+  Ollama's chat endpoint rejects arrays for ``content`` when it is text-only, so
   text parts are joined with newlines and other non-media content falls back to
   a JSON string. Multipart content with media blocks (image_url, video_url,
   audio_url) is returned unchanged so LiteLLM's Ollama handler can convert it
-  to the native `images` field instead of silently dropping the media.
+  to the native ``images`` field instead of silently dropping the media.
   """
   if content is None or isinstance(content, str):
     return content
@@ -2080,8 +2080,8 @@ def _model_response_to_chunk(
 ]:
   """Converts a litellm message to text, function or usage metadata chunk.
 
-  LiteLLM streaming chunks carry `delta`, while non-streaming chunks carry
-  `message`.
+  LiteLLM streaming chunks carry ``delta``, while non-streaming chunks carry
+  ``message``.
 
   Args:
     response: The response from the model.
@@ -2198,8 +2198,8 @@ def _extract_grounding_metadata(
 
   LiteLLM exposes Gemini's grounding metadata on the response/chunk object
   rather than inside the message, so the native Gemini path
-  (`candidate.grounding_metadata`) misses it. Mirroring it here lets downstream
-  consumers (event.grounding_metadata, after_model_callback, citation
+  (``candidate.grounding_metadata``) misses it. Mirroring it here lets
+  downstream consumers (event.grounding_metadata, after_model_callback, citation
   pipelines, ...) rely on it for both model paths.
 
   Returns the parsed metadata, or None when it is absent or malformed.
@@ -2776,10 +2776,10 @@ def _warn_gemini_via_litellm(model_string: str) -> None:
 class _BraceDepthTracker:
   """Streams JSON characters and reports when a top-level object closes.
 
-  Only `{`/`}` are counted; `[`/`]` are ignored. Tool-call arguments per
+  Only ``{``/``}`` are counted; ``[``/``]`` are ignored. Tool-call arguments per
   the OpenAI/LiteLLM spec are always top-level JSON objects, never arrays,
   so array depth is irrelevant for detecting when the top-level container
-  closes. Arrays nested as values (e.g. `{"a": [{"b": 1}]}`) still balance
+  closes. Arrays nested as values (e.g. ``{"a": [{"b": 1}]}``) still balance
   correctly because chars inside the array don't change brace depth.
   """
 

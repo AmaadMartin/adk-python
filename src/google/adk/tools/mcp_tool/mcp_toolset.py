@@ -78,7 +78,7 @@ def _set_allow_config_stdio_servers(value: Optional[bool]) -> None:
   """Overrides whether agent configs may declare stdio MCP servers.
 
   Applications that embed ADK and load only trusted agent configs can call this
-  at startup instead of setting `ADK_ALLOW_CONFIG_STDIO_MCP_SERVERS`.
+  at startup instead of setting ``ADK_ALLOW_CONFIG_STDIO_MCP_SERVERS``.
 
   Args:
     value: True to allow, False to deny, None to defer to the environment
@@ -212,7 +212,7 @@ class McpToolset(BaseToolset):
         progress handling logic and access/modify session state via the
         CallbackContext. The **kwargs parameter allows for future extensibility.
       use_mcp_resources: Whether the agent should have access to MCP resources.
-        This will add a `load_mcp_resource` tool to the toolset and include
+        This will add a ``load_mcp_resource`` tool to the toolset and include
         available resources in the agent context. Defaults to False.
       sampling_callback: Optional callback to handle sampling requests from the
         MCP server.
@@ -437,14 +437,14 @@ class McpToolset(BaseToolset):
     Args:
       coroutine_func: Receives the session and performs the MCP call.
       error_message: Prefix for the ConnectionError raised on failure.
-      readonly_context: Context used to build headers, unless `headers` is
+      readonly_context: Context used to build headers, unless ``headers`` is
         already supplied.
-      headers: Headers from a previous `_build_headers` call, for callers that
+      headers: Headers from a previous ``_build_headers`` call, for callers that
         need them before opening the session. None means build them here; pass
         an empty dict for "no headers".
 
     Returns:
-        Whatever `coroutine_func` returned.
+        Whatever ``coroutine_func`` returned.
     """
     current_debug: list[dict[str, Any]] = []
     debug_token = (
@@ -741,7 +741,7 @@ class McpToolset(BaseToolset):
 
 
 class MCPToolset(McpToolset):
-  """Deprecated name, use `McpToolset` instead."""
+  """Deprecated name, use ``McpToolset`` instead."""
 
   def __init__(self, *args, **kwargs):
     warnings.warn(

@@ -70,7 +70,7 @@ def create_request_input_event(request_input: RequestInput) -> Event:
 
 
 def has_request_input_function_call(event: Event) -> bool:
-  """Checks if an event contains a `request_input` function call."""
+  """Checks if an event contains a ``request_input`` function call."""
   if not (event.content and event.content.parts):
     return False
   return any(
@@ -81,7 +81,7 @@ def has_request_input_function_call(event: Event) -> bool:
 
 
 def has_auth_request_function_call(event: Event) -> bool:
-  """Checks if an event contains an `adk_request_credential` function call."""
+  """Checks if an event contains an ``adk_request_credential`` function call."""
   if not (event.content and event.content.parts):
     return False
   return any(
@@ -95,10 +95,11 @@ def create_request_input_response(
     interrupt_id: str,
     response: Mapping[str, Any],
 ) -> types.Part:
-  """Creates a FunctionResponse part in response to a `request_input` function call.
+  """Creates a FunctionResponse part in response to a ``request_input``
+  function call.
 
   Args:
-    interrupt_id: The interrupt_id from an event containing a `request_input`
+    interrupt_id: The interrupt_id from an event containing a ``request_input``
       function call.
     response: The response data to send back.
 
@@ -115,7 +116,7 @@ def create_request_input_response(
 
 
 def get_request_input_interrupt_ids(event: Event) -> list[str]:
-  """Extracts interrupt_ids from an event containing `request_input` function
+  """Extracts interrupt_ids from an event containing ``request_input`` function
   calls.
   """
   interrupt_ids: list[str] = []

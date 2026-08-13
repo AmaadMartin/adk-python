@@ -35,7 +35,7 @@ _llm_registry_dict: dict[str, Union[type['BaseLlm'], _LazyEntry]] = {}
 
 
 def _resolve_litellm_provider(model: str) -> type[BaseLlm] | None:
-  """Resolves a `provider/model` name that LiteLLM knows about.
+  """Resolves a ``provider/model`` name that LiteLLM knows about.
 
   LiteLLM supports well over a hundred providers and adds more over time, so
   the registry only spells out the common ones and defers the rest to LiteLLM

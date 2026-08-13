@@ -58,7 +58,7 @@ class ReflectAndRetryModelPlugin(BasePlugin):
         throw_exception_if_retry_exceeded: If True, raises the final exception
           when the retry limit is reached. If False, returns guidance instead.
         tracking_scope: Determines the lifecycle of the error tracking state.
-          Defaults to `TrackingScope.INVOCATION` tracking per-invocation.
+          Defaults to ``TrackingScope.INVOCATION`` tracking per-invocation.
         on_model_errors: A list of FinishReasons that should be treated as
           errors. Defaults to [types.FinishReason.MALFORMED_FUNCTION_CALL].
     """

@@ -302,8 +302,9 @@ def get_gcp_resource(project_id: Optional[str] = None) -> Resource:
   3. GCP detector adds attributes corresponding to a correct monitored resource if ADK runs on one of supported platforms (e.g. GCE, GKE, CloudRun).
 
   Args:
-    project_id: project id to fill out as `gcp.project_id` on the OTEL resource.
-    This may be overwritten by OTELResourceDetector, if `gcp.project_id` is present in `OTEL_RESOURCE_ATTRIBUTES` env var.
+    project_id: project id to fill out as ``gcp.project_id`` on the OTEL
+    resource. This may be overwritten by OTELResourceDetector, if
+    ``gcp.project_id`` is present in ``OTEL_RESOURCE_ATTRIBUTES`` env var.
   """
   agent_engine_id = os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID", "")
   cloud_resource_id = _detect_cloud_resource_id(project_id=project_id)

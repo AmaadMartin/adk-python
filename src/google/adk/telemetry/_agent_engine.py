@@ -140,7 +140,7 @@ class TopSpanProcessor(trace.SpanProcessor):
 def _metrics_flushing_dispatch(
     reader: _RequestDrivenMetricReader,
 ) -> DispatchFunction:
-  """Returns the dispatch that drives `reader` from the request lifecycle.
+  """Returns the dispatch that drives ``reader`` from the request lifecycle.
 
   Collection has to happen while a request is in flight: see the module
   docstring of ``_agent_engine_metric_exporter`` for why. Traces and logs are

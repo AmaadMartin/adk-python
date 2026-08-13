@@ -11,7 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-"""Helpers for managing an agent's `.adk` folder."""
+"""Helpers for managing an agent's ``.adk`` folder."""
 
 from __future__ import annotations
 
@@ -34,7 +34,7 @@ def _resolve_agent_dir(*, agents_root: Path | str, app_name: str) -> Path:
 
 
 class DotAdkFolder:
-  """Manages the lifecycle of the `.adk` folder for a single agent."""
+  """Manages the lifecycle of the ``.adk`` folder for a single agent."""
 
   def __init__(self, agent_dir: Path | str):
     self._agent_dir = Path(agent_dir).resolve()
@@ -59,17 +59,17 @@ class DotAdkFolder:
 def dot_adk_folder_for_agent(
     *, agents_root: Path | str, app_name: str
 ) -> DotAdkFolder:
-  """Creates a manager for an agent rooted under `agents_root`.
+  """Creates a manager for an agent rooted under ``agents_root``.
 
   Args:
     agents_root: Directory that contains all agents.
     app_name: Name of the agent directory.
 
   Returns:
-    A `DotAdkFolder` scoped to the given agent.
+    A ``DotAdkFolder`` scoped to the given agent.
 
   Raises:
-    ValueError: If `app_name` traverses outside of `agents_root`.
+    ValueError: If ``app_name`` traverses outside of ``agents_root``.
   """
   return DotAdkFolder(
       _resolve_agent_dir(agents_root=agents_root, app_name=app_name)

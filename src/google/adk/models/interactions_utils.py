@@ -18,7 +18,7 @@ This module provides both conversion utilities and the main entry point
 for generating content via the Interactions API. It includes:
 
 - Type conversion functions between ADK types and Interactions API types
-- The `generate_content_via_interactions` async generator that handles the
+- The ``generate_content_via_interactions`` async generator that handles the
   complete flow of sending requests and processing responses
 - Request/response logging utilities for debugging
 - Support for both streaming and non-streaming modes

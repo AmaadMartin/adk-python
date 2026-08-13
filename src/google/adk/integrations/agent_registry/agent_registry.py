@@ -175,8 +175,8 @@ class AgentRegistry:
 
   Unlike a standard REST client library, this class provides higher-level
   abstractions for ADK integration. It surfaces the agent registry service
-  methods along with helper methods like `get_mcp_toolset` and
-  `get_remote_a2a_agent` that automatically resolve connection details and
+  methods along with helper methods like ``get_mcp_toolset`` and
+  ``get_remote_a2a_agent`` that automatically resolve connection details and
   handle authentication to produce ready-to-use ADK components.
   """
 
@@ -399,8 +399,8 @@ class AgentRegistry:
   ) -> McpToolset:
     """Constructs an McpToolset from a registered MCP Server.
 
-    If `auth_scheme` is omitted, it is automatically resolved from the server's
-    IAM bindings via `GcpAuthProviderScheme`.
+    If ``auth_scheme`` is omitted, it is automatically resolved from the
+    server's IAM bindings via ``GcpAuthProviderScheme``.
 
     Args:
       mcp_server_name: Resource name of the MCP Server.

@@ -43,7 +43,7 @@ class ToolExecutionError(Exception):
       message (str): A message describing the error.
       error_type (ToolErrorType | str | None): The semantic error type (e.g.,
         ToolErrorType.REQUEST_TIMEOUT or '500'). Used to populate the
-        `error.type` span attribute in OpenTelemetry traces.
+        ``error.type`` span attribute in OpenTelemetry traces.
     """
     self.message = message
     if isinstance(error_type, ToolErrorType):

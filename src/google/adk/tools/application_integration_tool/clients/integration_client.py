@@ -61,7 +61,7 @@ class IntegrationClient:
     Args:
         project: The Google Cloud project ID.
         location: The Google Cloud location (e.g., us-central1).
-        connection_template_override: Overrides `ExecuteConnection` default
+        connection_template_override: Overrides ``ExecuteConnection`` default
           integration name.
         integration: The integration name.
         triggers: The list of trigger IDs for the integration.

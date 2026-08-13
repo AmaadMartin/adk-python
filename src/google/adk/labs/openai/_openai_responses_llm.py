@@ -1195,8 +1195,8 @@ class AzureOpenAIResponsesLlm(OpenAIResponsesLlm):
   """Azure OpenAI-compatible Responses API model.
 
   Azure's Responses API is exposed through an OpenAI-compatible
-  `/openai/v1/responses` endpoint. The `model` field should be the Azure model
-  deployment name.
+  ``/openai/v1/responses`` endpoint. The ``model`` field should be the Azure
+  model deployment name.
   """
 
   azure_endpoint: str | None = None

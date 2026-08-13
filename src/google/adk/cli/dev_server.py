@@ -18,7 +18,7 @@ This module provides the DevServer class which extends ApiServer with developmen
 All production endpoints are inherited from ApiServer.
 All dev-only endpoints (eval, debug, graph, test management) are added by DevServer.
 
-Use this for local development with `adk web`.
+Use this for local development with ``adk web``.
 For production deployments, use api_server.py instead.
 
 Security: like ApiServer, every endpoint here is unauthenticated, and the

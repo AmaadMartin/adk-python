@@ -30,7 +30,7 @@ from .vertex_ai_eval_facade import _MultiTurnVertexiAiEvalFacade
 class MultiTurnTrajectoryQualityV1Evaluator(Evaluator):
   """Evaluates the overall trajectory of the conversation.
 
-  Note that this metric is different from `Multi-Turn Overall Task Success`,
+  Note that this metric is different from ``Multi-Turn Overall Task Success``,
   in the sense that task success only concerns itself with the goal of whether
   the success was achieved or not. How that was achieved is not its concern.
   This metric on the other hand does care about the path that agent took to

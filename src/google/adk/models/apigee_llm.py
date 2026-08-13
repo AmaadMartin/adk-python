@@ -121,35 +121,36 @@ class ApigeeLlm(Gemini):
     Args:
       model: The model string specifies the LLM provider (e.g., Vertex AI,
         Gemini), API version, and the model ID. Supported format:
-        `apigee/[<provider>/][<version>/]<model_id>`
+        ``apigee/[<provider>/][<version>/]<model_id>``
 
         Components
-          `provider` (optional): `vertex_ai` or `gemini`. If omitted, behavior
-            depends on the `GOOGLE_GENAI_USE_ENTERPRISE` environment variable. If
-            that is not set to TRUE or 1, it defaults to `gemini`. `provider`
-            takes precedence over `GOOGLE_GENAI_USE_ENTERPRISE`.
-          `version` (optional): The API version (e.g., `v1`, `v1beta`). If
+          ``provider`` (optional): ``vertex_ai`` or ``gemini``. If omitted,
+            behavior depends on the ``GOOGLE_GENAI_USE_ENTERPRISE`` environment
+            variable. If that is not set to TRUE or 1, it defaults to
+            ``gemini``. ``provider`` takes precedence over
+            ``GOOGLE_GENAI_USE_ENTERPRISE``.
+          ``version`` (optional): The API version (e.g., ``v1``, ``v1beta``). If
             omitted, the default version for the provider is used.
-          `model_id` (required): The model identifier (e.g.,
-            `gemini-2.5-flash`).
+          ``model_id`` (required): The model identifier (e.g.,
+            ``gemini-2.5-flash``).
 
         Examples
-          - `apigee/gemini-2.5-flash`
-          - `apigee/v1/gemini-2.5-flash`
-          - `apigee/vertex_ai/gemini-2.5-flash`
-          - `apigee/gemini/v1/gemini-2.5-flash`
-          - `apigee/vertex_ai/v1beta/gemini-2.5-flash`
+          - ``apigee/gemini-2.5-flash``
+          - ``apigee/v1/gemini-2.5-flash``
+          - ``apigee/vertex_ai/gemini-2.5-flash``
+          - ``apigee/gemini/v1/gemini-2.5-flash``
+          - ``apigee/vertex_ai/v1beta/gemini-2.5-flash``
       proxy_url: The URL of the Apigee proxy.
       custom_headers: A dictionary of headers to be sent with the request.
         If needed, you can add authorization headers here, for example:
         {'Authorization': f'Bearer {API_KEY}'}. ApigeeLlm already handles
         authorization headers in Vertex AI and Gemini API calls.
       retry_options: Allow google-genai to retry failed responses.
-      api_type: The type of API to use. One of `ApiType` or string.
+      api_type: The type of API to use. One of ``ApiType`` or string.
       credentials: Optional google-auth credentials passed through to the
-        underlying `genai.Client`. Use this when the Apigee proxy requires
-        additional OAuth scopes (e.g., `userinfo.email` for tokeninfo-based
-        caller identification). When omitted, the default `genai.Client`
+        underlying ``genai.Client``. Use this when the Apigee proxy requires
+        additional OAuth scopes (e.g., ``userinfo.email`` for tokeninfo-based
+        caller identification). When omitted, the default ``genai.Client``
         authentication flow is used.
     """  # fmt: skip
 
@@ -390,7 +391,7 @@ def _validate_model_string(model: str) -> bool:
 
   Args:
     model: The model string. Supported format:
-      `apigee/[<provider>/][<version>/]<model_id>`
+      ``apigee/[<provider>/][<version>/]<model_id>``
 
   Returns:
     True if the model string is valid, False otherwise.
@@ -1141,8 +1142,8 @@ class ChatCompletionsResponseHandler:
 
     Returns:
       A tuple containing:
-        - A list of `types.Part` objects representing the content and tool calls
-          in this chunk.
+        - A list of ``types.Part`` objects representing the content and tool
+          calls in this chunk.
         - The role associated with the message.
     """
     parts = []
@@ -1170,8 +1171,8 @@ class ChatCompletionsResponseHandler:
 
     Returns:
       A tuple containing:
-        - A list of `types.Part` objects representing the content and tool calls
-          in this message.
+        - A list of ``types.Part`` objects representing the content and tool
+          calls in this message.
         - The role associated with the message.
     """
     for tool_call in message.get('tool_calls', []):
@@ -1209,7 +1210,8 @@ class ChatCompletionsResponseHandler:
         from the chat completions API.
 
     Returns:
-      A `types.Part` object representing the updated or newly created tool call.
+      A ``types.Part`` object representing the updated or newly created tool
+      call.
     """
     index = tool_call.get('index')
     if index is None:

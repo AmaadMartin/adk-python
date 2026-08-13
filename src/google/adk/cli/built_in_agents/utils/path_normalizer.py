@@ -25,8 +25,8 @@ _BOUNDARY_CHARS = " \t\r\n'\"`"
 def sanitize_generated_file_path(file_path: str) -> str:
   """Strip stray quotes/whitespace around each path segment.
 
-  The agent occasionally emits quoted paths such as `'tools/web.yaml'` which
-  would otherwise create directories literally named `'<name>`. This helper
+  The agent occasionally emits quoted paths such as ``'tools/web.yaml'`` which
+  would otherwise create directories literally named ``'<name>``. This helper
   removes leading/trailing whitespace and quote-like characters from the path
   and from each path component while preserving intentional interior
   characters.

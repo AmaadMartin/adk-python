@@ -32,7 +32,7 @@ def adk_to_mcp_tool_type(tool: BaseTool) -> mcp_types.Tool:
 
   Args:
       tool: The ADK tool to convert. It should be an instance of a class derived
-        from `BaseTool`.
+        from ``BaseTool``.
 
   Returns:
       An object of MCP Tool type, representing the converted tool.

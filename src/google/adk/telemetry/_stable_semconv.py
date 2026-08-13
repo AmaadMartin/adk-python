@@ -14,8 +14,8 @@
 
 """Helpers for building log bodies that follow the stable OTel GenAI semconv.
 
-This module centralizes the construction of `gen_ai.system.message`,
-`gen_ai.user.message`, and `gen_ai.choice` log bodies so that both the
+This module centralizes the construction of ``gen_ai.system.message``,
+``gen_ai.user.message``, and ``gen_ai.choice`` log bodies so that both the
 tracing layer (which emits the logs) and the ADK Web UI exporter (which
 rebuilds the bodies after elision) share the same shape.
 """
@@ -66,13 +66,13 @@ def system_message_body(
     *,
     do_not_elide: bool = False,
 ) -> Mapping[str, AnyValue]:
-  """Builds the body for a `gen_ai.system.message` log event.
+  """Builds the body for a ``gen_ai.system.message`` log event.
 
   Args:
     llm_request: The LLM request whose system instruction should be logged.
     do_not_elide_content: When True, always include the content regardless of
-      the `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` env var. The Web
-      UI exporter sets this to True because the UI needs the full content.
+      the ``OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`` env var. The
+      Web UI exporter sets this to True because the UI needs the full content.
   """
   system_instruction = None
   if llm_request.config is not None:
@@ -92,14 +92,14 @@ def user_message_body(
     *,
     do_not_elide: bool = False,
 ) -> Mapping[str, AnyValue]:
-  """Builds the body for a single `gen_ai.user.message` log event.
+  """Builds the body for a single ``gen_ai.user.message`` log event.
 
   Args:
     content: The user content for this message. Callers that emit multiple user
       messages (e.g. tracing's per-content loop) call this builder once per
       content.
     do_not_elide_content: When True, always include the content regardless of
-      the `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` env var.
+      the ``OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`` env var.
   """
   return {
       "content": _serialize_content_with_optional_elision(
@@ -116,15 +116,15 @@ def choice_body(
     *,
     do_not_elide: bool = False,
 ) -> Mapping[str, AnyValue]:
-  """Builds the body for a `gen_ai.choice` log event.
+  """Builds the body for a ``gen_ai.choice`` log event.
 
-  ADK always returns a single candidate, so `index` is always 0.
-  `finish_reason` is included only when present on the response.
+  ADK always returns a single candidate, so ``index`` is always 0.
+  ``finish_reason`` is included only when present on the response.
 
   Args:
     llm_response: The LLM response describing the choice.
     do_not_elide_content: When True, always include the content regardless of
-      the `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` env var.
+      the ``OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`` env var.
   """
   if llm_response is None:
     return {"content": None, "index": 0}

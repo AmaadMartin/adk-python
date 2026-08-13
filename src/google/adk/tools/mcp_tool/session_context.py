@@ -41,9 +41,9 @@ _T = TypeVar('_T')
 def _format_exception(exc: BaseException | None) -> str:
   """Formats an exception into a readable string representation.
 
-  This handles `ExceptionGroup` (by flattening inner exceptions) and optionally
-  extracts HTTP response bodies for network-related errors, truncating them
-  to 1000 characters to prevent log/context overflow.
+  This handles ``ExceptionGroup`` (by flattening inner exceptions) and
+  optionally extracts HTTP response bodies for network-related errors,
+  truncating them to 1000 characters to prevent log/context overflow.
 
   Args:
     exc: The exception to format.

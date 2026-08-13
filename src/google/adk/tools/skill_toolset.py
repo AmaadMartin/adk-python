@@ -1170,8 +1170,9 @@ class SkillToolset(BaseToolset):
       script_timeout: Timeout in seconds for shell script execution via
         subprocess.run. Defaults to 300 seconds. Does not apply to Python
         scripts executed via exec().
-      additional_tools: Optional list of `BaseTool` or `BaseToolset` instances
-        to be made available to the agent when certain skills are activated.
+      additional_tools: Optional list of ``BaseTool`` or ``BaseToolset``
+        instances to be made available to the agent when certain skills are
+        activated.
       tool_name_prefix: Optional prefix to prepend to tool names.
       tool_filter: Optional filter to select specific tools.
     """

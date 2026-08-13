@@ -60,7 +60,7 @@ def _iter_artifact_dirs(root: Path) -> list[Path]:
 def _read_bytes_if_present(path: Path) -> Optional[bytes]:
   """Reads a binary payload from disk.
 
-  The read is attempted directly instead of being guarded by an `exists()`
+  The read is attempted directly instead of being guarded by an ``exists()``
   check so that a concurrent delete cannot be observed as a distinguishable
   state between the check and the read.
 
@@ -105,7 +105,7 @@ def _umask_derived_file_mode() -> int:
   per-write.
 
   Returns:
-    The permission bits `open()` would produce for a new file.
+    The permission bits ``open()`` would produce for a new file.
   """
   umask = os.umask(0)
   os.umask(umask)
@@ -131,8 +131,8 @@ def _is_reserved_artifact_name(name: str) -> bool:
   """Checks whether an artifact directory name collides with the metadata doc.
 
   Compared caselessly because the collision is decided by the filesystem, and
-  the case-insensitive ones ADK supports (APFS, NTFS) resolve `Metadata.json`
-  and `metadata.json` to the same file.
+  the case-insensitive ones ADK supports (APFS, NTFS) resolve ``Metadata.json``
+  and ``metadata.json`` to the same file.
 
   Args:
     name: The final path segment of the artifact directory.
@@ -149,14 +149,14 @@ def _file_has_user_namespace(filename: str) -> bool:
 
 
 def _strip_user_namespace(filename: str) -> str:
-  """Removes the `user:` namespace prefix when present."""
+  """Removes the ``user:`` namespace prefix when present."""
   if _file_has_user_namespace(filename):
     return filename[len(_USER_NAMESPACE_PREFIX) :]
   return filename
 
 
 def _to_posix_path(path_value: str) -> PurePosixPath:
-  """Normalizes separators by converting to a `PurePosixPath`."""
+  """Normalizes separators by converting to a ``PurePosixPath``."""
   if "\\" in path_value:
     # Interpret Windows-style paths while still running on POSIX systems.
     path_value = PureWindowsPath(path_value).as_posix()
@@ -196,11 +196,11 @@ def _resolve_scoped_artifact_path(
 
   Returns:
     A tuple containing the absolute artifact directory and its path relative
-    to `scope_root`.
+    to ``scope_root``.
 
   Raises:
-    InputValidationError: If `filename` is rooted, drive-qualified, contains a
-      parent reference, or otherwise resolves outside of `scope_root`.
+    InputValidationError: If ``filename`` is rooted, drive-qualified, contains a
+      parent reference, or otherwise resolves outside of ``scope_root``.
   """
   stripped = _strip_user_namespace(filename).strip()
 
@@ -268,7 +268,7 @@ def _canonical_uri(artifact_dir: Path, version: int) -> str:
 
 
 def _prune_empty_dirs(leaf: Path, stop_at: Path) -> None:
-  """Removes `leaf` and any parents it leaves empty, stopping at `stop_at`.
+  """Removes ``leaf`` and any parents it leaves empty, stopping at ``stop_at``.
 
   Filenames may contain "/", so the directory of an artifact doubles as the
   parent directory of every artifact nested under it: "doc" is stored at

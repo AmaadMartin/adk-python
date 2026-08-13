@@ -66,11 +66,11 @@ class UserSimulatorProvider:
 
   from the EvalConfig with per-EvalCase conversation data.
 
-  Dispatch is driven by the runtime type of `user_simulator_config`, looked
-  up against the shared `_SIMULATOR_BY_CONFIG_TYPE` registry in
-  `user_simulator`. Built-in simulators are registered at the top of this
+  Dispatch is driven by the runtime type of ``user_simulator_config``, looked
+  up against the shared ``_SIMULATOR_BY_CONFIG_TYPE`` registry in
+  ``user_simulator``. Built-in simulators are registered at the top of this
   module; third-party simulators register themselves from their own module
-  via `register_user_simulator(...)`. Either way, no changes to this class
+  via ``register_user_simulator(...)``. Either way, no changes to this class
   are needed.
   """
 
@@ -91,23 +91,23 @@ class UserSimulatorProvider:
     """Provide an appropriate user simulator based on the EvalCase and config.
 
     Routing:
-      * If the EvalCase carries a static `conversation`, return a
-        `StaticUserSimulator` (config-agnostic).
+      * If the EvalCase carries a static ``conversation``, return a
+        ``StaticUserSimulator`` (config-agnostic).
       * Otherwise, look up the simulator implementation registered for
-        `type(self._user_simulator_config)` and instantiate it.
+        ``type(self._user_simulator_config)`` and instantiate it.
 
     Args:
-      eval_case: An EvalCase containing a `conversation` xor a
-        `conversation_scenario`.
+      eval_case: An EvalCase containing a ``conversation`` xor a
+        ``conversation_scenario``.
 
     Returns:
-      A `StaticUserSimulator` when the EvalCase carries static invocations,
-      otherwise the `UserSimulator` implementation registered for the
-      caller's `user_simulator_config` type.
+      A ``StaticUserSimulator`` when the EvalCase carries static invocations,
+      otherwise the ``UserSimulator`` implementation registered for the
+      caller's ``user_simulator_config`` type.
 
     Raises:
       ValueError: If no conversation data or multiple types of conversation
-        data are provided, or if no `UserSimulator` is registered for the
+        data are provided, or if no ``UserSimulator`` is registered for the
         caller's config type.
     """
     if eval_case.conversation is None:

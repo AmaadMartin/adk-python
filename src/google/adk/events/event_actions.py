@@ -46,10 +46,10 @@ def _make_json_serializable(obj: Any) -> Any:
   """Converts an object into a JSON-serializable form.
 
   Used as a fallback when the default Pydantic serialization fails. Delegates to
-  `pydantic_core.to_jsonable_python` so rich types (e.g. datetimes, Pydantic
+  ``pydantic_core.to_jsonable_python`` so rich types (e.g. datetimes, Pydantic
   models) are serialized faithfully instead of being discarded. Values that
   pydantic-core cannot serialize (e.g. Python callables stored in session state)
-  are replaced with their `repr` via `serialize_unknown=True` so the overall
+  are replaced with their ``repr`` via ``serialize_unknown=True`` so the overall
   structure can still be persisted without crashing.
   """
   return to_jsonable_python(obj, serialize_unknown=True)

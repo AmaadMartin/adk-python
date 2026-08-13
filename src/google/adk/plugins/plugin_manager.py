@@ -68,7 +68,7 @@ class PluginManager:
   were registered.
 
   The core execution logic implements an "early exit" strategy: if any plugin
-  callback returns a non-`None` value, the execution of subsequent plugins for
+  callback returns a non-``None`` value, the execution of subsequent plugins for
   that specific event is halted, and the returned value is propagated up the
   call stack. This allows plugins to short-circuit operations like agent runs,
   tool calls, or model requests.
@@ -93,11 +93,11 @@ class PluginManager:
         self.register_plugin(plugin)
 
   def set_skip_closing_plugins(self, value: bool) -> None:
-    """Controls whether `close()` will tear down the registered plugins.
+    """Controls whether ``close()`` will tear down the registered plugins.
 
     Set to True when the plugins are owned by another component (e.g. a parent
-    `Runner` whose plugin list this manager is sharing). When set, subsequent
-    calls to `close()` become a no-op so the shared plugins are not torn down
+    ``Runner`` whose plugin list this manager is sharing). When set, subsequent
+    calls to ``close()`` become a no-op so the shared plugins are not torn down
     while still in use.
 
     Args:
@@ -127,7 +127,7 @@ class PluginManager:
       plugin_name: The name of the plugin to retrieve.
 
     Returns:
-      The plugin instance if found; otherwise, `None`.
+      The plugin instance if found; otherwise, ``None``.
     """
     return next((p for p in self.plugins if p.name == plugin_name), None)
 
@@ -137,7 +137,7 @@ class PluginManager:
       user_message: types.Content,
       invocation_context: InvocationContext,
   ) -> Optional[types.Content]:
-    """Runs the `on_user_message_callback` for all plugins."""
+    """Runs the ``on_user_message_callback`` for all plugins."""
     return await self._run_callbacks(
         "on_user_message_callback",
         user_message=user_message,
@@ -147,7 +147,7 @@ class PluginManager:
   async def run_before_run_callback(
       self, *, invocation_context: InvocationContext
   ) -> Optional[types.Content]:
-    """Runs the `before_run_callback` for all plugins."""
+    """Runs the ``before_run_callback`` for all plugins."""
     return await self._run_callbacks(
         "before_run_callback", invocation_context=invocation_context
     )
@@ -155,7 +155,7 @@ class PluginManager:
   async def run_after_run_callback(
       self, *, invocation_context: InvocationContext
   ) -> Optional[None]:
-    """Runs the `after_run_callback` for all plugins."""
+    """Runs the ``after_run_callback`` for all plugins."""
     await self._run_callbacks(
         "after_run_callback", invocation_context=invocation_context
     )
@@ -163,7 +163,7 @@ class PluginManager:
   async def run_on_event_callback(
       self, *, invocation_context: InvocationContext, event: Event
   ) -> Optional[Event]:
-    """Runs the `on_event_callback` for all plugins."""
+    """Runs the ``on_event_callback`` for all plugins."""
     return await self._run_callbacks(
         "on_event_callback",
         invocation_context=invocation_context,
@@ -173,7 +173,7 @@ class PluginManager:
   async def run_before_agent_callback(
       self, *, agent: BaseAgent, callback_context: CallbackContext
   ) -> Optional[types.Content]:
-    """Runs the `before_agent_callback` for all plugins."""
+    """Runs the ``before_agent_callback`` for all plugins."""
     return await self._run_callbacks(
         "before_agent_callback",
         agent=agent,
@@ -183,7 +183,7 @@ class PluginManager:
   async def run_after_agent_callback(
       self, *, agent: BaseAgent, callback_context: CallbackContext
   ) -> Optional[types.Content]:
-    """Runs the `after_agent_callback` for all plugins."""
+    """Runs the ``after_agent_callback`` for all plugins."""
     return await self._run_callbacks(
         "after_agent_callback",
         agent=agent,
@@ -197,7 +197,7 @@ class PluginManager:
       tool_args: dict[str, Any],
       tool_context: ToolContext,
   ) -> Optional[dict[str, Any]]:
-    """Runs the `before_tool_callback` for all plugins."""
+    """Runs the ``before_tool_callback`` for all plugins."""
     return await self._run_callbacks(
         "before_tool_callback",
         tool=tool,
@@ -213,7 +213,7 @@ class PluginManager:
       tool_context: ToolContext,
       result: dict[str, Any],
   ) -> Optional[dict[str, Any]]:
-    """Runs the `after_tool_callback` for all plugins."""
+    """Runs the ``after_tool_callback`` for all plugins."""
     return await self._run_callbacks(
         "after_tool_callback",
         tool=tool,
@@ -229,7 +229,7 @@ class PluginManager:
       llm_request: LlmRequest,
       error: Exception,
   ) -> Optional[LlmResponse]:
-    """Runs the `on_model_error_callback` for all plugins."""
+    """Runs the ``on_model_error_callback`` for all plugins."""
     return await self._run_callbacks(
         "on_model_error_callback",
         callback_context=callback_context,
@@ -240,7 +240,7 @@ class PluginManager:
   async def run_before_model_callback(
       self, *, callback_context: CallbackContext, llm_request: LlmRequest
   ) -> Optional[LlmResponse]:
-    """Runs the `before_model_callback` for all plugins."""
+    """Runs the ``before_model_callback`` for all plugins."""
     return await self._run_callbacks(
         "before_model_callback",
         callback_context=callback_context,
@@ -250,7 +250,7 @@ class PluginManager:
   async def run_after_model_callback(
       self, *, callback_context: CallbackContext, llm_response: LlmResponse
   ) -> Optional[LlmResponse]:
-    """Runs the `after_model_callback` for all plugins."""
+    """Runs the ``after_model_callback`` for all plugins."""
     return await self._run_callbacks(
         "after_model_callback",
         callback_context=callback_context,
@@ -265,7 +265,7 @@ class PluginManager:
       tool_context: ToolContext,
       error: Exception,
   ) -> Optional[dict[str, Any]]:
-    """Runs the `on_tool_error_callback` for all plugins."""
+    """Runs the ``on_tool_error_callback`` for all plugins."""
     return await self._run_callbacks(
         "on_tool_error_callback",
         tool=tool,
@@ -282,17 +282,18 @@ class PluginManager:
     This private method iterates through the plugins and calls the specified
     callback method on each one, passing the provided keyword arguments.
 
-    The execution stops as soon as a plugin's callback returns a non-`None`
+    The execution stops as soon as a plugin's callback returns a non-``None``
     value. This "early exit" value is then returned by this method. If all
-    plugins are executed and all return `None`, this method also returns `None`.
+    plugins are executed and all return ``None``, this method also returns
+    ``None``.
 
     Args:
       callback_name: The name of the callback method to execute.
       **kwargs: Keyword arguments to be passed to the callback method.
 
     Returns:
-      The first non-`None` value returned by a plugin callback, or `None` if
-      all callbacks return `None`.
+      The first non-``None`` value returned by a plugin callback, or ``None`` if
+      all callbacks return ``None``.
 
     Raises:
       RuntimeError: If a plugin encounters an unhandled exception during
@@ -330,7 +331,7 @@ class PluginManager:
       callback_context: CallbackContext,
       error: Exception,
   ) -> None:
-    """Runs the `on_agent_error_callback` for all plugins."""
+    """Runs the ``on_agent_error_callback`` for all plugins."""
     await self._run_notification_callbacks(
         "on_agent_error_callback",
         agent=agent,
@@ -344,7 +345,7 @@ class PluginManager:
       invocation_context: InvocationContext,
       error: Exception,
   ) -> None:
-    """Runs the `on_run_error_callback` for all plugins."""
+    """Runs the ``on_run_error_callback`` for all plugins."""
     await self._run_notification_callbacks(
         "on_run_error_callback",
         invocation_context=invocation_context,
@@ -381,9 +382,9 @@ class PluginManager:
   async def close(self) -> None:
     """Calls the close method on all registered plugins concurrently.
 
-    If this manager was constructed with `skip_closing_plugins=True`, this
+    If this manager was constructed with ``skip_closing_plugins=True``, this
     method is a no-op so plugins owned by another component (e.g. a parent
-    `Runner`) are not torn down while still in use.
+    ``Runner``) are not torn down while still in use.
 
     Raises:
       RuntimeError: If one or more plugins failed to close, containing

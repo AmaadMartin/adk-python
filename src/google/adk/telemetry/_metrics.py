@@ -199,7 +199,7 @@ def record_tool_execution_duration(
     elapsed_s: Duration of the tool execution, in seconds.
     error: The exception raised by the tool, if any.
     error_type: An error type detected from a tool response that reported a
-      failure without raising. Ignored when `error` is also set.
+      failure without raising. Ignored when ``error`` is also set.
   """
   attrs = {
       gen_ai_attributes.GEN_AI_AGENT_NAME: agent_name,

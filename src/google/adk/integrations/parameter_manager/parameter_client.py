@@ -58,7 +58,7 @@ class ParameterManagerClient:
   ):
     """Initializes the ParameterManagerClient.
 
-    If neither `service_account_json` nor `auth_token` is provided, default
+    If neither ``service_account_json`` nor ``auth_token`` is provided, default
     credentials are used.
 
     Args:

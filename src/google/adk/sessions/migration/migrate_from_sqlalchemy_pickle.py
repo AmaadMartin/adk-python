@@ -103,10 +103,10 @@ _ALLOWED_PICKLE_GLOBALS: set[tuple[str, str]] = {
 class _RestrictedUnpickler(pickle.Unpickler):
   """Restricted unpickler for migrating legacy v0 schema actions.
 
-  The v0 session schema stored `EventActions` as a pickled blob. During
+  The v0 session schema stored ``EventActions`` as a pickled blob. During
   migration we treat the raw bytes read from the source DB as untrusted input
   and only allow the minimum set of safe globals needed to reconstruct
-  `EventActions`.
+  ``EventActions``.
   """
 
   def find_class(self, module: str, name: str) -> Any:  # noqa: ANN001

@@ -282,9 +282,10 @@ class GeminiLlmConnection(BaseLlmConnection):
   ) -> types.GenerateContentResponseUsageMetadata:
     """Converts live API usage metadata to GenerateContentResponse usage metadata.
 
-    The live API names output tokens `response_token_count`/
-    `response_tokens_details`, whereas `GenerateContentResponseUsageMetadata`
-    names them `candidates_token_count`/`candidates_tokens_details`.
+    The live API names output tokens ``response_token_count``/
+    ``response_tokens_details``, whereas
+    ``GenerateContentResponseUsageMetadata`` names them
+    ``candidates_token_count``/``candidates_tokens_details``.
 
     Args:
       usage_metadata: The live API usage metadata.

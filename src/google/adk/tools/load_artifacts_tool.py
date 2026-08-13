@@ -229,16 +229,16 @@ class LoadArtifactsTool(BaseTool):
 
     Args:
       process_artifact: An optional sync or async callable with signature
-        `(artifact: types.Part, artifact_name: str) -> types.Part | None |
-        Awaitable[types.Part | None]`. Allows artifact parts to be customized or
-        filtered before being added to the LLM request. If `None` (default), the
-        built-in safety conversion (`as_safe_part_for_llm`) is used to convert
-        unsupported formats (e.g., extracting text from DOCX/CSV/JSON/plain text
-        or replacing binary data with safe placeholder descriptions). If a
-        custom function is supplied, it bypasses default safety conversions;
-        returning `None` skips the artifact so it is omitted from the request.
-        If a custom callback raises an exception, the error is logged and the
-        artifact is skipped.
+        ``(artifact: types.Part, artifact_name: str) -> types.Part | None |
+        Awaitable[types.Part | None]``. Allows artifact parts to be customized
+        or filtered before being added to the LLM request. If ``None``
+        (default), the built-in safety conversion (``as_safe_part_for_llm``) is
+        used to convert unsupported formats (e.g., extracting text from
+        DOCX/CSV/JSON/plain text or replacing binary data with safe placeholder
+        descriptions). If a custom function is supplied, it bypasses default
+        safety conversions; returning ``None`` skips the artifact so it is
+        omitted from the request. If a custom callback raises an exception, the
+        error is logged and the artifact is skipped.
     """
     super().__init__(
         name='load_artifacts',

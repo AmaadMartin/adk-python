@@ -150,18 +150,18 @@ def trace_agent_invocation(
   Inference related fields are not set, because the OpenTelemetry semantic
     conventions plan to remove them from the invoke_agent span.
 
-  `gen_ai.agent.id` is not set because currently it's unclear what attributes
+  ``gen_ai.agent.id`` is not set because currently it's unclear what attributes
     this field should have, specifically:
   - In which scope should it be unique (globally, given project, given agentic
     flow, given deployment).
   - Should it be unchanging between deployments, and how this should this be
     achieved.
 
-  `gen_ai.data_source.id` is not set because it's not available.
+  ``gen_ai.data_source.id`` is not set because it's not available.
   Closest type which could contain this information is types.GroundingMetadata,
     which does not have an ID.
 
-  `server.*` attributes are not set pending confirmation from aabmass.
+  ``server.*`` attributes are not set pending confirmation from aabmass.
   """
 
   # Required
@@ -193,7 +193,7 @@ def trace_tool_call(
     span: The span to record attributes on. If None, uses current span.
     error_type: An error type string detected from the tool's response dict
       (e.g., "HTTP_ERROR", "MCP_TOOL_ERROR"). Used when the tool returned an
-      error as a dict rather than raising an exception. Ignored if `error` is
+      error as a dict rather than raising an exception. Ignored if ``error`` is
       also set (exception takes precedence).
     invocation_context: Optional invocation context. Forwarded so its
       ``run_config.telemetry`` overrides the env-var content toggle.
@@ -641,7 +641,7 @@ def use_generate_content_span(
     invocation_context: InvocationContext,
     model_response_event: Event,
 ) -> Iterator[Span | None]:
-  """Context manager encompassing `generate_content {model.name}` span.
+  """Context manager encompassing ``generate_content {model.name}`` span.
 
   When an external library for inference instrumentation is installed (e.g.
   opentelemetry-instrumentation-google-genai),
@@ -682,7 +682,7 @@ async def use_inference_span(
     invocation_context: InvocationContext,
     model_response_event: Event,
 ) -> AsyncIterator[GenerateContentSpan | None]:
-  """Context manager encompassing `generate_content {model.name}` span.
+  """Context manager encompassing ``generate_content {model.name}`` span.
 
   When an external library for inference instrumentation is installed (e.g.
   opentelemetry-instrumentation-google-genai),
@@ -890,7 +890,7 @@ async def _use_native_generate_content_span(
 
 
 class GenerateContentSpan:
-  """Manages tracing within a `generate_content` OpenTelemetry span.
+  """Manages tracing within a ``generate_content`` OpenTelemetry span.
 
   This class provides attributes for the experimental semantic convention.
   """
@@ -1006,10 +1006,10 @@ _RESOURCE_COLLECTION_SEGMENTS: Final = frozenset({
 
 
 def _resolve_gen_ai_system_name(model: str | None) -> str:
-  """Returns the `gen_ai.system` / `gen_ai.provider.name` value for a model.
+  """Returns the ``gen_ai.system`` / ``gen_ai.provider.name`` value for a model.
 
   The name has to follow the model actually being served, otherwise every
-  provider is reported as Gemini. A LiteLLM-style `<provider>/<model>` id
+  provider is reported as Gemini. A LiteLLM-style ``<provider>/<model>`` id
   carries the provider in its prefix, which semantic conventions allow as a
   lowercased name outside their well-known set. The prefix is read off the bare
   model name so that a resource path, whose leading segments describe where the

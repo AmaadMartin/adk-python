@@ -218,11 +218,11 @@ def execute_sql(
         will be returned. Defaults to False.
 
   Returns:
-      dict: If `dry_run` is False, dictionary representing the result of the
+      dict: If ``dry_run`` is False, dictionary representing the result of the
             query. If the result contains the key "result_is_likely_truncated"
             with value True, it means that there may be additional rows matching
             the query not returned in the result.
-            If `dry_run` is True, dictionary with "dry_run_info" field
+            If ``dry_run`` is True, dictionary with "dry_run_info" field
             containing query information returned by BigQuery.
 
   Examples:
@@ -308,11 +308,11 @@ def _execute_sql_write_mode(*args: Any, **kwargs: Any) -> dict[str, Any]:
         will be returned. Defaults to False.
 
   Returns:
-      dict: If `dry_run` is False, dictionary representing the result of the
+      dict: If ``dry_run`` is False, dictionary representing the result of the
             query. If the result contains the key "result_is_likely_truncated"
             with value True, it means that there may be additional rows matching
             the query not returned in the result.
-            If `dry_run` is True, dictionary with "dry_run_info" field
+            If ``dry_run`` is True, dictionary with "dry_run_info" field
             containing query information returned by BigQuery.
 
   Examples:
@@ -530,11 +530,11 @@ def _execute_sql_protected_write_mode(
         will be returned. Defaults to False.
 
   Returns:
-      dict: If `dry_run` is False, dictionary representing the result of the
+      dict: If ``dry_run`` is False, dictionary representing the result of the
             query. If the result contains the key "result_is_likely_truncated"
             with value True, it means that there may be additional rows matching
             the query not returned in the result.
-            If `dry_run` is True, dictionary with "dry_run_info" field
+            If ``dry_run`` is True, dictionary with "dry_run_info" field
             containing query information returned by BigQuery.
 
   Examples:
@@ -881,7 +881,7 @@ def forecast(
           }
 
       Error Scenarios:
-          When an element in `id_cols` is not a string:
+          When an element in ``id_cols`` is not a string:
 
           >>> forecast(
           ...     project_id="my-gcp-project",
@@ -895,7 +895,7 @@ def forecast(
             "error_details": "All elements in id_cols must be strings."
           }
 
-          When `history_data` refers to a table that does not exist:
+          When ``history_data`` refers to a table that does not exist:
 
           >>> forecast(
           ...     project_id="my-gcp-project",
@@ -1263,7 +1263,7 @@ def detect_anomalies(
           }
 
       Error Scenarios:
-          When an element in `times_series_id_cols` is not a string:
+          When an element in ``times_series_id_cols`` is not a string:
 
           >>> detect_anomalies(
           ...     project_id="my-gcp-project",
@@ -1278,7 +1278,7 @@ def detect_anomalies(
             strings."
           }
 
-          When `history_data` refers to a table that does not exist:
+          When ``history_data`` refers to a table that does not exist:
 
           >>> detect_anomalies(
           ...     project_id="my-gcp-project",

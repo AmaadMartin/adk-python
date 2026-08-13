@@ -57,7 +57,7 @@ class InvocationEvent(EvalBaseModel):
   It captures agent's replies, requests to use tools (function calls), and tool
   results.
 
-  This structure is a simple projection of the actual `Event` datamodel that
+  This structure is a simple projection of the actual ``Event`` datamodel that
   is intended for the Eval System.
   """
 

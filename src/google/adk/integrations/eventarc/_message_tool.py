@@ -80,10 +80,10 @@ async def publish_message(
       data: Optional. The payload of the event. Can be a string, integer, float,
         boolean, dictionary, or list. If omitted, no payload is sent. If you
         need to send binary data, you MUST provide it here as a Base64 encoded
-        string and set `is_base64_encoded=True`.
-      is_base64_encoded: Optional. Set to True ONLY if the `data` parameter is a
-        Base64 encoded string representing binary data (e.g., an image or file).
-        The tool will decode it into raw bytes before publishing.
+        string and set ``is_base64_encoded=True``.
+      is_base64_encoded: Optional. Set to True ONLY if the ``data`` parameter is
+        a Base64 encoded string representing binary data (e.g., an image or
+        file). The tool will decode it into raw bytes before publishing.
       include_tracing_extension: Optional. Set to True to automatically extract
         the current ADK agent's distributed tracing context (e.g., W3C
         traceparent) and inject it into the CloudEvent's extension attributes.

@@ -89,18 +89,19 @@ def _resolve_client_location(api_client: Client) -> Optional[str]:
 
 
 def _validate_client_location(api_client: Client) -> None:
-  """Reject an injected enterprise client not targeting the `global` location.
+  """Reject an injected enterprise client not targeting the ``global`` location.
 
-  The Managed Agents API is only served from `global`. This check applies only
+  The Managed Agents API is only served from ``global``. This check applies only
   to enterprise (Vertex) clients: the Gemini Developer API has no location
-  concept, yet google-genai still stamps `GOOGLE_CLOUD_LOCATION` onto every
-  client's `_api_client.location`, so a Developer-API client must not be
+  concept, yet google-genai still stamps ``GOOGLE_CLOUD_LOCATION`` onto every
+  client's ``_api_client.location``, so a Developer-API client must not be
   rejected for it. We do not override a caller-supplied client, but a
-  non-`global` enterprise client cannot work, so we reject it loudly. The
-  backend is read from the public `Client.vertexai` property; the resolved
+  non-``global`` enterprise client cannot work, so we reject it loudly. The
+  backend is read from the public ``Client.vertexai`` property; the resolved
   location has no public accessor in google-genai 2.9.0, so it is read from the
-  genai-internal `client._api_client.location` via `_resolve_client_location`
-  (an unresolvable location is treated as acceptable).
+  genai-internal ``client._api_client.location`` via
+  ``_resolve_client_location`` (an unresolvable location is treated as
+  acceptable).
   """
   # `Client.vertexai` is the public accessor (it returns False for the Gemini
   # Developer API, which has no location concept); only enterprise (Vertex)

@@ -58,8 +58,8 @@ class SecretManagerClient:
   ):
     """Initializes the SecretManagerClient.
 
-    Credentials are resolved in priority order: `service_account_json`, then
-    `auth_token`, then Application Default Credentials when neither is
+    Credentials are resolved in priority order: ``service_account_json``, then
+    ``auth_token``, then Application Default Credentials when neither is
     provided.
 
     Args:
@@ -70,8 +70,8 @@ class SecretManagerClient:
           Manager service. If not provided, the global endpoint is used.
 
     Raises:
-        ValueError: If both `service_account_json` and `auth_token` are
-            provided, if `service_account_json` is not valid JSON, or if
+        ValueError: If both ``service_account_json`` and ``auth_token`` are
+            provided, if ``service_account_json`` is not valid JSON, or if
             neither is provided and Application Default Credentials cannot be
             resolved.
         google.auth.exceptions.GoogleAuthError: If authentication fails.

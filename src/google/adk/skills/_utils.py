@@ -57,8 +57,8 @@ def _load_dir(directory: pathlib.Path) -> dict[str, Union[str, bytes]]:
     directory: Path to the directory to load.
 
   Returns:
-    Dictionary mapping relative file paths to their content: `str` for UTF-8
-    text, `bytes` for everything else.
+    Dictionary mapping relative file paths to their content: ``str`` for UTF-8
+    text, ``bytes`` for everything else.
   """
   files: dict[str, Union[str, bytes]] = {}
   if directory.exists() and directory.is_dir():
@@ -79,14 +79,14 @@ def _load_dir(directory: pathlib.Path) -> dict[str, Union[str, bytes]]:
 def _build_scripts(
     raw_scripts: dict[str, Union[str, bytes]],
 ) -> dict[str, models.Script]:
-  """Wrap raw script sources in `Script` models.
+  """Wrap raw script sources in ``Script`` models.
 
   Args:
     raw_scripts: Mapping of relative path to raw script content.
 
   Returns:
-    Mapping of relative path to `Script`, omitting any script that is not
-    UTF-8 text, since `Script.src` holds source code.
+    Mapping of relative path to ``Script``, omitting any script that is not
+    UTF-8 text, since ``Script.src`` holds source code.
   """
   scripts = {}
   for name, src in raw_scripts.items():

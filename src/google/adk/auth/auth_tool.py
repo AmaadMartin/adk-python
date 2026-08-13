@@ -31,9 +31,9 @@ def _stable_model_digest(model: BaseModel) -> str:
   """Returns a stable digest for a pydantic model.
 
   The digest is stable across:
-  - Python hash seeds (does not use `hash()`).
-  - Dict insertion ordering differences (canonicalizes via `sort_keys=True`).
-  - Pydantic `model_extra` values (ignored).
+  - Python hash seeds (does not use ``hash()``).
+  - Dict insertion ordering differences (canonicalizes via ``sort_keys=True``).
+  - Pydantic ``model_extra`` values (ignored).
   """
   if getattr(model, "model_extra", None):
     model = model.model_copy(deep=True)
@@ -100,7 +100,7 @@ class AuthConfig(BaseModelWithConfig):
     """Builds a stable key based on auth_scheme and raw_auth_credential.
 
     This is used to save/load credentials to/from a credential service when
-    `credential_key` is not explicitly provided.
+    ``credential_key`` is not explicitly provided.
     """
 
     auth_scheme = self.auth_scheme

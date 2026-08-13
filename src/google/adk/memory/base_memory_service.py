@@ -75,9 +75,9 @@ class BaseMemoryService(ABC):
     This is intended for cases where callers want to persist only a subset of
     events (e.g., the latest turn), rather than re-ingesting the full session.
 
-    Implementations should treat `events` as an incremental update (delta) and
+    Implementations should treat ``events`` as an incremental update (delta) and
     must not assume it represents the full session.
-    Implementations may ignore `session_id` if it is not applicable.
+    Implementations may ignore ``session_id`` if it is not applicable.
 
     Args:
       app_name: The application name for memory scope.

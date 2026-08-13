@@ -671,7 +671,7 @@ def to_cloud_run(
 ) -> None:
   """Deploys an agent to Google Cloud Run.
 
-  `agent_folder` should contain the following files:
+  ``agent_folder`` should contain the following files:
 
   - __init__.py
   - agent.py
@@ -682,14 +682,15 @@ def to_cloud_run(
 
   * dist/[google_adk wheel file]
   * agents/[app_name]/
-    * agent source code from `agent_folder`
+    * agent source code from ``agent_folder``
 
   Args:
     agent_folder: The folder (absolute path) containing the agent source code.
     project: Google Cloud project id.
     region: Google Cloud region.
     service_name: The service name in Cloud Run.
-    app_name: The name of the app, by default, it's basename of `agent_folder`.
+    app_name: The name of the app, by default, it's basename of
+      ``agent_folder``.
     temp_folder: The temp folder for the generated Cloud Run source files.
     port: The port of the ADK api server.
     trace_to_cloud: Whether to enable Cloud Trace.
@@ -889,7 +890,7 @@ def to_agent_engine(
 ) -> None:
   """Deploys an agent to Gemini Enterprise Agent Platform.
 
-  `agent_folder` should contain the following files:
+  ``agent_folder`` should contain the following files:
 
   - __init__.py
   - agent.py
@@ -919,22 +920,23 @@ def to_agent_engine(
     absolutize_imports (bool): Deprecated. This argument is no longer required
       or used.
     project (str): Optional. Google Cloud project id for the deployed agent. If
-      not specified, the project from the `GOOGLE_CLOUD_PROJECT` environment
-      variable will be used. It will be ignored if `api_key` is specified.
+      not specified, the project from the ``GOOGLE_CLOUD_PROJECT`` environment
+      variable will be used. It will be ignored if ``api_key`` is specified.
     region (str): Optional. Google Cloud region for the deployed agent. If not
-      specified, the region from the `GOOGLE_CLOUD_LOCATION` environment
-      variable will be used. It will be ignored if `api_key` is specified.
+      specified, the region from the ``GOOGLE_CLOUD_LOCATION`` environment
+      variable will be used. It will be ignored if ``api_key`` is specified.
     display_name (str): Optional. The display name of the Agent Runtime.
     description (str): Optional. The description of the Agent Runtime.
     requirements_file (str): Deprecated. This argument is no longer required or
       used.
-    env_file (str): Optional. The filepath to the `.env` file for environment
-      variables. If not specified, the `.env` file in the `agent_folder` will be
-      used. The values of `GOOGLE_CLOUD_PROJECT` and `GOOGLE_CLOUD_LOCATION`
-      will be overridden by `project` and `region` if they are specified.
+    env_file (str): Optional. The filepath to the ``.env`` file for environment
+      variables. If not specified, the ``.env`` file in the ``agent_folder``
+      will be used. The values of ``GOOGLE_CLOUD_PROJECT`` and
+      ``GOOGLE_CLOUD_LOCATION`` will be overridden by ``project`` and ``region``
+      if they are specified.
     agent_engine_config_file (str): The filepath to the agent platform config
-      file to use. If not specified, the `.agent_engine_config.json` file in the
-      `agent_folder` will be used.
+      file to use. If not specified, the ``.agent_engine_config.json`` file in
+      the ``agent_folder`` will be used.
     skip_agent_import_validation (bool): Deprecated. This argument is no longer
       required or used.
     trigger_sources (str): Optional. Comma-separated list of trigger sources to
@@ -1345,7 +1347,8 @@ def to_gke(
     region: Google Cloud region.
     cluster_name: The name of the GKE cluster.
     service_name: The service name in GKE.
-    app_name: The name of the app, by default, it's basename of `agent_folder`.
+    app_name: The name of the app, by default, it's basename of
+      ``agent_folder``.
     temp_folder: The local directory to use as a temporary workspace for
       preparing deployment artifacts. The tool populates this folder with a copy
       of the agent's source code and auto-generates necessary files like a

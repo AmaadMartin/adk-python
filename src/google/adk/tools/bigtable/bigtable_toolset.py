@@ -48,14 +48,15 @@ class BigtableParameterizedViewTool(GoogleTool):
   view_parameter_names.
 
   Example:
-      If a parameterized view `purchase_history_pv` was created with the query:
-      `SELECT * FROM purchases WHERE user_id = VIEW_PARAMETERS('user_id')`
+      If a parameterized view ``purchase_history_pv`` was created with the
+      query:
+      ``SELECT * FROM purchases WHERE user_id = VIEW_PARAMETERS('user_id')``
 
-      By configuring `view_parameter_names=["user_id"]`, the wrapper will
-      resolve the `user_id` value from the `tool_context.user_id` at runtime and
-      pass it as `view_parameters={"user_id": user_id}`.
-      This securely restricts query execution to the logged-in user's data
-      without exposing the `user_id` parameter to the LLM.
+      By configuring ``view_parameter_names=["user_id"]``, the wrapper will
+      resolve the ``user_id`` value from the ``tool_context.user_id`` at runtime
+      and pass it as ``view_parameters={"user_id": user_id}``. This securely
+      restricts query execution to the logged-in user's data without exposing
+      the ``user_id`` parameter to the LLM.
   """
 
   def __init__(

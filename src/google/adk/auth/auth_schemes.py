@@ -46,8 +46,8 @@ class OpenIdConnectWithConfig(SecurityBase):
 class CustomAuthScheme(BaseModelWithConfig):
   """A flexible model for custom authentication schemes.
 
-  The subclasses must define a `default` for the `type_` field, if using OAuth2
-  user consent flow, to ensure correct rehydration.
+  The subclasses must define a ``default`` for the ``type_`` field, if using
+  OAuth2 user consent flow, to ensure correct rehydration.
   """
 
   type_: str = Field(alias="type")

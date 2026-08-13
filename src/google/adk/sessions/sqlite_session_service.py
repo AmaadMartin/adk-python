@@ -103,15 +103,15 @@ def _parse_db_path(db_path: str) -> tuple[str, str, bool]:
 
   Returns:
     A tuple of:
-      - filesystem path (for `os.path.exists` and user-facing messages)
+      - filesystem path (for ``os.path.exists`` and user-facing messages)
       - value to pass to sqlite/aiosqlite connect
-      - whether to pass `uri=True` to sqlite/aiosqlite connect
+      - whether to pass ``uri=True`` to sqlite/aiosqlite connect
 
   Notes:
     When a SQLAlchemy-style SQLite URL is provided, this follows SQLAlchemy's
     conventions:
-      - `sqlite:///relative.db` is a path relative to the current working dir.
-      - `sqlite:////absolute.db` is an absolute filesystem path.
+      - ``sqlite:///relative.db`` is a path relative to the current working dir.
+      - ``sqlite:////absolute.db`` is an absolute filesystem path.
   """
   if not db_path.startswith(("sqlite:", "sqlite+aiosqlite:")):
     return db_path, db_path, False

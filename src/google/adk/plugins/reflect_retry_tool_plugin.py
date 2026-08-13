@@ -55,8 +55,8 @@ class ReflectAndRetryToolPlugin(BasePlugin):
   - **Concurrency Safe:** Uses locking to safely handle parallel tool
   executions
   - **Configurable Scope:** Tracks failures per-invocation (default) or globally
-    using the `TrackingScope` enum.
-  - **Extensible Scoping:** The `_get_scope_key` method can be overridden to
+    using the ``TrackingScope`` enum.
+  - **Extensible Scoping:** The ``_get_scope_key`` method can be overridden to
     implement custom tracking logic (e.g., per-user or per-session).
   - **Granular Tracking:** Failure counts are tracked per-tool within the
     defined scope. A success with one tool resets its counter without affecting
@@ -64,7 +64,7 @@ class ReflectAndRetryToolPlugin(BasePlugin):
   - **Custom Error Extraction:** Supports detecting errors in normal tool
   responses
   that
-    don't throw exceptions, by overriding the `extract_error_from_result`
+    don't throw exceptions, by overriding the ``extract_error_from_result``
     method.
 
   **Example:**
@@ -115,7 +115,7 @@ class ReflectAndRetryToolPlugin(BasePlugin):
         throw_exception_if_retry_exceeded: If True, raises the final exception
           when the retry limit is reached. If False, returns guidance instead.
         tracking_scope: Determines the lifecycle of the error tracking state.
-          Defaults to `TrackingScope.INVOCATION` tracking per-invocation.
+          Defaults to ``TrackingScope.INVOCATION`` tracking per-invocation.
     """
     super().__init__(name)
     if max_retries < 0:

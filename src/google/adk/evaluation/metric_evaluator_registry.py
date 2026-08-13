@@ -110,7 +110,7 @@ class MetricEvaluatorRegistry:
 
     Both sources are eval config entries: one recorded when the metric was
     registered from a config, the other carried on a metric built from a
-    config. The `custom_function_path` field on the incoming metric is not
+    config. The ``custom_function_path`` field on the incoming metric is not
     consulted, as it can be set by whoever built the request.
 
     Args:

@@ -200,14 +200,14 @@ Example:
   @model_validator(mode="before")
   @classmethod
   def _inject_default_user_simulator_type(cls, values: Any) -> Any:
-    """Inject the legacy default `type` when a JSON config predates the
+    """Inject the legacy default ``type`` when a JSON config predates the
 
     discriminator field.
 
-    Without this validator, existing configs that never carried a `type`
-    key would fail validation with `union_tag_not_found`. Here we silently
-    treat a missing `type` as the legacy default so existing files keep
-    working. Configs that DO carry `type` are left untouched.
+    Without this validator, existing configs that never carried a ``type``
+    key would fail validation with ``union_tag_not_found``. Here we silently
+    treat a missing ``type`` as the legacy default so existing files keep
+    working. Configs that DO carry ``type`` are left untouched.
     """
     if not isinstance(values, dict):
       return values

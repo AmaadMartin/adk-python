@@ -163,7 +163,8 @@ class DiscoveryEngineSearchTool(FunctionTool):
         to CHUNKS or DOCUMENTS to skip auto-detection.
       location: Optional endpoint location override.
         Examples: "global", "us", "eu". If not specified, location is inferred
-          from `data_store_id` or `search_engine_id` and defaults to "global".
+          from ``data_store_id`` or ``search_engine_id`` and defaults to
+          "global".
     """
     super().__init__(self.discovery_engine_search)
     if (data_store_id is None and search_engine_id is None) or (

@@ -641,10 +641,10 @@ def _recover_compacted_function_calls(
   intermediate placeholder response, then the real result arrives on resume
   (a later event not covered by the summary). That surviving response would
   be orphaned, which breaks call/response pairing during prompt assembly (it
-  raises in `_rearrange_events_for_latest_function_response`).
+  raises in ``_rearrange_events_for_latest_function_response``).
 
   For each response whose call is no longer present, this restores the
-  original call event from `source_events` (the pre-compaction list),
+  original call event from ``source_events`` (the pre-compaction list),
   inserting it immediately before the first surviving response that
   references it. The whole call event is re-injected verbatim (rather than
   trimmed to the resumed call) so parallel-call thought signatures, which only
@@ -657,7 +657,7 @@ def _recover_compacted_function_calls(
     source_events: The pre-compaction events to recover missing calls from.
 
   Returns:
-    `events` with any recoverable missing function-call events (and their
+    ``events`` with any recoverable missing function-call events (and their
     compacted sibling responses) re-injected; the original list is returned
     unchanged when nothing needs recovery.
   """

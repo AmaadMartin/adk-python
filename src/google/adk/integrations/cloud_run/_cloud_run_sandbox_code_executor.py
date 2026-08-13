@@ -47,15 +47,16 @@ def _filter_stderr(stderr: str | None) -> str:
 
 
 class CloudRunSandboxCodeExecutor(BaseCodeExecutor):
-  """Executes Python code inside a Cloud Run sandbox using the `sandbox` CLI tool.
+  """Executes Python code inside a Cloud Run sandbox using the ``sandbox`` CLI
+  tool.
 
   This executor is designed to run from within a Cloud Run container where
   sandboxes are enabled. It cannot be used to execute code remotely from a
   local machine or other external environments, as it relies on the local guest
-  `sandbox` binary provided by the Cloud Run container runtime.
+  ``sandbox`` binary provided by the Cloud Run container runtime.
 
   It executes the code by passing it via stdin to the Python interpreter
-  running inside the local sandbox: `sandbox do <python_path>`.
+  running inside the local sandbox: ``sandbox do <python_path>``.
   """
 
   sandbox_bin: str = '/usr/local/gcp/bin/sandbox'

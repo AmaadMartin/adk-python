@@ -81,11 +81,11 @@ async def get_app_or_root_agent(
 ) -> tuple[Optional[App], BaseAgent]:
   """Returns the (app, root_agent) pair for the given agent module.
 
-  If the module exposes an `App` instance via `app`, that App and its
-  `root_agent` are returned. Otherwise `app` is None and the root agent is
-  resolved the same way as `get_root_agent`. This lets eval flows participate
+  If the module exposes an ``App`` instance via ``app``, that App and its
+  ``root_agent`` are returned. Otherwise ``app`` is None and the root agent is
+  resolved the same way as ``get_root_agent``. This lets eval flows participate
   in the App's plugin / cache / resumability lifecycle when one is defined,
-  while preserving the bare-`root_agent` path for projects that don't use App.
+  while preserving the bare-``root_agent`` path for projects that don't use App.
   """
   agent_module = _get_agent_module(agent_module_file_path)
   agent_module_with_agent = getattr(agent_module, "agent", agent_module)
@@ -106,7 +106,7 @@ async def get_root_agent(agent_module_file_path: str) -> BaseAgent:
   """Returns root agent given the agent module.
 
   Kept for backward compatibility. New callers should prefer
-  `get_app_or_root_agent`, which also surfaces the wrapping `App` (if any)
+  ``get_app_or_root_agent``, which also surfaces the wrapping ``App`` (if any)
   so plugins, context-cache, and resumability configs are honored.
   """
   _, root_agent = await get_app_or_root_agent(agent_module_file_path)

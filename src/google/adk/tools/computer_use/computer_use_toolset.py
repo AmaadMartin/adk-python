@@ -63,7 +63,7 @@ class ComputerUseToolset(BaseToolset):
       computer: The computer environment to expose as tools.
       excluded_predefined_functions: Names of BaseComputer methods that should
         not be exposed as tools.
-      allow_private_network_access: By default `navigate` refuses urls whose
+      allow_private_network_access: By default ``navigate`` refuses urls whose
         host is not publicly routable. Set this to True when the agent is
         meant to drive the browser against localhost or an internal host.
     """
@@ -128,7 +128,9 @@ class ComputerUseToolset(BaseToolset):
   def _wrap_navigate_with_url_validation(
       self, navigate_method: Callable[..., Any]
   ) -> Callable[..., Any]:
-    """Checks a model-supplied url before `navigate` hands it to the browser."""
+    """Checks a model-supplied url before ``navigate`` hands it to the
+    browser.
+    """
 
     @functools.wraps(navigate_method)
     async def wrapper(url: str) -> Any:

@@ -53,7 +53,7 @@ def _get_api_registry_url(client_cert_source: Any | None = None) -> str:
 class ApiRegistry:
   """[DEPRECATED] Registry for MCP servers registered in API Registry.
 
-  Deprecated: Use AgentRegistry from `google.adk.integrations.agent_registry`
+  Deprecated: Use AgentRegistry from ``google.adk.integrations.agent_registry``
   instead.
   """
 

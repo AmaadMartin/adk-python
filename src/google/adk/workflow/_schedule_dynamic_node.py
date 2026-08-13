@@ -29,7 +29,7 @@ class ScheduleDynamicNode(Protocol):
   """Protocol for scheduling a dynamic node.
 
   Implementations handle the lifecycle of dynamically scheduled nodes (e.g.,
-  via `ctx.run_node()`). This includes:
+  via ``ctx.run_node()``). This includes:
   1. Fresh Execution: Running a node for the first time.
   2. Deduplication: Returning cached output if the node already completed in a
      prior turn (based on event history).
@@ -39,10 +39,10 @@ class ScheduleDynamicNode(Protocol):
 
   Args:
     ctx: The calling node's Context.
-    node: The node to execute. Usually a subclass of `BaseNode`.
+    node: The node to execute. Usually a subclass of ``BaseNode``.
     node_input: Input data for the node. Must match the node's input schema if
       defined.
-    node_name: Deterministic tracking name. If None, uses `node.name`. This is
+    node_name: Deterministic tracking name. If None, uses ``node.name``. This is
       critical for matching events on resume.
     use_as_output: If True, the child node's output will replace the calling
       node's output.
@@ -59,7 +59,7 @@ class ScheduleDynamicNode(Protocol):
   Raises:
     ValueError: If input validation fails or if the node configuration is
       invalid on resume (e.g., waiting for output but called with
-      `rerun_on_resume=False`).
+      ``rerun_on_resume=False``).
     RuntimeError: If the execution reaches an inconsistent state.
   """
 

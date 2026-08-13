@@ -261,13 +261,13 @@ class McpTool(BaseAuthenticatedTool):
   def mcp_app_resource_uri(self) -> str | None:
     """Returns the MCP App UI resource URI if this tool has one.
 
-    MCP Apps declare a UI resource via `meta.ui.resourceUri` in the tool
+    MCP Apps declare a UI resource via ``meta.ui.resourceUri`` in the tool
     definition. This property extracts that URI, supporting both the nested
-    format (`{"ui": {"resourceUri": "ui://..."}}`) and the flat format
-    (`{"ui/resourceUri": "ui://..."}`).
+    format (``{"ui": {"resourceUri": "ui://..."}}``) and the flat format
+    (``{"ui/resourceUri": "ui://..."}``).
 
     Returns:
-        The `ui://` resource URI string, or None if not present.
+        The ``ui://`` resource URI string, or None if not present.
     """
     meta = getattr(self.raw_mcp_tool, "meta", None)
     if not meta or not isinstance(meta, dict):
@@ -637,7 +637,7 @@ class McpTool(BaseAuthenticatedTool):
 
 
 class MCPTool(McpTool):
-  """Deprecated name, use `McpTool` instead."""
+  """Deprecated name, use ``McpTool`` instead."""
 
   def __init__(self, *args, **kwargs):
     warnings.warn(
