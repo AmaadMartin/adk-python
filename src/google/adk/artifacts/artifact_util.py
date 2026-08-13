@@ -15,7 +15,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Collection
 import re
 from typing import NamedTuple
 
@@ -181,8 +181,8 @@ def validate_artifact_filename(filename: str) -> None:
     )
 
 
-def assert_no_case_collision(
-    existing_filenames: Iterable[str], filename: str
+def validate_no_case_collision(
+    existing_filenames: Collection[str], filename: str
 ) -> None:
   """Rejects a filename that differs only in case from a stored one.
 
@@ -212,18 +212,15 @@ def assert_no_case_collision(
     InputValidationError: If `filename` differs only in case from one of
       `existing_filenames`.
   """
+  if filename in existing_filenames:
+    return
   lowered = filename.lower()
-  collision: str | None = None
   for existing in existing_filenames:
-    if existing == filename:
-      return
-    if collision is None and existing.lower() == lowered:
-      collision = existing
-  if collision is not None:
-    raise input_validation_error.InputValidationError(
-        f"Artifact filename {filename!r} differs only in case from existing"
-        f" artifact {collision!r}."
-    )
+    if existing.lower() == lowered:
+      raise input_validation_error.InputValidationError(
+          f"Artifact filename {filename!r} differs only in case from existing"
+          f" artifact {existing!r}."
+      )
 
 
 def validate_path_segment(value: str, field_name: str) -> None:
