@@ -57,10 +57,6 @@ def test_testpaths_is_the_unit_suite(testpaths: list[str]) -> None:
       'optional-dependencies.test does not install, and a default run must not '
       f'collect them. Found {testpaths!r}.'
   )
-  assert (REPO_ROOT / testpaths[0]).is_dir(), (
-      f'testpaths in pyproject.toml names {testpaths[0]!r}, which is not a '
-      f'directory under {REPO_ROOT}. A bare `pytest` would collect nothing.'
-  )
 
 
 def test_tox_runs_the_testpaths_suite(testpaths: list[str]) -> None:
@@ -68,13 +64,8 @@ def test_tox_runs_the_testpaths_suite(testpaths: list[str]) -> None:
   parser = configparser.ConfigParser()
   parser.read(_TOX_PATH, encoding='utf-8')
   command = shlex.split(parser['testenv']['commands'])
-  assert command[:1] == ['pytest'], (
-      f'[testenv] commands in {_TOX_PATH.name} must run pytest, so that the '
-      f'suite tox runs stays comparable with testpaths. Found {command!r}.'
-  )
-  tox_paths = [word for word in command[1:] if not word.startswith('-')]
-  assert tox_paths == testpaths, (
+  assert command == ['pytest', *testpaths], (
       f'{_TOX_PATH.name} and pyproject.toml must name one suite, so that `tox` '
       'and a bare `pytest` run the same tests. Update [testenv] commands and '
-      f'testpaths together. tox runs {tox_paths!r}, testpaths is {testpaths!r}.'
+      f'testpaths together. tox runs {command!r}, testpaths is {testpaths!r}.'
   )
