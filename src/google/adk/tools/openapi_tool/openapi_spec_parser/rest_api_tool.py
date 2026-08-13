@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import ssl
 from typing import Any
 from typing import Callable
@@ -608,12 +609,41 @@ class RestApiTool(BaseTool):
     )
 
 
+def _normalize_ssl_verify(
+    verify: Union[bool, str, ssl.SSLContext],
+) -> Union[bool, ssl.SSLContext]:
+  """Resolves a CA bundle path into an ``ssl.SSLContext``.
+
+  httpx deprecated ``verify=<str>`` in 0.28 and plans to remove it in 1.0, so
+  the path is resolved here instead, the same way httpx resolves it internally:
+  a directory becomes ``capath`` and anything else becomes ``cafile``. This
+  keeps ADK's public ``ssl_verify=<str>`` API working. Booleans and
+  caller-supplied contexts pass through untouched.
+
+  Args:
+      verify: The configured ``ssl_verify`` value.
+
+  Returns:
+      ``verify`` unchanged, unless it is a ``str``, in which case an
+      ``ssl.SSLContext`` built from that path.
+
+  Raises:
+      FileNotFoundError: If ``verify`` names a CA bundle file that does not
+          exist. httpx raises the same error for the same input today.
+  """
+  if not isinstance(verify, str):
+    return verify
+  if os.path.isdir(verify):
+    return ssl.create_default_context(capath=verify)
+  return ssl.create_default_context(cafile=verify)
+
+
 async def _request(
     *,
     httpx_client_factory: Optional[HttpxClientFactory] = None,
     **request_params,
 ) -> httpx.Response:
-  verify = request_params.pop("verify", True)
+  verify = _normalize_ssl_verify(request_params.pop("verify", True))
   if httpx_client_factory is not None:
     async with httpx_client_factory() as client:
       return await client.request(**request_params)
