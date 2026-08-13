@@ -1,0 +1,107 @@
+# Copyright 2026 Google LLC
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+name: Integration Tests
+
+# These tests call live models and need credentials, so they are deliberately
+# kept off the pull-request path: a contributor's pull request must never
+# depend on a secret the contributor cannot see. The nightly run exists so the
+# directory cannot silently rot again.
+on:
+  # Runs once per day at 07:00 UTC.
+  schedule:
+    - cron: '0 7 * * *'
+  # Manual trigger for testing and for the non-default backends.
+  workflow_dispatch:
+    inputs:
+      test_backend:
+        description: 'Backend to exercise (see tests/integration/conftest.py)'
+        required: false
+        default: 'GOOGLE_AI_ONLY'
+        type: choice
+        options: [GOOGLE_AI_ONLY, VERTEX_ONLY, BOTH]
+
+permissions:
+  contents: read
+
+# One live run at a time, so a slow nightly is never overtaken by the next one.
+concurrency:
+  group: integration-tests
+  cancel-in-progress: false
+
+jobs:
+  integration-test:
+    name: Integration Tests (live models)
+    # Forks hold none of the secrets below, so skip rather than fail for them.
+    if: github.repository == 'google/adk-python'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          persist-credentials: false
+
+      # A missing key means the repository owner has not opted in yet. Report
+      # that and stop, rather than failing the run every night.
+      - name: Check for credentials
+        id: guard
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        run: |
+          if [ -z "$GOOGLE_API_KEY" ]; then
+            echo 'GOOGLE_API_KEY is not configured; skipping integration tests.'
+            echo 'run=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'run=true' >> "$GITHUB_OUTPUT"
+          fi
+
+      # 3.11 matches the other scheduled workflows in this repository.
+      - name: Set up Python
+        if: steps.guard.outputs.run == 'true'
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.11'
+
+      - name: Install the latest version of uv
+        if: steps.guard.outputs.run == 'true'
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
+        with:
+          enable-cache: true
+
+      # --all-extras, not --extra test: tests/integration/integrations/oci
+      # imports the oci SDK at module scope, and oci lives in its own extra.
+      - name: Install dependencies
+        if: steps.guard.outputs.run == 'true'
+        run: |
+          uv venv .venv
+          source .venv/bin/activate
+          uv sync --all-extras
+
+      - name: List installed packages
+        if: steps.guard.outputs.run == 'true'
+        run: uv pip list
+
+      - name: Run integration tests with pytest
+        if: steps.guard.outputs.run == 'true'
+        env:
+          GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+          GOOGLE_CLOUD_PROJECT: ${{ secrets.GOOGLE_CLOUD_PROJECT }}
+          GOOGLE_CLOUD_LOCATION: ${{ secrets.GOOGLE_CLOUD_LOCATION }}
+          TEST_BACKEND: ${{ inputs.test_backend || 'GOOGLE_AI_ONLY' }}
+        # Name the subtree, never `pytest tests`: test_oci_genai_llm.py exists
+        # under both tests/integration and tests/unittests, and collecting both
+        # trees at once trips pytest's import file mismatch check. Serial on
+        # purpose, because these endpoints are rate limited.
+        run: uv run pytest tests/integration -q
