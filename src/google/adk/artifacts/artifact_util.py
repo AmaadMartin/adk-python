@@ -15,6 +15,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import re
 from typing import NamedTuple
 
@@ -177,6 +178,51 @@ def validate_artifact_filename(filename: str) -> None:
     raise input_validation_error.InputValidationError(
         f"Artifact filename {filename!r} must not have leading or trailing"
         " whitespace."
+    )
+
+
+def assert_no_case_collision(
+    existing_filenames: Iterable[str], filename: str
+) -> None:
+  """Rejects a filename that differs only in case from a stored one.
+
+  A filename is a storage key, so two filenames that differ only in case must
+  address two different artifacts. `FileArtifactService` maps a filename onto a
+  directory name, and the case-insensitive filesystems ADK supports (APFS,
+  NTFS) resolve `Report.txt` and `report.txt` to one directory, so the second
+  save appends a version to the first artifact and the two artifacts alias each
+  other. That pair is not storable distinctly on every supported platform, so
+  every backend rejects the second name.
+
+  An exact match is always allowed: re-saving a stored key is how a new version
+  is created.
+
+  The comparison uses `str.lower()` rather than `str.casefold()`, which folds
+  `ß` to `ss` and would reject `straße.txt` against `STRASSE.txt` — a pair APFS
+  and NTFS keep apart. Unicode normalization is a distinct equivalence and is
+  not handled here.
+
+  Args:
+    existing_filenames: The keys already stored in the same scope as
+      `filename`, in the same representation (a `user:` prefix is kept on both
+      sides).
+    filename: The caller-supplied artifact filename.
+
+  Raises:
+    InputValidationError: If `filename` differs only in case from one of
+      `existing_filenames`.
+  """
+  lowered = filename.lower()
+  collision: str | None = None
+  for existing in existing_filenames:
+    if existing == filename:
+      return
+    if collision is None and existing.lower() == lowered:
+      collision = existing
+  if collision is not None:
+    raise input_validation_error.InputValidationError(
+        f"Artifact filename {filename!r} differs only in case from existing"
+        f" artifact {collision!r}."
     )
 
 

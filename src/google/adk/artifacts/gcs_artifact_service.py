@@ -82,6 +82,23 @@ def _parse_version(blob_name: str, prefix: str) -> Optional[int]:
   return int(suffix)
 
 
+def _artifact_key_from_blob_name(blob_name: str, scope_prefix: str) -> str:
+  """Recovers the artifact key a blob belongs to.
+
+  A blob is named ``{scope_prefix}{filename}/{version}`` and a filename may
+  itself contain "/", so only the trailing version segment is dropped.
+
+  Args:
+      blob_name: The full name of the blob, which must start with
+        ``scope_prefix``.
+      scope_prefix: The blob prefix of the scope, including the trailing "/".
+
+  Returns:
+      The artifact key, still carrying any ``user:`` prefix.
+  """
+  return "/".join(blob_name[len(scope_prefix) :].split("/")[:-1])
+
+
 class GcsArtifactService(BaseArtifactService):
   """An artifact service implementation using Google Cloud Storage (GCS)."""
 
@@ -195,6 +212,35 @@ class GcsArtifactService(BaseArtifactService):
     """
     return filename.startswith("user:")
 
+  def _get_scope_prefix(
+      self,
+      app_name: str,
+      user_id: str,
+      filename: str,
+      session_id: Optional[str] = None,
+  ) -> str:
+    """Constructs the blob name prefix in GCS shared by one scope."""
+    artifact_util.validate_path_segment(app_name, "app_name")
+    artifact_util.validate_path_segment(user_id, "user_id")
+    if self._file_has_user_namespace(filename):
+      return f"{app_name}/{user_id}/user/"
+
+    if session_id is None:
+      raise InputValidationError(
+          "Session ID must be provided for session-scoped artifacts."
+      )
+    artifact_util.validate_path_segment(session_id, "session_id")
+    return f"{app_name}/{user_id}/{session_id}/"
+
+  def _list_keys_in_scope(self, scope_prefix: str) -> set[str]:
+    """Lists the key of every artifact stored under a scope prefix."""
+    return {
+        _artifact_key_from_blob_name(blob.name, scope_prefix)
+        for blob in self.storage_client.list_blobs(
+            self.bucket, prefix=scope_prefix
+        )
+    }
+
   def _get_blob_prefix(
       self,
       app_name: str,
@@ -203,17 +249,10 @@ class GcsArtifactService(BaseArtifactService):
       session_id: Optional[str] = None,
   ) -> str:
     """Constructs the blob name prefix in GCS for a given artifact."""
-    artifact_util.validate_path_segment(app_name, "app_name")
-    artifact_util.validate_path_segment(user_id, "user_id")
-    if self._file_has_user_namespace(filename):
-      return f"{app_name}/{user_id}/user/{filename}"
-
-    if session_id is None:
-      raise InputValidationError(
-          "Session ID must be provided for session-scoped artifacts."
-      )
-    artifact_util.validate_path_segment(session_id, "session_id")
-    return f"{app_name}/{user_id}/{session_id}/{filename}"
+    scope_prefix = self._get_scope_prefix(
+        app_name, user_id, filename, session_id
+    )
+    return f"{scope_prefix}{filename}"
 
   def _get_blob_name(
       self,
@@ -250,6 +289,12 @@ class GcsArtifactService(BaseArtifactService):
   ) -> int:
     artifact_util.validate_artifact_filename(filename)
     artifact = ensure_part(artifact)
+    artifact_util.assert_no_case_collision(
+        self._list_keys_in_scope(
+            self._get_scope_prefix(app_name, user_id, filename, session_id)
+        ),
+        filename,
+    )
     versions = self._list_versions(
         app_name=app_name,
         user_id=user_id,
@@ -415,33 +460,16 @@ class GcsArtifactService(BaseArtifactService):
     artifact_util.validate_path_segment(user_id, "user_id")
     if session_id is not None:
       artifact_util.validate_path_segment(session_id, "session_id")
-    filenames = set()
+    filenames: set[str] = set()
 
     if session_id:
-      session_prefix = f"{app_name}/{user_id}/{session_id}/"
-      session_blobs = self.storage_client.list_blobs(
-          self.bucket, prefix=session_prefix
+      filenames |= self._list_keys_in_scope(
+          f"{app_name}/{user_id}/{session_id}/"
       )
-      for blob in session_blobs:
-        # blob.name is like session_prefix/filename/version
-        # or session_prefix/path/to/filename/version
-        # we need to extract filename including slashes, but remove prefix
-        # and /version
-        fn_and_version = blob.name[len(session_prefix) :]
-        filename = "/".join(fn_and_version.split("/")[:-1])
-        filenames.add(filename)
 
-    user_namespace_prefix = f"{app_name}/{user_id}/user/"
-    user_namespace_blobs = self.storage_client.list_blobs(
-        self.bucket, prefix=user_namespace_prefix
-    )
-    for blob in user_namespace_blobs:
-      # blob.name is like user_namespace_prefix/filename/version
-      fn_and_version = blob.name[len(user_namespace_prefix) :]
-      filename = "/".join(fn_and_version.split("/")[:-1])
-      filenames.add(filename)
+    filenames |= self._list_keys_in_scope(f"{app_name}/{user_id}/user/")
 
-    return sorted(list(filenames))
+    return sorted(filenames)
 
   def _delete_artifact(
       self,
