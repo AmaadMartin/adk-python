@@ -620,8 +620,8 @@ class AgentRegistry:
         protocol_binding=getattr(binding, "value", binding),
         protocol_version=protocol_version,
         skills=skills,
-        default_input_modes=["text"],
-        default_output_modes=["text"],
+        default_input_modes=["text/plain"],
+        default_output_modes=["text/plain"],
     )
 
     return RemoteA2aAgent(

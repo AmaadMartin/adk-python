@@ -583,6 +583,63 @@ class TestAgentRegistry:
         agent._agent_card, "1.0" if _compat.IS_A2A_V1 else "0.3.0"
     )
 
+  def test_get_remote_a2a_agent_defaults_to_text_plain_modes(self, registry):
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "displayName": "TestAgent",
+        "description": "Test Desc",
+        "version": "1.0",
+        "protocols": [{
+            "type": _ProtocolType.A2A_AGENT,
+            "interfaces": [{
+                "url": "https://my-agent.com",
+            }],
+        }],
+    }
+    mock_response.raise_for_status = MagicMock()
+    registry._session.get.return_value = mock_response
+
+    registry._credentials.token = "token"
+    registry._credentials.refresh = MagicMock()
+
+    agent = registry.get_remote_a2a_agent("test-agent")
+    # The A2A spec types these fields as media types, so a bare "text" can
+    # never match the "text/plain" mime type ADK puts on text parts.
+    # `list(...)` keeps the assertion identical on the a2a-sdk 1.x proto, which
+    # returns a repeated scalar container rather than a list.
+    assert list(agent._agent_card.default_input_modes) == ["text/plain"]
+    assert list(agent._agent_card.default_output_modes) == ["text/plain"]
+
+  def test_get_remote_a2a_agent_with_card_preserves_card_modes(self, registry):
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "name": "projects/p/locations/l/agents/a",
+        "card": {
+            "type": "A2A_AGENT_CARD",
+            "content": {
+                "name": "CardName",
+                "description": "CardDesc",
+                "version": "2.0",
+                "url": "https://card-url.com",
+                "skills": [],
+                "capabilities": {},
+                "defaultInputModes": ["application/json"],
+                "defaultOutputModes": ["application/json"],
+            },
+        },
+    }
+    mock_response.raise_for_status = MagicMock()
+    registry._session.get.return_value = mock_response
+
+    registry._credentials.token = "token"
+    registry._credentials.refresh = MagicMock()
+
+    agent = registry.get_remote_a2a_agent("test-agent")
+    # A stored card passes through untouched, so synthesis defaults must not
+    # overwrite the modes it declares.
+    assert list(agent._agent_card.default_input_modes) == ["application/json"]
+    assert list(agent._agent_card.default_output_modes) == ["application/json"]
+
   def test_get_remote_a2a_agent_with_card(self, registry):
     mock_response = MagicMock()
     mock_response.json.return_value = {
