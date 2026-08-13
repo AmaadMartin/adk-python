@@ -145,6 +145,23 @@ async def test_openid_connect_uses_explicit_credential_key(
     openid_connect_scheme, openid_connect_credential
 ):
   tool_context = create_mock_tool_context()
+  handler = ToolAuthHandler(
+      tool_context,
+      openid_connect_scheme,
+      openid_connect_credential,
+      credential_key='my_tool_tokens',
+  )
+  result = await handler.prepare_auth_credentials()
+  assert result.state == 'pending'
+  requested = tool_context.actions.requested_auth_configs['test-fc-id']
+  assert requested.credential_key == 'my_tool_tokens'
+
+
+@pytest.mark.asyncio
+async def test_from_tool_context_pending_request_creates_no_cache_slot(
+    openid_connect_scheme, openid_connect_credential
+):
+  tool_context = create_mock_tool_context()
   handler = ToolAuthHandler.from_tool_context(
       tool_context,
       openid_connect_scheme,
@@ -155,8 +172,33 @@ async def test_openid_connect_uses_explicit_credential_key(
   assert result.state == 'pending'
   requested = tool_context.actions.requested_auth_configs['test-fc-id']
   assert requested.credential_key == 'my_tool_tokens'
-  # A pending request must not create a cache slot.
   assert not tool_context.state.to_dict()
+
+
+@pytest.mark.asyncio
+async def test_a_supplied_store_caches_under_the_configured_key():
+  """The handler configures the store it is given, so no caller can miss it."""
+  api_key_scheme, _ = token_to_scheme_credential(
+      'apikey', 'header', 'X-API-Key', 'unused'
+  )
+  tool_context = create_mock_tool_context()
+  tool_context.state['temp:my_tool_tokens'] = AuthCredential(
+      auth_type=AuthCredentialTypes.API_KEY, api_key='supplied_store_api_key'
+  ).model_dump(exclude_none=True)
+  credential_store = ToolContextCredentialStore(tool_context=tool_context)
+
+  handler = ToolAuthHandler(
+      tool_context,
+      api_key_scheme,
+      None,
+      credential_store=credential_store,
+      credential_key='my_tool_tokens',
+  )
+  result = await handler.prepare_auth_credentials()
+
+  assert result.state == 'done'
+  cached = AuthCredential.model_validate(tool_context.state['my_tool_tokens'])
+  assert cached.api_key == 'supplied_store_api_key'
 
 
 @pytest.mark.asyncio

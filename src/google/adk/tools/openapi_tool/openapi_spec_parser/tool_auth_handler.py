@@ -55,14 +55,6 @@ def _resolve_credential_key(
 
   The auth models allow extra fields, so a key can also arrive as a
   `credential_key` or `credentialKey` entry on the credential or the scheme.
-
-  Args:
-    credential_key: The key passed explicitly by the caller.
-    auth_credential: The auth credential to read an extra field from.
-    auth_scheme: The auth scheme to read an extra field from.
-
-  Returns:
-    The configured key, or None when no key is configured.
   """
   if credential_key:
     return credential_key
@@ -92,7 +84,7 @@ class ToolContextCredentialStore:
       credential_key: Optional[str] = None,
   ):
     self.tool_context = tool_context
-    self._credential_key = credential_key
+    self.credential_key = credential_key
 
   def _legacy_stable_digest(self, text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
@@ -135,8 +127,8 @@ class ToolContextCredentialStore:
 
     # A key the developer named wins over the derived one: it is how they
     # point several tools at one credential, or keep two apart.
-    if self._credential_key:
-      return self._credential_key
+    if self.credential_key:
+      return self.credential_key
 
     if auth_credential and auth_credential.oauth2:
       auth_credential = auth_credential.model_copy(deep=True)
@@ -189,7 +181,7 @@ class ToolContextCredentialStore:
     ):
       return AuthCredential.model_validate(serialized_credential)
 
-    if self._credential_key:
+    if self.credential_key:
       # A developer-named slot is exactly the slot: never migrate a
       # digest-keyed credential into it, or one tool's cached credential
       # silently shows up in another tool's named slot.
@@ -233,21 +225,6 @@ class ToolAuthHandler:
       *,
       credential_key: Optional[str] = None,
   ):
-    """Initializes the handler.
-
-    Args:
-      tool_context: The tool context the credentials are prepared for.
-      auth_scheme: The auth scheme the tool declares.
-      auth_credential: The raw auth credential the tool is configured with.
-      credential_exchanger: The exchanger to use, defaulting to
-        `AutoAuthCredentialExchanger`.
-      credential_store: The store that caches the exchanged credential. Pass
-        `credential_key` to the store as well, so the cached credential lands
-        in the configured slot; `from_tool_context` does that for you.
-      credential_key: Optional stable key naming the session state slot that
-        holds both the interactive auth request and the cached exchanged
-        credential.
-    """
     self.tool_context = tool_context
     self.auth_scheme = (
         auth_scheme.model_copy(deep=True) if auth_scheme else None
@@ -255,24 +232,23 @@ class ToolAuthHandler:
     self.auth_credential = (
         auth_credential.model_copy(deep=True) if auth_credential else None
     )
-    self._credential_key = credential_key
+    self._credential_key = _resolve_credential_key(
+        credential_key, self.auth_credential, self.auth_scheme
+    )
     self.credential_exchanger = (
         credential_exchanger or AutoAuthCredentialExchanger()
     )
     self.credential_store = credential_store
+    if credential_store and self._credential_key:
+      # The request slot and the cache slot are the same configured slot.
+      credential_store.credential_key = self._credential_key
     self.should_store_credential = True
-
-  def _get_credential_key_override(self) -> Optional[str]:
-    """Returns a user-provided credential_key if available."""
-    return _resolve_credential_key(
-        self._credential_key, self.auth_credential, self.auth_scheme
-    )
 
   def _build_auth_config(self) -> AuthConfig:
     return AuthConfig(
         auth_scheme=self.auth_scheme,
         raw_auth_credential=self.auth_credential,
-        credential_key=self._get_credential_key_override(),
+        credential_key=self._credential_key,
     )
 
   @classmethod
@@ -286,10 +262,7 @@ class ToolAuthHandler:
       credential_key: Optional[str] = None,
   ) -> "ToolAuthHandler":
     """Creates a ToolAuthHandler instance from a ToolContext."""
-    credential_store = ToolContextCredentialStore(
-        tool_context,
-        _resolve_credential_key(credential_key, auth_credential, auth_scheme),
-    )
+    credential_store = ToolContextCredentialStore(tool_context)
     return cls(
         tool_context,
         auth_scheme,
