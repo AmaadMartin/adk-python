@@ -25,7 +25,7 @@ import requests
 _PROJECT_ID = "test-project"
 _LOCATION = "global"
 
-MOCK_MCP_SERVERS_LIST = {
+_MOCK_MCP_SERVERS_LIST = {
     "mcpServers": [
         {
             "name": "test-mcp-server-1",
@@ -87,7 +87,7 @@ class TestApiRegistry:
   def test_deprecation_warning(self, mock_session):
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json = MagicMock(return_value=MOCK_MCP_SERVERS_LIST)
+    mock_response.json = MagicMock(return_value=_MOCK_MCP_SERVERS_LIST)
     mock_session.get.return_value = mock_response
 
     with pytest.warns(DeprecationWarning, match="ApiRegistry is deprecated"):
@@ -96,7 +96,7 @@ class TestApiRegistry:
   def test_init_success(self, mock_session):
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json = MagicMock(return_value=MOCK_MCP_SERVERS_LIST)
+    mock_response.json = MagicMock(return_value=_MOCK_MCP_SERVERS_LIST)
     mock_session.get.return_value = mock_response
 
     api_registry_instance = ApiRegistry(
@@ -122,7 +122,7 @@ class TestApiRegistry:
   ):
     mock_credentials.quota_project_id = "quota-project"
     mock_response = MagicMock()
-    mock_response.json.return_value = MOCK_MCP_SERVERS_LIST
+    mock_response.json.return_value = _MOCK_MCP_SERVERS_LIST
     mock_session.get.return_value = mock_response
 
     api_registry_instance = ApiRegistry(
@@ -221,7 +221,7 @@ class TestApiRegistry:
   def test_get_toolset_success(self, MockMcpToolset, mock_session):
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json = MagicMock(return_value=MOCK_MCP_SERVERS_LIST)
+    mock_response.json = MagicMock(return_value=_MOCK_MCP_SERVERS_LIST)
     mock_session.get.return_value = mock_response
 
     api_registry_instance = ApiRegistry(
@@ -250,7 +250,7 @@ class TestApiRegistry:
   ):
     mock_credentials.quota_project_id = "quota-project"
     mock_response = MagicMock()
-    mock_response.json.return_value = MOCK_MCP_SERVERS_LIST
+    mock_response.json.return_value = _MOCK_MCP_SERVERS_LIST
     mock_session.get.return_value = mock_response
 
     api_registry_instance = ApiRegistry(
@@ -282,7 +282,7 @@ class TestApiRegistry:
   ):
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json = MagicMock(return_value=MOCK_MCP_SERVERS_LIST)
+    mock_response.json = MagicMock(return_value=_MOCK_MCP_SERVERS_LIST)
     mock_session.get.return_value = mock_response
 
     api_registry_instance = ApiRegistry(
@@ -307,41 +307,43 @@ class TestApiRegistry:
     )
     assert toolset == MockMcpToolset.return_value
 
-  def test_get_toolset_url_scheme(self, mock_session):
-    params = [
-        ("test-mcp-server-http", "http://mcp.server_http.com"),
-        ("test-mcp-server-https", "https://mcp.server_https.com"),
-    ]
-    for mock_server_name, mock_url in params:
-      with (
-          patch.object(
-              api_registry.api_registry, "McpToolset", autospec=True
-          ) as MockMcpToolset,
-      ):
-        mock_response = MagicMock()
-        mock_response.json.return_value = MOCK_MCP_SERVERS_LIST
-        mock_session.get.return_value = mock_response
+  @pytest.mark.parametrize(
+      "server_name, expected_url",
+      [
+          ("test-mcp-server-http", "http://mcp.server_http.com"),
+          ("test-mcp-server-https", "https://mcp.server_https.com"),
+      ],
+  )
+  def test_get_toolset_url_scheme(
+      self, server_name, expected_url, mock_session
+  ):
+    with patch.object(
+        api_registry.api_registry, "McpToolset", autospec=True
+    ) as MockMcpToolset:
+      mock_response = MagicMock()
+      mock_response.json.return_value = _MOCK_MCP_SERVERS_LIST
+      mock_session.get.return_value = mock_response
 
-        api_registry_instance = ApiRegistry(
-            api_registry_project_id=_PROJECT_ID, location=_LOCATION
-        )
+      api_registry_instance = ApiRegistry(
+          api_registry_project_id=_PROJECT_ID, location=_LOCATION
+      )
 
-        api_registry_instance.get_toolset(mock_server_name)
+      api_registry_instance.get_toolset(server_name)
 
-        MockMcpToolset.assert_called_once_with(
-            connection_params=StreamableHTTPConnectionParams(
-                url=mock_url,
-                headers={"Authorization": "Bearer mock_token"},
-            ),
-            tool_filter=None,
-            tool_name_prefix=None,
-            header_provider=None,
-        )
+      MockMcpToolset.assert_called_once_with(
+          connection_params=StreamableHTTPConnectionParams(
+              url=expected_url,
+              headers={"Authorization": "Bearer mock_token"},
+          ),
+          tool_filter=None,
+          tool_name_prefix=None,
+          header_provider=None,
+      )
 
   def test_get_toolset_server_not_found(self, mock_session):
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json = MagicMock(return_value=MOCK_MCP_SERVERS_LIST)
+    mock_response.json = MagicMock(return_value=_MOCK_MCP_SERVERS_LIST)
     mock_session.get.return_value = mock_response
 
     api_registry_instance = ApiRegistry(
@@ -354,7 +356,7 @@ class TestApiRegistry:
   def test_get_toolset_server_no_url(self, mock_session):
     mock_response = MagicMock()
     mock_response.raise_for_status = MagicMock()
-    mock_response.json = MagicMock(return_value=MOCK_MCP_SERVERS_LIST)
+    mock_response.json = MagicMock(return_value=_MOCK_MCP_SERVERS_LIST)
     mock_session.get.return_value = mock_response
 
     api_registry_instance = ApiRegistry(
@@ -389,7 +391,7 @@ class TestApiRegistryMtls:
     ):
       mock_response = MagicMock()
       mock_response.raise_for_status = MagicMock()
-      mock_response.json.return_value = MOCK_MCP_SERVERS_LIST
+      mock_response.json.return_value = _MOCK_MCP_SERVERS_LIST
       mock_session = mock_session_class.return_value
       mock_session.__enter__.return_value = mock_session
       mock_session.get.return_value = mock_response
