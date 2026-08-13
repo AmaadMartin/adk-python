@@ -252,6 +252,56 @@ async def test_two_credential_keys_get_two_cache_slots():
 
 
 @pytest.mark.asyncio
+async def test_raw_token_string_in_the_named_slot_is_not_a_cache_hit():
+  """A raw token string is the prefixless value AuthHandler still reads."""
+  api_key_scheme, _ = token_to_scheme_credential(
+      'apikey', 'header', 'X-API-Key', 'unused'
+  )
+  tool_context = create_mock_tool_context()
+  tool_context.state['my_tool_tokens'] = 'raw_token_string'
+
+  handler = ToolAuthHandler.from_tool_context(
+      tool_context,
+      api_key_scheme,
+      None,
+      credential_key='my_tool_tokens',
+  )
+  result = await handler.prepare_auth_credentials()
+
+  assert result.state == 'done'
+  assert result.auth_credential.api_key == 'raw_token_string'
+  # The slot now holds the serialized credential, so the next run is a hit.
+  cached = AuthCredential.model_validate(tool_context.state['my_tool_tokens'])
+  assert cached.api_key == 'raw_token_string'
+
+
+@pytest.mark.asyncio
+async def test_credential_dict_in_the_named_slot_wins_over_the_auth_response():
+  """The store owns the shared slot when it holds a serialized credential."""
+  api_key_scheme, cached_credential = token_to_scheme_credential(
+      'apikey', 'header', 'X-API-Key', 'cached_api_key'
+  )
+  tool_context = create_mock_tool_context()
+  tool_context.state['my_tool_tokens'] = cached_credential.model_dump(
+      exclude_none=True
+  )
+  tool_context.state['temp:my_tool_tokens'] = AuthCredential(
+      auth_type=AuthCredentialTypes.API_KEY, api_key='fresh_api_key'
+  ).model_dump(exclude_none=True)
+
+  handler = ToolAuthHandler.from_tool_context(
+      tool_context,
+      api_key_scheme,
+      None,
+      credential_key='my_tool_tokens',
+  )
+  result = await handler.prepare_auth_credentials()
+
+  assert result.state == 'done'
+  assert result.auth_credential.api_key == 'cached_api_key'
+
+
+@pytest.mark.asyncio
 async def test_credential_key_on_the_credential_selects_the_cache_slot(
     openid_connect_scheme,
 ):

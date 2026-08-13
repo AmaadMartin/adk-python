@@ -180,7 +180,13 @@ class ToolContextCredentialStore:
     # session implementation, we don't want session to persist the token,
     # meanwhile we want the token shared across runs.
     serialized_credential = self.tool_context.state.get(token_key)
-    if serialized_credential:
+    # A configured key shares its slot with the prefixless lookup in
+    # `AuthHandler.get_auth_response`, where a raw token string is a valid
+    # value. Anything that is not a serialized credential is a cache miss, so
+    # `AuthHandler` still gets to read it.
+    if serialized_credential and isinstance(
+        serialized_credential, (dict, AuthCredential)
+    ):
       return AuthCredential.model_validate(serialized_credential)
 
     if self._credential_key:
