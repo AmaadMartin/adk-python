@@ -20,8 +20,6 @@ import re
 from typing import Optional
 from typing import TYPE_CHECKING
 
-from packaging.version import InvalidVersion
-from packaging.version import Version
 from typing_extensions import deprecated
 
 from .env_utils import is_env_enabled
@@ -30,6 +28,14 @@ if TYPE_CHECKING:
   from ..models.llm_request import LlmRequest
 
 _DISABLE_GEMINI_MODEL_ID_CHECK_ENV_VAR = 'ADK_DISABLE_GEMINI_MODEL_ID_CHECK'
+
+# The major version of a Gemini id, e.g. '2' in 'gemini-2.5-flash'. The
+# Gemini 2.5 Live ids place a 'live' marker before the version
+# ('gemini-live-2.5-flash-native-audio'), so that marker is skipped; Gemini 3.x
+# Live ids ('gemini-3.5-live-translate-*') already put the version first.
+_GEMINI_MAJOR_VERSION_PATTERN = re.compile(
+    r'^gemini-(?:live-)?(\d+)(?:\.\d+)*(?:-|$)'
+)
 
 
 def is_gemini_model_id_check_disabled() -> bool:
@@ -107,6 +113,29 @@ def is_gemini_model(model_string: Optional[str]) -> bool:
   return re.match(r'^gemini-', model_name) is not None
 
 
+def is_gemini_2_or_above(model_string: Optional[str]) -> bool:
+  """Check if the model is a Gemini model of major version 2 or above.
+
+  The id is normalized with ``extract_model_name`` first. Unlike the
+  deprecated ``is_gemini_eap_or_2_or_above``, this does not admit unversioned
+  Early Access ids: a parseable numeric version is required.
+
+  Args:
+    model_string: Either a simple model name or a path-based model name.
+
+  Returns:
+    True if it's a Gemini model whose major version is >= 2, False otherwise.
+  """
+  if not model_string:
+    return False
+
+  match = _GEMINI_MAJOR_VERSION_PATTERN.match(extract_model_name(model_string))
+  if not match:
+    return False
+
+  return int(match.group(1)) >= 2
+
+
 @deprecated(
     'ADK no longer distinguishes Gemini versions internally, because Gemini'
     ' 1.x is fully deprecated. Use is_gemini_model instead.'
@@ -152,20 +181,7 @@ def is_gemini_eap_or_2_or_above(model_string: Optional[str]) -> bool:
   if _is_gemini_eap_model(model_string):
     return True
 
-  model_name = extract_model_name(model_string)
-  if not model_name.startswith('gemini-'):
-    return False
-
-  version_string = model_name[len('gemini-') :].split('-', 1)[0]
-  if not version_string:
-    return False
-
-  try:
-    parsed_version = Version(version_string)
-  except InvalidVersion:
-    return False
-
-  return parsed_version.major >= 2
+  return is_gemini_2_or_above(model_string)
 
 
 def _is_gemini_eap_model(model_string: Optional[str]) -> bool:

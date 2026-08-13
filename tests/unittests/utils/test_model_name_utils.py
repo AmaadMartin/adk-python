@@ -14,11 +14,13 @@
 
 """Tests for model name utility functions."""
 
+from google.adk.agents.llm_agent import LlmAgent
 from google.adk.models.llm_request import LlmRequest
 from google.adk.utils.model_name_utils import _is_gemini_3_x_live
 from google.adk.utils.model_name_utils import _is_managed_agent
 from google.adk.utils.model_name_utils import extract_model_name
 from google.adk.utils.model_name_utils import is_gemini_1_model
+from google.adk.utils.model_name_utils import is_gemini_2_or_above
 from google.adk.utils.model_name_utils import is_gemini_3_5_live_translate
 from google.adk.utils.model_name_utils import is_gemini_eap_or_2_or_above
 from google.adk.utils.model_name_utils import is_gemini_model
@@ -220,6 +222,94 @@ class TestIsGemini1Model:
     assert is_gemini_1_model('gemini-1') is False  # Missing dot
     assert is_gemini_1_model('gemini-1-pro') is False  # Missing dot
     assert is_gemini_1_model('gemini-1.') is False  # Missing version number
+
+
+class TestIsGemini2OrAbove:
+  """Test the is_gemini_2_or_above function."""
+
+  def test_simple_names(self):
+    """Test major version detection with simple model names."""
+    assert is_gemini_2_or_above('gemini-2.5-flash') is True
+    assert is_gemini_2_or_above('gemini-2.5-pro') is True
+    assert is_gemini_2_or_above('gemini-2') is True
+    assert is_gemini_2_or_above('gemini-2-pro') is True
+    assert is_gemini_2_or_above('gemini-2.9-experimental') is True
+    assert is_gemini_2_or_above('gemini-3-pro-preview') is True
+    assert is_gemini_2_or_above('gemini-3.0-pro') is True
+    assert is_gemini_2_or_above('gemini-10.0-pro') is True
+    assert is_gemini_2_or_above('gemini-1.5-pro') is False
+    assert is_gemini_2_or_above('gemini-1.0-pro') is False
+    assert is_gemini_2_or_above('gemini-0.9-test') is False
+
+  def test_live_names(self):
+    """The 2.5 Live ids put the 'live' marker before the version."""
+    assert is_gemini_2_or_above('gemini-live-2.5-flash-native-audio') is True
+    assert is_gemini_2_or_above('gemini-live-2.5-flash-preview') is True
+    assert is_gemini_2_or_above('gemini-3.5-live-translate-preview') is True
+    assert is_gemini_2_or_above('gemini-live-1.5-flash') is False
+
+  def test_agent_default_models(self):
+    """The two LlmAgent defaults must pass, so CFC works out of the box."""
+    assert is_gemini_2_or_above(LlmAgent.DEFAULT_MODEL) is True
+    assert is_gemini_2_or_above(LlmAgent.DEFAULT_LIVE_MODEL) is True
+
+  def test_wrapped_names(self):
+    """Test that every wrapper form is normalized before the version check."""
+    vertex_path = 'projects/p/locations/l/publishers/google/models/'
+    assert is_gemini_2_or_above(f'{vertex_path}gemini-2.5-flash') is True
+    assert is_gemini_2_or_above(f'{vertex_path}gemini-3.0-pro') is True
+    assert (
+        is_gemini_2_or_above(f'{vertex_path}gemini-live-2.5-flash-native-audio')
+        is True
+    )
+    assert is_gemini_2_or_above(f'{vertex_path}gemini-1.5-flash') is False
+
+    assert is_gemini_2_or_above('apigee/gemini-2.5-flash') is True
+    assert is_gemini_2_or_above('apigee/vertex_ai/v1/gemini-2.5-flash') is True
+    assert is_gemini_2_or_above('models/gemini-2.5-pro') is True
+    assert is_gemini_2_or_above('gemini/gemini-2.5-flash') is True
+    assert is_gemini_2_or_above('vertex_ai/gemini-2.5-flash') is True
+    assert (
+        is_gemini_2_or_above('openrouter/google/gemini-2.5-pro:online') is True
+    )
+
+  def test_early_access_names(self):
+    """EAP ids carry no version, so this helper rejects them."""
+    assert is_gemini_2_or_above('gemini-early-exp') is False
+    assert is_gemini_2_or_above('gemini-flash-early-exp') is False
+    assert is_gemini_2_or_above('gemini-flash-lite-early-exp') is False
+
+    # The deprecated helper still admits EAP ids. Pin the divergence here.
+    assert is_gemini_eap_or_2_or_above('gemini-flash-early-exp') is True
+
+  def test_non_gemini_names(self):
+    """Test that non-Gemini ids are rejected."""
+    assert is_gemini_2_or_above('claude-3-sonnet') is False
+    assert is_gemini_2_or_above('gpt-4o') is False
+    assert is_gemini_2_or_above('my-gemini-2.5-model') is False
+    assert is_gemini_2_or_above('custom-gemini-2.5-flash') is False
+
+  def test_edge_cases(self):
+    """Test empty, version-less and unparseable ids."""
+    assert is_gemini_2_or_above(None) is False
+    assert is_gemini_2_or_above('') is False
+    assert is_gemini_2_or_above('gemini-') is False
+    assert is_gemini_2_or_above('gemini-one') is False
+
+    # A date code is not a version, so it must not read as major version 1206.
+    assert is_gemini_2_or_above('gemini-exp-1206') is False
+
+    # Malformed ids that a literal 'gemini-2' prefix test would accept.
+    assert is_gemini_2_or_above('gemini-2.') is False
+    assert is_gemini_2_or_above('gemini-2x') is False
+    assert is_gemini_2_or_above('gemini-2_0') is False
+
+  def test_deprecated_helper_delegates(self):
+    """Delegation gives the deprecated helper the Live ids it used to reject."""
+    assert (
+        is_gemini_eap_or_2_or_above('gemini-live-2.5-flash-native-audio')
+        is True
+    )
 
 
 class TestIsGemini2Model:
