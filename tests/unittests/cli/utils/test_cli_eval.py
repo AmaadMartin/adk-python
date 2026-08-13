@@ -19,6 +19,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest import mock
 
+import click
 from google.adk.agents.base_agent import BaseAgent
 from google.adk.apps.app import App
 from google.adk.cli.cli_eval import get_root_agent
@@ -261,3 +262,37 @@ async def test_get_root_agent_back_compat(monkeypatch):
   )
 
   assert await get_root_agent("some/path") is root_agent
+
+
+def test_get_eval_sets_manager_unsupported_uri_raises_click_exception():
+  """An unsupported eval storage URI becomes a click error, not a traceback."""
+  from google.adk.cli.cli_eval import get_eval_sets_manager
+
+  with pytest.raises(
+      click.ClickException, match="Unsupported evals storage URI: bad-uri"
+  ) as exc_info:
+    get_eval_sets_manager(eval_storage_uri="bad-uri", agents_dir="some/dir")
+
+  assert isinstance(exc_info.value.__cause__, ValueError)
+
+
+def test_get_eval_sets_manager_missing_gcp_extras_raises_click_exception(
+    monkeypatch,
+):
+  """Missing Google Cloud extras become a click error, not a traceback."""
+
+  def _raise_runtime_error(_eval_storage_uri):
+    raise RuntimeError("GCS evaluation managers require Google Cloud")
+
+  monkeypatch.setattr(
+      "google.adk.cli.utils.evals.create_gcs_eval_managers_from_uri",
+      _raise_runtime_error,
+  )
+  from google.adk.cli.cli_eval import get_eval_sets_manager
+
+  with pytest.raises(
+      click.ClickException, match="GCS evaluation managers require"
+  ) as exc_info:
+    get_eval_sets_manager(eval_storage_uri="gs://bucket", agents_dir="some/dir")
+
+  assert isinstance(exc_info.value.__cause__, RuntimeError)
