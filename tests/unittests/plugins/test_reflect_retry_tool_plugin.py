@@ -17,6 +17,7 @@ from unittest import IsolatedAsyncioTestCase
 from unittest.mock import Mock
 
 from google.adk.agents.llm_agent import LlmAgent
+from google.adk.errors.tool_execution_error import ToolExecutionError
 from google.adk.plugins.reflect_retry_tool_plugin import REFLECT_AND_RETRY_RESPONSE_TYPE
 from google.adk.plugins.reflect_retry_tool_plugin import ReflectAndRetryToolPlugin
 from google.adk.tools.base_tool import BaseTool
@@ -197,7 +198,7 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
     )
 
   async def test_on_tool_error_callback_max_retries_zero_with_dict_error(self):
-    """Test error callback when max_retries is 0 and error is a dict."""
+    """Test a dict error raises ToolExecutionError when max_retries is 0."""
     mock_tool = self.get_mock_tool()
     mock_tool_context = self.get_mock_tool_context()
     sample_tool_args = self.get_sample_tool_args()
@@ -207,7 +208,7 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
     dict_error = {"status": "error", "message": "Custom dict error"}
     plugin.set_error_condition(lambda result: dict_error)
 
-    with self.assertRaises(Exception) as cm:
+    with self.assertRaises(ToolExecutionError) as cm:
       await plugin.after_tool_callback(
           tool=mock_tool,
           tool_args=sample_tool_args,
@@ -215,9 +216,9 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
           result={"some": "result"},
       )
 
-    # Should raise an Exception wrapping the dict
-    self.assertNotIsInstance(cm.exception, TypeError)
+    # Should raise a ToolExecutionError wrapping the dict
     self.assertIn("Custom dict error", str(cm.exception))
+    self.assertEqual(cm.exception.error_type, "ToolError")
 
   async def test_on_tool_error_callback_first_failure(self):
     """Test first tool failure creates reflection response."""
@@ -332,7 +333,7 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
     self.assertIs(cm.exception, error)
 
   async def test_max_retries_exceeded_with_dict_error(self):
-    """Test that Exception is raised when max retries exceeded with dict error."""
+    """Test a dict error raises ToolExecutionError when max retries exceeded."""
     mock_tool = self.get_mock_tool()
     mock_tool_context = self.get_mock_tool_context()
     sample_tool_args = self.get_sample_tool_args()
@@ -353,7 +354,7 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
     self.assertEqual(result1["retry_count"], 1)
 
     # Second call should exceed max_retries and raise
-    with self.assertRaises(Exception) as cm:
+    with self.assertRaises(ToolExecutionError) as cm:
       await plugin.after_tool_callback(
           tool=mock_tool,
           tool_args=sample_tool_args,
@@ -362,8 +363,8 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
       )
 
     # Verify exception properties
-    self.assertNotIsInstance(cm.exception, TypeError)
     self.assertIn("Custom dict error", str(cm.exception))
+    self.assertEqual(cm.exception.error_type, "ToolError")
 
   async def test_max_retries_exceeded_without_exception(self):
     """Test max retries exceeded returns failure message when exception is disabled."""

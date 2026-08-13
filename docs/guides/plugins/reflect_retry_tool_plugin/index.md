@@ -74,7 +74,7 @@ The following options are introduced by `ReflectAndRetryToolPlugin` (options inh
 | `tracking_scope` | `TrackingScope` | `TrackingScope.INVOCATION` | Failure-counter lifecycle: per-invocation isolation or global sharing. |
 
 - **`max_retries`** is checked as `current_retries <= max_retries`, so `3` allows attempts 1–3 and the 4th consecutive failure triggers exhaustion. A negative value raises `ValueError` at construction, and `0` gives up on the very first failure without retrying.
-- **`throw_exception_if_retry_exceeded`** selects the failure mode once retries are spent: re-raise for an outer supervisor to catch, or return a final `ToolFailureResponse` that instructs the model to abandon the tool. Non-`Exception` errors are wrapped in `Exception` before being raised.
+- **`throw_exception_if_retry_exceeded`** selects the failure mode once retries are spent: re-raise for an outer supervisor to catch, or return a final `ToolFailureResponse` that instructs the model to abandon the tool. Non-`Exception` errors (for example a dict returned by an `extract_error_from_result` override) are wrapped in `ToolExecutionError` before being raised, with `error_type` set to `ToolError`.
 - **`tracking_scope`** defaults to `INVOCATION`; `GLOBAL` shares one counter across invocations.
 
 ## Advanced applications

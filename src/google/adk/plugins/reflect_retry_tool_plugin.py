@@ -20,6 +20,7 @@ from typing import Optional
 
 from pydantic import BaseModel
 
+from ..errors.tool_execution_error import ToolExecutionError
 from ..tools.base_tool import BaseTool
 from ..tools.tool_context import ToolContext
 from ._reflect_retry_utils import GLOBAL_SCOPE_KEY as GLOBAL_SCOPE_KEY
@@ -267,8 +268,18 @@ class ReflectAndRetryToolPlugin(BasePlugin):
     await self._tracker.reset(scope, tool_name)
 
   def _ensure_exception(self, error: Any) -> Exception:
-    """Ensures the given error is an Exception instance, wrapping if not."""
-    return error if isinstance(error, Exception) else Exception(str(error))
+    """Ensures the given error is an Exception instance, wrapping if not.
+
+    Non-`Exception` errors -- for example the dict returned by an
+    `extract_error_from_result` override -- are wrapped in
+    `ToolExecutionError` so callers can catch this failure by a specific type.
+    The wrapper's message is `str(error)`, and its `error_type` matches the
+    `"ToolError"` label the plugin reports for the same error in
+    `ToolFailureResponse`.
+    """
+    if isinstance(error, Exception):
+      return error
+    return ToolExecutionError(message=str(error), error_type="ToolError")
 
   def _format_error_details(self, error: Any) -> str:
     """Formats error details for inclusion in the reflection message."""
