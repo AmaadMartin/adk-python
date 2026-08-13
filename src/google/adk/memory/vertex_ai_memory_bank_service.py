@@ -22,6 +22,7 @@ from functools import lru_cache
 import logging
 from typing import Optional
 from typing import TYPE_CHECKING
+from typing import Union
 
 from google.auth.credentials import Credentials
 from google.genai import types
@@ -615,6 +616,19 @@ class VertexAiMemoryBankService(BaseMemoryService):
       logger.info('Retrieved no memory profiles.')
     return profiles
 
+  def _api_client_http_options_override(
+      self,
+  ) -> Optional[Union[types.HttpOptions, types.HttpOptionsDict]]:
+    """Returns the http options to build the Vertex AI client with.
+
+    Subclasses may override this to supply their own http options, e.g. a
+    custom base url, extra headers or a different timeout.
+
+    Returns:
+      The http options for the Vertex AI client, or None for no http options.
+    """
+    return None
+
   def _get_api_client(self) -> vertexai.AsyncClient:
     """Instantiates an API client for the given project and location.
 
@@ -627,11 +641,15 @@ class VertexAiMemoryBankService(BaseMemoryService):
     import vertexai
 
     if self._express_mode_api_key:
-      return vertexai.Client(api_key=self._express_mode_api_key).aio
+      return vertexai.Client(
+          http_options=self._api_client_http_options_override(),
+          api_key=self._express_mode_api_key,
+      ).aio
     return vertexai.Client(
         project=self._project,
         location=self._location,
         credentials=self._credentials,
+        http_options=self._api_client_http_options_override(),
     ).aio
 
 
