@@ -28,6 +28,7 @@ from ..models.llm_request import LlmRequest
 from ..models.llm_response import LlmResponse
 from ..tools.base_tool import BaseTool
 from ..tools.tool_context import ToolContext
+from ..utils.content_utils import content_union_to_text
 from .base_plugin import BasePlugin
 
 if TYPE_CHECKING:
@@ -174,10 +175,12 @@ class LoggingPlugin(BasePlugin):
     self._log(f"   Agent: {callback_context.agent_name}")
 
     # Log system instruction if present
-    if llm_request.config and llm_request.config.system_instruction:
-      sys_instruction = llm_request.config.system_instruction[:200]
-      if len(llm_request.config.system_instruction) > 200:
-        sys_instruction += "..."
+    sys_instruction = content_union_to_text(
+        llm_request.config.system_instruction if llm_request.config else None
+    )
+    if sys_instruction:
+      if len(sys_instruction) > 200:
+        sys_instruction = sys_instruction[:200] + "..."
       self._log(f"   System Instruction: '{sys_instruction}'")
 
     # Note: Content logging removed due to type compatibility issues
