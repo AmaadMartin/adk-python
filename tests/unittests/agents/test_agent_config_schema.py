@@ -52,19 +52,23 @@ TYPED_VALIDATORS = {
 # The samples dir lives at the repo root on GitHub but under
 # "open_source_workspace/" in the source tree, and neither ships in the sdist.
 _ADK_ROOT = Path(__file__).resolve().parents[3]
-_CANDIDATE_SAMPLES_DIRS = (
-    _ADK_ROOT / "contributing" / "samples",
-    _ADK_ROOT / "open_source_workspace" / "contributing" / "samples",
+_samples_dir = next(
+    (
+        candidate
+        for candidate in (
+            _ADK_ROOT / "contributing" / "samples",
+            _ADK_ROOT / "open_source_workspace" / "contributing" / "samples",
+        )
+        if candidate.is_dir()
+    ),
+    None,
 )
-SAMPLES_DIR = next(
-    (candidate for candidate in _CANDIDATE_SAMPLES_DIRS if candidate.is_dir()),
-    _CANDIDATE_SAMPLES_DIRS[0],
-)
-if not SAMPLES_DIR.is_dir():
+if _samples_dir is None:
   pytest.skip(
       "contributing/samples is not available in this layout",
       allow_module_level=True,
   )
+SAMPLES_DIR: Path = _samples_dir
 
 
 def collect_tagged_samples() -> list[Any]:

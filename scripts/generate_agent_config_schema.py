@@ -31,15 +31,9 @@ from typing_extensions import override
 if TYPE_CHECKING:
   from pydantic._internal._core_utils import CoreSchemaOrField
 
-# The agent_class value that selects each typed branch of the AgentConfig
-# union. BaseAgentConfig is deliberately absent: it is the fallback branch for
-# every other agent_class value.
-_AGENT_CLASS_BY_DEF = {
-    "LlmAgentConfig": "LlmAgent",
-    "LoopAgentConfig": "LoopAgent",
-    "ParallelAgentConfig": "ParallelAgent",
-    "SequentialAgentConfig": "SequentialAgent",
-}
+# The branch of the AgentConfig union that accepts every other agent_class
+# value. It stays unpinned so an unrecognised class still has somewhere to go.
+_FALLBACK_DEF = "BaseAgentConfig"
 
 
 class CustomGenerateJsonSchema(GenerateJsonSchema):
@@ -71,10 +65,10 @@ def apply_agent_class_discriminator(schema: dict[str, Any]) -> dict[str, Any]:
   `LlmAgent` document therefore matches two branches, and `oneOf` means
   exactly one.
 
-  This transform makes the union an `anyOf` and pins `agent_class` on each
-  typed branch with a `const`. `BaseAgentConfig` stays permissive, which
-  matches the runtime rule that an unrecognised `agent_class` routes to
-  `BaseAgent`.
+  This transform makes the union an `anyOf` and pins `agent_class` on every
+  branch but `BaseAgentConfig`, using the default that branch already
+  declares. `BaseAgentConfig` stays permissive, which matches the runtime rule
+  that an unrecognised `agent_class` routes to `BaseAgent`.
 
   Args:
     schema: A JSON Schema document produced by
@@ -86,7 +80,8 @@ def apply_agent_class_discriminator(schema: dict[str, Any]) -> dict[str, Any]:
 
   Raises:
     ValueError: If the document holds no top-level `oneOf` or `anyOf` union.
-    KeyError: If a typed agent config definition is missing from `$defs`.
+    KeyError: If a branch of the union names a definition that is missing, or
+      that declares no default `agent_class`.
   """
   if "oneOf" not in schema and "anyOf" not in schema:
     raise ValueError(
@@ -101,13 +96,15 @@ def apply_agent_class_discriminator(schema: dict[str, Any]) -> dict[str, Any]:
   }
 
   defs = result.get("$defs", {})
-  for def_name, agent_class in _AGENT_CLASS_BY_DEF.items():
-    if def_name not in defs:
-      raise KeyError(f"'{def_name}' is missing from the AgentConfig $defs.")
+  for branch in result["anyOf"]:
+    def_name = branch["$ref"].rsplit("/", 1)[-1]
+    if def_name == _FALLBACK_DEF:
+      continue
     properties = defs[def_name]["properties"]
+    agent_class = properties["agent_class"]
     # Sort the keys so the const lands where pydantic would have emitted it.
     properties["agent_class"] = dict(
-        sorted({**properties["agent_class"], "const": agent_class}.items())
+        sorted({**agent_class, "const": agent_class["default"]}.items())
     )
   return result
 

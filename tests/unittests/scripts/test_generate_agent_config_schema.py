@@ -15,33 +15,26 @@
 from __future__ import annotations
 
 import copy
-import importlib.util
 import json
 from pathlib import Path
-import sys
-from types import ModuleType
 from typing import Any
 
 from google.adk import agents
 import pytest
 
-# generate_agent_config_schema is a standalone script (not a package), so load
-# it by path. The scripts dir lives at the repo root on GitHub but under
-# "open_source_workspace/" in the source tree, so try both layouts.
-_ADK_ROOT = Path(__file__).resolve().parent.parent.parent
-SCRIPTS_DIR = next(
-    (
-        candidate
-        for candidate in (
-            _ADK_ROOT / "scripts",
-            _ADK_ROOT / "open_source_workspace" / "scripts",
-        )
-        if candidate.exists()
+generate_agent_config_schema = pytest.importorskip(
+    "scripts.generate_agent_config_schema",
+    reason=(
+        "scripts/generate_agent_config_schema.py is not present in this"
+        " checkout"
     ),
-    _ADK_ROOT / "scripts",
+)
+apply_agent_class_discriminator = (
+    generate_agent_config_schema.apply_agent_class_discriminator
 )
 
-# The agent_class each typed branch of the union stands for.
+# The agent_class each typed branch of the union stands for. These are the
+# test oracle, so they stay written out rather than read from the script.
 TYPED_BRANCHES = {
     "LlmAgentConfig": "LlmAgent",
     "LoopAgentConfig": "LoopAgent",
@@ -51,23 +44,6 @@ TYPED_BRANCHES = {
 
 COMMITTED_SCHEMA_PATH = (
     Path(agents.__file__).parent / "config_schemas" / "AgentConfig.json"
-)
-
-
-def import_script(name: str) -> ModuleType:
-  file_path = SCRIPTS_DIR / f"{name}.py"
-  spec = importlib.util.spec_from_file_location(name, file_path)
-  if spec is None or spec.loader is None:
-    raise ImportError(f"Could not load script {name} from {file_path}")
-  module = importlib.util.module_from_spec(spec)
-  sys.modules[name] = module
-  spec.loader.exec_module(module)
-  return module
-
-
-generate_agent_config_schema = import_script("generate_agent_config_schema")
-apply_agent_class_discriminator = (
-    generate_agent_config_schema.apply_agent_class_discriminator
 )
 
 
@@ -168,7 +144,7 @@ def test_missing_agent_branch_raises() -> None:
   schema = make_schema()
   del schema["$defs"]["LoopAgentConfig"]
 
-  with pytest.raises(KeyError, match="LoopAgentConfig' is missing"):
+  with pytest.raises(KeyError, match="LoopAgentConfig"):
     apply_agent_class_discriminator(schema)
 
 
