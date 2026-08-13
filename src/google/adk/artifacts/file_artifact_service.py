@@ -307,6 +307,59 @@ class FileArtifactVersion(ArtifactVersion):
   )
 
 
+def _latest_metadata(artifact_dir: Path) -> Optional[FileArtifactVersion]:
+  """Loads metadata for the most recent version."""
+  versions = _list_versions_on_disk(artifact_dir)
+  if not versions:
+    return None
+  return _read_metadata(_metadata_path(artifact_dir, versions[-1]))
+
+
+def _list_keys_in_scope(scope_root: Path, key_prefix: str = "") -> list[str]:
+  """Returns the key of every artifact stored in one scope.
+
+  Args:
+    scope_root: Directory that defines the storage scope.
+    key_prefix: Prefix for the fallback key of an artifact whose metadata
+      records none (`user:` for the user scope).
+
+  Returns:
+    One key per artifact directory beneath `scope_root`, taken from the
+    artifact's own metadata where it has some.
+  """
+  keys: list[str] = []
+  for artifact_dir in _iter_artifact_dirs(scope_root):
+    metadata = _latest_metadata(artifact_dir)
+    if metadata and metadata.file_name:
+      keys.append(str(metadata.file_name))
+    else:
+      rel = artifact_dir.relative_to(scope_root)
+      keys.append(f"{key_prefix}{rel.as_posix()}")
+  return keys
+
+
+def _stored_key_matches(artifact_dir: Path, filename: str) -> bool:
+  """Checks whether a stored artifact records `filename` as its key.
+
+  A case-insensitive filesystem resolves `Report.txt` and `report.txt` to one
+  directory, so the directory alone cannot say which key it holds. The metadata
+  records the requested filename verbatim and does settle it.
+
+  Args:
+    artifact_dir: Directory the filename resolved to.
+    filename: The caller-supplied artifact filename.
+
+  Returns:
+    True when the metadata records `filename`, or records no key at all — an
+    absent artifact then falls through to the existing not-found handling, and
+    metadata that this service cannot read stays as readable as it was before.
+  """
+  metadata = _latest_metadata(artifact_dir)
+  if not metadata or not metadata.file_name:
+    return True
+  return metadata.file_name == filename
+
+
 class FileArtifactService(BaseArtifactService):
   """Stores filesystem-backed artifacts beneath a configurable root directory."""
 
@@ -336,6 +389,10 @@ class FileArtifactService(BaseArtifactService):
   # nested directories, and path traversal is rejected to keep the layout
   # portable across filesystems. `{artifact_path}` therefore mirrors the
   # sanitized, scope-relative path derived from each filename.
+  #
+  # Two filenames that differ only in case share one `{artifact_path}` on a
+  # case-insensitive filesystem, so the second one is rejected on save and
+  # reports "not found" on read. See `_stored_key_matches`.
 
   def __init__(self, root_dir: Path | str):
     """Initializes the file-based artifact service.
@@ -367,6 +424,18 @@ class FileArtifactService(BaseArtifactService):
       )
     return _session_artifacts_dir(base_root, session_id)
 
+  def _scope_root_for(
+      self,
+      app_name: str,
+      user_id: str,
+      session_id: Optional[str],
+      filename: str,
+  ) -> Path:
+    """Returns the scope root directory that an artifact belongs to."""
+    return self._scope_root(
+        self._base_root(app_name, user_id), session_id, filename
+    )
+
   def _artifact_dir(
       self,
       app_name: str,
@@ -375,9 +444,8 @@ class FileArtifactService(BaseArtifactService):
       filename: str,
   ) -> Path:
     """Builds the directory that stores an artifact for an app."""
-    base_root = self._base_root(app_name, user_id)
     return _resolve_scoped_artifact_path(
-        self._scope_root(base_root, session_id, filename), filename
+        self._scope_root_for(app_name, user_id, session_id, filename), filename
     )[0]
 
   def _read_artifact_dir(
@@ -387,11 +455,25 @@ class FileArtifactService(BaseArtifactService):
       session_id: Optional[str],
       filename: str,
   ) -> Optional[Path]:
-    """Builds the artifact directory for a read, or None when `filename` is
-    padded and so cannot name a stored artifact."""
+    """Builds the artifact directory for a read.
+
+    Args:
+      app_name: The name of the application.
+      user_id: The ID of the user.
+      session_id: The ID of the session, or None for a user-scoped artifact.
+      filename: The caller-supplied artifact filename.
+
+    Returns:
+      The directory to read, or None when `filename` cannot name a stored
+      artifact: it is whitespace-padded, or it resolves onto a directory that
+      `_stored_key_matches` rejects.
+    """
     if artifact_util.is_whitespace_padded_filename(filename):
       return None
-    return self._artifact_dir(app_name, user_id, session_id, filename)
+    artifact_dir = self._artifact_dir(app_name, user_id, session_id, filename)
+    if not _stored_key_matches(artifact_dir, filename):
+      return None
+    return artifact_dir
 
   def _build_artifact_version(
       self,
@@ -415,15 +497,6 @@ class FileArtifactService(BaseArtifactService):
         mime_type=mime_type,
     )
 
-  def _latest_metadata(
-      self, artifact_dir: Path
-  ) -> Optional[FileArtifactVersion]:
-    """Loads metadata for the most recent version."""
-    versions = _list_versions_on_disk(artifact_dir)
-    if not versions:
-      return None
-    return _read_metadata(_metadata_path(artifact_dir, versions[-1]))
-
   @override
   async def save_artifact(
       self,
@@ -444,6 +517,11 @@ class FileArtifactService(BaseArtifactService):
     root (for example ``"../../secret.txt"``) raise ``ValueError``. A filename
     with leading or trailing whitespace after any ``user:`` prefix (for example
     ``" report.txt"``) also raises ``ValueError``.
+
+    A filename that differs only in case from an artifact already stored in the
+    same scope (``"report.txt"`` against a stored ``"Report.txt"``) raises
+    ``ValueError`` too, and nothing is written. Re-saving a stored filename
+    exactly is unaffected: that is how a new version is created.
     """
     return await asyncio.to_thread(
         self._save_artifact_sync,
@@ -482,6 +560,15 @@ class FileArtifactService(BaseArtifactService):
           " is stored under the artifact's own name and would overwrite the"
           " metadata document."
       )
+    scope_root = self._scope_root_for(app_name, user_id, session_id, filename)
+    key_prefix = (
+        artifact_util.USER_NAMESPACE_PREFIX
+        if _is_user_scoped(session_id, filename)
+        else ""
+    )
+    artifact_util.validate_no_case_collision(
+        _list_keys_in_scope(scope_root, key_prefix), filename
+    )
     artifact_dir.mkdir(parents=True, exist_ok=True)
 
     versions = _list_versions_on_disk(artifact_dir)
@@ -649,23 +736,15 @@ class FileArtifactService(BaseArtifactService):
     base_root = self._base_root(app_name, user_id)
 
     if session_id is not None:
-      session_root = _session_artifacts_dir(base_root, session_id)
-      for artifact_dir in _iter_artifact_dirs(session_root):
-        metadata = self._latest_metadata(artifact_dir)
-        if metadata and metadata.file_name:
-          filenames.add(str(metadata.file_name))
-        else:
-          rel = artifact_dir.relative_to(session_root)
-          filenames.add(rel.as_posix())
+      filenames.update(
+          _list_keys_in_scope(_session_artifacts_dir(base_root, session_id))
+      )
 
-    user_root = _user_artifacts_dir(base_root)
-    for artifact_dir in _iter_artifact_dirs(user_root):
-      metadata = self._latest_metadata(artifact_dir)
-      if metadata and metadata.file_name:
-        filenames.add(str(metadata.file_name))
-      else:
-        rel = artifact_dir.relative_to(user_root)
-        filenames.add(f"user:{rel.as_posix()}")
+    filenames.update(
+        _list_keys_in_scope(
+            _user_artifacts_dir(base_root), artifact_util.USER_NAMESPACE_PREFIX
+        )
+    )
 
     return sorted(filenames)
 
@@ -714,9 +793,7 @@ class FileArtifactService(BaseArtifactService):
     # parent of a nested artifact ("doc" vs "doc/nested"), so it is pruned
     # separately and only if nothing is left under it.
     shutil.rmtree(versions_dir)
-    scope_root = self._scope_root(
-        self._base_root(app_name, user_id), session_id, filename
-    )
+    scope_root = self._scope_root_for(app_name, user_id, session_id, filename)
     _prune_empty_dirs(artifact_dir, scope_root)
     logger.debug("Deleted artifact %s at %s", filename, artifact_dir)
 

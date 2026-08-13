@@ -345,3 +345,65 @@ def test_validate_artifact_reference_scope_session_uri_without_caller_session_ra
     )
 
   assert "same session scope" in str(exc_info.value)
+
+
+# Shared with test_artifact_service.py, which replays the rule against every
+# backend so the three stay in agreement about what a filename means.
+CASE_COLLISION_ERROR = "differs only in case"
+
+
+@pytest.mark.parametrize(
+    "existing, filename",
+    [
+        (["Report.txt"], "report.txt"),
+        (["report.txt"], "REPORT.TXT"),
+        (["nested/dir/a.txt"], "nested/Dir/a.txt"),
+        (["user:a.txt"], "user:A.txt"),
+        (["b.txt", "A.txt"], "a.txt"),
+    ],
+)
+def test_validate_no_case_collision_rejects_case_variant(existing, filename):
+  """A filename differing only in case from a stored key is refused."""
+  with pytest.raises(InputValidationError, match=CASE_COLLISION_ERROR):
+    artifact_util.validate_no_case_collision(existing, filename)
+
+
+def test_validate_no_case_collision_message_names_both_filenames():
+  """The message quotes the candidate and the artifact it would alias."""
+  with pytest.raises(InputValidationError) as exc_info:
+    artifact_util.validate_no_case_collision(["Report.txt"], "report.txt")
+
+  assert repr("report.txt") in str(exc_info.value)
+  assert repr("Report.txt") in str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "existing, filename",
+    [
+        ([], "a.txt"),
+        (["a.txt"], "a.txt"),
+        (["b.txt", "c.txt"], "a.txt"),
+        (["dir/a.txt"], "a.txt"),
+        (["nested/dir/a.txt"], "nested/dir/b.txt"),
+        (["user:a.txt"], "a.txt"),
+    ],
+)
+def test_validate_no_case_collision_accepts(existing, filename):
+  """An identical or unrelated filename passes."""
+  artifact_util.validate_no_case_collision(existing, filename)
+
+
+@pytest.mark.parametrize("existing", [["A.txt", "a.txt"], ["a.txt", "A.txt"]])
+def test_validate_no_case_collision_allows_an_exact_match(existing):
+  """A stored key stays writable even beside a case variant of itself.
+
+  A case-variant pair can already exist on a case-sensitive filesystem and in
+  GCS. Without this escape its owner could never save a new version of either
+  artifact again.
+  """
+  artifact_util.validate_no_case_collision(existing, "a.txt")
+
+
+def test_validate_no_case_collision_uses_lower_not_casefold():
+  """`casefold()` folds `ß` to `ss`, a pair APFS and NTFS keep apart."""
+  artifact_util.validate_no_case_collision(["STRASSE.txt"], "straße.txt")

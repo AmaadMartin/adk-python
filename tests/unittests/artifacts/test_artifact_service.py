@@ -40,6 +40,7 @@ from google.cloud.exceptions import NotFound
 from google.genai import types
 import pytest
 
+from .test_artifact_util import CASE_COLLISION_ERROR
 from .test_artifact_util import PADDED_FILENAME_CASES
 
 Enum = enum.Enum
@@ -2844,3 +2845,213 @@ async def test_file_empty_filename_still_reaches_the_artifact_fallback(
   loaded = await service.load_artifact(**scope, filename="")
   assert loaded is not None
   assert loaded.text == "fallback"
+
+
+def _session_artifact_dir(root: Path, filename: str) -> Path:
+  """Returns the on-disk directory of a session-scoped artifact."""
+  return (
+      root
+      / "apps"
+      / "app0"
+      / "users"
+      / "user0"
+      / "sessions"
+      / "sess0"
+      / "artifacts"
+      / filename
+  )
+
+
+def _write_session_artifact(root: Path, filename: str, text: str) -> None:
+  """Writes version 0 of a flat artifact directly, bypassing the service.
+
+  This reaches the state a case-sensitive filesystem can already hold: two
+  artifacts whose names differ only in case. `save_artifact` no longer creates
+  it, so it has to be built on disk.
+
+  Args:
+    root: Artifact service root directory.
+    filename: Name of the artifact, without path separators.
+    text: The payload to store.
+  """
+  version_dir = _session_artifact_dir(root, filename) / "versions" / "0"
+  version_dir.mkdir(parents=True)
+  payload_path = version_dir / filename
+  payload_path.write_text(text, encoding="utf-8")
+  file_artifact_service._write_metadata(
+      version_dir / "metadata.json",
+      filename=filename,
+      mime_type=None,
+      version=0,
+      canonical_uri=payload_path.resolve().as_uri(),
+      custom_metadata=None,
+  )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("service_type", _ALL_SERVICE_TYPES)
+@pytest.mark.parametrize(
+    "stored, variant",
+    [
+        ("Report.txt", "report.txt"),
+        ("report.txt", "REPORT.TXT"),
+        ("nested/dir/a.txt", "nested/Dir/a.txt"),
+    ],
+)
+async def test_save_artifact_rejects_case_variant_of_a_stored_filename(
+    service_type, stored, variant, artifact_service_factory
+):
+  """Every backend refuses a second key that differs only in case."""
+  service = artifact_service_factory(service_type)
+  scope = {"app_name": "app0", "user_id": "user0", "session_id": "sess0"}
+  await service.save_artifact(
+      **scope, filename=stored, artifact=types.Part(text="first")
+  )
+
+  with pytest.raises(InputValidationError, match=CASE_COLLISION_ERROR):
+    await service.save_artifact(
+        **scope, filename=variant, artifact=types.Part(text="second")
+    )
+
+  # The rejected save stored nothing and left the first artifact alone.
+  assert await service.list_versions(**scope, filename=stored) == [0]
+  loaded = await service.load_artifact(**scope, filename=stored)
+  assert loaded is not None
+  assert loaded.text == "first"
+  keys = await service.list_artifact_keys(**scope)
+  assert stored in keys
+  assert variant not in keys
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("service_type", _ALL_SERVICE_TYPES)
+async def test_session_and_user_scope_keep_case_variants_apart(
+    service_type, artifact_service_factory
+):
+  """The two scopes are separate stores, so neither name aliases the other."""
+  service = artifact_service_factory(service_type)
+  scope = {"app_name": "app0", "user_id": "user0", "session_id": "sess0"}
+
+  assert (
+      await service.save_artifact(
+          **scope, filename="Report.txt", artifact=types.Part(text="session")
+      )
+      == 0
+  )
+  assert (
+      await service.save_artifact(
+          **scope,
+          filename="user:report.txt",
+          artifact=types.Part(text="user"),
+      )
+      == 0
+  )
+
+  keys = await service.list_artifact_keys(**scope)
+  assert "Report.txt" in keys
+  assert "user:report.txt" in keys
+
+
+@pytest.mark.asyncio
+async def test_file_case_variant_read_does_not_reach_the_stored_artifact(
+    tmp_path,
+):
+  """A case variant reports not found, on a case-sensitive filesystem too.
+
+  The rename reproduces on Linux what APFS and NTFS present: the artifact of
+  `Report.txt` sitting in the directory `report.txt` names.
+  """
+  root = tmp_path / "artifacts"
+  service = FileArtifactService(root_dir=root)
+  scope = {"app_name": "app0", "user_id": "user0", "session_id": "sess0"}
+  await service.save_artifact(
+      **scope, filename="Report.txt", artifact=types.Part(text="first")
+  )
+
+  stored_dir = _session_artifact_dir(root, "Report.txt")
+  version_dir = stored_dir / "versions" / "0"
+  (version_dir / "Report.txt").rename(version_dir / "report.txt")
+  stored_dir.rename(_session_artifact_dir(root, "report.txt"))
+
+  variant = {**scope, "filename": "report.txt"}
+  assert await service.load_artifact(**variant) is None
+  assert await service.get_artifact_version(**variant) is None
+  assert await service.list_versions(**variant) == []
+  assert await service.list_artifact_versions(**variant) == []
+
+  await service.delete_artifact(**variant)
+
+  assert await service.list_artifact_keys(**scope) == ["Report.txt"]
+
+
+@pytest.mark.asyncio
+async def test_file_artifact_without_a_recorded_key_stays_readable(tmp_path):
+  """An artifact whose metadata this service cannot read is not hidden."""
+  root = tmp_path / "artifacts"
+  service = FileArtifactService(root_dir=root)
+  scope = {"app_name": "app0", "user_id": "user0", "session_id": "sess0"}
+  await service.save_artifact(
+      **scope, filename="report.txt", artifact=types.Part(text="stored")
+  )
+
+  metadata_path = (
+      _session_artifact_dir(root, "report.txt")
+      / "versions"
+      / "0"
+      / "metadata.json"
+  )
+  metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+  del metadata["fileName"]
+  metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+  loaded = await service.load_artifact(**scope, filename="report.txt")
+  assert loaded is not None
+  assert loaded.text == "stored"
+
+
+@pytest.mark.asyncio
+async def test_file_stored_case_variant_pair_still_takes_new_versions(
+    tmp_path,
+):
+  """A pair stored before this change keeps both artifacts writable."""
+  root = tmp_path / "artifacts"
+  service = FileArtifactService(root_dir=root)
+  scope = {"app_name": "app0", "user_id": "user0", "session_id": "sess0"}
+  await service.save_artifact(
+      **scope, filename="Report.txt", artifact=types.Part(text="upper v0")
+  )
+  _write_session_artifact(root, "report.txt", "lower v0")
+
+  assert (
+      await service.save_artifact(
+          **scope, filename="report.txt", artifact=types.Part(text="lower v1")
+      )
+      == 1
+  )
+
+  upper = await service.load_artifact(**scope, filename="Report.txt")
+  assert upper is not None
+  assert upper.text == "upper v0"
+  lower = await service.load_artifact(**scope, filename="report.txt")
+  assert lower is not None
+  assert lower.text == "lower v1"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "service_type", [ArtifactServiceType.IN_MEMORY, ArtifactServiceType.GCS]
+)
+async def test_save_session_scoped_artifact_requires_a_session_id(
+    service_type, artifact_service_factory
+):
+  """The scope has to be known before the case guard can look it up."""
+  service = artifact_service_factory(service_type)
+
+  with pytest.raises(InputValidationError, match="Session ID must be provided"):
+    await service.save_artifact(
+        app_name="app0",
+        user_id="user0",
+        session_id=None,
+        filename="a.txt",
+        artifact=types.Part(text="content"),
+    )

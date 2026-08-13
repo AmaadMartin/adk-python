@@ -68,6 +68,40 @@ class InMemoryArtifactService(BaseArtifactService, BaseModel):
     """
     return filename.startswith("user:")
 
+  def _scope_prefix(
+      self,
+      app_name: str,
+      user_id: str,
+      filename: str,
+      session_id: Optional[str],
+  ) -> str:
+    """Constructs the path prefix shared by every artifact in one scope.
+
+    Args:
+        app_name: The name of the application.
+        user_id: The ID of the user.
+        filename: The name of the artifact file, which selects the scope.
+        session_id: The ID of the session.
+
+    Returns:
+        The constructed scope prefix, ending with a "/".
+
+    Raises:
+        InputValidationError: If a session-scoped filename comes without a
+          session ID.
+    """
+    artifact_util.validate_path_segment(app_name, "app_name")
+    artifact_util.validate_path_segment(user_id, "user_id")
+    if self._file_has_user_namespace(filename):
+      return f"{app_name}/{user_id}/user/"
+
+    if session_id is None:
+      raise InputValidationError(
+          "Session ID must be provided for session-scoped artifacts."
+      )
+    artifact_util.validate_path_segment(session_id, "session_id")
+    return f"{app_name}/{user_id}/{session_id}/"
+
   def _artifact_path(
       self,
       app_name: str,
@@ -86,17 +120,8 @@ class InMemoryArtifactService(BaseArtifactService, BaseModel):
     Returns:
         The constructed artifact path.
     """
-    artifact_util.validate_path_segment(app_name, "app_name")
-    artifact_util.validate_path_segment(user_id, "user_id")
-    if self._file_has_user_namespace(filename):
-      return f"{app_name}/{user_id}/user/{filename}"
-
-    if session_id is None:
-      raise InputValidationError(
-          "Session ID must be provided for session-scoped artifacts."
-      )
-    artifact_util.validate_path_segment(session_id, "session_id")
-    return f"{app_name}/{user_id}/{session_id}/{filename}"
+    prefix = self._scope_prefix(app_name, user_id, filename, session_id)
+    return f"{prefix}{filename}"
 
   @override
   async def save_artifact(
@@ -111,7 +136,16 @@ class InMemoryArtifactService(BaseArtifactService, BaseModel):
   ) -> int:
     artifact_util.validate_artifact_filename(filename)
     artifact = ensure_part(artifact)
-    path = self._artifact_path(app_name, user_id, filename, session_id)
+    prefix = self._scope_prefix(app_name, user_id, filename, session_id)
+    artifact_util.validate_no_case_collision(
+        [
+            key.removeprefix(prefix)
+            for key in self.artifacts
+            if key.startswith(prefix)
+        ],
+        filename,
+    )
+    path = f"{prefix}{filename}"
     if path not in self.artifacts:
       self.artifacts[path] = []
     version = len(self.artifacts[path])
