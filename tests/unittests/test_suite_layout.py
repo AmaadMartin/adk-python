@@ -34,6 +34,16 @@ _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 # pytest collects both suffixes, so a file of either shape can collide.
 _TEST_FILE_PATTERNS = ("test_*.py", "*_test.py")
 
+# These directories carry a marker file named ``__init__`` with no ``.py``
+# extension, so Python does not see a package. A separate change renames those
+# files. Skip the directories here instead of asserting that they are
+# unpackaged, so this test keeps passing once that change lands.
+_EXTENSIONLESS_MARKER_DIRECTORIES = frozenset({
+    "tests/unittests/tools/bigquery",
+    "tests/unittests/tools/bigtable",
+    "tests/unittests/tools/spanner",
+})
+
 
 def _pytest_module_name(path: pathlib.Path) -> str:
   """Returns the module name pytest imports ``path`` under in prepend mode."""
@@ -71,6 +81,27 @@ def _duplicate_module_names(tests_root: pathlib.Path) -> dict[str, list[str]]:
   }
 
 
+def _unpackaged_test_directories(tests_root: pathlib.Path) -> list[str]:
+  """Returns the directories under ``tests_root`` that pytest puts on sys.path.
+
+  Args:
+    tests_root: The directory to walk for files matching
+      ``_TEST_FILE_PATTERNS``.
+
+  Returns:
+    The sorted paths, relative to the repository root, of every directory that
+    holds a test file but no ``__init__.py``.
+  """
+  paths = itertools.chain.from_iterable(
+      tests_root.rglob(pattern) for pattern in _TEST_FILE_PATTERNS
+  )
+  return sorted(
+      directory.relative_to(_REPO_ROOT).as_posix()
+      for directory in {path.parent for path in paths}
+      if not (directory / "__init__.py").is_file()
+  )
+
+
 def test_no_duplicate_pytest_module_names() -> None:
   collisions = _duplicate_module_names(_REPO_ROOT / "tests")
 
@@ -79,6 +110,23 @@ def test_no_duplicate_pytest_module_names() -> None:
       " session that sees both aborts collection. Give the files unique"
       " basenames, or add __init__.py to every directory between them and"
       f" their nearest packaged ancestor: {collisions}"
+  )
+
+
+def test_every_unittests_directory_with_tests_is_packaged() -> None:
+  unpackaged = [
+      directory
+      for directory in _unpackaged_test_directories(
+          _REPO_ROOT / "tests" / "unittests"
+      )
+      if directory not in _EXTENSIONLESS_MARKER_DIRECTORIES
+  ]
+
+  assert not unpackaged, (
+      "These directories hold test files but no __init__.py, so pytest puts"
+      " each one on sys.path and imports its tests under a bare name. Copy the"
+      " license-header __init__.py from a sibling package into each directory,"
+      f" and into every directory above it up to tests/: {unpackaged}"
   )
 
 
