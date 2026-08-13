@@ -93,6 +93,7 @@ class ApiParameter(BaseModel):
         'param_schema': self.param_schema,
         'description': self.description,
         'py_name': self.py_name,
+        'required': self.required,
     }
 
   def __str__(self):
