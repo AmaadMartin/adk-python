@@ -18,6 +18,7 @@ import logging
 from typing import Any
 from typing import Iterable
 from typing import Optional
+from typing import Union
 from unittest import mock
 
 from google.adk.events.event import Event
@@ -256,6 +257,7 @@ def test_get_api_client_passes_credentials_through():
       project='test-project',
       location='test-location',
       credentials=mock_credentials,
+      http_options=None,
   )
 
 
@@ -269,6 +271,95 @@ def test_get_api_client_defaults_credentials_to_none():
       project='test-project',
       location='test-location',
       credentials=None,
+      http_options=None,
+  )
+
+
+def http_options_override_memory_bank_service(
+    http_options: Optional[Union[types.HttpOptions, types.HttpOptionsDict]],
+    project: Optional[str] = 'test-project',
+    location: Optional[str] = 'test-location',
+    express_mode_api_key: Optional[str] = None,
+) -> VertexAiMemoryBankService:
+  """Creates a service subclass that overrides the http options hook."""
+
+  class _OverridingMemoryBankService(VertexAiMemoryBankService):
+
+    def _api_client_http_options_override(
+        self,
+    ) -> Optional[Union[types.HttpOptions, types.HttpOptionsDict]]:
+      return http_options
+
+  return _OverridingMemoryBankService(
+      project=project,
+      location=location,
+      agent_engine_id='123',
+      express_mode_api_key=express_mode_api_key,
+  )
+
+
+def test_api_client_http_options_override_defaults_to_none():
+  """The base hook returns None so the default client is unchanged."""
+  memory_service = mock_vertex_ai_memory_bank_service()
+
+  assert memory_service._api_client_http_options_override() is None
+
+
+def test_get_api_client_forwards_http_options_override():
+  """The override reaches the client on the project and location branch."""
+  http_options = types.HttpOptions(
+      base_url='https://example.test', headers={'x-test': '1'}
+  )
+  memory_service = http_options_override_memory_bank_service(http_options)
+
+  with mock.patch('vertexai.Client') as mock_client_constructor:
+    memory_service._get_api_client()
+
+  mock_client_constructor.assert_called_once_with(
+      project='test-project',
+      location='test-location',
+      credentials=None,
+      http_options=http_options,
+  )
+
+
+def test_get_api_client_forwards_http_options_override_in_express_mode(
+    monkeypatch,
+):
+  """The override reaches the client on the express mode branch."""
+  monkeypatch.setenv('GOOGLE_GENAI_USE_ENTERPRISE', 'true')
+  http_options = types.HttpOptions(
+      base_url='https://example.test', headers={'x-test': '1'}
+  )
+  memory_service = http_options_override_memory_bank_service(
+      http_options,
+      project=None,
+      location=None,
+      express_mode_api_key='test-api-key',
+  )
+
+  with mock.patch('vertexai.Client') as mock_client_constructor:
+    memory_service._get_api_client()
+
+  mock_client_constructor.assert_called_once_with(
+      http_options=http_options,
+      api_key='test-api-key',
+  )
+
+
+def test_get_api_client_accepts_http_options_dict_override():
+  """A plain dict override arrives at the client unchanged."""
+  http_options = {'headers': {'x-test': '1'}}
+  memory_service = http_options_override_memory_bank_service(http_options)
+
+  with mock.patch('vertexai.Client') as mock_client_constructor:
+    memory_service._get_api_client()
+
+  mock_client_constructor.assert_called_once_with(
+      project='test-project',
+      location='test-location',
+      credentials=None,
+      http_options=http_options,
   )
 
 
