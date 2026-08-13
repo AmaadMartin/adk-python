@@ -18,12 +18,26 @@ from unittest import mock
 from google.adk.telemetry.setup import maybe_set_otel_providers
 import pytest
 
+OTLP_ENDPOINT_ENV_VARS = (
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+)
+
 
 @pytest.fixture
 def mock_os_environ():
   initial_env = os.environ.copy()
   with mock.patch.dict(os.environ, initial_env, clear=False) as m:
     yield m
+
+
+@pytest.fixture
+def no_otlp_endpoint_env(monkeypatch: pytest.MonkeyPatch) -> None:
+  """Clears the OTLP endpoint variables the ambient environment may export."""
+  for env_var in OTLP_ENDPOINT_ENV_VARS:
+    monkeypatch.delenv(env_var, raising=False)
 
 
 @pytest.mark.parametrize(
@@ -117,3 +131,48 @@ def test_maybe_set_otel_providers(
   assert trace_provider_mock.call_count == (1 if should_setup_trace else 0)
   assert meter_provider_mock.call_count == (1 if should_setup_metrics else 0)
   assert logs_provider_mock.call_count == (1 if should_setup_logs else 0)
+
+
+@pytest.mark.parametrize(
+    "env_vars",
+    [
+        {},
+        {"OTEL_EXPORTER_OTLP_ENDPOINT": ""},
+    ],
+)
+@pytest.mark.usefixtures("no_otlp_endpoint_env")
+def test_maybe_set_otel_providers_without_an_endpoint(
+    env_vars: dict[str, str],
+    monkeypatch: pytest.MonkeyPatch,
+):
+  """No configured endpoint means no global provider is touched.
+
+  Callers rely on this to invoke the function unconditionally. An empty value
+  counts as unset.
+  """
+  # Arrange.
+  for k, v in env_vars.items():
+    monkeypatch.setenv(k, v)
+  trace_provider_mock = mock.MagicMock()
+  monkeypatch.setattr(
+      "opentelemetry.trace.set_tracer_provider",
+      trace_provider_mock,
+  )
+  meter_provider_mock = mock.MagicMock()
+  monkeypatch.setattr(
+      "opentelemetry.metrics.set_meter_provider",
+      meter_provider_mock,
+  )
+  logs_provider_mock = mock.MagicMock()
+  monkeypatch.setattr(
+      "opentelemetry._logs.set_logger_provider",
+      logs_provider_mock,
+  )
+
+  # Act.
+  maybe_set_otel_providers()
+
+  # Assert.
+  trace_provider_mock.assert_not_called()
+  meter_provider_mock.assert_not_called()
+  logs_provider_mock.assert_not_called()

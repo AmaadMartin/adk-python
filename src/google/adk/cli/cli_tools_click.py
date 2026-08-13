@@ -933,6 +933,14 @@ def cli_run(
   """
   logs.log_to_tmp_folder(level=getattr(logging, log_level.upper()))
 
+  # Imported lazily, like the `.cli` imports below, so the other `adk` commands
+  # do not pay for the OTel SDK. This registers a provider only for the signals
+  # the OTEL_EXPORTER_OTLP_* variables configure, and nothing at all when the
+  # user set none of them.
+  from ..telemetry.setup import maybe_set_otel_providers
+
+  maybe_set_otel_providers()
+
   agent_parent_folder = os.path.dirname(agent)
   agent_folder_name = os.path.basename(agent)
 
