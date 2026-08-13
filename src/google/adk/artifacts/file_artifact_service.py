@@ -390,11 +390,9 @@ class FileArtifactService(BaseArtifactService):
   # portable across filesystems. `{artifact_path}` therefore mirrors the
   # sanitized, scope-relative path derived from each filename.
   #
-  # Two filenames in one scope that differ only in case share one
-  # `{artifact_path}` on a case-insensitive filesystem (APFS, NTFS), so saving
-  # the second one is rejected. Reads are answered by the filename recorded in
-  # the metadata document, so a case variant of a stored filename reports "not
-  # found" instead of the other artifact's data.
+  # Two filenames that differ only in case share one `{artifact_path}` on a
+  # case-insensitive filesystem, so the second one is rejected on save and
+  # reports "not found" on read. See `_stored_key_matches`.
 
   def __init__(self, root_dir: Path | str):
     """Initializes the file-based artifact service.
@@ -467,10 +465,8 @@ class FileArtifactService(BaseArtifactService):
 
     Returns:
       The directory to read, or None when `filename` cannot name a stored
-      artifact. A padded filename never names one, and a filename that
-      resolves onto a directory whose metadata records a different key names
-      that other artifact instead: on a case-insensitive filesystem
-      `report.txt` resolves onto the directory of `Report.txt`.
+      artifact: it is whitespace-padded, or it resolves onto a directory that
+      `_stored_key_matches` rejects.
     """
     if artifact_util.is_whitespace_padded_filename(filename):
       return None
@@ -570,7 +566,7 @@ class FileArtifactService(BaseArtifactService):
         if _is_user_scoped(session_id, filename)
         else ""
     )
-    artifact_util.assert_no_case_collision(
+    artifact_util.validate_no_case_collision(
         _list_keys_in_scope(scope_root, key_prefix), filename
     )
     artifact_dir.mkdir(parents=True, exist_ok=True)

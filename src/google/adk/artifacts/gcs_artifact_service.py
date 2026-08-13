@@ -289,7 +289,7 @@ class GcsArtifactService(BaseArtifactService):
   ) -> int:
     artifact_util.validate_artifact_filename(filename)
     artifact = ensure_part(artifact)
-    artifact_util.assert_no_case_collision(
+    artifact_util.validate_no_case_collision(
         self._list_keys_in_scope(
             self._get_scope_prefix(app_name, user_id, filename, session_id)
         ),

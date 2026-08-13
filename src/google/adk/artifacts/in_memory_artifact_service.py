@@ -137,7 +137,7 @@ class InMemoryArtifactService(BaseArtifactService, BaseModel):
     artifact_util.validate_artifact_filename(filename)
     artifact = ensure_part(artifact)
     prefix = self._scope_prefix(app_name, user_id, filename, session_id)
-    artifact_util.assert_no_case_collision(
+    artifact_util.validate_no_case_collision(
         [
             key.removeprefix(prefix)
             for key in self.artifacts
