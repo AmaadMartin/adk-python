@@ -21,17 +21,15 @@
 
 set -euo pipefail
 
-# Parse arguments. Consume the parameters one at a time so the shift is
-# meaningful: inside a `for`, the list is expanded up front and shifting it
-# does nothing.
+# Parse arguments
 CHECK_ONLY=false
-while [ "$#" -gt 0 ]; do
-  case "$1" in
+for arg in "$@"; do
+  case $arg in
     --check)
       CHECK_ONLY=true
+      shift
       ;;
   esac
-  shift
 done
 
 # Ensure uv is in PATH
@@ -45,9 +43,7 @@ trap cleanup EXIT
 PYTHON_VERSIONS=("3.10" "3.11" "3.12" "3.13" "3.14")
 EXIT_CODE=0
 
-# Check mode reads the date out of each file's own header instead of computing
-# one, so this stays empty there. It must be defined either way: under `set -u`
-# the unconditional read below would otherwise abort the run.
+# Must be defined: set -u would abort the unconditional read below in check mode.
 EXCLUDE_NEWER_DATE=""
 
 # Calculate 4 days ago date
@@ -76,10 +72,7 @@ for ver in "${PYTHON_VERSIONS[@]}"; do
 
   if [ -f "$TARGET_FILE" ]; then
     if [ "$CHECK_ONLY" = true ]; then
-      # In check mode, extract the date used when it was generated. `|| true`
-      # is load-bearing now that `pipefail` is set: a header recording no date
-      # fails the greps, and the assignment would abort the whole run under
-      # `set -e` instead of leaving date_to_use empty for the check below.
+      # `|| true`: pipefail now propagates grep's no-match exit; an undated header must leave this empty.
       date_to_use=$(grep -h "#    uv pip compile" "$TARGET_FILE" | grep -oE -- '--exclude-newer [0-9]{4}-[0-9]{2}-[0-9]{2}' | cut -d' ' -f2 || true)
     fi
   fi

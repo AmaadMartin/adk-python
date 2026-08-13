@@ -25,13 +25,8 @@ import dataclasses
 import pathlib
 import re
 import subprocess
-import sys
 
 import pytest
-
-pytestmark = pytest.mark.skipif(
-    sys.platform.startswith('win'), reason='POSIX shell script.'
-)
 
 _SCRIPT = (
     pathlib.Path(__file__).resolve().parents[3]
