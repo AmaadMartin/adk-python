@@ -147,7 +147,34 @@ class TestApiParameter:
         'param_schema': {'type': 'string', 'description': 'test description'},
         'description': 'test description',
         'py_name': 'test_param_custom',
+        'required': False,
     }
+
+  @pytest.mark.parametrize('required', [True, False])
+  def test_api_parameter_required_survives_round_trip(self, required):
+    param = ApiParameter(
+        original_name='testParam',
+        param_location='query',
+        param_schema=Schema(type='string'),
+        required=required,
+    )
+
+    reloaded = ApiParameter.model_validate(param.model_dump(mode='json'))
+
+    assert reloaded.required is required
+
+  def test_api_parameter_accepts_payload_without_required_key(self):
+    payload = {
+        'original_name': 'testParam',
+        'param_location': 'query',
+        'param_schema': {'type': 'string'},
+        'description': '',
+        'py_name': 'test_param',
+    }
+
+    param = ApiParameter.model_validate(payload)
+
+    assert param.required is False
 
   @pytest.mark.parametrize(
       'schema, expected_type_value, expected_type_hint',

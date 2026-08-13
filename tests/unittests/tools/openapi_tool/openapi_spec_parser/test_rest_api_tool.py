@@ -115,14 +115,14 @@ def sample_api_parameters():
           py_name="test_param",
           param_location="query",
           param_schema=OpenAPISchema(type="string"),
-          is_required=True,
+          required=True,
       ),
       ApiParameter(
           original_name="",
           py_name="test_body_param",
           param_location="body",
           param_schema=OpenAPISchema(type="string"),
-          is_required=True,
+          required=True,
       ),
   ]
 
@@ -134,7 +134,7 @@ def sample_return_parameter():
       py_name="test_param",
       param_location="query",
       param_schema=OpenAPISchema(type="string"),
-      is_required=True,
+      required=True,
   )
 
 
@@ -276,6 +276,84 @@ class TestRestApiTool:
 
     tool = RestApiTool.from_parsed_operation_str(parsed_operation_str)
     assert tool.name == "test_operation"
+
+  def test_from_parsed_operation_str_preserves_required_flags(
+      self,
+      sample_endpoint,
+      sample_api_parameters,
+      sample_return_parameter,
+      sample_operation,
+  ):
+    parsed = ParsedOperation(
+        name="test_operation",
+        description="Test Description",
+        endpoint=sample_endpoint,
+        operation=sample_operation,
+        parameters=sample_api_parameters,
+        return_value=sample_return_parameter,
+    )
+
+    tool = RestApiTool.from_parsed_operation_str(
+        parsed.model_dump_json(by_alias=True, exclude_none=True)
+    )
+
+    assert [
+        (p.py_name, p.required) for p in tool._operation_parser.get_parameters()
+    ] == [("test_param", True), ("test_body_param", True)]
+    assert sorted(tool._operation_parser.get_json_schema()["required"]) == [
+        "test_body_param",
+        "test_param",
+    ]
+
+  @patch(
+      "google.adk.tools.openapi_tool.openapi_spec_parser.rest_api_tool._request"
+  )
+  @pytest.mark.asyncio
+  async def test_round_tripped_tool_fills_required_param_default(
+      self,
+      mock_request,
+      mock_tool_context,
+      sample_endpoint,
+      sample_return_parameter,
+  ):
+    """A required parameter with a schema default survives serialization."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"result": "success"}
+    mock_request.return_value = mock_response
+
+    page_size = ApiParameter(
+        original_name="page_size",
+        py_name="page_size",
+        param_location="query",
+        param_schema=OpenAPISchema(type="integer", default=10),
+        required=True,
+    )
+    parsed = ParsedOperation(
+        name="list_items",
+        description="List items",
+        endpoint=sample_endpoint,
+        operation=Operation(
+            operationId="listItems",
+            description="List items",
+            parameters=[
+                OpenAPIParameter(**{
+                    "name": "page_size",
+                    "in": "query",
+                    "required": True,
+                    "schema": OpenAPISchema(type="integer", default=10),
+                })
+            ],
+        ),
+        parameters=[page_size],
+        return_value=sample_return_parameter,
+    )
+
+    tool = RestApiTool.from_parsed_operation_str(
+        parsed.model_dump_json(by_alias=True, exclude_none=True)
+    )
+    await tool.call(args={}, tool_context=mock_tool_context)
+
+    assert mock_request.call_args[1]["params"] == {"page_size": 10}
 
   @patch(
       "google.adk.tools.openapi_tool.openapi_spec_parser.rest_api_tool._request"
