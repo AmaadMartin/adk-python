@@ -360,9 +360,13 @@ def _load_skill_from_zip_bytes(zip_bytes: bytes) -> models.Skill:
     skill_name = parsed.get("name")
     if not skill_name:
       raise ValueError("SKILL.md frontmatter must contain 'name'")
+    # PureWindowsPath treats both "/" and "\" as separators and understands
+    # drive prefixes, so the same name gets the same verdict on every host OS.
+    # It keeps ".." as a name component, so reject that name explicitly.
     if (
         not isinstance(skill_name, str)
-        or pathlib.Path(skill_name).name != skill_name
+        or skill_name == ".."
+        or pathlib.PureWindowsPath(skill_name).name != skill_name
     ):
       raise ValueError(f"Invalid skill name in SKILL.md: {skill_name}")
 
