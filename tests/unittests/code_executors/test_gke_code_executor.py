@@ -22,6 +22,21 @@ from kubernetes import client
 from kubernetes import config
 from kubernetes.client.rest import ApiException
 import pytest
+import requests
+
+
+def _gateway_error(cause: Exception) -> RuntimeError:
+  """Builds the error the sandbox client raises when a request fails.
+
+  The client wraps every `requests` failure as `raise RuntimeError(...) from e`;
+  assigning `__cause__` is what that statement does.
+  """
+  error = RuntimeError(
+      "Failed to communicate with the sandbox via the gateway at"
+      " http://10.0.0.1:8080/execute."
+  )
+  error.__cause__ = cause
+  return error
 
 
 @pytest.fixture
@@ -360,12 +375,16 @@ class TestGkeCodeExecutor:
       executor.execute_code(mock_invocation_context, code_input)
 
   @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
-  def test_execute_code_sandbox_timeout_error(
+  def test_execute_code_sandbox_provisioning_timeout_returns_result(
       self,
       mock_sandbox_client,
       mock_invocation_context,
   ):
-    """Tests handling of TimeoutError from SandboxClient."""
+    """Tests that a sandbox that never becomes ready is reported in stderr.
+
+    The client raises the builtin TimeoutError only while provisioning, so this
+    covers the provisioning arm and not an execution timeout.
+    """
     mock_sandbox_client.return_value.__enter__.side_effect = TimeoutError(
         "Execution timed out"
     )
@@ -377,6 +396,55 @@ class TestGkeCodeExecutor:
 
     assert result.stdout == ""
     assert "Sandbox timed out: Execution timed out" in result.stderr
+
+  @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
+  def test_execute_code_sandbox_execution_timeout_returns_result(
+      self,
+      mock_sandbox_client,
+      mock_invocation_context,
+  ):
+    """Tests that code outrunning the read deadline is reported in stderr."""
+    mock_sandbox_instance = (
+        mock_sandbox_client.return_value.__enter__.return_value
+    )
+    mock_sandbox_instance.run.side_effect = _gateway_error(
+        requests.exceptions.ReadTimeout(
+            "HTTPConnectionPool(host='10.0.0.1', port=8080): Read timed out."
+            " (read timeout=60)"
+        )
+    )
+
+    executor = GkeCodeExecutor(executor_type="sandbox")
+    code_input = CodeExecutionInput(code="import time; time.sleep(120)")
+
+    result = executor.execute_code(mock_invocation_context, code_input)
+
+    assert result.stdout == ""
+    assert result.stderr.startswith("Sandbox timed out: ")
+
+  @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
+  def test_execute_code_sandbox_connect_timeout_raises_infrastructure_error(
+      self,
+      mock_sandbox_client,
+      mock_invocation_context,
+  ):
+    """Tests that a gateway that never answers stays an infrastructure error.
+
+    A connect timeout means the request never reached the sandbox, so the code
+    did not outrun any deadline.
+    """
+    mock_sandbox_instance = (
+        mock_sandbox_client.return_value.__enter__.return_value
+    )
+    mock_sandbox_instance.run.side_effect = _gateway_error(
+        requests.exceptions.ConnectTimeout("Connection to 10.0.0.1 timed out")
+    )
+
+    executor = GkeCodeExecutor(executor_type="sandbox")
+    code_input = CodeExecutionInput(code='print("sandbox")')
+
+    with pytest.raises(RuntimeError, match="Sandbox infrastructure error"):
+      executor.execute_code(mock_invocation_context, code_input)
 
   @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
   @patch("google.adk.code_executors.gke_code_executor.Watch")
@@ -448,3 +516,53 @@ class TestGkeCodeExecutor:
     assert result.stderr == "oops\n"
     mock_sandbox_instance.write.assert_called_with("script.py", code_input.code)
     mock_sandbox_instance.run.assert_called_with("python3 script.py")
+
+  def test_sandbox_execution_timeout_degrades_without_mocks(
+      self,
+      mock_invocation_context,
+  ):
+    """Tests the timeout contract end to end against a fake, with no mocks."""
+    run_calls: list[str] = []
+
+    class FakeSandboxClient:
+      """A sandbox whose code always outruns the read deadline."""
+
+      def __init__(
+          self,
+          template_name: str,
+          namespace: str = "default",
+          gateway_name: str | None = None,
+      ):
+        pass
+
+      def __enter__(self) -> "FakeSandboxClient":
+        return self
+
+      def __exit__(self, *exc_info: object) -> None:
+        return None
+
+      def write(self, path: str, content: str, timeout: int = 60) -> None:
+        return None
+
+      def run(self, command: str, timeout: int = 60) -> object:
+        run_calls.append(command)
+        raise _gateway_error(
+            requests.exceptions.ReadTimeout(
+                "HTTPConnectionPool(host='10.0.0.1', port=8080): Read timed"
+                " out. (read timeout=60)"
+            )
+        )
+
+    with patch(
+        "google.adk.code_executors.gke_code_executor.SandboxClient",
+        FakeSandboxClient,
+    ):
+      executor = GkeCodeExecutor(executor_type="sandbox")
+      result = executor.execute_code(
+          mock_invocation_context,
+          CodeExecutionInput(code="import time; time.sleep(120)"),
+      )
+
+    assert run_calls == ["python3 script.py"]
+    assert result.stdout == ""
+    assert result.stderr.startswith("Sandbox timed out: ")

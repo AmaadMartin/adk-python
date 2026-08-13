@@ -21,6 +21,7 @@ import uuid
 import kubernetes as k8s
 from kubernetes.watch import Watch
 from pydantic import field_validator
+import requests
 from typing_extensions import Literal
 from typing_extensions import override
 from typing_extensions import TYPE_CHECKING
@@ -176,7 +177,13 @@ class GkeCodeExecutor(BaseCodeExecutor):
     return v
 
   def _execute_in_sandbox(self, code: str) -> CodeExecutionResult:
-    """Executes code using Agent Sandbox Client."""
+    """Executes code using Agent Sandbox Client.
+
+    Raises:
+      RuntimeError: The sandbox infrastructure failed, for example the gateway
+        is unreachable or the port-forward crashed. A sandbox timeout is
+        reported in `stderr` instead.
+    """
     try:
       with SandboxClient(
           template_name=self.sandbox_template,
@@ -189,14 +196,23 @@ class GkeCodeExecutor(BaseCodeExecutor):
 
         return CodeExecutionResult(stdout=result.stdout, stderr=result.stderr)
     except RuntimeError as e:
+      # The client reports a read timeout and an unreachable gateway with the
+      # same message, so only the cause tells them apart. Returning a result
+      # instead of raising lets the agent read the timeout as tool output and
+      # adjust, which is what the job path and ContainerCodeExecutor already do
+      # for their own timeouts.
+      if isinstance(e.__cause__, requests.exceptions.ReadTimeout):
+        logger.error("Sandbox timed out running the code", exc_info=True)
+        return CodeExecutionResult(stderr=f"Sandbox timed out: {e}")
       logger.error(
           "SandboxClient failed to initialize or find gateway", exc_info=True
       )
       raise RuntimeError(f"Sandbox infrastructure error: {e}") from e
     except TimeoutError as e:
-      logger.error("Sandbox timed out", exc_info=True)
-      # Returning a result instead of raising allows the Agent to process
-      # the error gracefully.
+      # The sandbox client raises the builtin TimeoutError when the sandbox
+      # never reports Ready, the gateway never gets an IP, or the dev-mode
+      # tunnel never comes up -- provisioning, never execution.
+      logger.error("Sandbox provisioning timed out", exc_info=True)
       return CodeExecutionResult(stderr=f"Sandbox timed out: {e}")
     except Exception as e:
       logger.error("Sandbox execution failed: %s", e, exc_info=True)
