@@ -26,10 +26,12 @@ from kubernetes import config
 from kubernetes.client.rest import ApiException
 import pydantic
 import pytest
+import requests
 
 try:
   from k8s_agent_sandbox import SandboxClient as RealSandboxClient
   from k8s_agent_sandbox.commands.command_executor import CommandExecutor
+  from k8s_agent_sandbox.exceptions import SandboxRequestError
   from k8s_agent_sandbox.exceptions import SandboxWarmPoolNotFoundError
   from k8s_agent_sandbox.files.filesystem import Filesystem
   from k8s_agent_sandbox.models import ExecutionResult
@@ -438,6 +440,33 @@ class TestGkeCodeExecutor:
 
     assert result.stdout == ""
     assert "Sandbox timed out: Execution timed out" in result.stderr
+
+  @requires_agent_sandbox
+  def test_execute_in_sandbox_reports_a_hung_script_as_a_timeout(
+      self,
+      mock_sandbox_client,
+      mock_invocation_context,
+  ):
+    """Tests that a wrapped read timeout returns a result, not an error.
+
+    A script that outruns `timeout_seconds` fails the HTTP request, and the
+    client re-raises that as a `SandboxRequestError`, which subclasses
+    `RuntimeError`. The executor must still report it as a timeout.
+    """
+    wrapped = SandboxRequestError("Failed to communicate with the sandbox.")
+    wrapped.__cause__ = requests.exceptions.ReadTimeout(
+        "Read timed out. (read timeout=300)"
+    )
+    mock_sandbox_client["sandbox"].commands.run.side_effect = wrapped
+    executor = GkeCodeExecutor(executor_type="sandbox")
+
+    result = executor.execute_code(
+        mock_invocation_context, CodeExecutionInput(code="while True: pass")
+    )
+
+    assert result.stdout == ""
+    assert "Sandbox timed out: " in result.stderr
+    mock_sandbox_client["sandbox"].terminate.assert_called_once_with()
 
   @requires_agent_sandbox
   @patch("google.adk.code_executors.gke_code_executor.Watch")

@@ -24,6 +24,7 @@ from kubernetes.watch import Watch
 from pydantic import Field
 from pydantic import field_validator
 from pydantic import model_validator
+import requests
 from typing_extensions import Literal
 from typing_extensions import override
 from typing_extensions import TYPE_CHECKING
@@ -103,14 +104,10 @@ class GkeCodeExecutor(BaseCodeExecutor):
   """Wall-clock bound, in seconds, on a single code execution.
 
   In job mode this bounds the watch on the submitted Job. In sandbox mode it
-  bounds the wait for the sandbox to become ready, the script upload and the
-  execution request.
+  bounds sandbox readiness, the script upload and the execution request.
 
-  Must be positive: the API server treats `timeoutSeconds=0` as no timeout, so
-  a zero would silently fall back to the server default while the
-  `TimeoutError` raised afterwards reports a `0s` deadline that was never
-  applied. Raise this value for long-running code rather than removing the
-  bound; unlike on the base class, `None` is rejected.
+  Must be positive: the API server reads `timeoutSeconds=0` as no timeout, so
+  a zero would report a `0s` deadline that was never applied.
   """
   executor_type: Literal["job", "sandbox"] = "job"
   cpu_requested: str = "200m"
@@ -261,7 +258,12 @@ class GkeCodeExecutor(BaseCodeExecutor):
         self._terminate_sandbox(sandbox)
     except RuntimeError as e:
       # SandboxError and its subclasses derive from RuntimeError, so this also
-      # covers a missing warm pool, a failed claim and transport failures.
+      # covers a missing warm pool and a failed claim. The client wraps an
+      # upload or execution timeout in SandboxRequestError, so a hung script
+      # reaches this branch rather than the TimeoutError one below.
+      if isinstance(e.__cause__, requests.exceptions.Timeout):
+        logger.error("Sandbox timed out", exc_info=True)
+        return CodeExecutionResult(stderr=f"Sandbox timed out: {e}")
       logger.error("Sandbox infrastructure failure", exc_info=True)
       raise RuntimeError(f"Sandbox infrastructure error: {e}") from e
     except TimeoutError as e:
