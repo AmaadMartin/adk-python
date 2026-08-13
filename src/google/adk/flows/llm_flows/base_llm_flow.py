@@ -38,7 +38,6 @@ from ...agents.invocation_context import InvocationContext
 from ...agents.live_request_queue import LiveRequestQueue
 from ...agents.readonly_context import ReadonlyContext
 from ...agents.run_config import StreamingMode
-from ...auth.auth_tool import AuthConfig
 from ...events.event import Event
 from ...events.event_actions import EventActions
 from ...models.base_llm_connection import BaseLlmConnection
@@ -69,6 +68,7 @@ class _ReconnectSentinel(Event):
 
 if TYPE_CHECKING:
   from ...agents.llm_agent import LlmAgent
+  from ...auth.auth_tool import AuthConfig
   from ...models.base_llm import BaseLlm
   from ._base_llm_processor import BaseLlmRequestProcessor
   from ._base_llm_processor import BaseLlmResponseProcessor
