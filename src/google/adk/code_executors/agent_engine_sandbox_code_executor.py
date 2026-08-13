@@ -145,18 +145,16 @@ class AgentEngineSandboxCodeExecutor(BaseCodeExecutor):
       from google.genai import errors as genai_errors
       from vertexai import types
 
+      # Reuse the sandbox recorded in the code executor context if available.
       code_executor_context = code_execution_input.code_executor_context
       if code_executor_context is None:
         logger.debug(
             'No code executor context provided. The sandbox resource name will'
             ' not be persisted, so the next invocation creates a new sandbox.'
         )
-      # Reuse the sandbox recorded in the code executor context if available.
-      sandbox_name = (
-          code_executor_context.get_sandbox_name()
-          if code_executor_context is not None
-          else None
-      )
+        sandbox_name = None
+      else:
+        sandbox_name = code_executor_context.get_sandbox_name()
       create_new_sandbox = False
       if sandbox_name is None:
         create_new_sandbox = True

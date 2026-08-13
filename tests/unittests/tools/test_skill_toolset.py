@@ -1352,6 +1352,29 @@ async def test_execute_script_adds_no_state_delta_when_nothing_recorded(
 
 
 @pytest.mark.asyncio
+async def test_execute_script_does_not_republish_existing_code_execution_state(
+    mock_skill1,
+):
+  """State the code execution flow already recorded is not republished."""
+  executor = _make_mock_executor(stdout="hello\n")
+  toolset = skill_toolset.SkillToolset([mock_skill1], code_executor=executor)
+  tool = skill_toolset.RunSkillScriptTool(toolset)
+  ctx = _make_tool_context_with_agent()
+  ctx.state = State(
+      {"_code_execution_context": {"execution_session_id": "session-1"}},
+      ctx.actions.state_delta,
+  )
+
+  result = await tool.run_async(
+      args={"skill_name": "skill1", "file_path": "run.py"},
+      tool_context=ctx,
+  )
+
+  assert result["status"] == "success"
+  assert ctx.actions.state_delta == {}
+
+
+@pytest.mark.asyncio
 async def test_execute_script_publishes_state_delta_when_execution_raises(
     mock_skill1,
 ):

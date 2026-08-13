@@ -533,7 +533,7 @@ class _SkillScriptCodeExecutor:
       short_options: dict[str, Any] | None = None,
       positional_args: list[str] | None = None,
       *,
-      code_executor_context: CodeExecutorContext | None = None,
+      code_executor_context: CodeExecutorContext,
   ) -> dict[str, Any]:
     """Prepares and executes the script using the base executor.
 
@@ -1058,9 +1058,11 @@ class RunSkillScriptTool(BaseTool):
     script_executor = _SkillScriptCodeExecutor(
         code_executor, self._toolset._script_timeout  # pylint: disable=protected-access
     )
-    # Build the context over a copy of the state. Building it over the live
-    # State writes an empty placeholder into the tool's state delta.
+    # Read the state through a plain dict: building the context over the live
+    # State would write an empty placeholder into the tool's state delta.
     code_executor_context = CodeExecutorContext(tool_context.state.to_dict())
+    # get_state_delta() deep-copies, so this snapshot survives the execution.
+    baseline_state_delta = code_executor_context.get_state_delta()
     try:
       return await script_executor.execute_script_async(
           tool_context._invocation_context,  # pylint: disable=protected-access
@@ -1068,15 +1070,15 @@ class RunSkillScriptTool(BaseTool):
           file_path,
           script_args,
           short_options,
-          positional_args,  # pylint: disable=protected-access
+          positional_args,
           code_executor_context=code_executor_context,
       )
     finally:
       # Publish the context even when the script fails, so a sandbox the
-      # executor created is still recorded. An executor that records nothing
+      # executor created is still recorded. An execution that records nothing
       # must not add a state delta.
       state_delta = code_executor_context.get_state_delta()
-      if any(state_delta.values()):
+      if state_delta != baseline_state_delta:
         tool_context.actions.state_delta.update(state_delta)
 
   async def _ensure_skill_materialized_in_env(
