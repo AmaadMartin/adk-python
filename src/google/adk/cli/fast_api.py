@@ -176,6 +176,10 @@ def get_fast_api_app(
 
   Returns:
     The configured FastAPI application instance.
+
+  Raises:
+    click.ClickException: If eval_storage_uri is not a supported URI, or if the
+      Google Cloud optional dependencies it needs are not installed.
   """
 
   # Enable the YAML key denylist for config loads if the web UI is enabled.
@@ -198,9 +202,12 @@ def get_fast_api_app(
   if eval_storage_uri:
     from .utils import evals
 
-    gcs_eval_managers = evals.create_gcs_eval_managers_from_uri(
-        eval_storage_uri
-    )
+    try:
+      gcs_eval_managers = evals.create_gcs_eval_managers_from_uri(
+          eval_storage_uri
+      )
+    except (ValueError, RuntimeError) as exc:
+      raise click.ClickException(str(exc)) from exc
     eval_sets_manager = gcs_eval_managers.eval_sets_manager
     eval_set_results_manager = gcs_eval_managers.eval_set_results_manager
   else:
