@@ -96,12 +96,31 @@ def prompt_str(
     *,
     prior_msg: Optional[str] = None,
     default_value: Optional[str] = None,
+    hide_input: bool = False,
 ) -> str:
+  """Prompts for a non-blank string, re-asking until one is given.
+
+  Args:
+    prompt_prefix: Text shown before the input cursor.
+    prior_msg: Optional message printed once before the first prompt.
+    default_value: Returned when the user submits empty input.
+    hide_input: Set for secrets. Stops the typed characters being echoed and
+      stops the default being rendered in the prompt line, since for a secret
+      the default is itself the secret.
+
+  Returns:
+    The stripped user input, or `default_value` if the user submitted empty
+    input.
+  """
   if prior_msg:
     click.secho(prior_msg, fg="green")
   while True:
     value: str = click.prompt(
-        prompt_prefix, default=default_value or None, type=str
+        prompt_prefix,
+        default=default_value or None,
+        type=str,
+        hide_input=hide_input,
+        show_default=not hide_input,
     )
     if value and value.strip():
       return value.strip()
@@ -151,6 +170,7 @@ def prompt_for_google_api_key(
       "Enter Google API key",
       prior_msg=_GOOGLE_API_MSG,
       default_value=google_api_key,
+      hide_input=True,
   )
   return google_api_key
 
