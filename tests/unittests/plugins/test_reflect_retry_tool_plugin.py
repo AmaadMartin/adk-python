@@ -13,7 +13,6 @@
 # limitations under the License.
 
 from typing import Any
-from unittest import IsolatedAsyncioTestCase
 from unittest.mock import Mock
 
 from google.adk.agents.llm_agent import LlmAgent
@@ -22,6 +21,7 @@ from google.adk.plugins.reflect_retry_tool_plugin import ReflectAndRetryToolPlug
 from google.adk.tools.base_tool import BaseTool
 from google.adk.tools.tool_context import ToolContext
 from google.genai import types
+import pytest
 
 from .. import testing_utils
 
@@ -57,9 +57,7 @@ class CustomErrorExtractionPlugin(ReflectAndRetryToolPlugin):
     return None
 
 
-# Inheriting from IsolatedAsyncioTestCase ensures consistent behavior, because
-# pytest-asyncio's own event-loop scoping varies across versions.
-class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
+class TestReflectAndRetryToolPlugin:
   """Comprehensive tests for ReflectAndRetryToolPlugin focusing on behavior."""
 
   def get_plugin(self):
@@ -90,15 +88,15 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
     """Sample tool arguments for testing."""
     return {"param1": "value1", "param2": 42, "param3": True}
 
-  async def test_plugin_initialization_default(self):
+  def test_plugin_initialization_default(self):
     """Test plugin initialization with default parameters."""
     plugin = self.get_plugin()
 
-    self.assertEqual(plugin.name, "reflect_retry_tool_plugin")
-    self.assertEqual(plugin.max_retries, 3)
-    self.assertIs(plugin.throw_exception_if_retry_exceeded, True)
+    assert plugin.name == "reflect_retry_tool_plugin"
+    assert plugin.max_retries == 3
+    assert plugin.throw_exception_if_retry_exceeded is True
 
-  async def test_plugin_initialization_custom(self):
+  def test_plugin_initialization_custom(self):
     """Test plugin initialization with custom parameters."""
     plugin = ReflectAndRetryToolPlugin(
         name="custom_name",
@@ -106,10 +104,11 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         throw_exception_if_retry_exceeded=False,
     )
 
-    self.assertEqual(plugin.name, "custom_name")
-    self.assertEqual(plugin.max_retries, 10)
-    self.assertIsNot(plugin.throw_exception_if_retry_exceeded, True)
+    assert plugin.name == "custom_name"
+    assert plugin.max_retries == 10
+    assert plugin.throw_exception_if_retry_exceeded is False
 
+  @pytest.mark.asyncio
   async def test_after_tool_callback_successful_call(self):
     """Test after_tool_callback with successful tool call."""
     plugin = self.get_plugin()
@@ -126,8 +125,9 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
     )
 
     # Should return None for successful calls
-    self.assertIsNone(callback_result)
+    assert callback_result is None
 
+  @pytest.mark.asyncio
   async def test_after_tool_callback_ignore_retry_response(self):
     """Test that retry responses are ignored in after_tool_callback."""
     plugin = self.get_plugin()
@@ -144,8 +144,9 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
     )
 
     # Retry responses should be ignored
-    self.assertIsNone(callback_result)
+    assert callback_result is None
 
+  @pytest.mark.asyncio
   async def test_on_tool_error_callback_max_retries_zero(self):
     """Test error callback when max_retries is 0.
 
@@ -157,7 +158,7 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
     plugin = ReflectAndRetryToolPlugin(max_retries=0)
     error = ValueError("Test error")
 
-    with self.assertRaises(ValueError) as cm:
+    with pytest.raises(ValueError, match=r"Test error") as exc_info:
       await plugin.on_tool_error_callback(
           tool=mock_tool,
           tool_args=sample_tool_args,
@@ -166,8 +167,9 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
       )
 
     # Should re-raise the original exception when max_retries is 0
-    self.assertIs(cm.exception, error)
+    assert exc_info.value is error
 
+  @pytest.mark.asyncio
   async def test_on_tool_error_callback_max_retries_zero_without_exception(
       self,
   ):
@@ -188,14 +190,13 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
     )
 
     # Should return a retry exceeded message instead of raising
-    self.assertIsNotNone(result)
-    self.assertEqual(result["response_type"], REFLECT_AND_RETRY_RESPONSE_TYPE)
-    self.assertEqual(result["error_type"], "ValueError")
-    self.assertEqual(result["retry_count"], 0)
-    self.assertIn(
-        "the retry limit has been exceeded", result["reflection_guidance"]
-    )
+    assert result is not None
+    assert result["response_type"] == REFLECT_AND_RETRY_RESPONSE_TYPE
+    assert result["error_type"] == "ValueError"
+    assert result["retry_count"] == 0
+    assert "the retry limit has been exceeded" in result["reflection_guidance"]
 
+  @pytest.mark.asyncio
   async def test_on_tool_error_callback_max_retries_zero_with_dict_error(self):
     """Test error callback when max_retries is 0 and error is a dict."""
     mock_tool = self.get_mock_tool()
@@ -207,7 +208,7 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
     dict_error = {"status": "error", "message": "Custom dict error"}
     plugin.set_error_condition(lambda result: dict_error)
 
-    with self.assertRaises(Exception) as cm:
+    with pytest.raises(Exception, match=r"Custom dict error") as exc_info:
       await plugin.after_tool_callback(
           tool=mock_tool,
           tool_args=sample_tool_args,
@@ -215,10 +216,12 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
           result={"some": "result"},
       )
 
-    # Should raise an Exception wrapping the dict
-    self.assertNotIsInstance(cm.exception, TypeError)
-    self.assertIn("Custom dict error", str(cm.exception))
+    # `_ensure_exception` wraps a non-Exception error in a plain `Exception`;
+    # before it existed, `raise <dict>` produced a TypeError. Pin the exact
+    # type so that regression cannot pass as a subclass match.
+    assert type(exc_info.value) is Exception
 
+  @pytest.mark.asyncio
   async def test_on_tool_error_callback_first_failure(self):
     """Test first tool failure creates reflection response."""
     plugin = self.get_plugin()
@@ -234,14 +237,15 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         error=error,
     )
 
-    self.assertIsNotNone(result)
-    self.assertEqual(result["response_type"], REFLECT_AND_RETRY_RESPONSE_TYPE)
-    self.assertEqual(result["error_type"], "ValueError")
-    self.assertEqual(result["error_details"], "Test error message")
-    self.assertEqual(result["retry_count"], 1)
-    self.assertIn("test_tool_id", result["reflection_guidance"])
-    self.assertIn("Test error message", result["reflection_guidance"])
+    assert result is not None
+    assert result["response_type"] == REFLECT_AND_RETRY_RESPONSE_TYPE
+    assert result["error_type"] == "ValueError"
+    assert result["error_details"] == "Test error message"
+    assert result["retry_count"] == 1
+    assert "test_tool_id" in result["reflection_guidance"]
+    assert "Test error message" in result["reflection_guidance"]
 
+  @pytest.mark.asyncio
   async def test_retry_behavior_with_consecutive_failures(self):
     """Test the retry behavior with consecutive failures."""
     plugin = self.get_plugin()
@@ -257,7 +261,7 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         tool_context=mock_tool_context,
         error=error,
     )
-    self.assertEqual(result1["retry_count"], 1)
+    assert result1["retry_count"] == 1
 
     # Second failure - should have different retry count based on plugin logic
     result2 = await plugin.on_tool_error_callback(
@@ -267,10 +271,11 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         error=error,
     )
     # The plugin's internal logic determines the exact retry count
-    self.assertIsNotNone(result2)
-    self.assertEqual(result2["response_type"], REFLECT_AND_RETRY_RESPONSE_TYPE)
-    self.assertEqual(result2["retry_count"], 2)
+    assert result2 is not None
+    assert result2["response_type"] == REFLECT_AND_RETRY_RESPONSE_TYPE
+    assert result2["retry_count"] == 2
 
+  @pytest.mark.asyncio
   async def test_different_tools_behavior(self):
     """Test behavior when using different tools."""
     plugin = self.get_plugin()
@@ -287,7 +292,7 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         tool_context=mock_tool_context,
         error=error,
     )
-    self.assertEqual(result1["retry_count"], 1)
+    assert result1["retry_count"] == 1
 
     # Failure on tool2
     result2 = await plugin.on_tool_error_callback(
@@ -297,10 +302,11 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         error=error,
     )
     # Since tool is different, retry count should start over.
-    self.assertIsNotNone(result2)
-    self.assertEqual(result2["response_type"], REFLECT_AND_RETRY_RESPONSE_TYPE)
-    self.assertEqual(result2["retry_count"], 1)
+    assert result2 is not None
+    assert result2["response_type"] == REFLECT_AND_RETRY_RESPONSE_TYPE
+    assert result2["retry_count"] == 1
 
+  @pytest.mark.asyncio
   async def test_max_retries_exceeded_with_exception(self):
     """Test that original exception is raised when max retries exceeded."""
     mock_tool = self.get_mock_tool()
@@ -320,7 +326,7 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
     )
 
     # Second call should exceed max_retries and raise
-    with self.assertRaises(ConnectionError) as cm:
+    with pytest.raises(ConnectionError, match=r"Connection failed") as exc_info:
       await plugin.on_tool_error_callback(
           tool=mock_tool,
           tool_args=sample_tool_args,
@@ -329,8 +335,9 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
       )
 
     # Verify exception properties
-    self.assertIs(cm.exception, error)
+    assert exc_info.value is error
 
+  @pytest.mark.asyncio
   async def test_max_retries_exceeded_with_dict_error(self):
     """Test that Exception is raised when max retries exceeded with dict error."""
     mock_tool = self.get_mock_tool()
@@ -349,11 +356,11 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         tool_context=mock_tool_context,
         result={"some": "result"},
     )
-    self.assertIsNotNone(result1)
-    self.assertEqual(result1["retry_count"], 1)
+    assert result1 is not None
+    assert result1["retry_count"] == 1
 
     # Second call should exceed max_retries and raise
-    with self.assertRaises(Exception) as cm:
+    with pytest.raises(Exception, match=r"Custom dict error") as exc_info:
       await plugin.after_tool_callback(
           tool=mock_tool,
           tool_args=sample_tool_args,
@@ -361,10 +368,12 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
           result={"some": "result"},
       )
 
-    # Verify exception properties
-    self.assertNotIsInstance(cm.exception, TypeError)
-    self.assertIn("Custom dict error", str(cm.exception))
+    # `_ensure_exception` wraps a non-Exception error in a plain `Exception`;
+    # before it existed, `raise <dict>` produced a TypeError. Pin the exact
+    # type so that regression cannot pass as a subclass match.
+    assert type(exc_info.value) is Exception
 
+  @pytest.mark.asyncio
   async def test_max_retries_exceeded_without_exception(self):
     """Test max retries exceeded returns failure message when exception is disabled."""
     mock_tool = self.get_mock_tool()
@@ -386,14 +395,13 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
       )
 
     # Should get a retry exceeded message on the last call
-    self.assertIsNotNone(result)
-    self.assertEqual(result["response_type"], REFLECT_AND_RETRY_RESPONSE_TYPE)
-    self.assertEqual(result["error_type"], "TimeoutError")
-    self.assertIn(
-        "the retry limit has been exceeded", result["reflection_guidance"]
-    )
-    self.assertIn("Do not attempt to use the", result["reflection_guidance"])
+    assert result is not None
+    assert result["response_type"] == REFLECT_AND_RETRY_RESPONSE_TYPE
+    assert result["error_type"] == "TimeoutError"
+    assert "the retry limit has been exceeded" in result["reflection_guidance"]
+    assert "Do not attempt to use the" in result["reflection_guidance"]
 
+  @pytest.mark.asyncio
   async def test_successful_call_resets_retry_behavior(self):
     """Test that successful calls reset the retry behavior."""
     plugin = self.get_plugin()
@@ -409,7 +417,7 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         tool_context=mock_tool_context,
         error=error,
     )
-    self.assertEqual(result1["retry_count"], 1)
+    assert result1["retry_count"] == 1
 
     # Successful call
     await plugin.after_tool_callback(
@@ -426,8 +434,9 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         tool_context=mock_tool_context,
         error=error,
     )
-    self.assertEqual(result2["retry_count"], 1)  # Should restart from 1
+    assert result2["retry_count"] == 1  # Should restart from 1
 
+  @pytest.mark.asyncio
   async def test_none_result_handling(self):
     """Test handling of None results in after_tool_callback."""
     plugin = self.get_plugin()
@@ -443,8 +452,9 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         result=None,
     )
 
-    self.assertIsNone(callback_result)
+    assert callback_result is None
 
+  @pytest.mark.asyncio
   async def test_empty_tool_args_handling(self):
     """Test handling of empty tool arguments."""
     plugin = self.get_plugin()
@@ -460,10 +470,11 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         error=error,
     )
 
-    self.assertIsNotNone(result)
+    assert result is not None
     # Empty args should be represented in the response
-    self.assertIn("{}", result["reflection_guidance"])
+    assert "{}" in result["reflection_guidance"]
 
+  @pytest.mark.asyncio
   async def test_retry_count_progression(self):
     """Test that retry counts progress correctly for the same tool."""
     mock_tool_context = self.get_mock_tool_context()
@@ -479,8 +490,9 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
           tool_context=mock_tool_context,
           error=error,
       )
-      self.assertEqual(result["retry_count"], i)
+      assert result["retry_count"] == i
 
+  @pytest.mark.asyncio
   async def test_max_retries_parameter_behavior(self):
     """Test that max_retries parameter affects behavior correctly."""
     mock_tool = self.get_mock_tool()
@@ -509,10 +521,9 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
     )
 
     # Should hit max retries quickly with max_retries=1
-    self.assertIn(
-        "the retry limit has been exceeded.", result["reflection_guidance"]
-    )
+    assert "the retry limit has been exceeded." in result["reflection_guidance"]
 
+  @pytest.mark.asyncio
   async def test_default_extract_error_returns_none(self):
     """Test that default extract_error_from_result returns None."""
     plugin = self.get_plugin()
@@ -527,8 +538,9 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         tool_context=mock_tool_context,
         result=result,
     )
-    self.assertIsNone(error)
+    assert error is None
 
+  @pytest.mark.asyncio
   async def test_custom_error_detection_and_success_handling(self):
     """Test custom error detection, success handling, and retry progression."""
     custom_error_plugin = self.get_custom_error_plugin()
@@ -547,11 +559,9 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         tool_context=mock_tool_context,
         result=error_result,
     )
-    self.assertIsNotNone(callback_result)
-    self.assertEqual(
-        callback_result["response_type"], REFLECT_AND_RETRY_RESPONSE_TYPE
-    )
-    self.assertEqual(callback_result["retry_count"], 1)
+    assert callback_result is not None
+    assert callback_result["response_type"] == REFLECT_AND_RETRY_RESPONSE_TYPE
+    assert callback_result["retry_count"] == 1
 
     # Test success handling
     success_result = {"status": "success", "data": "operation completed"}
@@ -561,8 +571,9 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         tool_context=mock_tool_context,
         result=success_result,
     )
-    self.assertIsNone(callback_result)
+    assert callback_result is None
 
+  @pytest.mark.asyncio
   async def test_retry_state_management(self):
     """Test retry state management with custom errors and mixed error types."""
     custom_error_plugin = self.get_custom_error_plugin()
@@ -581,7 +592,7 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         tool_context=mock_tool_context,
         result=custom_error,
     )
-    self.assertEqual(result1["retry_count"], 1)
+    assert result1["retry_count"] == 1
 
     # Exception should increment retry count
     exception = ValueError("Invalid parameter")
@@ -591,7 +602,7 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         tool_context=mock_tool_context,
         error=exception,
     )
-    self.assertEqual(result2["retry_count"], 2)
+    assert result2["retry_count"] == 2
 
     # Success should reset
     success = {"result": "success"}
@@ -601,7 +612,7 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         tool_context=mock_tool_context,
         result=success,
     )
-    self.assertIsNone(result3)
+    assert result3 is None
 
     # Next error should start fresh
     result4 = await custom_error_plugin.after_tool_callback(
@@ -610,8 +621,9 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         tool_context=mock_tool_context,
         result=custom_error,
     )
-    self.assertEqual(result4["retry_count"], 1)
+    assert result4["retry_count"] == 1
 
+  @pytest.mark.asyncio
   async def test_hallucinating_tool_name(self):
     """Test that hallucinating tool name is handled correctly."""
     wrong_function_call = types.Part.from_function_call(
@@ -665,15 +677,16 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
 
     # Assert that the third event is a function call with the correct name
     assert events[2].content.parts[0].function_call.name == "increase"
-    self.assertEqual(function_called, 1)
+    assert function_called == 1
 
-  async def test_negative_max_retries_rejected(self):
+  def test_negative_max_retries_rejected(self):
     """Test that a negative retry budget is rejected at construction."""
-    with self.assertRaises(ValueError) as cm:
+    with pytest.raises(
+        ValueError, match=r"max_retries must be a non-negative integer"
+    ):
       ReflectAndRetryToolPlugin(max_retries=-1)
 
-    self.assertIn("non-negative", str(cm.exception))
-
+  @pytest.mark.asyncio
   async def test_reflection_response_does_not_reset_the_retry_count(self):
     """Test that feeding a reflection response back does not clear failures.
 
@@ -694,7 +707,7 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         tool_context=mock_tool_context,
         error=error,
     )
-    self.assertEqual(reflection["retry_count"], 1)
+    assert reflection["retry_count"] == 1
 
     passthrough = await plugin.after_tool_callback(
         tool=mock_tool,
@@ -702,7 +715,7 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         tool_context=mock_tool_context,
         result=reflection,
     )
-    self.assertIsNone(passthrough)
+    assert passthrough is None
 
     next_failure = await plugin.on_tool_error_callback(
         tool=mock_tool,
@@ -710,4 +723,4 @@ class TestReflectAndRetryToolPlugin(IsolatedAsyncioTestCase):
         tool_context=mock_tool_context,
         error=error,
     )
-    self.assertEqual(next_failure["retry_count"], 2)
+    assert next_failure["retry_count"] == 2
