@@ -20,6 +20,7 @@ from pathlib import Path
 from unittest import mock
 
 from google.adk.cli.built_in_agents.tools.cleanup_unused_files import cleanup_unused_files
+import pytest
 
 
 def _tool_context(root: Path) -> mock.MagicMock:
@@ -41,6 +42,7 @@ def _unused(result, root: Path) -> list[str]:
   )
 
 
+@pytest.mark.asyncio
 async def test_cleanup_unused_files_reports_python_files_not_in_use(tmp_path):
   _populate(tmp_path, ["used.py", "orphan.py", "pkg/nested_orphan.py"])
 
@@ -56,6 +58,7 @@ async def test_cleanup_unused_files_reports_python_files_not_in_use(tmp_path):
   assert result["total_freed_space"] == 0
 
 
+@pytest.mark.asyncio
 async def test_cleanup_unused_files_applies_the_default_exclusions(tmp_path):
   _populate(
       tmp_path,
@@ -77,6 +80,7 @@ async def test_cleanup_unused_files_applies_the_default_exclusions(tmp_path):
   assert _unused(result, tmp_path) == ["orphan.py"]
 
 
+@pytest.mark.asyncio
 async def test_cleanup_unused_files_honors_custom_patterns(tmp_path):
   _populate(tmp_path, ["a.yaml", "b.yaml", "keep.py", "__init__.py"])
 
@@ -90,6 +94,7 @@ async def test_cleanup_unused_files_honors_custom_patterns(tmp_path):
   assert _unused(result, tmp_path) == ["b.yaml"]
 
 
+@pytest.mark.asyncio
 async def test_cleanup_unused_files_matches_used_files_after_resolution(
     tmp_path,
 ):
@@ -104,6 +109,7 @@ async def test_cleanup_unused_files_matches_used_files_after_resolution(
   assert result["unused_files"] == []
 
 
+@pytest.mark.asyncio
 async def test_cleanup_unused_files_reports_a_missing_root_directory(tmp_path):
   missing = tmp_path / "does_not_exist"
 
@@ -117,6 +123,7 @@ async def test_cleanup_unused_files_reports_a_missing_root_directory(tmp_path):
   assert result["unused_files"] == []
 
 
+@pytest.mark.asyncio
 async def test_cleanup_unused_files_fails_closed_on_a_used_file_escape(
     tmp_path,
 ):
