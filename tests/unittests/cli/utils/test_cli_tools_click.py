@@ -33,6 +33,7 @@ from unittest import mock
 
 import click
 from click.testing import CliRunner
+from click.testing import Result
 from google.adk.agents.base_agent import BaseAgent
 from google.adk.agents.run_config import StreamingMode
 from google.adk.cli import cli_tools_click
@@ -3027,11 +3028,11 @@ def _make_agent_dir(tmp_path: Path, name: str) -> Path:
   return agent_path
 
 
-def _assert_clean_cli_error(result: Any, message: str) -> None:
+def _assert_clean_cli_error(result: Result, message: str) -> None:
   assert result.exit_code == 1
   assert isinstance(result.exception, SystemExit)
+  assert result.output.startswith("Error: ")
   assert message in result.output
-  assert "Traceback" not in result.output
 
 
 def test_cli_eval_unsupported_eval_storage_uri_raises_click_exception(
