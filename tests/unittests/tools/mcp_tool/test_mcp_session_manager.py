@@ -1784,27 +1784,20 @@ class TestResolveMtlsFactory:
   def test_no_transport_returns_custom_factory(self):
     """Test that a custom factory is returned unchanged without mTLS."""
     custom_factory = _make_plain_factory([])
-    params = SseConnectionParams(
-        url="https://example.com/mcp", httpx_client_factory=custom_factory
-    )
 
-    assert _resolve_mtls_factory(params, None) is custom_factory
+    assert _resolve_mtls_factory(custom_factory, None) is custom_factory
 
   def test_no_transport_returns_opt_in_factory_unwrapped(self):
     """Test that an opt-in factory is not wrapped when there is no mTLS."""
     opt_in_factory = _make_opt_in_factory([])
-    params = SseConnectionParams(
-        url="https://example.com/mcp", httpx_client_factory=opt_in_factory
-    )
 
-    assert _resolve_mtls_factory(params, None) is opt_in_factory
+    assert _resolve_mtls_factory(opt_in_factory, None) is opt_in_factory
 
   def test_transport_with_default_factory_builds_adk_mtls_client(self):
     """Test that the default factory is replaced by ADK's mTLS factory."""
-    params = SseConnectionParams(url="https://example.com/mcp")
     mock_transport = Mock(spec=httpx.AsyncBaseTransport)
 
-    factory = _resolve_mtls_factory(params, mock_transport)
+    factory = _resolve_mtls_factory(create_mcp_http_client, mock_transport)
     client = factory()
 
     assert isinstance(client._transport, _SharedAsyncTransport)
@@ -1813,13 +1806,11 @@ class TestResolveMtlsFactory:
   def test_transport_with_non_opt_in_factory_skips_that_factory(self):
     """Test that a factory without `transport` is replaced, not called."""
     recorder = []
-    params = SseConnectionParams(
-        url="https://example.com/mcp",
-        httpx_client_factory=_make_plain_factory(recorder),
-    )
     mock_transport = Mock(spec=httpx.AsyncBaseTransport)
 
-    factory = _resolve_mtls_factory(params, mock_transport)
+    factory = _resolve_mtls_factory(
+        _make_plain_factory(recorder), mock_transport
+    )
     client = factory()
 
     assert isinstance(client._transport, _SharedAsyncTransport)
@@ -1829,13 +1820,11 @@ class TestResolveMtlsFactory:
   def test_transport_with_opt_in_factory_is_wrapped_for_sharing(self):
     """Test that the opt-in factory receives a close-suppressing transport."""
     recorder = []
-    params = SseConnectionParams(
-        url="https://example.com/mcp",
-        httpx_client_factory=_make_opt_in_factory(recorder),
-    )
     mock_transport = Mock(spec=httpx.AsyncBaseTransport)
 
-    factory = _resolve_mtls_factory(params, mock_transport)
+    factory = _resolve_mtls_factory(
+        _make_opt_in_factory(recorder), mock_transport
+    )
     client = factory()
 
     assert len(recorder) == 1
@@ -2018,11 +2007,7 @@ class TestCreateClientTransportComposition:
           event_hooks={"request": [log_request]},
       )
 
-    params = StreamableHTTPConnectionParams(
-        url="https://example.com/mcp", httpx_client_factory=user_factory
-    )
-
-    factory = _resolve_mtls_factory(params, adk_transport)
+    factory = _resolve_mtls_factory(user_factory, adk_transport)
     client = factory(headers={"x-test": "1"})
     async with client:
       response = await client.get("https://example.com/mcp")
@@ -2037,12 +2022,8 @@ class TestCreateClientTransportComposition:
   async def test_composed_client_close_does_not_close_shared_transport(self):
     """Test that closing a composed client leaves the mTLS transport open."""
     mock_transport = AsyncMock(spec=httpx.AsyncBaseTransport)
-    params = StreamableHTTPConnectionParams(
-        url="https://example.com/mcp",
-        httpx_client_factory=_make_opt_in_factory([]),
-    )
 
-    factory = _resolve_mtls_factory(params, mock_transport)
+    factory = _resolve_mtls_factory(_make_opt_in_factory([]), mock_transport)
     client = factory()
     await client.aclose()
 

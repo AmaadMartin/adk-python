@@ -30,12 +30,12 @@ import threading
 from typing import Any
 from typing import AsyncIterator
 from typing import Callable
-from typing import cast
 from typing import Dict
 from typing import Optional
 from typing import Protocol
 from typing import runtime_checkable
 from typing import TextIO
+from typing import TypeGuard
 import urllib.parse
 
 import google.auth
@@ -570,7 +570,9 @@ def _create_mtls_client_factory(
   return factory
 
 
-def _factory_accepts_transport(factory: Callable[..., Any]) -> bool:
+def _factory_accepts_transport(
+    factory: CheckableMcpHttpClientFactory,
+) -> TypeGuard[McpHttpClientFactoryWithTransport]:
   """Returns whether `factory` declares an explicit `transport` parameter.
 
   Args:
@@ -598,59 +600,39 @@ def _factory_accepts_transport(factory: Callable[..., Any]) -> bool:
   )
 
 
-def _bind_transport(
-    factory: CheckableMcpHttpClientFactory,
-    transport: httpx.AsyncBaseTransport,
-) -> CheckableMcpHttpClientFactory:
-  """Returns a three-keyword factory that calls `factory` with `transport`.
-
-  Args:
-      factory: A factory that declares a `transport` parameter.
-      transport: The transport to pass to `factory` on every call.
-
-  Returns:
-      A factory with the plain three-keyword MCP shape, so it still slots in
-      under `_DebugHttpxClientFactory`.
-  """
-  # `_factory_accepts_transport` already proved at runtime what the type
-  # checker cannot see from the declared field type.
-  opt_in_factory = cast(McpHttpClientFactoryWithTransport, factory)
-
-  def bound_factory(
-      headers: dict[str, Any] | None = None,
-      timeout: httpx.Timeout | None = None,
-      auth: httpx.Auth | None = None,
-  ) -> httpx.AsyncClient:
-    return opt_in_factory(
-        headers=headers,
-        timeout=timeout,
-        auth=auth,
-        transport=transport,
-    )
-
-  return bound_factory
-
-
 def _resolve_mtls_factory(
-    connection_params: SseConnectionParams | StreamableHTTPConnectionParams,
+    factory: CheckableMcpHttpClientFactory,
     mtls_transport: httpx.AsyncBaseTransport | None,
 ) -> CheckableMcpHttpClientFactory:
   """Picks the HTTP client factory, composing mTLS into an opt-in factory.
 
   Args:
-      connection_params: The HTTP connection parameters holding the factory.
+      factory: The factory the connection params carry.
       mtls_transport: The mTLS transport ADK built, or None when it has none.
 
   Returns:
       The factory to build this connection's HTTP client with.
   """
-  factory = connection_params.httpx_client_factory
   if not mtls_transport:
     return factory
   if _factory_accepts_transport(factory):
     # The caller never receives the raw transport: ADK shares it across
     # sessions on the event loop and closes it in MCPSessionManager.close().
-    return _bind_transport(factory, _SharedAsyncTransport(mtls_transport))
+    shared_transport = _SharedAsyncTransport(mtls_transport)
+
+    def bound_factory(
+        headers: dict[str, Any] | None = None,
+        timeout: httpx.Timeout | None = None,
+        auth: httpx.Auth | None = None,
+    ) -> httpx.AsyncClient:
+      return factory(
+          headers=headers,
+          timeout=timeout,
+          auth=auth,
+          transport=shared_transport,
+      )
+
+    return bound_factory
   return _create_mtls_client_factory(mtls_transport)
 
 
@@ -1011,7 +993,9 @@ class MCPSessionManager:
           errlog=self._errlog,
       )
     elif isinstance(self._connection_params, SseConnectionParams):
-      factory = _resolve_mtls_factory(self._connection_params, mtls_transport)
+      factory = _resolve_mtls_factory(
+          self._connection_params.httpx_client_factory, mtls_transport
+      )
       debug_factory = _DebugHttpxClientFactory(
           factory,
           session_manager=self,
@@ -1028,7 +1012,9 @@ class MCPSessionManager:
           on_session_created=on_session_created,
       )
     elif isinstance(self._connection_params, StreamableHTTPConnectionParams):
-      factory = _resolve_mtls_factory(self._connection_params, mtls_transport)
+      factory = _resolve_mtls_factory(
+          self._connection_params.httpx_client_factory, mtls_transport
+      )
       debug_factory = _DebugHttpxClientFactory(
           factory,
           session_manager=self,
