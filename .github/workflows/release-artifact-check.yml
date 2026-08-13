@@ -59,10 +59,17 @@ jobs:
       - name: Checkout candidate
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
 
+      # Pin the release toolchain. Under "latest" this job and the publish job
+      # can install different uv builds from the same commit, so the wheel that
+      # was checked is not the wheel that is published. checksum is the sha256
+      # of the x86_64 Linux archive; the setup-uv commit pinned above ships
+      # checksums only up to uv 0.10.10, so without it the download is never
+      # verified. Bump both values together with release-publish.yml.
       - name: Install uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:
-          version: "latest"
+          version: "0.12.3"
+          checksum: "600cf9a742aca00d292673b16b5acffaa7b8c269a364ad0c2e79498dcb1fe101"
           enable-cache: true
 
       - name: Set up Python
