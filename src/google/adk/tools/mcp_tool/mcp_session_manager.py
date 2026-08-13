@@ -68,6 +68,7 @@ from mcp.client.streamable_http import McpHttpClientFactory
 from mcp.client.streamable_http import streamable_http_client
 from pydantic import BaseModel
 from pydantic import ConfigDict
+from pydantic.json_schema import SkipJsonSchema
 
 try:
   from opentelemetry.instrumentation.httpx import HTTPXClientInstrumentor
@@ -207,7 +208,9 @@ class SseConnectionParams(BaseModel):
       sse_read_timeout: Timeout in seconds for reading data from the MCP SSE
         server.
       httpx_client_factory: Factory function to create a custom HTTPX client. If
-        not provided, a default factory will be used.
+        not provided, a default factory will be used. Only settable in Python;
+        it is omitted from the generated JSON schema because a callable has no
+        JSON representation.
   """
 
   model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -216,7 +219,9 @@ class SseConnectionParams(BaseModel):
   headers: dict[str, Any] | None = None
   timeout: float = 5.0
   sse_read_timeout: float = 60 * 5.0
-  httpx_client_factory: CheckableMcpHttpClientFactory = create_mcp_http_client
+  httpx_client_factory: SkipJsonSchema[CheckableMcpHttpClientFactory] = (
+      create_mcp_http_client
+  )
 
 
 @runtime_checkable
@@ -325,7 +330,9 @@ class StreamableHTTPConnectionParams(BaseModel):
       terminate_on_close: Whether to terminate the MCP Streamable HTTP server
         when the connection is closed.
       httpx_client_factory: Factory function to create a custom HTTPX client. If
-        not provided, a default factory will be used.
+        not provided, a default factory will be used. Only settable in Python;
+        it is omitted from the generated JSON schema because a callable has no
+        JSON representation.
   """
 
   model_config = ConfigDict(arbitrary_types_allowed=True)
@@ -335,7 +342,9 @@ class StreamableHTTPConnectionParams(BaseModel):
   timeout: float = 5.0
   sse_read_timeout: float = 60 * 5.0
   terminate_on_close: bool = True
-  httpx_client_factory: CheckableMcpHttpClientFactory = create_mcp_http_client
+  httpx_client_factory: SkipJsonSchema[CheckableMcpHttpClientFactory] = (
+      create_mcp_http_client
+  )
 
 
 def retry_on_errors(func):

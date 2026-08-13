@@ -39,6 +39,7 @@ from google.adk.tools.mcp_tool.mcp_session_manager import StdioConnectionParams
 from google.adk.tools.mcp_tool.mcp_session_manager import StreamableHTTPConnectionParams
 import httpx
 from mcp import StdioServerParameters
+from pydantic import ValidationError
 import pytest
 
 try:
@@ -1677,3 +1678,90 @@ class TestDebugHttpxClientFactory:
     assert record["response_body"].startswith("b" * 1000)
 
     await base_client.aclose()
+
+
+class TestConnectionParamsJsonSchema:
+  """JSON schema generation for the HTTP-based MCP connection params."""
+
+  def test_sse_connection_params_json_schema_generates(self):
+    """Test that the SSE params model produces a JSON schema."""
+    schema = SseConnectionParams.model_json_schema()
+
+    assert set(schema["properties"]) == {
+        "url",
+        "headers",
+        "timeout",
+        "sse_read_timeout",
+    }
+    assert schema["required"] == ["url"]
+
+  def test_sse_connection_params_json_schema_omits_httpx_client_factory(self):
+    """Test that the SSE schema drops the callable field in both modes."""
+    for mode in ("validation", "serialization"):
+      schema = SseConnectionParams.model_json_schema(mode=mode)
+
+      assert "httpx_client_factory" not in schema["properties"], mode
+
+  def test_streamable_http_connection_params_json_schema_generates(self):
+    """Test that the Streamable HTTP params model produces a JSON schema."""
+    schema = StreamableHTTPConnectionParams.model_json_schema()
+
+    assert set(schema["properties"]) == {
+        "url",
+        "headers",
+        "timeout",
+        "sse_read_timeout",
+        "terminate_on_close",
+    }
+    assert schema["required"] == ["url"]
+
+  def test_streamable_http_json_schema_omits_httpx_client_factory(self):
+    """Test that the Streamable HTTP schema drops the callable field."""
+    for mode in ("validation", "serialization"):
+      schema = StreamableHTTPConnectionParams.model_json_schema(mode=mode)
+
+      assert "httpx_client_factory" not in schema["properties"], mode
+
+  def test_httpx_client_factory_default_is_unchanged(self):
+    """Test that both models still default to the ADK factory."""
+    sse_params = SseConnectionParams(url="https://example.com/sse")
+    http_params = StreamableHTTPConnectionParams(url="https://example.com/mcp")
+
+    assert sse_params.httpx_client_factory is create_mcp_http_client
+    assert http_params.httpx_client_factory is create_mcp_http_client
+
+  def test_httpx_client_factory_accepts_custom_factory(self):
+    """Test that a caller-supplied factory is still stored by identity."""
+
+    def custom_factory(
+        headers=None, timeout=None, auth=None
+    ) -> httpx.AsyncClient:
+      return httpx.AsyncClient(headers=headers, timeout=timeout, auth=auth)
+
+    sse_params = SseConnectionParams(
+        url="https://example.com/sse", httpx_client_factory=custom_factory
+    )
+    http_params = StreamableHTTPConnectionParams(
+        url="https://example.com/mcp", httpx_client_factory=custom_factory
+    )
+
+    assert sse_params.httpx_client_factory is custom_factory
+    assert http_params.httpx_client_factory is custom_factory
+
+  def test_httpx_client_factory_rejects_non_factory(self):
+    """Test that skipping the field in the schema does not weaken validation."""
+    with pytest.raises(ValidationError, match="httpx_client_factory"):
+      SseConnectionParams(
+          url="https://example.com/sse", httpx_client_factory=42
+      )
+
+    with pytest.raises(ValidationError, match="httpx_client_factory"):
+      StreamableHTTPConnectionParams(
+          url="https://example.com/mcp", httpx_client_factory=42
+      )
+
+  def test_httpx_client_factory_still_serialized(self):
+    """Test that the field stays in model_dump; only the schema drops it."""
+    dumped = SseConnectionParams(url="https://example.com/sse").model_dump()
+
+    assert dumped["httpx_client_factory"] is create_mcp_http_client
