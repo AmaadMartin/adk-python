@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 REQUEST_INPUT_FUNCTION_CALL_NAME = 'adk_request_input'
 REQUEST_CREDENTIAL_FUNCTION_CALL_NAME = 'adk_request_credential'
 
-RESPONSE_SCHEMA_ARG = 'response_schema'
+_RESPONSE_SCHEMA_ARG = 'response_schema'
 """The wire key the response schema is written under."""
 
 _LEGACY_RESPONSE_SCHEMA_ARG = 'responseSchema'
@@ -53,7 +53,7 @@ _RESULT_KEY = 'result'
 def create_request_input_event(request_input: RequestInput) -> Event:
   """Creates a RequestInput event from a RequestInput object."""
   args = request_input.model_dump(exclude={'response_schema'}, by_alias=True)
-  args[RESPONSE_SCHEMA_ARG] = (
+  args[_RESPONSE_SCHEMA_ARG] = (
       schema_to_json_schema(request_input.response_schema)
       if request_input.response_schema is not None
       else None
@@ -82,12 +82,11 @@ def get_response_schema_arg(args: Mapping[str, Any] | None) -> Any | None:
     args: The function call's args, or None.
 
   Returns:
-    The recorded JSON Schema, or None when neither spelling carries one.
-    `response_schema` wins when both are present.
+    The canonical schema when it is non-null, else the legacy one, else None.
   """
   if not args:
     return None
-  schema = args.get(RESPONSE_SCHEMA_ARG)
+  schema = args.get(_RESPONSE_SCHEMA_ARG)
   if schema is None:
     return args.get(_LEGACY_RESPONSE_SCHEMA_ARG)
   return schema
