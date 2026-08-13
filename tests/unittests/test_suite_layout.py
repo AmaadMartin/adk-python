@@ -71,6 +71,27 @@ def _duplicate_module_names(tests_root: pathlib.Path) -> dict[str, list[str]]:
   }
 
 
+def _unpackaged_test_directories(tests_root: pathlib.Path) -> list[str]:
+  """Returns the directories under ``tests_root`` that pytest puts on sys.path.
+
+  Args:
+    tests_root: The directory to walk for files matching
+      ``_TEST_FILE_PATTERNS``.
+
+  Returns:
+    The sorted paths, relative to the parent of ``tests_root``, of every
+    directory that holds a test file but no ``__init__.py``.
+  """
+  paths = itertools.chain.from_iterable(
+      tests_root.rglob(pattern) for pattern in _TEST_FILE_PATTERNS
+  )
+  return sorted(
+      directory.relative_to(tests_root.parent).as_posix()
+      for directory in {path.parent for path in paths}
+      if not (directory / "__init__.py").is_file()
+  )
+
+
 def test_no_duplicate_pytest_module_names() -> None:
   collisions = _duplicate_module_names(_REPO_ROOT / "tests")
 
@@ -80,6 +101,33 @@ def test_no_duplicate_pytest_module_names() -> None:
       " basenames, or add __init__.py to every directory between them and"
       f" their nearest packaged ancestor: {collisions}"
   )
+
+
+def test_every_test_directory_is_packaged() -> None:
+  unpackaged = _unpackaged_test_directories(_REPO_ROOT / "tests")
+
+  assert not unpackaged, (
+      "These directories hold test files but no __init__.py, so pytest puts"
+      " each one on sys.path and imports its tests under a bare name. Copy the"
+      " license-header __init__.py from a sibling package into each directory,"
+      f" and into every directory above it up to tests/: {unpackaged}"
+  )
+
+
+def test_unpackaged_test_directories_names_only_the_directory_without_a_marker(
+    tmp_path: pathlib.Path,
+) -> None:
+  """A directory counts as a test directory under either naming convention."""
+  tests_root = tmp_path / "tests"
+  packaged = tests_root / "packaged"
+  packaged.mkdir(parents=True)
+  (packaged / "__init__.py").touch()
+  (packaged / "test_thing.py").touch()
+  bare = tests_root / "bare"
+  bare.mkdir()
+  (bare / "thing_test.py").touch()
+
+  assert _unpackaged_test_directories(tests_root) == ["tests/bare"]
 
 
 def test_duplicate_module_names_flags_same_name_in_two_namespace_dirs(
