@@ -54,33 +54,22 @@ def _append_to_system_instruction(
 ) -> None:
   """Appends ``new_text`` to ``config.system_instruction``.
 
-  ``system_instruction`` is a ``types.ContentUnion``, so it may already hold a
-  ``types.Content``, a ``types.Part`` or a list. The existing text is read out
-  of whichever arm it uses and ``system_instruction`` is left a ``str``. Any
-  non-text part of the existing value (inline data, file data) is dropped,
-  because the model API takes a string here.
-
-  A value that carries no text at all is left untouched and logs a warning.
-
   Args:
     config: The config whose ``system_instruction`` is appended to.
     new_text: The text to append.
   """
   existing = config.system_instruction
-  if not existing:
+  existing_text = content_union_to_text(existing)
+  if existing_text:
+    config.system_instruction = existing_text + "\n\n" + new_text
+  elif not existing:
     config.system_instruction = new_text
-  elif isinstance(existing, str):
-    config.system_instruction = existing + "\n\n" + new_text
   else:
-    existing_text = content_union_to_text(existing)
-    if existing_text:
-      config.system_instruction = existing_text + "\n\n" + new_text
-    else:
-      logging.warning(
-          "Cannot append to system_instruction of unsupported type: %s. "
-          "Only string system_instruction is supported.",
-          type(existing),
-      )
+    logging.warning(
+        "Cannot append to system_instruction of unsupported type: %s. "
+        "Only string system_instruction is supported.",
+        type(existing),
+    )
 
 
 class LlmRequest(BaseModel):

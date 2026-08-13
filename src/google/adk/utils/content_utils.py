@@ -58,8 +58,9 @@ def extract_text_from_content(content: types.Content | None) -> str:
   return ''.join(p.text for p in content.parts if p.text and not p.thought)
 
 
-def _join_texts(texts: Iterable[str | None]) -> str | None:
-  """Joins the non-empty fragments with a newline, or returns None."""
+def _join_texts(values: Iterable[types.ContentUnion]) -> str | None:
+  """Reads each value and joins the non-empty results with a newline."""
+  texts = (content_union_to_text(value) for value in values)
   return '\n'.join(text for text in texts if text) or None
 
 
@@ -84,11 +85,9 @@ def content_union_to_text(value: types.ContentUnion | None) -> str | None:
   if isinstance(value, str):
     return value
   if isinstance(value, list):
-    return _join_texts(content_union_to_text(item) for item in value)
+    return _join_texts(value)
   if isinstance(value, types.Content):
-    return _join_texts(
-        content_union_to_text(part) for part in value.parts or []
-    )
+    return _join_texts(value.parts or [])
   if isinstance(value, types.Part):
     return value.text or None
   return None
