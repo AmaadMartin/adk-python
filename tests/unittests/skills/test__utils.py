@@ -18,6 +18,7 @@ import asyncio
 import builtins
 import io
 import pathlib
+import re
 import struct
 import threading
 import tracemalloc
@@ -558,6 +559,78 @@ def test__load_skill_from_zip_bytes_keeps_binary_resources():
   assert skill.resources.get_reference("diagram.png") == _PNG_HEADER
   assert skill.resources.get_asset("logo.png") == _PNG_HEADER
   assert skill.resources.list_scripts() == ["script1.sh"]
+
+
+def _zip_with_frontmatter_name(name_yaml: str) -> bytes:
+  """Builds a minimal skill archive whose frontmatter name is ``name_yaml``.
+
+  Args:
+    name_yaml: The raw YAML text that follows ``name:``. Single-quote it to
+      keep a backslash verbatim, since a single-quoted YAML scalar processes
+      no escapes.
+  """
+
+  zip_buffer = io.BytesIO()
+  with zipfile.ZipFile(zip_buffer, "w") as z:
+    z.writestr(
+        "SKILL.md",
+        f"---\nname: {name_yaml}\ndescription: A skill\n---\nBody",
+    )
+  return zip_buffer.getvalue()
+
+
+@pytest.mark.parametrize(
+    "unsafe_name",
+    [
+        # Shapes a POSIX host accepts today and a Windows host refuses.
+        "a\\b",
+        "C:evil",
+        "C:\\evil",
+        "..\\evil",
+        "\\\\srv\\share",
+        # A shape both flavours accept today.
+        "..",
+        # Shapes both flavours already refuse.
+        "../evil",
+        "a/b",
+        ".",
+        "evil/",
+    ],
+)
+def test__load_skill_from_zip_bytes_rejects_non_bare_name(unsafe_name):
+  """Tests that a name that is not one bare path segment is refused.
+
+  The message must be the loader's own, on every host OS. Matching it is what
+  separates this guard from the ``Frontmatter`` pattern two lines later, whose
+  ``pydantic.ValidationError`` is also a ``ValueError``. Matching the name
+  itself also proves YAML kept the backslashes verbatim.
+  """
+
+  with pytest.raises(
+      ValueError,
+      match=re.escape(f"Invalid skill name in SKILL.md: {unsafe_name}"),
+  ):
+    _load_skill_from_zip_bytes(_zip_with_frontmatter_name(f"'{unsafe_name}'"))
+
+
+def test__load_skill_from_zip_bytes_rejects_non_string_name():
+  """Tests that a frontmatter name YAML parses to a list is refused."""
+
+  with pytest.raises(
+      ValueError, match=re.escape("Invalid skill name in SKILL.md: [1, 2]")
+  ):
+    _load_skill_from_zip_bytes(_zip_with_frontmatter_name("[1, 2]"))
+
+
+@pytest.mark.parametrize("valid_name", ["my-skill", "skill2"])
+def test__load_skill_from_zip_bytes_accepts_bare_name(valid_name):
+  """Tests that a single bare path segment still loads."""
+
+  skill = _load_skill_from_zip_bytes(
+      _zip_with_frontmatter_name(f"'{valid_name}'")
+  )
+
+  assert skill.frontmatter.name == valid_name
 
 
 def test__load_skill_from_zip_bytes_rejects_oversized_archive():
