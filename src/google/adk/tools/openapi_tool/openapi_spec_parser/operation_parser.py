@@ -139,9 +139,9 @@ class OperationParser:
     for _, media_type_object in content.items():
       schema = media_type_object.schema_ or {}
       description = request_body.description or ''
+      properties = schema.properties if schema else None
 
-      if schema and schema.type == 'object':
-        properties = schema.properties or {}
+      if schema and schema.type == 'object' and properties:
         required_properties = set(schema.required or [])
         for prop_name, prop_details in properties.items():
           self._params.append(
@@ -166,11 +166,11 @@ class OperationParser:
         )
       else:
         # Prefer explicit body name to avoid empty keys when schema lacks type
-        # information (e.g., oneOf/anyOf/allOf) while retaining legacy behavior
-        # for simple scalar types.
+        # information (e.g., oneOf/anyOf/allOf) or declares a free-form object,
+        # while retaining legacy behavior for simple scalar types.
         if schema and (schema.oneOf or schema.anyOf or schema.allOf):
           param_name = 'body'
-        elif not schema or not schema.type:
+        elif not schema or not schema.type or schema.type == 'object':
           param_name = 'body'
         else:
           param_name = ''

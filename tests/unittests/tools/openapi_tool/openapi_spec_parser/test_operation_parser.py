@@ -224,7 +224,7 @@ def test_process_request_body_one_of_schema_assigns_name():
 
 
 def test_process_request_body_empty_object():
-  """Test _process_request_body with a schema that is of type object but with no properties."""
+  """An object body with no properties becomes one whole-body parameter."""
   operation = Operation(
       requestBody=RequestBody(
           content={'application/json': MediaType(schema=Schema(type='object'))}
@@ -232,7 +232,83 @@ def test_process_request_body_empty_object():
   )
   parser = OperationParser(operation, should_parse=False)
   parser._process_request_body()
-  assert len(parser._params) == 0
+  assert len(parser._params) == 1
+  assert parser._params[0].original_name == 'body'
+  assert parser._params[0].py_name == 'body'
+  assert parser._params[0].param_location == 'body'
+  assert parser._params[0].param_schema.type == 'object'
+
+
+def test_process_request_body_free_form_object_uses_request_body_description():
+  """The whole-body parameter carries the request body description."""
+  operation = Operation(
+      requestBody=RequestBody(
+          description='Arbitrary JSON document.',
+          content={'application/json': MediaType(schema=Schema(type='object'))},
+      )
+  )
+  parser = OperationParser(operation, should_parse=False)
+  parser._process_request_body()
+  assert len(parser._params) == 1
+  assert parser._params[0].description == 'Arbitrary JSON document.'
+
+
+def test_process_request_body_additional_properties_object():
+  """An additionalProperties object body becomes one whole-body parameter."""
+  operation = Operation(
+      requestBody=RequestBody(
+          content={
+              'application/json': MediaType(
+                  schema=Schema(type='object', additionalProperties=True)
+              )
+          }
+      )
+  )
+  parser = OperationParser(operation, should_parse=False)
+  parser._process_request_body()
+  assert len(parser._params) == 1
+  assert parser._params[0].original_name == 'body'
+  assert parser._params[0].param_location == 'body'
+
+
+def test_free_form_object_body_appears_in_json_schema():
+  """The free-form body is an argument that the model can populate."""
+  operation = Operation(
+      operationId='ingest_document',
+      requestBody=RequestBody(
+          content={
+              'application/json': MediaType(
+                  schema=Schema(type='object', additionalProperties=True)
+              )
+          }
+      ),
+      responses={'200': Response(description='ok')},
+  )
+  parser = OperationParser(operation)
+  properties = parser.get_json_schema()['properties']
+  assert 'body' in properties
+  assert '' not in properties
+
+
+def test_process_request_body_object_with_property_named_body():
+  """A property called 'body' still expands like any other property."""
+  operation = Operation(
+      requestBody=RequestBody(
+          content={
+              'application/json': MediaType(
+                  schema=Schema(
+                      type='object',
+                      properties={'body': Schema(type='string')},
+                  )
+              )
+          }
+      )
+  )
+  parser = OperationParser(operation, should_parse=False)
+  parser._process_request_body()
+  assert len(parser._params) == 1
+  assert parser._params[0].original_name == 'body'
+  assert parser._params[0].param_schema.type == 'string'
 
 
 def test_dedupe_param_names(sample_operation):
