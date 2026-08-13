@@ -1794,11 +1794,8 @@ def web_options():
     )
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-      # The two logo options are only meaningful as a pair. The server raises a
-      # plain ValueError for a half-configured logo while the app is being
-      # built, which reaches the user as a traceback. Truthiness (not `is
-      # None`) mirrors that server-side check, so an empty string means "not
-      # provided" in both layers.
+      # The two logo options are only meaningful as a pair. Truthiness (not `is
+      # None`) mirrors the server-side check in ApiServer._setup_runtime_config.
       if bool(kwargs.get("logo_text")) != bool(kwargs.get("logo_image_url")):
         raise click.UsageError(
             "Both --logo-text and --logo-image-url must be provided when"
