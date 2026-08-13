@@ -386,7 +386,7 @@ class TestGkeCodeExecutor:
     covers the provisioning arm and not an execution timeout.
     """
     mock_sandbox_client.return_value.__enter__.side_effect = TimeoutError(
-        "Sandbox did not become ready within 180 seconds."
+        "Execution timed out"
     )
 
     executor = GkeCodeExecutor(executor_type="sandbox")
@@ -395,10 +395,7 @@ class TestGkeCodeExecutor:
     result = executor.execute_code(mock_invocation_context, code_input)
 
     assert result.stdout == ""
-    assert (
-        "Sandbox timed out: Sandbox did not become ready within 180 seconds."
-        in result.stderr
-    )
+    assert "Sandbox timed out: Execution timed out" in result.stderr
 
   @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
   def test_execute_code_sandbox_execution_timeout_returns_result(
@@ -524,12 +521,7 @@ class TestGkeCodeExecutor:
       self,
       mock_invocation_context,
   ):
-    """Tests the timeout contract against a client with real signatures.
-
-    A MagicMock accepts any call shape, so it cannot show that the executor
-    drives a client that declares `write(path, content, timeout=60)` and
-    `run(command, timeout=60)`, as k8s-agent-sandbox does.
-    """
+    """Tests the timeout contract end to end against a fake, with no mocks."""
     run_calls: list[str] = []
 
     class FakeSandboxClient:
@@ -541,9 +533,7 @@ class TestGkeCodeExecutor:
           namespace: str = "default",
           gateway_name: str | None = None,
       ):
-        self.template_name = template_name
-        self.namespace = namespace
-        self.gateway_name = gateway_name
+        pass
 
       def __enter__(self) -> "FakeSandboxClient":
         return self

@@ -47,31 +47,6 @@ ApiException = k8s.client.exceptions.ApiException
 logger = logging.getLogger("google_adk." + __name__)
 
 
-def _is_execution_timeout(exc: BaseException) -> bool:
-  """Returns True if `exc` was raised because an HTTP read deadline expired.
-
-  The sandbox client funnels every `requests` failure through
-  `raise RuntimeError(...) from e`, so a sandbox that accepts the execute
-  request and then outruns the deadline reaches the caller as a `RuntimeError`
-  whose cause is a `requests.exceptions.ReadTimeout` -- not as the builtin
-  `TimeoutError`, which the client raises only while waiting for the sandbox,
-  the gateway or the tunnel to come up. Only the cause chain tells an execution
-  timeout apart from a gateway failure, because both carry the same message.
-
-  Args:
-    exc: The exception raised by the sandbox client.
-
-  Returns:
-    True if a read timeout appears anywhere in the cause chain of `exc`.
-  """
-  cause: BaseException | None = exc
-  while cause is not None:
-    if isinstance(cause, requests.exceptions.ReadTimeout):
-      return True
-    cause = cause.__cause__
-  return False
-
-
 class GkeCodeExecutor(BaseCodeExecutor):
   """Executes Python code in a secure gVisor-sandboxed Pod on GKE.
 
@@ -204,17 +179,10 @@ class GkeCodeExecutor(BaseCodeExecutor):
   def _execute_in_sandbox(self, code: str) -> CodeExecutionResult:
     """Executes code using Agent Sandbox Client.
 
-    Args:
-      code: The Python source to run in the sandbox.
-
-    Returns:
-      The stdout and stderr of the run. A sandbox timeout, whether the code
-      outran the execution deadline or the sandbox never came up, is reported
-      in `stderr` rather than raised.
-
     Raises:
       RuntimeError: The sandbox infrastructure failed, for example the gateway
-        is unreachable or the port-forward crashed.
+        is unreachable or the port-forward crashed. A sandbox timeout is
+        reported in `stderr` instead.
     """
     try:
       with SandboxClient(
@@ -228,11 +196,13 @@ class GkeCodeExecutor(BaseCodeExecutor):
 
         return CodeExecutionResult(stdout=result.stdout, stderr=result.stderr)
     except RuntimeError as e:
-      if _is_execution_timeout(e):
+      # The client reports a read timeout and an unreachable gateway with the
+      # same message, so only the cause tells them apart. Returning a result
+      # instead of raising lets the agent read the timeout as tool output and
+      # adjust, which is what the job path and ContainerCodeExecutor already do
+      # for their own timeouts.
+      if isinstance(e.__cause__, requests.exceptions.ReadTimeout):
         logger.error("Sandbox timed out running the code", exc_info=True)
-        # Returning a result instead of raising lets the agent read the timeout
-        # as tool output and adjust, which is what the job path and
-        # ContainerCodeExecutor already do for their own timeouts.
         return CodeExecutionResult(stderr=f"Sandbox timed out: {e}")
       logger.error(
           "SandboxClient failed to initialize or find gateway", exc_info=True
