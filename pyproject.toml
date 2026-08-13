@@ -59,6 +59,7 @@ dependencies = [
 ]
 optional-dependencies.a2a = [
   "a2a-sdk>=0.3.4,<2",
+  "protobuf>=5.29.5",  # a2a/_compat.py imports google.protobuf directly; this is a2a-sdk's own floor, so declaring the edge narrows nothing.
 ]
 optional-dependencies.agent-identity = [
   "google-cloud-agentidentitycredentials>=0.1,<0.2",

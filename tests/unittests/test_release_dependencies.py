@@ -20,6 +20,9 @@ regressions documented in the bare-install audit cannot silently re-emerge:
 * ``packaging`` MUST be declared in main deps (used at import-time by
   ``utils/model_name_utils.py`` and ``cli/cli_deploy.py``; reachable from
   ``from google.adk import Runner`` and from ``adk --help``).
+* ``protobuf`` MUST be declared in the ``a2a`` extra (imported at module scope
+  by ``a2a/_compat.py``; it only reaches an ``[a2a]`` install as a transitive
+  dependency of ``a2a-sdk``).
 * ``ValidationError`` in ``environment_simulation_config`` MUST come from
   ``pydantic`` (which always installs alongside the package), NOT from the
   undeclared ``pydantic_core``.
@@ -129,6 +132,26 @@ def test_main_deps_include_packaging(pyproject: dict) -> None:
       'src/google/adk/cli/cli_deploy.py import it unguarded at module top '
       'level. Without this declaration, `pip install google-adk` is one '
       'transitive resolver change away from breaking on `import google.adk`.'
+  )
+
+
+def test_a2a_extra_declares_protobuf(pyproject: dict) -> None:
+  """The a2a extra declares protobuf, which a2a/_compat.py imports directly."""
+  specifier = _requirement_specifier(
+      pyproject['project']['optional-dependencies']['a2a'], 'protobuf'
+  )
+
+  assert specifier is not None, (
+      'The a2a extra must declare protobuf because '
+      'src/google/adk/a2a/_compat.py imports google.protobuf.json_format at '
+      'module scope. protobuf reaches an [a2a] install only as a transitive '
+      'dependency of a2a-sdk, so without this declaration the whole a2a '
+      'feature is one a2a-sdk repackaging away from an ImportError.'
+  )
+  assert specifier.contains('5.29.5'), (
+      'The a2a extra must admit protobuf 5.29.5, the floor a2a-sdk itself '
+      'declares. Declaring the direct edge should not narrow what an [a2a] '
+      'install can resolve to.'
   )
 
 
