@@ -46,11 +46,53 @@ class AuthPreparationResult(BaseModel):
   auth_credential: Optional[AuthCredential] = None
 
 
-class ToolContextCredentialStore:
-  """Handles storage and retrieval of credentials within a ToolContext."""
+def _resolve_credential_key(
+    credential_key: Optional[str],
+    auth_credential: Optional[AuthCredential],
+    auth_scheme: Optional[AuthScheme],
+) -> Optional[str]:
+  """Returns the credential key the developer configured, if any.
 
-  def __init__(self, tool_context: ToolContext):
+  The auth models allow extra fields, so a key can also arrive as a
+  `credential_key` or `credentialKey` entry on the credential or the scheme.
+
+  Args:
+    credential_key: The key passed explicitly by the caller.
+    auth_credential: The auth credential to read an extra field from.
+    auth_scheme: The auth scheme to read an extra field from.
+
+  Returns:
+    The configured key, or None when no key is configured.
+  """
+  if credential_key:
+    return credential_key
+
+  for obj in (auth_credential, auth_scheme):
+    if not obj or not obj.model_extra:
+      continue
+    for key in ("credential_key", "credentialKey"):
+      value = obj.model_extra.get(key)
+      if isinstance(value, str) and value:
+        return value
+
+  return None
+
+
+class ToolContextCredentialStore:
+  """Handles storage and retrieval of credentials within a ToolContext.
+
+  A configured `credential_key` names the session state slot outright: the
+  credential is read from and written to exactly that key. Without one, the
+  key is derived from the auth scheme and the auth credential.
+  """
+
+  def __init__(
+      self,
+      tool_context: ToolContext,
+      credential_key: Optional[str] = None,
+  ):
     self.tool_context = tool_context
+    self._credential_key = credential_key
 
   def _legacy_stable_digest(self, text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
@@ -90,6 +132,11 @@ class ToolContextCredentialStore:
       auth_credential: Optional[AuthCredential],
   ) -> str:
     """Generates a unique key for the given auth scheme and credential."""
+
+    # A key the developer named wins over the derived one: it is how they
+    # point several tools at one credential, or keep two apart.
+    if self._credential_key:
+      return self._credential_key
 
     if auth_credential and auth_credential.oauth2:
       auth_credential = auth_credential.model_copy(deep=True)
@@ -136,6 +183,12 @@ class ToolContextCredentialStore:
     if serialized_credential:
       return AuthCredential.model_validate(serialized_credential)
 
+    if self._credential_key:
+      # A developer-named slot is exactly the slot: never migrate a
+      # digest-keyed credential into it, or one tool's cached credential
+      # silently shows up in another tool's named slot.
+      return None
+
     legacy_key = self._get_legacy_credential_key(auth_scheme, auth_credential)
     if legacy_key == token_key:
       return None
@@ -174,6 +227,21 @@ class ToolAuthHandler:
       *,
       credential_key: Optional[str] = None,
   ):
+    """Initializes the handler.
+
+    Args:
+      tool_context: The tool context the credentials are prepared for.
+      auth_scheme: The auth scheme the tool declares.
+      auth_credential: The raw auth credential the tool is configured with.
+      credential_exchanger: The exchanger to use, defaulting to
+        `AutoAuthCredentialExchanger`.
+      credential_store: The store that caches the exchanged credential. Pass
+        `credential_key` to the store as well, so the cached credential lands
+        in the configured slot; `from_tool_context` does that for you.
+      credential_key: Optional stable key naming the session state slot that
+        holds both the interactive auth request and the cached exchanged
+        credential.
+    """
     self.tool_context = tool_context
     self.auth_scheme = (
         auth_scheme.model_copy(deep=True) if auth_scheme else None
@@ -190,18 +258,9 @@ class ToolAuthHandler:
 
   def _get_credential_key_override(self) -> Optional[str]:
     """Returns a user-provided credential_key if available."""
-    if self._credential_key:
-      return self._credential_key
-
-    for obj in (self.auth_credential, self.auth_scheme):
-      if not obj or not obj.model_extra:
-        continue
-      for key in ("credential_key", "credentialKey"):
-        value = obj.model_extra.get(key)
-        if isinstance(value, str) and value:
-          return value
-
-    return None
+    return _resolve_credential_key(
+        self._credential_key, self.auth_credential, self.auth_scheme
+    )
 
   def _build_auth_config(self) -> AuthConfig:
     return AuthConfig(
@@ -221,7 +280,10 @@ class ToolAuthHandler:
       credential_key: Optional[str] = None,
   ) -> "ToolAuthHandler":
     """Creates a ToolAuthHandler instance from a ToolContext."""
-    credential_store = ToolContextCredentialStore(tool_context)
+    credential_store = ToolContextCredentialStore(
+        tool_context,
+        _resolve_credential_key(credential_key, auth_credential, auth_scheme),
+    )
     return cls(
         tool_context,
         auth_scheme,
