@@ -37,8 +37,10 @@ import fastapi
 from google.adk.telemetry import _agent_engine
 from google.adk.telemetry._agent_engine import get_propagated_context
 from google.adk.telemetry._agent_engine import TopSpanProcessor
+from google.cloud.aiplatform import version as aiplatform_version
 from opentelemetry import baggage
 from opentelemetry import context
+from opentelemetry.exporter.otlp.proto.http import version as otlp_http_version
 from opentelemetry.sdk.metrics import MeterProvider
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace import TracerProvider
@@ -449,3 +451,72 @@ def test_agent_engine_metrics_builder_takes_no_args() -> None:
       _agent_engine._get_agent_engine_metrics_setup.__wrapped__
   )
   assert not sig.parameters
+
+
+# The telemetry User-Agent is built from two optional packages. Absence is
+# simulated by mapping the package to None in sys.modules, which makes the
+# import machinery raise ImportError. The imports are function-local, so no
+# module reload is needed.
+_TELEMETRY_ENV_VAR = "GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY"
+_AIPLATFORM_PACKAGE = "google.cloud.aiplatform"
+_OTLP_HTTP_PACKAGE = "opentelemetry.exporter.otlp.proto.http"
+
+_VERTEX_SEGMENT = f"Vertex-Agent-Engine/{aiplatform_version.__version__}"
+_OTLP_SEGMENT = f"OTel-OTLP-Exporter-Python/{otlp_http_version.__version__}"
+
+
+def test_telemetry_user_agent_headers_none_when_telemetry_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """Without the env var, no header is built, though both packages are here."""
+  monkeypatch.delenv(_TELEMETRY_ENV_VAR, raising=False)
+
+  assert _agent_engine.telemetry_user_agent_headers() is None
+
+
+def test_telemetry_user_agent_headers_includes_both_versions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """With both packages installed, both version segments are reported."""
+  monkeypatch.setenv(_TELEMETRY_ENV_VAR, "1")
+
+  headers = _agent_engine.telemetry_user_agent_headers()
+
+  assert headers == {"User-Agent": f"{_VERTEX_SEGMENT} {_OTLP_SEGMENT}"}
+
+
+def test_telemetry_user_agent_headers_omits_vertex_segment_without_aiplatform(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """A missing google-cloud-aiplatform drops its segment instead of raising."""
+  monkeypatch.setenv(_TELEMETRY_ENV_VAR, "1")
+
+  with mock.patch.dict("sys.modules", {_AIPLATFORM_PACKAGE: None}):
+    headers = _agent_engine.telemetry_user_agent_headers()
+
+  assert headers == {"User-Agent": _OTLP_SEGMENT}
+
+
+def test_telemetry_user_agent_headers_omits_otlp_segment_without_exporter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """A missing OTLP HTTP exporter drops its segment instead of raising."""
+  monkeypatch.setenv(_TELEMETRY_ENV_VAR, "1")
+
+  with mock.patch.dict("sys.modules", {_OTLP_HTTP_PACKAGE: None}):
+    headers = _agent_engine.telemetry_user_agent_headers()
+
+  assert headers == {"User-Agent": _VERTEX_SEGMENT}
+
+
+def test_telemetry_user_agent_headers_none_when_no_versions_available(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """With neither package installed, no empty User-Agent is emitted."""
+  monkeypatch.setenv(_TELEMETRY_ENV_VAR, "1")
+
+  with mock.patch.dict(
+      "sys.modules",
+      {_AIPLATFORM_PACKAGE: None, _OTLP_HTTP_PACKAGE: None},
+  ):
+    assert _agent_engine.telemetry_user_agent_headers() is None
