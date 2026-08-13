@@ -389,6 +389,109 @@ class TestScanNodeEvents:
         "count": 42
     }
 
+  COUNT_SCHEMA = {
+      "type": "object",
+      "properties": {"count": {"type": "integer"}},
+      "required": ["count"],
+  }
+
+  def _interrupt_event(self, schema_args: dict[str, object]) -> Event:
+    """Builds an interrupt event whose schema args are written by hand.
+
+    `create_request_input_event` only ever writes the canonical
+    `response_schema` key, so an interrupt recorded by an older adk-js has to
+    be built directly.
+    """
+    return Event(
+        author="node",
+        node_info=NodeInfo(path="/wf@1/node_a@1"),
+        invocation_id="test_id",
+        long_running_tool_ids={"interrupt-1"},
+        content=types.Content(
+            role="model",
+            parts=[
+                types.Part(
+                    function_call=types.FunctionCall(
+                        id="interrupt-1",
+                        name="adk_request_input",
+                        args={
+                            "interruptId": "interrupt-1",
+                            "message": "how many?",
+                            **schema_args,
+                        },
+                    )
+                )
+            ],
+        ),
+    )
+
+  def _reply_event(self, result: str) -> Event:
+    return Event(
+        author="user",
+        invocation_id="test_id",
+        content=types.Content(
+            parts=[
+                types.Part(
+                    function_response=types.FunctionResponse(
+                        id="interrupt-1",
+                        name="adk_request_input",
+                        response={"result": result},
+                    )
+                )
+            ]
+        ),
+    )
+
+  def _scan(self, events: list[Event]) -> dict[str, _ChildScanState]:
+    return _reconstruct_node_states(
+        events,
+        "/wf@1",
+        invocation_id="test_id",
+        group_by_direct_child=True,
+    )
+
+  def test_scan_coerces_response_against_legacy_camel_case_schema(self):
+    """A schema under the legacy `responseSchema` key still drives coercion."""
+    results = self._scan([
+        self._interrupt_event({"responseSchema": self.COUNT_SCHEMA}),
+        self._reply_event('{"count": "42"}'),
+    ])
+
+    assert results["node_a@1"].resolved_responses["interrupt-1"] == {
+        "count": 42
+    }
+
+  def test_scan_rejects_response_that_fails_legacy_camel_case_schema(self):
+    """A schema under the legacy key also rejects a mismatching reply."""
+    with pytest.raises(ValueError, match="Validation failed for interrupt"):
+      self._scan([
+          self._interrupt_event({"responseSchema": self.COUNT_SCHEMA}),
+          self._reply_event('{"count": "abc"}'),
+      ])
+
+  def test_scan_prefers_canonical_schema_over_legacy_camel_case_schema(self):
+    """With both spellings present, `response_schema` drives validation."""
+    results = self._scan([
+        self._interrupt_event({
+            "response_schema": self.COUNT_SCHEMA,
+            "responseSchema": {"type": "string"},
+        }),
+        self._reply_event('{"count": "42"}'),
+    ])
+
+    assert results["node_a@1"].resolved_responses["interrupt-1"] == {
+        "count": 42
+    }
+
+  def test_scan_passes_response_through_when_schema_is_null(self):
+    """A null canonical schema with no legacy key leaves the reply untouched."""
+    results = self._scan([
+        self._interrupt_event({"response_schema": None}),
+        self._reply_event("hello"),
+    ])
+
+    assert results["node_a@1"].resolved_responses["interrupt-1"] == "hello"
+
 
 # --- is_terminal_event ---
 #

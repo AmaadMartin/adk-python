@@ -24,6 +24,7 @@ from google.adk.workflow.utils._workflow_hitl_utils import create_auth_request_e
 from google.adk.workflow.utils._workflow_hitl_utils import create_request_input_event
 from google.adk.workflow.utils._workflow_hitl_utils import create_request_input_response
 from google.adk.workflow.utils._workflow_hitl_utils import get_request_input_interrupt_ids
+from google.adk.workflow.utils._workflow_hitl_utils import get_response_schema_arg
 from google.adk.workflow.utils._workflow_hitl_utils import has_auth_credential
 from google.adk.workflow.utils._workflow_hitl_utils import has_request_input_function_call
 from google.adk.workflow.utils._workflow_hitl_utils import process_auth_resume
@@ -75,6 +76,43 @@ class TestCreateRequestInputEvent:
     schema = fc.args["response_schema"]
     assert "approved" in schema["properties"]
     assert schema["properties"]["approved"]["type"] == "boolean"
+
+
+# --- get_response_schema_arg ---
+
+
+class TestGetResponseSchemaArg:
+
+  SCHEMA = {"type": "object", "properties": {"count": {"type": "integer"}}}
+  LEGACY_SCHEMA = {"type": "string"}
+
+  def test_reads_canonical_key(self):
+    assert (
+        get_response_schema_arg({"response_schema": self.SCHEMA}) == self.SCHEMA
+    )
+
+  def test_reads_legacy_camel_case_key(self):
+    assert (
+        get_response_schema_arg({"responseSchema": self.SCHEMA}) == self.SCHEMA
+    )
+
+  def test_canonical_key_wins_over_legacy_key(self):
+    args = {
+        "response_schema": self.SCHEMA,
+        "responseSchema": self.LEGACY_SCHEMA,
+    }
+    assert get_response_schema_arg(args) == self.SCHEMA
+
+  def test_null_canonical_key_falls_back_to_legacy_key(self):
+    args = {"response_schema": None, "responseSchema": self.LEGACY_SCHEMA}
+    assert get_response_schema_arg(args) == self.LEGACY_SCHEMA
+
+  def test_none_for_unrelated_args(self):
+    assert get_response_schema_arg({"message": "hello"}) is None
+
+  def test_none_for_empty_or_missing_args(self):
+    assert get_response_schema_arg({}) is None
+    assert get_response_schema_arg(None) is None
 
 
 # --- has_request_input_function_call ---
