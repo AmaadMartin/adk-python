@@ -30,6 +30,7 @@ from google.adk.auth.auth_credential import AuthCredential
 from google.adk.auth.auth_credential import AuthCredentialTypes
 from google.adk.auth.auth_credential import HttpAuth
 from google.adk.auth.auth_credential import HttpCredentials
+from google.adk.auth.auth_schemes import AuthScheme
 from google.adk.features import FeatureName
 from google.adk.features._feature_registry import temporary_feature_override
 from google.adk.sessions.state import State
@@ -449,6 +450,59 @@ class TestRestApiTool:
     assert call_kwargs["url"] == "https://example.com/users/me/messages"
     assert result == {"result": "success"}
 
+  @patch(
+      "google.adk.tools.openapi_tool.openapi_spec_parser.rest_api_tool._request"
+  )
+  @pytest.mark.asyncio
+  async def test_call_sends_one_of_request_body(
+      self,
+      mock_request,
+      mock_tool_context,
+      sample_endpoint,
+      sample_auth_scheme,
+      sample_auth_credential,
+  ):
+    """A oneOf body reaches the request through the parser-built parameters."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"result": "success"}
+    mock_request.return_value = mock_response
+
+    mock_operation = Operation(
+        operationId="test_op",
+        requestBody=RequestBody(
+            content={
+                "application/json": MediaType(
+                    schema=OpenAPISchema(
+                        oneOf=[
+                            OpenAPISchema(
+                                type="object",
+                                properties={
+                                    "type": OpenAPISchema(type="string")
+                                },
+                            )
+                        ]
+                    )
+                )
+            }
+        ),
+    )
+    tool = RestApiTool(
+        name="test_tool",
+        description="Test Tool",
+        endpoint=sample_endpoint,
+        operation=mock_operation,
+        auth_scheme=sample_auth_scheme,
+        auth_credential=sample_auth_credential,
+    )
+
+    payload = {"type": "a", "stage": "b"}
+    result = await tool.call(
+        args={"body": payload}, tool_context=mock_tool_context
+    )
+
+    assert mock_request.call_args[1]["json"] == payload
+    assert result == {"result": "success"}
+
   def test_prepare_request_params_query_body(
       self, sample_endpoint, sample_auth_credential, sample_auth_scheme
   ):
@@ -646,6 +700,109 @@ class TestRestApiTool:
 
     assert request_params["data"] == "test_value"
     assert request_params["headers"]["Content-Type"] == "text/plain"
+
+  def _whole_body_tool(
+      self,
+      schema: OpenAPISchema,
+      endpoint: OperationEndpoint,
+      auth_credential: AuthCredential,
+      auth_scheme: AuthScheme,
+  ) -> RestApiTool:
+    """Builds a tool whose JSON request body is the given schema."""
+    return RestApiTool(
+        name="test_tool",
+        description="Test Tool",
+        endpoint=endpoint,
+        operation=Operation(
+            operationId="test_op",
+            requestBody=RequestBody(
+                content={"application/json": MediaType(schema=schema)}
+            ),
+        ),
+        auth_credential=auth_credential,
+        auth_scheme=auth_scheme,
+    )
+
+  def test_prepare_request_params_one_of_body(
+      self, sample_endpoint, sample_auth_credential, sample_auth_scheme
+  ):
+    """A oneOf body named 'body' by the parser is sent as the payload."""
+    schema = OpenAPISchema(
+        oneOf=[
+            OpenAPISchema(
+                type="object", properties={"type": OpenAPISchema(type="string")}
+            )
+        ]
+    )
+    tool = self._whole_body_tool(
+        schema, sample_endpoint, sample_auth_credential, sample_auth_scheme
+    )
+    params = [
+        # An API key credential prepends a non-body parameter, so the body
+        # parameter is not always first.
+        ApiParameter(
+            original_name="X-API-Key",
+            py_name="x_api_key",
+            param_location="header",
+            param_schema=OpenAPISchema(type="string"),
+        ),
+        ApiParameter(
+            original_name="body",
+            py_name="body",
+            param_location="body",
+            param_schema=schema,
+        ),
+    ]
+
+    request_params = tool._prepare_request_params(
+        params, {"x_api_key": "secret", "body": {"type": "a", "stage": "b"}}
+    )
+
+    assert request_params["json"] == {"type": "a", "stage": "b"}
+    assert request_params["headers"]["Content-Type"] == "application/json"
+    assert request_params["headers"]["X-API-Key"] == "secret"
+
+  def test_prepare_request_params_untyped_body(
+      self, sample_endpoint, sample_auth_credential, sample_auth_scheme
+  ):
+    """A body schema with no type is sent as the payload."""
+    schema = OpenAPISchema(description="free-form")
+    tool = self._whole_body_tool(
+        schema, sample_endpoint, sample_auth_credential, sample_auth_scheme
+    )
+    params = [
+        ApiParameter(
+            original_name="body",
+            py_name="body",
+            param_location="body",
+            param_schema=schema,
+        )
+    ]
+
+    request_params = tool._prepare_request_params(params, {"body": [1, 2]})
+
+    assert request_params["json"] == [1, 2]
+
+  def test_prepare_request_params_one_of_body_omitted(
+      self, sample_endpoint, sample_auth_credential, sample_auth_scheme
+  ):
+    """An omitted optional body stays absent instead of being sent as null."""
+    schema = OpenAPISchema(oneOf=[OpenAPISchema(type="string")])
+    tool = self._whole_body_tool(
+        schema, sample_endpoint, sample_auth_credential, sample_auth_scheme
+    )
+    params = [
+        ApiParameter(
+            original_name="body",
+            py_name="body",
+            param_location="body",
+            param_schema=schema,
+        )
+    ]
+
+    request_params = tool._prepare_request_params(params, {})
+
+    assert "json" not in request_params
 
   def test_prepare_request_params_form_data(
       self, sample_endpoint, sample_auth_scheme, sample_auth_credential
