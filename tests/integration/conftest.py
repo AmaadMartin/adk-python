@@ -18,13 +18,10 @@ from typing import Literal
 import warnings
 
 from dotenv import load_dotenv
-from google.adk import Agent
 from pytest import fixture
 from pytest import FixtureRequest
 from pytest import hookimpl
 from pytest import Metafunc
-
-from .utils import TestRunner
 
 logger = logging.getLogger('google_adk.' + __name__)
 
@@ -33,7 +30,7 @@ def load_env_for_tests():
   dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
   if not os.path.exists(dotenv_path):
     warnings.warn(
-        f'Missing .env file at {dotenv_path}. See dotenv.sample for an example.'
+        f'Missing .env file at {dotenv_path}. See .env.example for an example.'
     )
   else:
     load_dotenv(dotenv_path, override=True, verbose=True)
@@ -56,20 +53,6 @@ def load_env_for_tests():
 load_env_for_tests()
 
 BackendType = Literal['GOOGLE_AI', 'VERTEX']
-
-
-@fixture
-def agent_runner(request: FixtureRequest) -> TestRunner:
-  assert isinstance(request.param, dict)
-
-  if 'agent' in request.param:
-    assert isinstance(request.param['agent'], Agent)
-    return TestRunner(request.param['agent'])
-  elif 'agent_name' in request.param:
-    assert isinstance(request.param['agent_name'], str)
-    return TestRunner.from_agent_name(request.param['agent_name'])
-
-  raise NotImplementedError('Must provide agent or agent_name.')
 
 
 @fixture(autouse=True)

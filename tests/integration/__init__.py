@@ -11,8 +11,3 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
-import pytest
-
-# This allows pytest to show the values of the asserts.
-pytest.register_assert_rewrite('tests.integration.utils')
