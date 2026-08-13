@@ -42,7 +42,9 @@ class BashToolPolicy:
   """Configuration for allowed bash commands and resource limits.
 
   Set allowed_command_prefixes to ("*",) to allow all commands (default),
-  or explicitly list allowed prefixes.
+  or explicitly list allowed prefixes. A prefix matches only at a token
+  boundary - the command must equal the prefix or continue with whitespace -
+  so ("ls",) permits `ls -la` but not `lsof -i`.
 
   Values for max_memory_bytes, max_file_size_bytes, and max_child_processes
   will be enforced upon the spawned subprocess.
@@ -70,7 +72,13 @@ def _validate_command(command: str, policy: BashToolPolicy) -> Optional[str]:
     return None
 
   for prefix in policy.allowed_command_prefixes:
-    if stripped.startswith(prefix):
+    if not stripped.startswith(prefix):
+      continue
+    # Require a token boundary after the prefix so a prefix names a program
+    # (optionally with leading arguments) rather than a string fragment:
+    # "ls" must permit "ls -la" but not "lsof -i".
+    remainder = stripped[len(prefix) :]
+    if not remainder or remainder[0].isspace():
       return None
 
   allowed = ", ".join(policy.allowed_command_prefixes)
