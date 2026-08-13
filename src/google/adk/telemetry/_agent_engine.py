@@ -201,10 +201,28 @@ async def _drain_metrics(reader: _RequestDrivenMetricReader) -> None:
 
 
 def telemetry_user_agent_headers() -> dict[str, str] | None:
-  """Returns the Vertex Agent Engine User-Agent header, if telemetry is on."""
+  """Returns the Vertex Agent Engine User-Agent header, if telemetry is on.
+
+  Both version modules are optional at runtime, so they are imported inside
+  the function. Telemetry is a best-effort side path: a package that is not
+  installed drops its own segment from the User-Agent instead of raising, and
+  this returns None when no segment can be built. Both call sites already
+  accept None and pass it on as ``headers=None``.
+  """
   if not os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY"):
     return None
-  from google.cloud.aiplatform import version as aip_version
+
+  aip_version: ModuleType | None
+  try:
+    from google.cloud.aiplatform import version as _aip_version
+
+    aip_version = _aip_version
+  except (ImportError, AttributeError):
+    logger.debug(
+        "google-cloud-aiplatform is not installed; omitting the"
+        " Vertex-Agent-Engine version from the telemetry User-Agent."
+    )
+    aip_version = None
 
   otlp_http_version: ModuleType | None
   try:
@@ -214,10 +232,16 @@ def telemetry_user_agent_headers() -> dict[str, str] | None:
   except (ImportError, AttributeError):
     otlp_http_version = None
 
-  user_agent = f"Vertex-Agent-Engine/{aip_version.__version__}"
+  segments: list[str] = []
+  if aip_version:
+    segments.append(f"Vertex-Agent-Engine/{aip_version.__version__}")
   if otlp_http_version:
-    user_agent += f" OTel-OTLP-Exporter-Python/{otlp_http_version.__version__}"
-  return {"User-Agent": user_agent}
+    segments.append(
+        f"OTel-OTLP-Exporter-Python/{otlp_http_version.__version__}"
+    )
+  if not segments:
+    return None
+  return {"User-Agent": " ".join(segments)}
 
 
 @functools.cache
