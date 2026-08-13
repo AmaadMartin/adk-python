@@ -119,6 +119,19 @@ Agent(name='agent', model='gemini-2.5-flash')
   )
 
 
+def test_memory_package_resolves_services_without_the_dependency_helper():
+  """Lazy memory exports resolve without eagerly loading any import helper."""
+  assert_modules_unloaded(
+      """
+import google.adk.memory as memory
+
+for name in memory.__all__:
+  assert getattr(memory, name).__name__ == name, name
+""",
+      ('google.adk.utils._dependency',),
+  )
+
+
 def test_lazy_packages_support_star_imports():
   """Every lazy package still resolves through Python's public import syntax."""
   result = run_isolated(f"""
