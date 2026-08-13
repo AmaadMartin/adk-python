@@ -17,6 +17,8 @@ from datetime import datetime
 import importlib
 import json
 import os
+import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -109,6 +111,88 @@ EXPOSE {port}
 
 CMD adk {command} --port={port} {host_option} {service_option} {trace_to_cloud_option} {otel_to_cloud_option} {allow_origins_option} {a2a_option} {trigger_sources_option} {gemini_enterprise_option}{express_mode_option} "/app/agents"
 """
+
+# A Dockerfile instruction has no generic escaping mechanism: a newline ends
+# the current instruction and starts a new one, so a value carrying
+# "\nRUN ..." is executed during `docker build`. The template's CMD is in
+# shell form, so a metacharacter in a value that reaches it is interpreted by
+# /bin/sh when the container starts. Restricting a value to a plain token
+# closes both at once, and none of an app name, a GCP project id or a GCP
+# region legitimately needs anything outside this set.
+_SAFE_DOCKERFILE_TOKEN_RE: Final[re.Pattern[str]] = re.compile(
+    r'[A-Za-z0-9_.-]{1,128}'
+)
+
+
+def _assert_safe_dockerfile_token(value: Optional[str], field: str) -> None:
+  """Rejects a value that cannot be embedded in the Dockerfile verbatim.
+
+  Args:
+    value: The value to check. An unset value is left alone: the template
+      interpolates it without producing a new instruction.
+    field: The field name to report, e.g. 'app_name'.
+
+  Raises:
+    click.ClickException: If `value` is not a plain token.
+  """
+  if not value:
+    return
+  # fullmatch, not match: '$' would also accept a trailing newline, which is
+  # exactly the character this guard exists to reject.
+  if not _SAFE_DOCKERFILE_TOKEN_RE.fullmatch(value):
+    raise click.ClickException(
+        f'Invalid {field} {value!r}: must match'
+        f' {_SAFE_DOCKERFILE_TOKEN_RE.pattern} to be safely embedded in the'
+        ' generated Dockerfile.'
+    )
+
+
+def _quote_dockerfile_cmd_value(value: str, field: str) -> str:
+  """Returns `value` quoted for the generated Dockerfile's CMD line.
+
+  These values are free-form -- a service URI can carry a credential and
+  allow_origins is a comma-separated list -- so they cannot be restricted to
+  the plain token above. They only reach the shell-form CMD, where quoting
+  neutralizes every shell metacharacter. Quoting cannot neutralize a newline,
+  which still ends the CMD instruction, so a value containing one is rejected.
+
+  Args:
+    value: The value to embed.
+    field: The field name to report, e.g. 'allow_origins'.
+
+  Returns:
+    The value, shell-quoted if it needs it.
+
+  Raises:
+    click.ClickException: If `value` contains a newline.
+  """
+  if '\n' in value or '\r' in value:
+    raise click.ClickException(
+        f'Invalid {field} {value!r}: must not contain a newline character to'
+        ' be safely embedded in the generated Dockerfile.'
+    )
+  return shlex.quote(value)
+
+
+def _dockerfile_cmd_flag(flag: str, value: Optional[str]) -> str:
+  """Returns the CMD-line flag carrying `value`, or '' when it is unset.
+
+  Args:
+    flag: The ADK CLI flag, e.g. '--allow_origins'. Its name without the
+      leading dashes is the field reported when the value is rejected.
+    value: The value to embed.
+
+  Returns:
+    The flag and its quoted value, or an empty string.
+
+  Raises:
+    click.ClickException: If `value` contains a newline.
+  """
+  if not value:
+    return ''
+  quoted = _quote_dockerfile_cmd_value(value, flag.lstrip('-'))
+  return f'{flag}={quoted}'
+
 
 _AGENT_ENGINE_CLASS_METHODS = [
     {
@@ -588,16 +672,20 @@ def _get_service_option_by_adk_version(
     memory_uri: Optional[str],
     use_local_storage: Optional[bool] = None,
 ) -> str:
-  """Returns service option string based on adk_version."""
+  """Returns service option string based on adk_version.
+
+  Raises:
+    click.ClickException: If a URI contains a newline character.
+  """
   parsed_version = parse(adk_version)
   options: list[str] = []
 
   if session_uri:
-    options.append(f'--session_service_uri={session_uri}')
+    options.append(_dockerfile_cmd_flag('--session_service_uri', session_uri))
   if artifact_uri:
-    options.append(f'--artifact_service_uri={artifact_uri}')
+    options.append(_dockerfile_cmd_flag('--artifact_service_uri', artifact_uri))
   if memory_uri:
-    options.append(f'--memory_service_uri={memory_uri}')
+    options.append(_dockerfile_cmd_flag('--memory_service_uri', memory_uri))
 
   if use_local_storage is not None and parsed_version >= parse(
       _LOCAL_STORAGE_FLAG_MIN_VERSION
@@ -706,8 +794,15 @@ def to_cloud_run(
     use_local_storage: Whether to use local .adk storage in the container.
     with_cloud_run_sandbox: Whether to enable the Cloud Run sandbox for code
       execution.
+
+  Raises:
+    click.ClickException: If a value that reaches the generated Dockerfile is
+      unsafe to embed there.
   """
   app_name = app_name or os.path.basename(agent_folder)
+  _assert_safe_dockerfile_token(app_name, 'app_name')
+  _assert_safe_dockerfile_token(project, 'project')
+  _assert_safe_dockerfile_token(region, 'region')
   if parse(adk_version) >= parse('1.3.0') and not use_local_storage:
     session_service_uri = session_service_uri or 'memory://'
     artifact_service_uri = artifact_service_uri or 'memory://'
@@ -736,12 +831,12 @@ def to_cloud_run(
     # create Dockerfile
     click.echo('Creating Dockerfile...')
     host_option = '--host=0.0.0.0' if adk_version > '0.5.0' else ''
-    allow_origins_option = (
-        f'--allow_origins={",".join(allow_origins)}' if allow_origins else ''
+    allow_origins_option = _dockerfile_cmd_flag(
+        '--allow_origins', ','.join(allow_origins or [])
     )
     a2a_option = '--a2a' if a2a else ''
-    trigger_sources_option = (
-        f'--trigger_sources={trigger_sources}' if trigger_sources else ''
+    trigger_sources_option = _dockerfile_cmd_flag(
+        '--trigger_sources', trigger_sources
     )
     dockerfile_content = _DOCKERFILE_TEMPLATE.format(
         gcp_project_id=project,
@@ -952,8 +1047,13 @@ def to_agent_engine(
       used.
     extra_packages (list[str]): Optional. Additional local file or directory
       paths to stage alongside the agent and make importable in the image.
+
+  Raises:
+    click.ClickException: If a value that reaches the generated Dockerfile is
+      unsafe to embed there.
   """
   app_name = os.path.basename(agent_folder)
+  _assert_safe_dockerfile_token(app_name, 'app_name')
   display_name = display_name or app_name
   parent_folder = os.path.dirname(agent_folder)
   if adk_app_object:
@@ -1186,6 +1286,15 @@ def to_agent_engine(
       project = auth_info.project_id
       region = auth_info.region
 
+    _assert_safe_dockerfile_token(project, 'project')
+    _assert_safe_dockerfile_token(region, 'region')
+    # Built here rather than in create_dockerfile_for_agent_engine, which runs
+    # after the Agent Runtime instance exists, so a rejected value cannot
+    # create one.
+    trigger_sources_option = _dockerfile_cmd_flag(
+        '--trigger_sources', trigger_sources
+    )
+
     click.echo('Initializing Agent Platform client...')
     if project and region:
       client = vertexai.Client(
@@ -1221,9 +1330,6 @@ def to_agent_engine(
           f'RUN pip install -r "/app/agents/{app_name}/requirements.txt"'
           if os.path.exists(requirements_txt_path)
           else '# No requirements.txt found.'
-      )
-      trigger_sources_option = (
-          f'--trigger_sources={trigger_sources}' if trigger_sources else ''
       )
       extra_packages_copy = ''
       if staged_extra_packages:
@@ -1364,6 +1470,10 @@ def to_gke(
     memory_service_uri: The URI of the memory service.
     use_local_storage: Whether to use local .adk storage in the container.
     service_type: The Kubernetes Service type (default: ClusterIP).
+
+  Raises:
+    click.ClickException: If a value that reaches the generated Dockerfile is
+      unsafe to embed there.
   """
   click.secho(
       '\n🚀 Starting ADK Agent Deployment to GKE...', fg='cyan', bold=True
@@ -1377,6 +1487,9 @@ def to_gke(
   click.echo('--------------------------------------------------\n')
 
   app_name = app_name or os.path.basename(agent_folder)
+  _assert_safe_dockerfile_token(app_name, 'app_name')
+  _assert_safe_dockerfile_token(project, 'project')
+  _assert_safe_dockerfile_token(region, 'region')
   if parse(adk_version) >= parse('1.3.0') and not use_local_storage:
     session_service_uri = session_service_uri or 'memory://'
     artifact_service_uri = artifact_service_uri or 'memory://'
@@ -1403,8 +1516,11 @@ def to_gke(
     )
     click.secho('✅ Environment prepared.', fg='green')
 
-    allow_origins_option = (
-        f'--allow_origins={",".join(allow_origins)}' if allow_origins else ''
+    allow_origins_option = _dockerfile_cmd_flag(
+        '--allow_origins', ','.join(allow_origins or [])
+    )
+    trigger_sources_option = _dockerfile_cmd_flag(
+        '--trigger_sources', trigger_sources
     )
 
     # create Dockerfile
@@ -1431,9 +1547,7 @@ def to_gke(
         adk_version=adk_version,
         host_option=host_option,
         a2a_option='--a2a' if a2a else '',
-        trigger_sources_option=(
-            f'--trigger_sources={trigger_sources}' if trigger_sources else ''
-        ),
+        trigger_sources_option=trigger_sources_option,
         gemini_enterprise_option='',
         express_mode_option='',
         extra_packages_copy='',
