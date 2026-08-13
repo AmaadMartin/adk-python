@@ -17,11 +17,13 @@ from __future__ import annotations
 import logging
 from typing import cast
 import uuid
+import warnings
 
 import kubernetes as k8s
 from kubernetes.watch import Watch
 from pydantic import Field
 from pydantic import field_validator
+from pydantic import model_validator
 from typing_extensions import Literal
 from typing_extensions import override
 from typing_extensions import TYPE_CHECKING
@@ -33,11 +35,15 @@ from .code_execution_utils import CodeExecutionResult
 
 try:
   from k8s_agent_sandbox import SandboxClient
+  from k8s_agent_sandbox.models import SandboxGatewayConnectionConfig
 except ImportError:
   SandboxClient = None
+  SandboxGatewayConnectionConfig = None
 
 if TYPE_CHECKING:
   from k8s_agent_sandbox import SandboxClient
+  from k8s_agent_sandbox.models import SandboxGatewayConnectionConfig
+  from k8s_agent_sandbox.sandbox import Sandbox
 
 # Expose these for tests to monkeypatch.
 client = k8s.client
@@ -61,7 +67,7 @@ class GkeCodeExecutor(BaseCodeExecutor):
   Executes code using the Agent Sandbox Client. This mode requires additional
   infrastructure to be deployed in the cluster, specifically:
   - Agent-sandbox controller
-  - Sandbox templates (e.g., python-sandbox-template)
+  - A SandboxWarmPool (e.g., python-sandbox-warmpool)
   - Sandbox router and gateway
 
   Key Features:
@@ -97,8 +103,8 @@ class GkeCodeExecutor(BaseCodeExecutor):
   """Wall-clock bound, in seconds, on a single code execution.
 
   In job mode this bounds the watch on the submitted Job. In sandbox mode it
-  bounds the execution request sent to the sandbox; the script upload that
-  precedes it keeps the sandbox client's own default.
+  bounds the wait for the sandbox to become ready, the script upload and the
+  execution request.
 
   Must be positive: the API server treats `timeoutSeconds=0` as no timeout, so
   a zero would silently fall back to the server default while the
@@ -116,9 +122,21 @@ class GkeCodeExecutor(BaseCodeExecutor):
   kubeconfig_path: str | None = None
   kubeconfig_context: str | None = None
 
-  # Sandbox constants
+  # Sandbox mode configuration.
   sandbox_gateway_name: str | None = None
-  sandbox_template: str | None = "python-sandbox-template"
+  """Name of the Gateway that fronts the sandbox router.
+
+  When unset, the sandbox client falls back to its local tunnel, which
+  discovers the sandbox through `kubectl port-forward`.
+  """
+  sandbox_warmpool: str = "python-sandbox-warmpool"
+  """Name of the SandboxWarmPool that provisions the sandbox."""
+  sandbox_template: str | None = None
+  """Deprecated: use `sandbox_warmpool` instead.
+
+  The Agent Sandbox client provisions sandboxes from a SandboxWarmPool rather
+  than from a template. A value set here is used as the warm-pool name.
+  """
 
   _batch_v1: k8s.client.BatchV1Api
   _core_v1: k8s.client.CoreV1Api
@@ -188,23 +206,63 @@ class GkeCodeExecutor(BaseCodeExecutor):
       )
     return v
 
+  @model_validator(mode="after")
+  def _resolve_deprecated_sandbox_template(self) -> GkeCodeExecutor:
+    """Adopts a legacy `sandbox_template` value as the warm-pool name."""
+    if self.sandbox_template is None:
+      return self
+    warnings.warn(
+        "The Agent Sandbox client provisions sandboxes from a"
+        " SandboxWarmPool, so GkeCodeExecutor.sandbox_template is deprecated"
+        " in favour of sandbox_warmpool. Using"
+        f" '{self.sandbox_template}' as the warm-pool name.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    if "sandbox_warmpool" not in self.model_fields_set:
+      self.sandbox_warmpool = self.sandbox_template
+    return self
+
+  def _terminate_sandbox(self, sandbox: Sandbox) -> None:
+    """Deletes the sandbox claim, logging rather than raising on failure."""
+    try:
+      sandbox.terminate()
+    except Exception as e:
+      logger.warning(
+          f"Failed to terminate sandbox claim '{sandbox.claim_name}' in"
+          f" namespace '{self.namespace}'. Manual cleanup is required."
+          f" Reason: {e}"
+      )
+
   def _execute_in_sandbox(self, code: str) -> CodeExecutionResult:
     """Executes code using Agent Sandbox Client."""
-    try:
-      with SandboxClient(
-          template_name=self.sandbox_template,
-          gateway_name=self.sandbox_gateway_name,
-          namespace=self.namespace,
-      ) as sandbox:
-        # Execute the code as a python script
-        sandbox.write("script.py", code)
-        result = sandbox.run("python3 script.py", timeout=self.timeout_seconds)
-
-        return CodeExecutionResult(stdout=result.stdout, stderr=result.stderr)
-    except RuntimeError as e:
-      logger.error(
-          "SandboxClient failed to initialize or find gateway", exc_info=True
+    connection_config = None
+    if self.sandbox_gateway_name:
+      connection_config = SandboxGatewayConnectionConfig(
+          gateway_name=self.sandbox_gateway_name
       )
+    try:
+      sandbox_client = SandboxClient(connection_config=connection_config)
+      sandbox = sandbox_client.create_sandbox(
+          warmpool=self.sandbox_warmpool,
+          namespace=self.namespace,
+          sandbox_ready_timeout=self.timeout_seconds,
+      )
+      try:
+        # Execute the code as a python script.
+        sandbox.files.write("script.py", code, timeout=self.timeout_seconds)
+        result = sandbox.commands.run(
+            "python3 script.py", timeout=self.timeout_seconds
+        )
+        return CodeExecutionResult(stdout=result.stdout, stderr=result.stderr)
+      finally:
+        # The 0.5 client has no context manager and does not clean up on its
+        # own, so an unterminated sandbox leaks a pod.
+        self._terminate_sandbox(sandbox)
+    except RuntimeError as e:
+      # SandboxError and its subclasses derive from RuntimeError, so this also
+      # covers a missing warm pool, a failed claim and transport failures.
+      logger.error("Sandbox infrastructure failure", exc_info=True)
       raise RuntimeError(f"Sandbox infrastructure error: {e}") from e
     except TimeoutError as e:
       logger.error("Sandbox timed out", exc_info=True)
