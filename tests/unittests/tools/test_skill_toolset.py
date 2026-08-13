@@ -725,9 +725,9 @@ async def test_load_resource_failures_isolated_per_invocation(mock_skill1):
 
   shared_state = {}
   ctx_a = _make_tool_context_with_agent(invocation_id="inv_a")
-  ctx_a.state = shared_state
+  ctx_a.state = State(shared_state, ctx_a.actions.state_delta)
   ctx_b = _make_tool_context_with_agent(invocation_id="inv_b")
-  ctx_b.state = shared_state
+  ctx_b.state = State(shared_state, ctx_b.actions.state_delta)
 
   # invocation A: one failure — counter for inv_a reaches 1 (soft).
   result_a = await tool.run_async(
@@ -940,9 +940,9 @@ async def test_execute_script_failures_isolated_per_invocation(mock_skill1):
 
   shared_state = {}
   ctx_a = _make_tool_context_with_agent(invocation_id="inv_a")
-  ctx_a.state = shared_state
+  ctx_a.state = State(shared_state, ctx_a.actions.state_delta)
   ctx_b = _make_tool_context_with_agent(invocation_id="inv_b")
-  ctx_b.state = shared_state
+  ctx_b.state = State(shared_state, ctx_b.actions.state_delta)
 
   # invocation A: one failure — counter for inv_a reaches 1 (soft).
   result_a = await tool.run_async(
