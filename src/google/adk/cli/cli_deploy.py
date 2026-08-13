@@ -147,31 +147,28 @@ def _assert_safe_dockerfile_token(value: Optional[str], field: str) -> None:
     )
 
 
-def _quote_dockerfile_cmd_value(value: str, field: str) -> str:
-  """Returns `value` quoted for the generated Dockerfile's CMD line.
+def _assert_no_dockerfile_newline(value: Optional[str], field: str) -> None:
+  """Rejects a value that would end the Dockerfile instruction carrying it.
 
   These values are free-form -- a service URI can carry a credential and
   allow_origins is a comma-separated list -- so they cannot be restricted to
   the plain token above. They only reach the shell-form CMD, where quoting
   neutralizes every shell metacharacter. Quoting cannot neutralize a newline,
-  which still ends the CMD instruction, so a value containing one is rejected.
+  which still ends the CMD instruction, so this is the one character that has
+  to be rejected outright.
 
   Args:
-    value: The value to embed.
+    value: The value to check. An unset value is left alone.
     field: The field name to report, e.g. 'allow_origins'.
-
-  Returns:
-    The value, shell-quoted if it needs it.
 
   Raises:
     click.ClickException: If `value` contains a newline.
   """
-  if '\n' in value or '\r' in value:
+  if value and ('\n' in value or '\r' in value):
     raise click.ClickException(
         f'Invalid {field} {value!r}: must not contain a newline character to'
         ' be safely embedded in the generated Dockerfile.'
     )
-  return shlex.quote(value)
 
 
 def _dockerfile_cmd_flag(flag: str, value: Optional[str]) -> str:
@@ -180,7 +177,7 @@ def _dockerfile_cmd_flag(flag: str, value: Optional[str]) -> str:
   Args:
     flag: The ADK CLI flag, e.g. '--allow_origins'. Its name without the
       leading dashes is the field reported when the value is rejected.
-    value: The value to embed.
+    value: The value to embed. It is shell-quoted if it needs it.
 
   Returns:
     The flag and its quoted value, or an empty string.
@@ -190,8 +187,8 @@ def _dockerfile_cmd_flag(flag: str, value: Optional[str]) -> str:
   """
   if not value:
     return ''
-  quoted = _quote_dockerfile_cmd_value(value, flag.lstrip('-'))
-  return f'{flag}={quoted}'
+  _assert_no_dockerfile_newline(value, flag.lstrip('-'))
+  return f'{flag}={shlex.quote(value)}'
 
 
 _AGENT_ENGINE_CLASS_METHODS = [
@@ -1288,9 +1285,12 @@ def to_agent_engine(
 
     _assert_safe_dockerfile_token(project, 'project')
     _assert_safe_dockerfile_token(region, 'region')
-    # Built here rather than in create_dockerfile_for_agent_engine, which runs
-    # after the Agent Runtime instance exists, so a rejected value cannot
-    # create one.
+    # These reach the Dockerfile through create_dockerfile_for_agent_engine,
+    # which runs after the Agent Runtime instance exists. Checking them here
+    # means a rejected value cannot leave an orphaned instance behind.
+    _assert_no_dockerfile_newline(session_service_uri, 'session_service_uri')
+    _assert_no_dockerfile_newline(artifact_service_uri, 'artifact_service_uri')
+    _assert_no_dockerfile_newline(memory_service_uri, 'memory_service_uri')
     trigger_sources_option = _dockerfile_cmd_flag(
         '--trigger_sources', trigger_sources
     )

