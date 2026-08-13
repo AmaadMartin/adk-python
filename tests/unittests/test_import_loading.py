@@ -120,6 +120,15 @@ _LAZY_PACKAGES = (
                 'starlette',
             ),
         ),
+        (
+            'google.adk.auth.base_auth_provider',
+            (
+                'fastapi',
+                'google.adk.auth.auth_schemes',
+                'google.adk.auth.auth_tool',
+                'starlette',
+            ),
+        ),
     ],
     ids=(
         'root',
@@ -129,6 +138,7 @@ _LAZY_PACKAGES = (
         'llm_agent',
         'llm_flows_functions',
         'runners',
+        'base_auth_provider',
     ),
 )
 def test_package_import_defers_unrelated_runtime(
