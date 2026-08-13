@@ -20,6 +20,7 @@ integration tests using a clean venv (skipped by default, run via env var).
 
 from __future__ import annotations
 
+import ast
 import importlib.util
 import os
 import subprocess
@@ -285,3 +286,49 @@ except ImportError as e:
   output = result.stdout.strip()
   assert "CAUGHT_IMPORT_ERROR" in output
   assert "google-cloud-aiplatform" in output
+
+
+def test_oci_integration_test_guards_the_optional_import():
+  """The OCI integration test must importorskip before importing the provider.
+
+  google.adk.integrations.oci._oci_genai_llm raises ImportError at import time
+  when the optional oci SDK is absent, and oci is not in the test extra. Without
+  the guard, a bare `pytest` in a `uv sync --extra test` environment fails
+  collection instead of skipping the file.
+  """
+  source = (
+      _REPO_ROOT
+      / "tests"
+      / "integration"
+      / "integrations"
+      / "oci"
+      / "test_oci_genai_llm.py"
+  ).read_text()
+  tree = ast.parse(source)
+
+  guard_line = next(
+      (
+          node.lineno
+          for node in ast.walk(tree)
+          if isinstance(node, ast.Call)
+          and isinstance(node.func, ast.Attribute)
+          and node.func.attr == "importorskip"
+          and node.args
+          and getattr(node.args[0], "value", None)
+          == "oci.generative_ai_inference"
+      ),
+      None,
+  )
+  assert guard_line is not None, "missing pytest.importorskip('oci...') guard"
+
+  provider_import_line = next(
+      (
+          node.lineno
+          for node in ast.walk(tree)
+          if isinstance(node, ast.ImportFrom)
+          and (node.module or "").startswith("google.adk.integrations.oci")
+      ),
+      None,
+  )
+  assert provider_import_line is not None, "provider import not found"
+  assert guard_line < provider_import_line
