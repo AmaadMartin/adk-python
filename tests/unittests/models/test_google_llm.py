@@ -602,6 +602,58 @@ async def test_connect(gemini_llm, llm_request):
 
 
 @pytest.mark.asyncio
+async def test_connect_system_instruction_content_becomes_text_part(
+    gemini_llm, llm_request
+):
+  """Test that a Content system_instruction reaches the wire as text."""
+  llm_request.config.system_instruction = Content(
+      role="system", parts=[Part(text="a"), Part(text="b")]
+  )
+
+  with mock.patch.object(gemini_llm, "_live_api_client") as mock_live_client:
+
+    class MockLiveConnect:
+
+      async def __aenter__(self):
+        return mock.AsyncMock()
+
+      async def __aexit__(self, *args):
+        pass
+
+    mock_live_client.aio.live.connect.return_value = MockLiveConnect()
+
+    async with gemini_llm.connect(llm_request):
+      sent = llm_request.live_connect_config.system_instruction
+      assert isinstance(sent.parts[0].text, str)
+      assert sent.parts[0].text == "a\nb"
+
+
+@pytest.mark.asyncio
+async def test_connect_without_system_instruction_still_sends_empty_part(
+    gemini_llm, llm_request
+):
+  """Test that no system instruction still sends Content with one empty Part."""
+  llm_request.config.system_instruction = None
+
+  with mock.patch.object(gemini_llm, "_live_api_client") as mock_live_client:
+
+    class MockLiveConnect:
+
+      async def __aenter__(self):
+        return mock.AsyncMock()
+
+      async def __aexit__(self, *args):
+        pass
+
+    mock_live_client.aio.live.connect.return_value = MockLiveConnect()
+
+    async with gemini_llm.connect(llm_request):
+      sent = llm_request.live_connect_config.system_instruction
+      assert len(sent.parts) == 1
+      assert sent.parts[0].text is None
+
+
+@pytest.mark.asyncio
 async def test_generate_content_async_with_custom_headers(
     gemini_llm, llm_request, generate_content_response
 ):
