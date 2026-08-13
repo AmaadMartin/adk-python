@@ -16,8 +16,10 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
+from typing import Any
 from typing import TYPE_CHECKING
 
 from google.adk.agents.agent_config import AgentConfig
@@ -28,6 +30,10 @@ from typing_extensions import override
 
 if TYPE_CHECKING:
   from pydantic._internal._core_utils import CoreSchemaOrField
+
+# The branch of the AgentConfig union that accepts every other agent_class
+# value. It stays unpinned so an unrecognised class still has somewhere to go.
+_FALLBACK_DEF = "BaseAgentConfig"
 
 
 class CustomGenerateJsonSchema(GenerateJsonSchema):
@@ -47,11 +53,67 @@ class CustomGenerateJsonSchema(GenerateJsonSchema):
       }
 
 
+def apply_agent_class_discriminator(schema: dict[str, Any]) -> dict[str, Any]:
+  """Restores the agent_class routing rule that pydantic cannot render.
+
+  `AgentConfig` is a root model over a union tagged with a callable pydantic
+  `Discriminator`. Pydantic cannot express a callable discriminator in JSON
+  Schema, so the union comes out as a bare `oneOf` and the routing rule is
+  lost. That `oneOf` is unsatisfiable: `BaseAgentConfig` allows extra
+  properties by design, so it matches almost every agent document, and
+  `agent_class` is an unconstrained string in every typed branch. An ordinary
+  `LlmAgent` document therefore matches two branches, and `oneOf` means
+  exactly one.
+
+  This transform makes the union an `anyOf` and pins `agent_class` on every
+  branch but `BaseAgentConfig`, using the default that branch already
+  declares. `BaseAgentConfig` stays permissive, which matches the runtime rule
+  that an unrecognised `agent_class` routes to `BaseAgent`.
+
+  Args:
+    schema: A JSON Schema document produced by
+      `AgentConfig.model_json_schema()`.
+
+  Returns:
+    A new document with the transform applied. The argument is not mutated,
+    and applying the transform to its own output changes nothing.
+
+  Raises:
+    ValueError: If the document holds no top-level `oneOf` or `anyOf` union.
+    KeyError: If a branch of the union names a definition that is missing, or
+      that declares no default `agent_class`.
+  """
+  if "oneOf" not in schema and "anyOf" not in schema:
+    raise ValueError(
+        "Expected a top-level 'oneOf' or 'anyOf' union in the AgentConfig"
+        " schema."
+    )
+
+  # Rebuild the mapping so the renamed key keeps its original position.
+  result = {
+      ("anyOf" if key == "oneOf" else key): value
+      for key, value in copy.deepcopy(schema).items()
+  }
+
+  defs = result.get("$defs", {})
+  for branch in result["anyOf"]:
+    def_name = branch["$ref"].rsplit("/", 1)[-1]
+    if def_name == _FALLBACK_DEF:
+      continue
+    properties = defs[def_name]["properties"]
+    agent_class = properties["agent_class"]
+    # Sort the keys so the const lands where pydantic would have emitted it.
+    properties["agent_class"] = dict(
+        sorted({**agent_class, "const": agent_class["default"]}.items())
+    )
+  return result
+
+
 def main() -> None:
   """Generates the AgentConfig.json schema."""
   # Use the custom generator to avoid failing on httpx.Client
-  schema = AgentConfig.model_json_schema(
-      schema_generator=CustomGenerateJsonSchema
+  schema = apply_agent_class_discriminator(
+      AgentConfig.model_json_schema(schema_generator=CustomGenerateJsonSchema)
   )
 
   # Find the repo root relative to this file.

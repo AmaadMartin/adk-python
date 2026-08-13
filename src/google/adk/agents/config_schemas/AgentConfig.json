@@ -3085,6 +3085,7 @@
       "description": "The config for the YAML schema of a LlmAgent.",
       "properties": {
         "agent_class": {
+          "const": "LlmAgent",
           "default": "LlmAgent",
           "description": "The value is used to uniquely identify the LlmAgent class. If it is empty, it is by default an LlmAgent.",
           "title": "Agent Class",
@@ -3404,6 +3405,7 @@
       "description": "The config for the YAML schema of a LoopAgent.",
       "properties": {
         "agent_class": {
+          "const": "LoopAgent",
           "default": "LoopAgent",
           "description": "The value is used to uniquely identify the LoopAgent class.",
           "title": "Agent Class",
@@ -3627,6 +3629,7 @@
       "description": "The config for the YAML schema of a ParallelAgent.",
       "properties": {
         "agent_class": {
+          "const": "ParallelAgent",
           "default": "ParallelAgent",
           "description": "The value is used to uniquely identify the ParallelAgent class.",
           "title": "Agent Class",
@@ -4840,6 +4843,7 @@
       "description": "The config for the YAML schema of a SequentialAgent.",
       "properties": {
         "agent_class": {
+          "const": "SequentialAgent",
           "default": "SequentialAgent",
           "description": "The value is used to uniquely identify the SequentialAgent class.",
           "title": "Agent Class",
@@ -6094,7 +6098,7 @@
   },
   "deprecated": true,
   "description": "The config for the YAML schema to create an agent.",
-  "oneOf": [
+  "anyOf": [
     {
       "$ref": "#/$defs/LlmAgentConfig"
     },
