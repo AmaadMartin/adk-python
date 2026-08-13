@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import ssl
 from typing import Any
 from typing import Callable
@@ -608,6 +609,22 @@ class RestApiTool(BaseTool):
     )
 
 
+def _normalize_ssl_verify(
+    verify: Union[bool, str, ssl.SSLContext],
+) -> Union[bool, ssl.SSLContext]:
+  """Resolves a CA bundle path into an ``ssl.SSLContext``.
+
+  httpx deprecated ``verify=<str>`` in 0.28 and plans to remove it in 1.0, so
+  the path is resolved here instead, the same way httpx resolves it internally:
+  a directory becomes ``capath`` and anything else becomes ``cafile``.
+  """
+  if not isinstance(verify, str):
+    return verify
+  if os.path.isdir(verify):
+    return ssl.create_default_context(capath=verify)
+  return ssl.create_default_context(cafile=verify)
+
+
 async def _request(
     *,
     httpx_client_factory: Optional[HttpxClientFactory] = None,
@@ -617,5 +634,7 @@ async def _request(
   if httpx_client_factory is not None:
     async with httpx_client_factory() as client:
       return await client.request(**request_params)
-  async with httpx.AsyncClient(verify=verify, timeout=None) as client:
+  async with httpx.AsyncClient(
+      verify=_normalize_ssl_verify(verify), timeout=None
+  ) as client:
     return await client.request(**request_params)
