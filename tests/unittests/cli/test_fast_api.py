@@ -728,6 +728,43 @@ def test_api_server_get_runner_async_rejects_internal_special_agent_name(
   )
 
 
+@pytest.mark.parametrize(
+    "logo_kwargs",
+    [
+        {"logo_text": "My Co"},
+        {"logo_image_url": "https://example.com/logo.png"},
+    ],
+    ids=["logo_text_only", "logo_image_url_only"],
+)
+def test_get_fast_api_app_rejects_partial_logo_configuration(
+    tmp_path,
+    mock_session_service,
+    mock_artifact_service,
+    mock_memory_service,
+    mock_agent_loader,
+    mock_eval_sets_manager,
+    mock_eval_set_results_manager,
+    logo_kwargs,
+):
+  """Programmatic callers still get a ValueError for a half-specified logo."""
+  from google.adk.cli.api_server import ApiServer
+
+  api_server = ApiServer(
+      agent_loader=mock_agent_loader,
+      session_service=mock_session_service,
+      memory_service=mock_memory_service,
+      artifact_service=mock_artifact_service,
+      credential_service=MagicMock(),
+      eval_sets_manager=mock_eval_sets_manager,
+      eval_set_results_manager=mock_eval_set_results_manager,
+      agents_dir=str(tmp_path),
+      **logo_kwargs,
+  )
+
+  with pytest.raises(ValueError, match="Both --logo-text and --logo-image-url"):
+    api_server.get_fast_api_app(web_assets_dir=str(tmp_path))
+
+
 @pytest.fixture
 def test_app(
     mock_session_service,
