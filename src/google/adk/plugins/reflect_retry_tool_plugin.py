@@ -270,12 +270,8 @@ class ReflectAndRetryToolPlugin(BasePlugin):
   def _ensure_exception(self, error: Any) -> Exception:
     """Ensures the given error is an Exception instance, wrapping if not.
 
-    Non-`Exception` errors -- for example the dict returned by an
-    `extract_error_from_result` override -- are wrapped in
-    `ToolExecutionError` so callers can catch this failure by a specific type.
-    The wrapper's message is `str(error)`, and its `error_type` matches the
-    `"ToolError"` label the plugin reports for the same error in
-    `ToolFailureResponse`.
+    A non-`Exception` error is wrapped in `ToolExecutionError`, under the same
+    `"ToolError"` label the plugin reports in `ToolFailureResponse`.
     """
     if isinstance(error, Exception):
       return error
