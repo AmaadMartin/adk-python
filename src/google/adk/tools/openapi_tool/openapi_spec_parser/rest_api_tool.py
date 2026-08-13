@@ -435,8 +435,11 @@ class RestApiTool(BaseTool):
               break
         else:  # like string
           for param in parameters:
-            # original_name = '' indicating this param applies to the full body.
-            if param.param_location == "body" and not param.original_name:
+            # The parser emits exactly one body parameter here and it carries
+            # the whole payload -- named 'body' for oneOf/anyOf/allOf and
+            # untyped schemas, unnamed for simple scalars -- so match on the
+            # location alone rather than on the name.
+            if param.param_location == "body":
               body_data = (
                   kwargs.get(param.py_name) if param.py_name in kwargs else None
               )
