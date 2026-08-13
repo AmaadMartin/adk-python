@@ -337,7 +337,11 @@ overrides = [ { module = [
 ], ignore_missing_imports = true, follow_imports = "skip" } ]
 
 [tool.pytest]
-ini_options.testpaths = [ "tests" ]
+# Only tests/unittests is hermetic, so it is what a bare `pytest` runs, and it
+# is what CI and tox run. tests/integration and tests/remote need live cloud
+# credentials and extras outside optional-dependencies.test; select those trees
+# by path.
+ini_options.testpaths = [ "tests/unittests" ]
 ini_options.asyncio_default_fixture_loop_scope = "function"
 ini_options.asyncio_mode = "auto"
 
