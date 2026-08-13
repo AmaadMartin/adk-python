@@ -131,6 +131,49 @@ async def test_preprocess_request(llm_request):
 
 
 @pytest.mark.asyncio
+async def test_preprocess_request_content_system_instruction_becomes_text():
+  """Test that a Content system_instruction is prepended as text."""
+  llm_request = LlmRequest(
+      model="gemma-3-4b-it",
+      contents=[Content(role="user", parts=[Part.from_text(text="Hello")])],
+      config=types.GenerateContentConfig(
+          system_instruction=Content(
+              role="system",
+              parts=[Part(text="Be terse."), Part(text="Be polite.")],
+          )
+      ),
+  )
+
+  await Gemma()._preprocess_request(llm_request)
+
+  assert not llm_request.config.system_instruction
+  assert llm_request.contents[0].role == "user"
+  assert llm_request.contents[0].parts[0].text == "Be terse.\nBe polite."
+
+
+@pytest.mark.asyncio
+async def test_preprocess_request_textless_system_instruction_is_kept():
+  """Test that a system_instruction carrying no text is left untouched."""
+  existing = Content(
+      role="system",
+      parts=[
+          Part(inline_data=types.Blob(mime_type="image/png", data=b"\x00\x01"))
+      ],
+  )
+  llm_request = LlmRequest(
+      model="gemma-3-4b-it",
+      contents=[Content(role="user", parts=[Part.from_text(text="Hello")])],
+      config=types.GenerateContentConfig(system_instruction=existing),
+  )
+
+  await Gemma()._preprocess_request(llm_request)
+
+  # Nothing readable to prepend, so the request is left as it was.
+  assert llm_request.config.system_instruction is existing
+  assert len(llm_request.contents) == 1
+
+
+@pytest.mark.asyncio
 async def test_preprocess_request_with_tools(llm_request_with_tools):
 
   gemma = Gemma()
