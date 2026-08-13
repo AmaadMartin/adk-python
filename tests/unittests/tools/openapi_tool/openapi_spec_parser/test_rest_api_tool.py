@@ -155,7 +155,7 @@ def https_server(tmp_path):
       self.end_headers()
       self.wfile.write(body)
 
-    def log_message(self, *args):
+    def log_message(self, format, *args):
       """Keeps per-request server logs out of the test output."""
 
   server = http.server.ThreadingHTTPServer(("localhost", 0), _JsonHandler)
@@ -173,19 +173,13 @@ def https_server(tmp_path):
 
 
 @pytest.fixture
-def mock_api_response():
-  """Fixture for a successful JSON API response."""
+def mock_httpx_client():
+  """Fixture for an httpx.AsyncClient that returns a successful JSON body."""
   response = mock.create_autospec(requests.Response, instance=True)
   response.json.return_value = {"result": "success"}
   response.configure_mock(status_code=200)
-  return response
-
-
-@pytest.fixture
-def mock_httpx_client(mock_api_response):
-  """Fixture for an httpx.AsyncClient that returns mock_api_response."""
   client = mock.create_autospec(httpx.AsyncClient, instance=True, spec_set=True)
-  client.request = AsyncMock(return_value=mock_api_response)
+  client.request = AsyncMock(return_value=response)
   return client
 
 
@@ -1783,6 +1777,36 @@ class TestRestApiTool:
     custom_factory.assert_called_once_with()
     mock_default.assert_not_called()
     mock_client.request.assert_awaited_once()
+    assert result == {"result": "success"}
+
+  @pytest.mark.asyncio
+  async def test_call_with_factory_ignores_ssl_verify_without_reading_it(
+      self,
+      mock_tool_context,
+      sample_endpoint,
+      sample_operation,
+      sample_auth_scheme,
+      sample_auth_credential,
+      mock_httpx_client,
+      tmp_path,
+  ):
+    """A factory owns its TLS config, so ssl_verify is never resolved for it."""
+    mock_httpx_client.__aenter__ = AsyncMock(return_value=mock_httpx_client)
+    mock_httpx_client.__aexit__ = AsyncMock(return_value=None)
+
+    tool = RestApiTool(
+        name="test_tool",
+        description="Test Tool",
+        endpoint=sample_endpoint,
+        operation=sample_operation,
+        auth_scheme=sample_auth_scheme,
+        auth_credential=sample_auth_credential,
+        ssl_verify=str(tmp_path / "does-not-exist.pem"),
+        httpx_client_factory=MagicMock(return_value=mock_httpx_client),
+    )
+
+    result = await tool.call(args={}, tool_context=mock_tool_context)
+
     assert result == {"result": "success"}
 
   @pytest.mark.asyncio
