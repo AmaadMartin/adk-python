@@ -1316,6 +1316,38 @@ class TestExtractSystemInstruction:
     result = interactions_utils.extract_system_instruction(config)
     assert result is None
 
+  def test_part_instruction(self):
+    """Test extracting a Part system instruction."""
+    config = types.GenerateContentConfig(
+        system_instruction=types.Part(text='Be helpful.')
+    )
+    result = interactions_utils.extract_system_instruction(config)
+    assert result == 'Be helpful.'
+
+  def test_list_instruction(self):
+    """Test extracting a list system instruction."""
+    config = types.GenerateContentConfig(
+        system_instruction=['Be helpful.', types.Part(text='Be concise.')]
+    )
+    result = interactions_utils.extract_system_instruction(config)
+    assert result == 'Be helpful.\nBe concise.'
+
+  def test_textless_instruction(self):
+    """Test that an instruction carrying no text reads as None."""
+    config = types.GenerateContentConfig(
+        system_instruction=types.Content(
+            parts=[
+                types.Part(
+                    inline_data=types.Blob(
+                        mime_type='image/png', data=b'\x00\x01'
+                    )
+                )
+            ]
+        )
+    )
+    result = interactions_utils.extract_system_instruction(config)
+    assert result is None
+
 
 class TestLlmRequestPreviousInteractionId:
   """Tests for previous_interaction_id field in LlmRequest."""

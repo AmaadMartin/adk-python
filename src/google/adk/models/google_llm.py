@@ -38,6 +38,7 @@ from typing_extensions import override
 
 from ..utils._google_client_headers import get_tracking_headers
 from ..utils._google_client_headers import merge_tracking_headers
+from ..utils.content_utils import content_union_to_text
 from ..utils.context_utils import Aclosing
 from ..utils.streaming_utils import StreamingResponseAggregator
 from ..utils.variant_utils import GoogleLLMVariant
@@ -467,8 +468,10 @@ class Gemini(BaseLlm):
     llm_request.live_connect_config.system_instruction = types.Content(
         role='system',
         parts=[
-            types.Part.from_text(
-                text=cast(str, llm_request.config.system_instruction)
+            types.Part(
+                text=content_union_to_text(
+                    llm_request.config.system_instruction
+                )
             )
         ],
     )

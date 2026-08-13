@@ -27,6 +27,7 @@ from pydantic import PrivateAttr
 from ..agents.context_cache_config import ContextCacheConfig
 from ..tools.base_tool import BaseTool
 from ..utils._schema_utils import SchemaType
+from ..utils.content_utils import content_union_to_text
 from .cache_metadata import CacheMetadata
 
 
@@ -46,6 +47,29 @@ def _find_tool_with_function_declarations(
       ),
       None,
   )
+
+
+def _append_to_system_instruction(
+    config: types.GenerateContentConfig, new_text: str
+) -> None:
+  """Appends ``new_text`` to ``config.system_instruction``.
+
+  Args:
+    config: The config whose ``system_instruction`` is appended to.
+    new_text: The text to append.
+  """
+  existing = config.system_instruction
+  existing_text = content_union_to_text(existing)
+  if existing_text:
+    config.system_instruction = existing_text + "\n\n" + new_text
+  elif not existing:
+    config.system_instruction = new_text
+  else:
+    logging.warning(
+        "Cannot append to system_instruction of unsupported type: %s. "
+        "Only string system_instruction is supported.",
+        type(existing),
+    )
 
 
 class LlmRequest(BaseModel):
@@ -135,6 +159,13 @@ class LlmRequest(BaseModel):
     in Content are processed with references in system_instruction and returned
     as user contents.
 
+    The existing ``config.system_instruction`` is read as a
+    ``types.ContentUnion``, so it may hold a ``str``, a ``types.Content``, a
+    ``types.Part`` or a list of those. Its text is recovered and
+    ``system_instruction`` is a ``str`` when this method returns. Non-text parts
+    of the existing value are dropped. A value that carries no text at all is
+    left untouched and logs a warning.
+
     Behavior:
       - list[str]: concatenates with existing system_instruction using \\n\\n
       - types.Content: extracts text parts with references to non-text parts,
@@ -216,18 +247,7 @@ class LlmRequest(BaseModel):
 
       # Handle text parts for system instruction
       if text_parts:
-        new_text = "\n\n".join(text_parts)
-        if not self.config.system_instruction:
-          self.config.system_instruction = new_text
-        elif isinstance(self.config.system_instruction, str):
-          self.config.system_instruction += "\n\n" + new_text
-        else:
-          # Log warning for unsupported system_instruction types
-          logging.warning(
-              "Cannot append to system_instruction of unsupported type: %s. "
-              "Only string system_instruction is supported.",
-              type(self.config.system_instruction),
-          )
+        _append_to_system_instruction(self.config, "\n\n".join(text_parts))
 
       # Add user contents directly to llm_request.contents
       if user_contents:
@@ -242,18 +262,7 @@ class LlmRequest(BaseModel):
       if not instructions:  # Handle empty list
         return []
 
-      new_text = "\n\n".join(instructions)
-      if not self.config.system_instruction:
-        self.config.system_instruction = new_text
-      elif isinstance(self.config.system_instruction, str):
-        self.config.system_instruction += "\n\n" + new_text
-      else:
-        # Log warning for unsupported system_instruction types
-        logging.warning(
-            "Cannot append to system_instruction of unsupported type: %s. "
-            "Only string system_instruction is supported.",
-            type(self.config.system_instruction),
-        )
+      _append_to_system_instruction(self.config, "\n\n".join(instructions))
       return []
 
     # Invalid input

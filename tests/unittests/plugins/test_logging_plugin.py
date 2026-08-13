@@ -94,6 +94,108 @@ async def test_before_model_callback_keeps_system_instruction_at_budget(
   assert f"System Instruction: '{'a' * 200}'" in out
 
 
+async def test_before_model_callback_reads_content_system_instruction(
+    plugin, callback_context, capsys
+):
+  llm_request = LlmRequest(
+      model='test-model',
+      config=types.GenerateContentConfig(
+          system_instruction=types.Content(
+              role='system', parts=[types.Part(text='Be terse.')]
+          )
+      ),
+  )
+
+  result = await plugin.before_model_callback(
+      callback_context=callback_context, llm_request=llm_request
+  )
+
+  out = capsys.readouterr().out
+  assert result is None
+  assert "System Instruction: 'Be terse.'" in out
+
+
+async def test_before_model_callback_reads_list_system_instruction(
+    plugin, callback_context, capsys
+):
+  llm_request = LlmRequest(
+      model='test-model',
+      config=types.GenerateContentConfig(system_instruction=['a', 'b']),
+  )
+
+  await plugin.before_model_callback(
+      callback_context=callback_context, llm_request=llm_request
+  )
+
+  out = capsys.readouterr().out
+  # The recovered text is logged, not the repr of the list.
+  assert "System Instruction: 'a\nb'" in out
+
+
+async def test_before_model_callback_truncates_long_content_system_instruction(
+    plugin, callback_context, capsys
+):
+  llm_request = LlmRequest(
+      model='test-model',
+      config=types.GenerateContentConfig(
+          system_instruction=types.Content(
+              role='system', parts=[types.Part(text='a' * 200 + 'Z' * 50)]
+          )
+      ),
+  )
+
+  await plugin.before_model_callback(
+      callback_context=callback_context, llm_request=llm_request
+  )
+
+  out = capsys.readouterr().out
+  assert f"System Instruction: '{'a' * 200}...'" in out
+  assert 'Z' not in out
+
+
+async def test_before_model_callback_skips_textless_system_instruction(
+    plugin, callback_context, capsys
+):
+  llm_request = LlmRequest(
+      model='test-model',
+      config=types.GenerateContentConfig(
+          system_instruction=types.Content(
+              role='system',
+              parts=[
+                  types.Part(
+                      inline_data=types.Blob(
+                          mime_type='image/png', data=b'\x00\x01'
+                      )
+                  )
+              ],
+          )
+      ),
+  )
+
+  result = await plugin.before_model_callback(
+      callback_context=callback_context, llm_request=llm_request
+  )
+
+  out = capsys.readouterr().out
+  assert result is None
+  assert 'System Instruction' not in out
+
+
+async def test_before_model_callback_without_config_logs_no_instruction(
+    plugin, callback_context, capsys
+):
+  llm_request = LlmRequest(model='test-model')
+  llm_request.config = None
+
+  result = await plugin.before_model_callback(
+      callback_context=callback_context, llm_request=llm_request
+  )
+
+  out = capsys.readouterr().out
+  assert result is None
+  assert 'System Instruction' not in out
+
+
 async def test_before_model_callback_lists_available_tool_names(
     plugin, callback_context, capsys
 ):

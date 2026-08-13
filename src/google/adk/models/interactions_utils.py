@@ -85,6 +85,7 @@ if TYPE_CHECKING:
   from ..tools._remote_mcp_server import RemoteMcpServer
 
 from ..utils._google_client_headers import merge_tracking_headers
+from ..utils.content_utils import content_union_to_text
 from .llm_request import LlmRequest
 from .llm_response import LlmResponse
 
@@ -1219,20 +1220,7 @@ def extract_system_instruction(
   Returns:
     The system instruction as a string, or None if not present.
   """
-  if config.system_instruction is None:
-    return None
-
-  if isinstance(config.system_instruction, str):
-    return config.system_instruction
-  elif isinstance(config.system_instruction, types.Content):
-    # Extract text from Content
-    texts = []
-    if config.system_instruction.parts:
-      for part in config.system_instruction.parts:
-        if part.text:
-          texts.append(part.text)
-    return '\n'.join(texts) if texts else None
-  return None
+  return content_union_to_text(config.system_instruction)
 
 
 def _build_tool_log(tool: ToolParam) -> str:

@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 import json
 from typing import Any
 
@@ -55,6 +56,41 @@ def extract_text_from_content(content: types.Content | None) -> str:
   if not content or not content.parts:
     return ''
   return ''.join(p.text for p in content.parts if p.text and not p.thought)
+
+
+def _join_texts(values: Iterable[types.ContentUnion]) -> str | None:
+  """Reads each value and joins the non-empty results with a newline."""
+  texts = (content_union_to_text(value) for value in values)
+  return '\n'.join(text for text in texts if text) or None
+
+
+def content_union_to_text(value: types.ContentUnion | None) -> str | None:
+  """Reads the text carried by any arm of ``types.ContentUnion``.
+
+  ``types.GenerateContentConfig.system_instruction`` is a ``ContentUnion``, so a
+  reader must handle a ``str``, a ``types.Part``, a ``types.Content`` and a list
+  of those. Several text fragments join with ``'\\n'``. Arms that carry no text
+  at all (a ``types.File``, a PIL image, inline binary data) are dropped, so a
+  value that carries only binary data reads as ``None``.
+
+  Args:
+    value: The value to read.
+
+  Returns:
+    The recovered text, or ``None`` when the value carries no text. Never the
+    empty string. The argument is never mutated.
+  """
+  if not value:
+    return None
+  if isinstance(value, str):
+    return value
+  if isinstance(value, list):
+    return _join_texts(value)
+  if isinstance(value, types.Content):
+    return _join_texts(value.parts or [])
+  if isinstance(value, types.Part):
+    return value.text or None
+  return None
 
 
 def to_user_content(value: Any) -> types.Content:

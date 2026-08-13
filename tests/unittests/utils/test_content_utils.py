@@ -14,6 +14,7 @@
 
 from __future__ import annotations
 
+from google.adk.utils.content_utils import content_union_to_text
 from google.adk.utils.content_utils import extract_text_from_content
 from google.adk.utils.content_utils import filter_audio_parts
 from google.adk.utils.content_utils import is_audio_part
@@ -205,3 +206,86 @@ def test_extract_text_from_content_none_returns_empty_string():
 def test_extract_text_from_content_without_text_parts_returns_empty_string():
   content = types.Content(role='user', parts=[_audio_blob_part('audio/pcm')])
   assert extract_text_from_content(content) == ''
+
+
+def test_content_union_to_text_none_returns_none():
+  assert content_union_to_text(None) is None
+
+
+def test_content_union_to_text_empty_string_returns_none():
+  # The result is never '': callers test the return value for truthiness.
+  assert content_union_to_text('') is None
+
+
+def test_content_union_to_text_str_returned_verbatim():
+  assert content_union_to_text('be terse') == 'be terse'
+
+
+def test_content_union_to_text_part_returns_part_text():
+  assert content_union_to_text(types.Part(text='a')) == 'a'
+
+
+def test_content_union_to_text_part_without_text_returns_none():
+  assert content_union_to_text(_audio_blob_part('audio/pcm')) is None
+
+
+def test_content_union_to_text_content_joins_parts_with_newline():
+  content = types.Content(
+      role='system',
+      parts=[types.Part(text='a'), types.Part(text='b')],
+  )
+  assert content_union_to_text(content) == 'a\nb'
+
+
+def test_content_union_to_text_content_without_parts_returns_none():
+  assert content_union_to_text(types.Content(role='system')) is None
+  assert content_union_to_text(types.Content(role='system', parts=[])) is None
+
+
+def test_content_union_to_text_content_with_only_binary_parts_returns_none():
+  content = types.Content(role='system', parts=[_audio_blob_part('image/png')])
+  assert content_union_to_text(content) is None
+
+
+def test_content_union_to_text_list_joins_strings_and_parts():
+  assert content_union_to_text(['a', 'b']) == 'a\nb'
+  assert content_union_to_text(['a', types.Part(text='b')]) == 'a\nb'
+
+
+def test_content_union_to_text_empty_list_returns_none():
+  assert content_union_to_text([]) is None
+
+
+def test_content_union_to_text_list_skips_empty_fragments():
+  value = ['a', '', types.Part(text=None), 'b']
+  assert content_union_to_text(value) == 'a\nb'
+
+
+def test_content_union_to_text_nested_list_of_content_is_flattened():
+  # A Content inside a list reads through the same recursion, so the list
+  # and Content arms agree on the separator.
+  value = [
+      types.Content(role='system', parts=[types.Part(text='a')]),
+      'b',
+  ]
+  assert content_union_to_text(value) == 'a\nb'
+
+
+def test_content_union_to_text_unsupported_value_returns_none():
+  # A File or a PIL image carries no text; the reader drops it rather than
+  # raising, so the caller keeps its warn-and-skip behavior.
+  assert content_union_to_text({'unsupported': 'dict'}) is None
+  assert content_union_to_text(types.File(name='files/abc')) is None
+
+
+def test_content_union_to_text_does_not_mutate_input():
+  content = types.Content(
+      role='system',
+      parts=[types.Part(text='a'), _audio_blob_part('audio/pcm')],
+  )
+
+  content_union_to_text(content)
+
+  assert len(content.parts) == 2
+  assert content.parts[0].text == 'a'
+  assert content.parts[1].inline_data.mime_type == 'audio/pcm'

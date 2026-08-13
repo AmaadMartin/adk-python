@@ -20,12 +20,12 @@ import logging
 import re
 from typing import Any
 from typing import AsyncGenerator
-from typing import cast
 from typing import TYPE_CHECKING
 
 from google.adk.models.google_llm import Gemini
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
+from google.adk.utils.content_utils import content_union_to_text
 from google.adk.utils.variant_utils import GoogleLLMVariant
 from google.genai import types
 from google.genai.types import Content
@@ -219,11 +219,13 @@ class Gemma(GemmaFunctionCallingMixin, Gemini):
   async def _preprocess_request(self, llm_request: LlmRequest) -> None:
     self._move_function_calls_into_system_instruction(llm_request=llm_request)
 
-    if system_instruction := llm_request.config.system_instruction:
+    if system_instruction := content_union_to_text(
+        llm_request.config.system_instruction
+    ):
       contents = llm_request.contents
       instruction_content = Content(
           role='user',
-          parts=[Part.from_text(text=cast(str, system_instruction))],
+          parts=[Part.from_text(text=system_instruction)],
       )
 
       # NOTE: if history is preserved, we must include the system instructions ONLY once at the beginning

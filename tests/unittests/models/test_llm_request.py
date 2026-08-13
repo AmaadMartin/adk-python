@@ -613,6 +613,93 @@ def test_append_instructions_mixed_string_and_content():
   )
 
 
+def test_append_instructions_appends_to_content_system_instruction():
+  """Test appending onto a types.Content system_instruction."""
+  request = LlmRequest(
+      config=types.GenerateContentConfig(
+          system_instruction=types.Content(
+              role='system', parts=[types.Part(text='Be terse.')]
+          )
+      )
+  )
+
+  request.append_instructions(['Transfer to another agent when asked.'])
+
+  # Nothing is dropped: both the existing text and the new text survive.
+  assert isinstance(request.config.system_instruction, str)
+  assert (
+      request.config.system_instruction
+      == 'Be terse.\n\nTransfer to another agent when asked.'
+  )
+
+
+def test_append_instructions_appends_to_list_system_instruction():
+  """Test appending onto a list system_instruction."""
+  request = LlmRequest(
+      config=types.GenerateContentConfig(system_instruction=['a', 'b'])
+  )
+
+  request.append_instructions(['c'])
+
+  assert isinstance(request.config.system_instruction, str)
+  assert request.config.system_instruction == 'a\nb\n\nc'
+
+
+def test_append_instructions_content_appends_to_content_system_instruction():
+  """Test appending a Content onto a types.Content system_instruction."""
+  request = LlmRequest(
+      config=types.GenerateContentConfig(
+          system_instruction=types.Content(
+              role='system', parts=[types.Part(text='Be terse.')]
+          )
+      )
+  )
+
+  request.append_instructions(
+      types.Content(role='user', parts=[types.Part(text='Be polite.')])
+  )
+
+  assert isinstance(request.config.system_instruction, str)
+  assert request.config.system_instruction == 'Be terse.\n\nBe polite.'
+
+
+def test_append_instructions_appends_to_part_system_instruction():
+  """Test appending onto a types.Part system_instruction."""
+  request = LlmRequest(
+      config=types.GenerateContentConfig(
+          system_instruction=types.Part(text='a')
+      )
+  )
+
+  request.append_instructions(['b'])
+
+  assert isinstance(request.config.system_instruction, str)
+  assert request.config.system_instruction == 'a\n\nb'
+
+
+def test_append_instructions_textless_content_system_instruction_warns(caplog):
+  """Test that a system_instruction carrying no text is left untouched."""
+  existing = types.Content(
+      role='system',
+      parts=[
+          types.Part(
+              inline_data=types.Blob(mime_type='image/png', data=b'\x00\x01')
+          )
+      ],
+  )
+  request = LlmRequest(
+      config=types.GenerateContentConfig(system_instruction=existing)
+  )
+
+  with caplog.at_level(logging.WARNING):
+    request.append_instructions(['Transfer to another agent when asked.'])
+
+  assert request.config.system_instruction is existing
+  assert (
+      'Cannot append to system_instruction of unsupported type' in caplog.text
+  )
+
+
 def test_append_instructions_content_extracts_text_only():
   """Test that Content objects have text extracted regardless of role."""
   request = LlmRequest()
