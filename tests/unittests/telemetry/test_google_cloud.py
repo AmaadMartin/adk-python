@@ -374,6 +374,36 @@ def test_get_gcp_otlp_metric_exporter_sends_agent_engine_user_agent(
   assert headers["User-Agent"].startswith("Vertex-Agent-Engine/")
 
 
+@mock.patch.object(requests, "AuthorizedSession", autospec=True)
+@mock.patch(
+    "opentelemetry.exporter.otlp.proto.http.metric_exporter.OTLPMetricExporter",
+    autospec=True,
+)
+@mock.patch(
+    "google.adk.telemetry.google_cloud._use_client_cert_effective",
+    autospec=True,
+)
+def test_get_gcp_otlp_metric_exporter_without_aiplatform_still_exports(
+    mock_use_cert: mock.MagicMock,
+    mock_exporter: mock.MagicMock,
+    mock_session: mock.MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+):
+  """The exporter is built without google-cloud-aiplatform installed."""
+  credentials = mock.create_autospec(
+      google.auth.credentials.Credentials, instance=True
+  )
+  mock_use_cert.return_value = False
+  monkeypatch.setenv("GOOGLE_CLOUD_AGENT_ENGINE_ENABLE_TELEMETRY", "1")
+
+  with mock.patch.dict("sys.modules", {"google.cloud.aiplatform": None}):
+    _get_gcp_otlp_metric_exporter(google_auth=(credentials, "project-id"))
+
+  mock_exporter.assert_called_once()
+  headers = mock_exporter.call_args.kwargs["headers"]
+  assert "Vertex-Agent-Engine" not in headers["User-Agent"]
+
+
 def test_get_gcp_otlp_metric_exporter_uses_default_credentials(
     monkeypatch: pytest.MonkeyPatch,
 ):
