@@ -1058,7 +1058,9 @@ class RunSkillScriptTool(BaseTool):
     script_executor = _SkillScriptCodeExecutor(
         code_executor, self._toolset._script_timeout  # pylint: disable=protected-access
     )
-    code_executor_context = CodeExecutorContext(tool_context.state)
+    # Build the context over a copy of the state. Building it over the live
+    # State writes an empty placeholder into the tool's state delta.
+    code_executor_context = CodeExecutorContext(tool_context.state.to_dict())
     try:
       return await script_executor.execute_script_async(
           tool_context._invocation_context,  # pylint: disable=protected-access
@@ -1071,10 +1073,11 @@ class RunSkillScriptTool(BaseTool):
       )
     finally:
       # Publish the context even when the script fails, so a sandbox the
-      # executor created is still recorded.
-      tool_context.actions.state_delta.update(
-          code_executor_context.get_state_delta()
-      )
+      # executor created is still recorded. An executor that records nothing
+      # must not add a state delta.
+      state_delta = code_executor_context.get_state_delta()
+      if any(state_delta.values()):
+        tool_context.actions.state_delta.update(state_delta)
 
   async def _ensure_skill_materialized_in_env(
       self, skill: models.Skill, file_path: str, env: BaseEnvironment
