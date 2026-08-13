@@ -115,24 +115,6 @@ def maybe_set_otel_providers(
     _logs.set_logger_provider(new_logger_provider)
 
 
-def otel_env_vars_enabled() -> bool:
-  """Returns whether the user configured any OTLP endpoint.
-
-  The exporters added by `maybe_set_otel_providers` are driven entirely by these
-  environment variables, so this is how a caller decides whether setting up OTel
-  providers would export anything at all.
-  """
-  return any(
-      os.getenv(endpoint_var)
-      for endpoint_var in (
-          otel_env.OTEL_EXPORTER_OTLP_ENDPOINT,
-          otel_env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
-          otel_env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
-          otel_env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT,
-      )
-  )
-
-
 def _get_otel_resource() -> Resource:
   # The OTELResourceDetector populates resource labels from
   # environment variables like OTEL_SERVICE_NAME and OTEL_RESOURCE_ATTRIBUTES.

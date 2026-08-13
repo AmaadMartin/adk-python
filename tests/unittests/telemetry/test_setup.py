@@ -16,7 +16,6 @@ import os
 from unittest import mock
 
 from google.adk.telemetry.setup import maybe_set_otel_providers
-from google.adk.telemetry.setup import otel_env_vars_enabled
 import pytest
 
 OTLP_ENDPOINT_ENV_VARS = (
@@ -135,29 +134,45 @@ def test_maybe_set_otel_providers(
 
 
 @pytest.mark.parametrize(
-    "env_vars, expected",
+    "env_vars",
     [
-        ({"OTEL_EXPORTER_OTLP_ENDPOINT": "some-endpoint"}, True),
-        ({"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "some-endpoint"}, True),
-        ({"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "some-endpoint"}, True),
-        ({"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "some-endpoint"}, True),
-        ({}, False),
-        ({"OTEL_EXPORTER_OTLP_ENDPOINT": ""}, False),
+        {},
+        {"OTEL_EXPORTER_OTLP_ENDPOINT": ""},
     ],
 )
-def test_otel_env_vars_enabled(
+@pytest.mark.usefixtures("no_otlp_endpoint_env")
+def test_maybe_set_otel_providers_without_an_endpoint(
     env_vars: dict[str, str],
-    expected: bool,
     monkeypatch: pytest.MonkeyPatch,
-    no_otlp_endpoint_env,  # pylint: disable=unused-argument,redefined-outer-name
 ):
-  """Each OTLP endpoint variable opens the gate; an empty value does not."""
+  """No configured endpoint means no global provider is touched.
+
+  Callers rely on this to invoke the function unconditionally. An empty value
+  counts as unset.
+  """
   # Arrange.
   for k, v in env_vars.items():
     monkeypatch.setenv(k, v)
+  trace_provider_mock = mock.MagicMock()
+  monkeypatch.setattr(
+      "opentelemetry.trace.set_tracer_provider",
+      trace_provider_mock,
+  )
+  meter_provider_mock = mock.MagicMock()
+  monkeypatch.setattr(
+      "opentelemetry.metrics.set_meter_provider",
+      meter_provider_mock,
+  )
+  logs_provider_mock = mock.MagicMock()
+  monkeypatch.setattr(
+      "opentelemetry._logs.set_logger_provider",
+      logs_provider_mock,
+  )
 
   # Act.
-  enabled = otel_env_vars_enabled()
+  maybe_set_otel_providers()
 
   # Assert.
-  assert enabled is expected
+  trace_provider_mock.assert_not_called()
+  meter_provider_mock.assert_not_called()
+  logs_provider_mock.assert_not_called()

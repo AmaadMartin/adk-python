@@ -690,76 +690,27 @@ def _make_agent_dir(tmp_path: Path, name: str) -> Path:
   return agent_dir
 
 
-@pytest.mark.parametrize("env_var", OTLP_ENDPOINT_ENV_VARS)
+@pytest.fixture
+def stub_otel_span_exporter(monkeypatch: pytest.MonkeyPatch) -> None:
+  """Keeps the tracer setup off the network by faking the OTLP exporter."""
+  monkeypatch.setattr(
+      "google.adk.telemetry.setup._get_otel_span_exporter",
+      lambda: mock.MagicMock(),
+  )
+
+
+@pytest.mark.usefixtures("no_otlp_endpoint_env", "stub_otel_span_exporter")
 def test_cli_run_sets_up_otel_from_env(
-    env_var: str,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    no_otlp_endpoint_env,  # pylint: disable=unused-argument,redefined-outer-name
 ) -> None:
-  """`adk run` installs the OTel providers when an OTLP endpoint is set."""
+  """`adk run` registers a tracer provider when an OTLP endpoint is set."""
   # Arrange
   agent_dir = _make_agent_dir(tmp_path, "agent_otel")
-  monkeypatch.setenv(env_var, "http://localhost:4318")
+  monkeypatch.setenv(
+      "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://localhost:4318/v1/traces"
+  )
   monkeypatch.setattr("google.adk.cli.cli.run_cli", mock.AsyncMock())
-  mock_set_providers = mock.Mock()
-  monkeypatch.setattr(
-      "google.adk.telemetry.setup.maybe_set_otel_providers",
-      mock_set_providers,
-  )
-
-  runner = CliRunner()
-
-  # Act
-  result = runner.invoke(cli_tools_click.main, ["run", str(agent_dir)])
-
-  # Assert
-  assert result.exit_code == 0
-  mock_set_providers.assert_called_once_with()
-
-
-def test_cli_run_sets_up_otel_from_env_with_query(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    no_otlp_endpoint_env,  # pylint: disable=unused-argument,redefined-outer-name
-) -> None:
-  """The single-query path installs the providers too."""
-  # Arrange
-  agent_dir = _make_agent_dir(tmp_path, "agent_otel_query")
-  monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
-  monkeypatch.setattr(
-      "google.adk.cli.cli.run_once_cli", mock.AsyncMock(return_value=0)
-  )
-  mock_set_providers = mock.Mock()
-  monkeypatch.setattr(
-      "google.adk.telemetry.setup.maybe_set_otel_providers",
-      mock_set_providers,
-  )
-
-  runner = CliRunner()
-
-  # Act
-  result = runner.invoke(cli_tools_click.main, ["run", str(agent_dir), "hello"])
-
-  # Assert
-  assert result.exit_code == 0
-  mock_set_providers.assert_called_once_with()
-
-
-def test_cli_run_without_otel_env_registers_no_provider(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    no_otlp_endpoint_env,  # pylint: disable=unused-argument,redefined-outer-name
-) -> None:
-  """With no OTLP endpoint configured, `adk run` touches no global provider."""
-  # Arrange
-  agent_dir = _make_agent_dir(tmp_path, "agent_no_otel")
-  monkeypatch.setattr("google.adk.cli.cli.run_cli", mock.AsyncMock())
-  mock_set_providers = mock.Mock()
-  monkeypatch.setattr(
-      "google.adk.telemetry.setup.maybe_set_otel_providers",
-      mock_set_providers,
-  )
   mock_set_tracer_provider = mock.Mock()
   monkeypatch.setattr(
       "opentelemetry.trace.set_tracer_provider", mock_set_tracer_provider
@@ -772,21 +723,82 @@ def test_cli_run_without_otel_env_registers_no_provider(
 
   # Assert
   assert result.exit_code == 0
-  mock_set_providers.assert_not_called()
-  # Guards against a bare TracerProvider() being registered unconditionally,
-  # which would make every ADK span record and export nowhere.
+  mock_set_tracer_provider.assert_called_once()
+
+
+@pytest.mark.usefixtures("no_otlp_endpoint_env", "stub_otel_span_exporter")
+def test_cli_run_sets_up_otel_from_env_with_query(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """The single-query path registers the provider too."""
+  # Arrange
+  agent_dir = _make_agent_dir(tmp_path, "agent_otel_query")
+  monkeypatch.setenv(
+      "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "http://localhost:4318/v1/traces"
+  )
+  monkeypatch.setattr(
+      "google.adk.cli.cli.run_once_cli", mock.AsyncMock(return_value=0)
+  )
+  mock_set_tracer_provider = mock.Mock()
+  monkeypatch.setattr(
+      "opentelemetry.trace.set_tracer_provider", mock_set_tracer_provider
+  )
+
+  runner = CliRunner()
+
+  # Act
+  result = runner.invoke(cli_tools_click.main, ["run", str(agent_dir), "hello"])
+
+  # Assert
+  assert result.exit_code == 0
+  mock_set_tracer_provider.assert_called_once()
+
+
+@pytest.mark.usefixtures("no_otlp_endpoint_env")
+def test_cli_run_without_otel_env_registers_no_provider(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """With no OTLP endpoint configured, `adk run` touches no global provider."""
+  # Arrange
+  agent_dir = _make_agent_dir(tmp_path, "agent_no_otel")
+  monkeypatch.setattr("google.adk.cli.cli.run_cli", mock.AsyncMock())
+  mock_set_tracer_provider = mock.Mock()
+  monkeypatch.setattr(
+      "opentelemetry.trace.set_tracer_provider", mock_set_tracer_provider
+  )
+  mock_set_meter_provider = mock.Mock()
+  monkeypatch.setattr(
+      "opentelemetry.metrics.set_meter_provider", mock_set_meter_provider
+  )
+  mock_set_logger_provider = mock.Mock()
+  monkeypatch.setattr(
+      "opentelemetry._logs.set_logger_provider", mock_set_logger_provider
+  )
+
+  runner = CliRunner()
+
+  # Act
+  result = runner.invoke(cli_tools_click.main, ["run", str(agent_dir)])
+
+  # Assert
+  assert result.exit_code == 0
+  # A user who registers their own provider from the agent module keeps it, and
+  # ADK records no spans that export nowhere.
   mock_set_tracer_provider.assert_not_called()
+  mock_set_meter_provider.assert_not_called()
+  mock_set_logger_provider.assert_not_called()
 
 
+@pytest.mark.usefixtures("no_otlp_endpoint_env")
 def test_cli_run_otel_env_setup_precedes_the_run(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    no_otlp_endpoint_env,  # pylint: disable=unused-argument,redefined-outer-name
 ) -> None:
   """The providers are installed before the agent runs, so spans are captured."""
   # Arrange
   agent_dir = _make_agent_dir(tmp_path, "agent_otel_order")
-  monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318")
   call_log: List[str] = []
   monkeypatch.setattr(
       "google.adk.telemetry.setup.maybe_set_otel_providers",

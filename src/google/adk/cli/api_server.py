@@ -50,6 +50,7 @@ from fastapi.websockets import WebSocket
 from fastapi.websockets import WebSocketDisconnect
 from google.genai import types
 from opentelemetry import trace
+import opentelemetry.sdk.environment_variables as otel_env
 from opentelemetry.sdk.trace import export as export_lib
 from opentelemetry.sdk.trace import ReadableSpan
 from opentelemetry.sdk.trace import SpanProcessor
@@ -532,13 +533,11 @@ def _setup_telemetry(
     otel_to_cloud: bool = False,
     internal_exporters: Optional[list[SpanProcessor]] = None,
 ):
-  from ..telemetry.setup import otel_env_vars_enabled
-
   # TODO - remove the else branch here once maybe_set_otel_providers is no
   # longer experimental.
   if otel_to_cloud:
     _setup_gcp_telemetry(internal_exporters=internal_exporters)
-  elif otel_env_vars_enabled():
+  elif _otel_env_vars_enabled():
     _setup_telemetry_from_env(internal_exporters=internal_exporters)
   else:
     # Old logic - to be removed when above leaves experimental.
@@ -547,6 +546,18 @@ def _setup_telemetry(
       for exporter in internal_exporters:
         tracer_provider.add_span_processor(exporter)
     trace.set_tracer_provider(tracer_provider=tracer_provider)
+
+
+def _otel_env_vars_enabled() -> bool:
+  return any([
+      os.getenv(endpoint_var)
+      for endpoint_var in [
+          otel_env.OTEL_EXPORTER_OTLP_ENDPOINT,
+          otel_env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT,
+          otel_env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT,
+          otel_env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT,
+      ]
+  ])
 
 
 def _setup_gcp_telemetry(
