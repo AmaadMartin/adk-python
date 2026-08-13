@@ -60,9 +60,8 @@ class _NlPlanningRequestProcessor(BaseLlmRequestProcessor):
 
       _remove_thought_from_request(llm_request)
 
-    # Maintain async generator behavior
-    if False:  # Ensures it behaves as a generator
-      yield  # This is a no-op but maintains generator structure
+    return
+    yield  # AsyncGenerator requires a yield in function body.
 
 
 request_processor = _NlPlanningRequestProcessor()
