@@ -1744,6 +1744,18 @@ class TestFactoryAcceptsTransport:
 
     assert _factory_accepts_transport(factory) is False
 
+  def test_positional_only_transport_does_not_opt_in(self):
+    """Test that a positional-only `transport` does not opt in.
+
+    ADK passes the transport by keyword, which a positional-only parameter
+    cannot accept.
+    """
+
+    def factory(transport=None, /, headers=None, timeout=None, auth=None):
+      del transport, headers, timeout, auth
+
+    assert _factory_accepts_transport(factory) is False
+
   def test_callable_object_declaring_transport(self):
     """Test that a callable object opts in through its __call__ signature."""
 
@@ -1965,6 +1977,61 @@ class TestCreateClientTransportComposition:
     http_client = mock_streamable_http_client.call_args.kwargs["http_client"]
     assert isinstance(http_client._transport, _SharedAsyncTransport)
     assert http_client._transport._transport is mock_transport
+
+  @pytest.mark.asyncio
+  async def test_composed_client_sends_through_adk_transport(self):
+    """Test the composed client end to end, with no mocks.
+
+    A real request must reach ADK's transport while the user's own client
+    configuration stays active, and closing the client must leave the shared
+    transport open.
+    """
+
+    class RecordingTransport(httpx.AsyncBaseTransport):
+      """A stand-in for the mTLS transport that records what it sends."""
+
+      def __init__(self):
+        self.requests = []
+        self.closed = False
+
+      async def handle_async_request(
+          self, request: httpx.Request
+      ) -> httpx.Response:
+        self.requests.append(request)
+        return httpx.Response(200, text="ok")
+
+      async def aclose(self) -> None:
+        self.closed = True
+
+    adk_transport = RecordingTransport()
+    hooked_urls = []
+
+    async def log_request(request: httpx.Request) -> None:
+      hooked_urls.append(str(request.url))
+
+    def user_factory(headers=None, timeout=None, auth=None, *, transport=None):
+      return httpx.AsyncClient(
+          headers=headers,
+          timeout=timeout,
+          auth=auth,
+          transport=transport,
+          event_hooks={"request": [log_request]},
+      )
+
+    params = StreamableHTTPConnectionParams(
+        url="https://example.com/mcp", httpx_client_factory=user_factory
+    )
+
+    factory = _resolve_mtls_factory(params, adk_transport)
+    client = factory(headers={"x-test": "1"})
+    async with client:
+      response = await client.get("https://example.com/mcp")
+
+    assert response.status_code == 200
+    assert len(adk_transport.requests) == 1
+    assert adk_transport.requests[0].headers["x-test"] == "1"
+    assert hooked_urls == ["https://example.com/mcp"]
+    assert adk_transport.closed is False
 
   @pytest.mark.asyncio
   async def test_composed_client_close_does_not_close_shared_transport(self):
