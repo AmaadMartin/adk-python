@@ -78,6 +78,23 @@ class _RecordingCodeExecutor(BaseCodeExecutor):
     return CodeExecutionResult(stdout='ok')
 
 
+class _SandboxRecordingCodeExecutor(BaseCodeExecutor):
+  """A code executor that records a sandbox name on the caller's context."""
+
+  sandbox_name: str = 'sandbox-1'
+
+  def execute_code(
+      self,
+      invocation_context,
+      code_execution_input: CodeExecutionInput,
+  ) -> CodeExecutionResult:
+    assert code_execution_input.code_executor_context is not None
+    code_execution_input.code_executor_context.set_sandbox_name(
+        self.sandbox_name
+    )
+    return CodeExecutionResult(stdout='ok')
+
+
 @pytest.mark.asyncio
 @patch('google.adk.flows.llm_flows._code_execution.datetime')
 async def test_builtin_code_executor_image_artifact_creation(mock_datetime):
@@ -362,6 +379,82 @@ async def test_pre_processor_runs_execute_code_off_the_loop():
   ]
 
   assert record.thread is not threading.main_thread()
+
+
+@pytest.mark.asyncio
+async def test_post_processor_publishes_sandbox_name_state_delta():
+  """The post-processor publishes a sandbox name the executor recorded."""
+  code_executor = _SandboxRecordingCodeExecutor()
+  agent = Agent(name='test_agent', code_executor=code_executor)
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content='test message'
+  )
+  invocation_context.artifact_service = MagicMock()
+  invocation_context.artifact_service.save_artifact = AsyncMock()
+
+  llm_response = LlmResponse(
+      content=types.Content(
+          parts=[types.Part(text='```python\nprint("hello")\n```')]
+      )
+  )
+
+  events = [
+      event
+      async for event in response_processor.run_async(
+          invocation_context, llm_response
+      )
+  ]
+
+  result_event = events[-1]
+  assert (
+      result_event.actions.state_delta['_code_execution_context'][
+          'sandbox_name'
+      ]
+      == 'sandbox-1'
+  )
+
+
+@pytest.mark.asyncio
+async def test_pre_processor_publishes_sandbox_name_state_delta():
+  """The pre-processor publishes a sandbox name the executor recorded."""
+  code_executor = _SandboxRecordingCodeExecutor(optimize_data_file=True)
+  agent = Agent(name='test_agent', code_executor=code_executor)
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content='test message'
+  )
+  invocation_context.artifact_service = MagicMock()
+  invocation_context.artifact_service.save_artifact = AsyncMock()
+
+  llm_request = LlmRequest(
+      contents=[
+          types.Content(
+              role='user',
+              parts=[
+                  types.Part(
+                      inline_data=types.Blob(
+                          mime_type='text/csv',
+                          data=b'col1,col2\n1,2\n',
+                      )
+                  )
+              ],
+          )
+      ]
+  )
+
+  events = [
+      event
+      async for event in request_processor.run_async(
+          invocation_context, llm_request
+      )
+  ]
+
+  result_event = events[-1]
+  assert (
+      result_event.actions.state_delta['_code_execution_context'][
+          'sandbox_name'
+      ]
+      == 'sandbox-1'
+  )
 
 
 def test_get_content_as_bytes_returns_bytes_unchanged():

@@ -24,10 +24,13 @@ from unittest import mock
 
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.code_executors.base_code_executor import BaseCodeExecutor
+from google.adk.code_executors.code_execution_utils import CodeExecutionInput
 from google.adk.code_executors.code_execution_utils import CodeExecutionResult
 from google.adk.code_executors.unsafe_local_code_executor import UnsafeLocalCodeExecutor
 from google.adk.environment import BaseEnvironment
+from google.adk.events import EventActions
 from google.adk.models import llm_request as llm_request_model
+from google.adk.sessions.state import State
 from google.adk.skills import models
 from google.adk.tools import skill_toolset
 from google.adk.tools import tool_context
@@ -792,6 +795,31 @@ def _make_mock_executor(stdout="", stderr=""):
   return executor
 
 
+class _SandboxRecordingCodeExecutor(BaseCodeExecutor):
+  """A code executor that records a sandbox name on the caller's context."""
+
+  fail: bool = False
+
+  def execute_code(
+      self,
+      invocation_context,
+      code_execution_input: CodeExecutionInput,
+  ) -> CodeExecutionResult:
+    assert code_execution_input.code_executor_context is not None
+    code_execution_input.code_executor_context.set_sandbox_name("sandbox-1")
+    if self.fail:
+      raise RuntimeError("boom")
+    return CodeExecutionResult(stdout="ok")
+
+
+def _make_tool_context_with_real_state():
+  """Creates a mock ToolContext with a real State and EventActions."""
+  ctx = _make_tool_context_with_agent()
+  ctx.state = State({}, {})
+  ctx.actions = EventActions()
+  return ctx
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "args, expected_error_code",
@@ -1285,6 +1313,48 @@ async def test_execute_script_agent_executor_fallback(mock_skill1):
   )
   assert result["stdout"] == "from agent\n"
   agent_executor.execute_code.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_script_publishes_code_executor_state_delta(mock_skill1):
+  """A sandbox name the executor records reaches the tool's state delta."""
+  executor = _SandboxRecordingCodeExecutor()
+  toolset = skill_toolset.SkillToolset([mock_skill1], code_executor=executor)
+  tool = skill_toolset.RunSkillScriptTool(toolset)
+  ctx = _make_tool_context_with_real_state()
+
+  result = await tool.run_async(
+      args={"skill_name": "skill1", "file_path": "run.py"},
+      tool_context=ctx,
+  )
+
+  assert result["status"] == "success"
+  assert (
+      ctx.actions.state_delta["_code_execution_context"]["sandbox_name"]
+      == "sandbox-1"
+  )
+
+
+@pytest.mark.asyncio
+async def test_execute_script_publishes_state_delta_when_script_fails(
+    mock_skill1,
+):
+  """A sandbox created by a failing script is still recorded."""
+  executor = _SandboxRecordingCodeExecutor(fail=True)
+  toolset = skill_toolset.SkillToolset([mock_skill1], code_executor=executor)
+  tool = skill_toolset.RunSkillScriptTool(toolset)
+  ctx = _make_tool_context_with_real_state()
+
+  result = await tool.run_async(
+      args={"skill_name": "skill1", "file_path": "run.py"},
+      tool_context=ctx,
+  )
+
+  assert result["error_code"] == "EXECUTION_ERROR"
+  assert (
+      ctx.actions.state_delta["_code_execution_context"]["sandbox_name"]
+      == "sandbox-1"
+  )
 
 
 @pytest.mark.asyncio
