@@ -251,7 +251,7 @@ async def similarity_search(
   the text query automatically, then use the embedding vector to do similarity
   search and to return requested data. This is suitable when the Spanner table
   contains a column that stores the embeddings of the data that we want to
-  search the `query` against.
+  search the ``query`` against.
 
   Args:
       project_id (str): The GCP project id in which the spanner database
@@ -269,28 +269,28 @@ async def similarity_search(
       embedding_options (Dict[str, str]): A dictionary of options to use for
         the embedding service. **Exactly one of the following three keys
         MUST be present in this dictionary**:
-        `vertex_ai_embedding_model_name`, `spanner_googlesql_embedding_model_name`,
-        or `spanner_postgresql_vertex_ai_embedding_model_endpoint`.
+        ``vertex_ai_embedding_model_name``,
+        ``spanner_googlesql_embedding_model_name``, or
+        ``spanner_postgresql_vertex_ai_embedding_model_endpoint``.
         - vertex_ai_embedding_model_name (str): (Supported both **GoogleSQL and
             PostgreSQL** dialects Spanner database) The name of a
-            public Vertex AI embedding model (e.g., `'text-embedding-005'`).
+            public Vertex AI embedding model (e.g., ``'text-embedding-005'``).
             If specified, the tool generates embeddings client-side using the
             Vertex AI embedding model.
         - spanner_googlesql_embedding_model_name (str): (For GoogleSQL dialect) The
           name of the embedding model that is registered in Spanner via a
-          `CREATE MODEL` statement. For more details, see
+          ``CREATE MODEL`` statement. For more details, see
           https://cloud.google.com/spanner/docs/ml-tutorial-embeddings#generate_and_store_text_embeddings
           If specified, embedding generation is performed using Spanner's
-          `ML.PREDICT` function.
+          ``ML.PREDICT`` function.
         - spanner_postgresql_vertex_ai_embedding_model_endpoint (str):
           (For PostgreSQL dialect) The fully qualified endpoint of the Vertex AI
           embedding model, in the format of
-          `projects/$project/locations/$location/publishers/google/models/$model_name`,
+          ``projects/$project/locations/$location/publishers/google/models/$model_name``,
           where $project is the project hosting the Vertex AI endpoint,
-          $location is the location of the endpoint, and $model_name is
-          the name of the text embedding model.
-          If specified, embedding generation is performed using Spanner's
-          `spanner.ML_PREDICT_ROW` function.
+          $location is the location of the endpoint, and $model_name is the name
+          of the text embedding model. If specified, embedding generation is
+          performed using Spanner's ``spanner.ML_PREDICT_ROW`` function.
         - output_dimensionality: Optional. The output dimensionality of the
           embedding. If not specified, the embedding model's default output
           dimensionality will be used.

@@ -206,10 +206,11 @@ class SpannerVectorStore:
     Args:
       settings (SpannerToolSettings): The settings for the tool.
       credentials (Credentials | None): Credentials for Spanner operations. This
-        is used to initialize a new Spanner client only if `spanner_client`
+        is used to initialize a new Spanner client only if ``spanner_client``
         is not explicitly provided.
-      spanner_client (spanner.Client | None): An pre-configured `spanner.Client`
-        instance. If not provided, a new client will be created.
+      spanner_client (spanner.Client | None): An pre-configured
+        ``spanner.Client`` instance. If not provided, a new client will be
+        created.
       genai_client (Client | None): Google GenAI client used for
         generating vector embeddings.
     """
@@ -276,7 +277,7 @@ class SpannerVectorStore:
 
     The vector store table is created based on the given settings.
     - **id_column** (STRING or text): The default primary key, typically a UUID.
-      Note: This column is only included in the DDL when `primary_key_columns`
+      Note: This column is only included in the DDL when ``primary_key_columns``
       is not specified in the settings.
     - **content_column** (STRING or text): The source text content used to
       generate the embedding.

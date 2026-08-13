@@ -156,7 +156,7 @@ def get_db_schema_version(db_url: str) -> str:
     db_url: The database URL.
 
   Returns:
-    The detected schema version as a string. Returns `LATEST_SCHEMA_VERSION`
+    The detected schema version as a string. Returns ``LATEST_SCHEMA_VERSION``
     if it's a new database.
   """
   engine = None

@@ -171,16 +171,16 @@ def _build_eval_runner_kwargs(
     app: Optional[App],
     internal_eval_plugins: list[BasePlugin],
 ) -> dict[str, Any]:
-  """Returns the Runner kwargs used to evaluate `root_agent`.
+  """Returns the Runner kwargs used to evaluate ``root_agent``.
 
-  When `app` is provided, the Runner is built from a copy of the App with the
-  internal eval plugins merged into `app.plugins`, so the App's
-  `context_cache_config`, `resumability_config`, and any other
+  When ``app`` is provided, the Runner is built from a copy of the App with the
+  internal eval plugins merged into ``app.plugins``, so the App's
+  ``context_cache_config``, ``resumability_config``, and any other
   application-wide configuration participate in the eval run. The copy leaves
-  the caller's App instance untouched, and `root_agent` is overridden so the
+  the caller's App instance untouched, and ``root_agent`` is overridden so the
   Runner targets the agent the caller asked to evaluate, which may be a
-  sub-agent. When `app` is None, the Runner is built from the bare
-  `root_agent` with only the internal eval plugins.
+  sub-agent. When ``app`` is None, the Runner is built from the bare
+  ``root_agent`` with only the internal eval plugins.
   """
   if app is None:
     return {
@@ -367,7 +367,9 @@ class _LiveSession:
       self.turn_complete_event.set()  # Unblock any waiters
 
   async def _consume_node_events(self) -> None:
-    """Drives a non-Agent `BaseNode` (e.g. `Workflow`) via `Runner.run_live`."""
+    """Drives a non-Agent ``BaseNode`` (e.g. ``Workflow``) via
+    ``Runner.run_live``.
+    """
     from google.genai import errors
 
     # TODO: Remove once the live flow fires before/after_model_callback natively.
@@ -555,9 +557,9 @@ class EvaluationGenerator:
       agent_name: The name of the agent that should be evaluated. This is
         usually the sub-agent.
       user_simulator_config: Optional configuration for the user simulator.
-        Only relevant for eval cases that use a `conversation_scenario` (which
-        are driven by `LlmBackedUserSimulator`); ignored for static
-        conversations. Pass an `LlmBackedUserSimulatorConfig` to override the
+        Only relevant for eval cases that use a ``conversation_scenario`` (which
+        are driven by ``LlmBackedUserSimulator``); ignored for static
+        conversations. Pass an ``LlmBackedUserSimulatorConfig`` to override the
         user-simulation model, max invocations, or custom instructions.
     """
     results = []
@@ -596,7 +598,7 @@ class EvaluationGenerator:
     """
     results = []
 
-    with open(session_path, "r") as f:
+    with open(session_path, "r", encoding="utf-8") as f:
       session_data = Session.model_validate_json(f.read())
       logger.info("Loaded session %s", session_path)
 
@@ -749,9 +751,9 @@ class EvaluationGenerator:
   ) -> list[Invocation]:
     """Scrapes the root agent in coordination with the user simulator in live mode.
 
-    Mirrors `_generate_inferences_from_root_agent`: when `app` is provided the
-    Runner carries the App's plugins and configuration, otherwise the bare
-    `root_agent` is used.
+    Mirrors ``_generate_inferences_from_root_agent``: when ``app`` is provided
+    the Runner carries the App's plugins and configuration, otherwise the bare
+    ``root_agent`` is used.
     """
     if not session_service:
       session_service = InMemorySessionService()
@@ -870,11 +872,11 @@ class EvaluationGenerator:
   ) -> list[Invocation]:
     """Scrapes the root agent in coordination with the user simulator.
 
-    If `app` is provided, the eval Runner is built from a copy of the App
-    with internal eval plugins merged into `app.plugins`, preserving the
-    App's `context_cache_config`, `resumability_config`, and any other
+    If ``app`` is provided, the eval Runner is built from a copy of the App
+    with internal eval plugins merged into ``app.plugins``, preserving the
+    App's ``context_cache_config``, ``resumability_config``, and any other
     application-wide configuration. Otherwise the Runner is built from
-    the bare `root_agent` with only the internal eval plugins, matching
+    the bare ``root_agent`` with only the internal eval plugins, matching
     the legacy behavior.
     """
 

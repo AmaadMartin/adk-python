@@ -42,7 +42,7 @@ class TrajectoryEvaluator(Evaluator):
 
   This evaluator compares the sequence of tools called by the agent against a
   list of expected calls and computes an average score based on one of the match
-  types: `EXACT`, `IN_ORDER`, or `ANY_ORDER`.
+  types: ``EXACT``, ``IN_ORDER``, or ``ANY_ORDER``.
 
   For each invocation being evaluated, this evaluator compares the list of
   tool calls produced by the agent with the list of expected tool calls using
@@ -52,12 +52,12 @@ class TrajectoryEvaluator(Evaluator):
   invocations in the eval case.
 
   The comparison can be done using one of following match types:
-    - `EXACT`: Requires a perfect match between the actual and expected tool
+    - ``EXACT``: Requires a perfect match between the actual and expected tool
       calls, with no extra or missing tool calls.
-    - `IN_ORDER`: Requires all tool calls from the expected list to be present
+    - ``IN_ORDER``: Requires all tool calls from the expected list to be present
       in the actual list, in the same order, but allows for other tool calls
       to appear in between.
-    - `ANY_ORDER`: Requires all tool calls from the expected list to be
+    - ``ANY_ORDER``: Requires all tool calls from the expected list to be
       present in the actual list, in any order, and allows for other tool
       calls to appear in between.
   """

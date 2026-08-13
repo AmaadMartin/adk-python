@@ -53,14 +53,14 @@ def validate_app_name(name: str) -> None:
 class App(BaseModel):
   """Represents an LLM-backed agentic application.
 
-  An `App` is the top-level container for an agentic system powered by LLMs.
-  It manages either a root agent (`root_agent`) or a root node (`root_node`),
-  which serves as the entry point for execution.
+  An ``App`` is the top-level container for an agentic system powered by LLMs.
+  It manages either a root agent (``root_agent``) or a root node
+  (``root_node``), which serves as the entry point for execution.
 
-  Exactly one of `root_agent` or `root_node` must be provided.
+  Exactly one of ``root_agent`` or ``root_node`` must be provided.
 
-  The `plugins` are application-wide components that provide shared capabilities
-  and services to the entire system.
+  The ``plugins`` are application-wide components that provide shared
+  capabilities and services to the entire system.
   """
 
   model_config = ConfigDict(

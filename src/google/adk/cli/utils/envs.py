@@ -29,11 +29,11 @@ _ADK_DISABLE_LOAD_DOTENV_ENV_VAR = 'ADK_DISABLE_LOAD_DOTENV'
 
 @functools.lru_cache(maxsize=1)
 def _get_explicit_env_keys() -> frozenset[str]:
-  """Returns env var keys set before ADK loads any `.env` files.
+  """Returns env var keys set before ADK loads any ``.env`` files.
 
   This snapshot is used to preserve user-provided environment variables while
-  still allowing later `.env` files to override earlier ones via
-  `override=True`.
+  still allowing later ``.env`` files to override earlier ones via
+  ``override=True``.
   """
   return frozenset(os.environ)
 
@@ -53,11 +53,11 @@ def _walk_to_root_until_found(folder: str, filename: str) -> str:
 def load_dotenv_for_agent(
     agent_name: str, agent_parent_folder: str, filename: str = '.env'
 ) -> None:
-  """Loads the `.env` file for the agent module.
+  """Loads the ``.env`` file for the agent module.
 
-  Explicit environment variables (present before the first `.env` load) are
-  preserved, while values loaded from `.env` may be overridden by later `.env`
-  loads.
+  Explicit environment variables (present before the first ``.env`` load) are
+  preserved, while values loaded from ``.env`` may be overridden by later
+  ``.env`` loads.
   """
   if is_env_enabled(_ADK_DISABLE_LOAD_DOTENV_ENV_VAR):
     logger.info(

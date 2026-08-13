@@ -298,10 +298,10 @@ class VertexAiMemoryBankService(BaseMemoryService):
   ) -> None:
     """Adds explicit memory items using Vertex Memory Bank.
 
-    By default, this writes directly via `memories.create`.
-    If `custom_metadata["enable_consolidation"]` is set to True, this uses
-    `memories.generate` with `direct_memories_source` so provided memories are
-    consolidated server-side.
+    By default, this writes directly via ``memories.create``.
+    If ``custom_metadata["enable_consolidation"]`` is set to True, this uses
+    ``memories.generate`` with ``direct_memories_source`` so provided memories
+    are consolidated server-side.
     """
     if _is_consolidation_enabled(custom_metadata):
       await self._add_memories_via_generate_direct_memories_source(

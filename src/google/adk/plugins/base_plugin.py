@@ -127,8 +127,8 @@ class BasePlugin(ABC):
       user_message: The message content input by user.
 
     Returns:
-      An optional `types.Content` to be returned to the ADK. Returning a
-      value to replace the user message. Returning `None` to proceed
+      An optional ``types.Content`` to be returned to the ADK. Returning a
+      value to replace the user message. Returning ``None`` to proceed
       normally.
     """
     pass
@@ -146,9 +146,9 @@ class BasePlugin(ABC):
         session information, the root agent, etc.
 
     Returns:
-      An optional `Event` to be returned to the ADK. Returning a value to
+      An optional ``Event`` to be returned to the ADK. Returning a value to
       halt execution of the runner and ends the runner with that event. Return
-      `None` to proceed normally.
+      ``None`` to proceed normally.
     """
     pass
 
@@ -165,8 +165,8 @@ class BasePlugin(ABC):
       event: The event raised by the runner.
 
     Returns:
-      An optional value. A non-`None` return may be used by the framework to
-      modify or replace the response. Returning `None` allows the original
+      An optional value. A non-``None`` return may be used by the framework to
+      modify or replace the response. Returning ``None`` allows the original
       response to be used.
     """
     pass
@@ -208,9 +208,9 @@ class BasePlugin(ABC):
       callback_context: The context for the agent invocation.
 
     Returns:
-      An optional `types.Content` object. If a value is returned, it will bypass
-      the agent's callbacks and its execution, and return this value directly.
-      Returning `None` allows the agent to proceed normally.
+      An optional ``types.Content`` object. If a value is returned, it will
+      bypass the agent's callbacks and its execution, and return this value
+      directly. Returning ``None`` allows the agent to proceed normally.
     """
     pass
 
@@ -224,7 +224,7 @@ class BasePlugin(ABC):
       callback_context: The context for the agent invocation.
 
     Returns:
-      An optional `types.Content` object. The content to return to the user.
+      An optional ``types.Content`` object. The content to return to the user.
       When the content is present, the provided content will be used as agent
       response and appended to event history as agent response.
     """
@@ -235,18 +235,18 @@ class BasePlugin(ABC):
   ) -> Optional[LlmResponse]:
     """Callback executed before a request is sent to the model.
 
-    This provides an opportunity to inspect, log, or modify the `LlmRequest`
+    This provides an opportunity to inspect, log, or modify the ``LlmRequest``
     object. It can also be used to implement caching by returning a cached
-    `LlmResponse`, which would skip the actual model call.
+    ``LlmResponse``, which would skip the actual model call.
 
     Args:
       callback_context: The context for the current agent call.
       llm_request: The prepared request object to be sent to the model.
 
     Returns:
-      An optional value. The interpretation of a non-`None` trigger an early
-      exit and returns the response immediately. Returning `None` allows the LLM
-      request to proceed normally.
+      An optional value. The interpretation of a non-``None`` trigger an early
+      exit and returns the response immediately. Returning ``None`` allows the
+      LLM request to proceed normally.
     """
     pass
 
@@ -256,15 +256,15 @@ class BasePlugin(ABC):
     """Callback executed after a response is received from the model.
 
     This is the ideal place to log model responses, collect metrics on token
-    usage, or perform post-processing on the raw `LlmResponse`.
+    usage, or perform post-processing on the raw ``LlmResponse``.
 
     Args:
       callback_context: The context for the current agent call.
       llm_response: The response object received from the model.
 
     Returns:
-      An optional value. A non-`None` return may be used by the framework to
-      modify or replace the response. Returning `None` allows the original
+      An optional value. A non-``None`` return may be used by the framework to
+      modify or replace the response. Returning ``None`` allows the original
       response to be used.
     """
     pass
@@ -289,7 +289,7 @@ class BasePlugin(ABC):
 
     Returns:
       An optional LlmResponse. If an LlmResponse is returned, it will be used
-      instead of propagating the error. Returning `None` allows the original
+      instead of propagating the error. Returning ``None`` allows the original
       error to be raised.
     """
     pass
@@ -313,8 +313,8 @@ class BasePlugin(ABC):
 
     Returns:
       An optional dictionary. If a dictionary is returned, it will stop the tool
-      execution and return this response immediately. Returning `None` uses the
-      original, unmodified arguments.
+      execution and return this response immediately. Returning ``None`` uses
+      the original, unmodified arguments.
     """
     pass
 
@@ -340,7 +340,7 @@ class BasePlugin(ABC):
     Returns:
       An optional dictionary. If a dictionary is returned, it will **replace**
       the original result from the tool. This allows for post-processing or
-      altering tool outputs. Returning `None` uses the original, unmodified
+      altering tool outputs. Returning ``None`` uses the original, unmodified
       result.
     """
     pass
@@ -366,7 +366,7 @@ class BasePlugin(ABC):
 
     Returns:
       An optional dictionary. If a dictionary is returned, it will be used as
-      the tool response instead of propagating the error. Returning `None`
+      the tool response instead of propagating the error. Returning ``None``
       allows the original error to be raised.
     """
     pass

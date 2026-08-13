@@ -91,9 +91,10 @@ class EventarcToolset(BaseToolset):
   ) -> GoogleTool:
     """Creates a domain-specific publish tool with static or dynamic bindings.
 
-    This acts as a wrapper around the generic `publish_message` tool, allowing
-    developers to lock down specific CloudEvent attributes (like `bus`, `type`,
-    or `source`) or make them dynamically generated based on the payload.
+    This acts as a wrapper around the generic ``publish_message`` tool, allowing
+    developers to lock down specific CloudEvent attributes (like ``bus``,
+    ``type``, or ``source``) or make them dynamically generated based on the
+    payload.
 
     Args:
         name: The name of the tool as exposed to the LLM agent.

@@ -92,10 +92,10 @@ def _detect_error_type_for_telemetry(
 ) -> Optional[str]:
   """Detects an error type from a tool response for telemetry purposes.
 
-  This does not modify the response. `_detect_error_in_response` is an optional
-  per-tool hook accessed via `getattr` to avoid adding a public API on
-  `BaseTool`. Any exception raised by the detector is logged and swallowed so
-  that telemetry logic never breaks tool execution.
+  This does not modify the response. ``_detect_error_in_response`` is an
+  optional per-tool hook accessed via ``getattr`` to avoid adding a public API
+  on ``BaseTool``. Any exception raised by the detector is logged and swallowed
+  so that telemetry logic never breaks tool execution.
 
   Args:
     tool: The tool whose response is being inspected.
@@ -104,8 +104,8 @@ def _detect_error_type_for_telemetry(
     function_response: The raw response returned by the tool.
 
   Returns:
-    The error type string reported by the tool's `_detect_error_in_response`
-    hook, or `None` if no error was detected, no hook is defined, or the hook
+    The error type string reported by the tool's ``_detect_error_in_response``
+    hook, or ``None`` if no error was detected, no hook is defined, or the hook
     raised an exception.
   """
   try:
@@ -1268,7 +1268,7 @@ def _try_decode_computer_use_image(
       is successfully decoded.
 
   Returns:
-    A list containing a `types.FunctionResponsePart` with the decoded image
+    A list containing a ``types.FunctionResponsePart`` with the decoded image
     data, or None if no image was found or decoding failed.
   """
 

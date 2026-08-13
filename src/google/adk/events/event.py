@@ -292,7 +292,7 @@ class Event(LlmResponse):
     user-facing response instead of replicating its logic.
 
     Note that when multiple agents participate in one invocation, there could be
-    one event has `is_final_response()` as True for each participating agent.
+    one event has ``is_final_response()`` as True for each participating agent.
     """
     if self.actions.skip_summarization or self.long_running_tool_ids:
       return True

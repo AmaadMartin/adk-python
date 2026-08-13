@@ -51,9 +51,9 @@ class ToolConfig(BaseModel):
 
   For examples:
 
-    1. For ADK built-in tool instances or classes in `google.adk.tools` package,
-    they can be referenced directly with the `name` and optionally with
-    `args`.
+    1. For ADK built-in tool instances or classes in ``google.adk.tools``
+    package, they can be referenced directly with the ``name`` and optionally
+    with ``args``.
 
     ```
     tools:
@@ -64,7 +64,7 @@ class ToolConfig(BaseModel):
           skip_summarization: true
     ```
 
-    2. For user-defined tool instances, the `name` is the fully qualified path
+    2. For user-defined tool instances, the ``name`` is the fully qualified path
     to the tool instance.
 
     ```
@@ -72,8 +72,8 @@ class ToolConfig(BaseModel):
       - name: my_package.my_module.my_tool
     ```
 
-    3. For user-defined tool classes (custom tools), the `name` is the fully
-    qualified path to the tool class and `args` is the arguments for the tool.
+    3. For user-defined tool classes (custom tools), the ``name`` is the fully
+    qualified path to the tool class and ``args`` is the arguments for the tool.
 
     ```
     tools:
@@ -83,8 +83,8 @@ class ToolConfig(BaseModel):
           my_tool_arg2: value2
     ```
 
-    4. For user-defined functions that generate tool instances, the `name` is
-    the fully qualified path to the function and `args` is passed to the
+    4. For user-defined functions that generate tool instances, the ``name`` is
+    the fully qualified path to the function and ``args`` is passed to the
     function as arguments.
 
     ```
@@ -101,7 +101,7 @@ class ToolConfig(BaseModel):
       ...
     ```
 
-    5. For user-defined function tools, the `name` is the fully qualified path
+    5. For user-defined function tools, the ``name`` is the fully qualified path
     to the function.
 
     ```

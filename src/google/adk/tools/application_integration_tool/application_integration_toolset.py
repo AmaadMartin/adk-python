@@ -110,7 +110,7 @@ class ApplicationIntegrationToolset(BaseToolset):  # type: ignore[misc]
     Args:
         project: The GCP project ID.
         location: The GCP location.
-        connection_template_override: Overrides `ExecuteConnection` default
+        connection_template_override: Overrides ``ExecuteConnection`` default
           integration name.
         integration: The integration name.
         triggers: The list of trigger names in the integration.

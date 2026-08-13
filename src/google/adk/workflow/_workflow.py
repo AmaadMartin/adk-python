@@ -512,13 +512,14 @@ class Workflow(BaseNode):
     """Prepare NodeState for starting a node.
 
     This method determines whether to reuse or recreate the node's state:
-    *   Creates a brand new `NodeState` if none exists.
-    *   Creates a fresh `NodeState` (preserving `run_counter`) if this is a new execution
-        (not resuming and not waiting) to avoid state carryover.
-    *   Reuses the existing `NodeState` if resuming from interrupt or waiting for inputs.
+    *   Creates a brand new ``NodeState`` if none exists.
+    *   Creates a fresh ``NodeState`` (preserving ``run_counter``) if this is a
+        new execution (not resuming and not waiting) to avoid state carryover.
+    *   Reuses the existing ``NodeState`` if resuming from interrupt or waiting
+        for inputs.
 
     Outcome: The node's state is updated with the trigger's input and source,
-    and its status is set to `RUNNING`.
+    and its status is set to ``RUNNING``.
     """
     if node_name not in loop_state.nodes:
       node_state = NodeState()

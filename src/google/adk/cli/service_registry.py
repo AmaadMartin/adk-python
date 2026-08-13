@@ -22,11 +22,12 @@ custom services.
 There are two ways to register custom services:
 
 1. YAML Configuration (Recommended for simple cases)
-   If your custom service can be instantiated with `MyService(uri="...", **kwargs)`,
-   you can register it without writing Python code by creating a `services.yaml`
-   or `services.yml` file in your agent directory (e.g., `my_agent/services.yaml`).
+   If your custom service can be instantiated with
+   ``MyService(uri="...", **kwargs)``, you can register it without writing
+   Python code by creating a ``services.yaml`` or ``services.yml`` file in your
+   agent directory (e.g., ``my_agent/services.yaml``).
 
-   Example `services.yaml`:
+   Example ``services.yaml``:
    ```yaml
    services:
      - scheme: mysession
@@ -37,13 +38,13 @@ There are two ways to register custom services:
        class: my_package.other_module.MyCustomMemoryService
    ```
 
-2. Python Registration (`services.py`)
-   For more complex initialization logic, create a `services.py` file in your
-   agent directory (e.g., `my_agent/services.py`). In this file, get the
+2. Python Registration (``services.py``)
+   For more complex initialization logic, create a ``services.py`` file in your
+   agent directory (e.g., ``my_agent/services.py``). In this file, get the
    registry instance and register your custom factory functions. This file can
-   be used for registration in addition to, or instead of, `services.yaml`.
+   be used for registration in addition to, or instead of, ``services.yaml``.
 
-   Example `services.py`:
+   Example ``services.py``:
    ```python
    from google.adk.cli.service_registry import get_service_registry
    from my_package.my_module import MyCustomSessionService
@@ -55,10 +56,10 @@ There are two ways to register custom services:
    get_service_registry().register_session_service("mysession", my_session_factory)
    ```
 
-Note: If both `services.yaml` (or `.yml`) and `services.py` are present in the
-same directory, services from **both** files will be loaded. YAML files are
-processed first, then `services.py`. If the same service scheme is defined in
-both, the definition in `services.py` will overwrite the one from YAML.
+Note: If both ``services.yaml`` (or ``.yml``) and ``services.py`` are present in
+the same directory, services from **both** files will be loaded. YAML files are
+processed first, then ``services.py``. If the same service scheme is defined in
+both, the definition in ``services.py`` will overwrite the one from YAML.
 """
 
 from __future__ import annotations

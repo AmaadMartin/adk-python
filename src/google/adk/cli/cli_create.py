@@ -198,7 +198,7 @@ def run_cmd(
     google_cloud_region: Optional[str],
     type: Optional[str],
 ) -> None:
-  """Runs `adk create` command to create agent template.
+  """Runs ``adk create`` command to create agent template.
 
   Args:
     agent_name: str, The name of the agent.

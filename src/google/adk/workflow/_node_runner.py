@@ -400,7 +400,7 @@ class NodeRunner:
   def _flush_deltas(self, event: Event, ctx: Context) -> None:
     """Move pending state/artifact deltas from ctx onto the event.
 
-    TODO: Handle non-persisted states (e.g. `temp:` prefixed keys)
+    TODO: Handle non-persisted states (e.g. ``temp:`` prefixed keys)
     that should flow through ctx but not be written to session events.
     """
     from ..events.event_actions import EventActions

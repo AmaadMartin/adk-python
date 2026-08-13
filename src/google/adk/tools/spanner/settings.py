@@ -128,7 +128,7 @@ class SpannerVectorStoreSettings(BaseModel):
 
   This is used for vector similarity search in a Spanner vector store table.
   Provide the vector store table and the embedding model settings to use with
-  the `vector_store_similarity_search` tool.
+  the ``vector_store_similarity_search`` tool.
   """
 
   project_id: str

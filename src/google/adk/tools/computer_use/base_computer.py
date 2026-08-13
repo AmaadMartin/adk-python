@@ -131,9 +131,11 @@ class BaseComputer(abc.ABC):
   ) -> ComputerState:
     """Types text at a specific x, y coordinate.
 
-    The system automatically presses ENTER after typing. To disable this, set `press_enter` to False.
-    The system automatically clears any existing content before typing the specified `text`. To disable this, set `clear_before_typing` to False.
-    The 'x' and 'y' values are absolute values, scaled to the height and width of the screen.
+    The system automatically presses ENTER after typing. To disable this, set
+    ``press_enter`` to False. The system automatically clears any existing
+    content before typing the specified ``text``. To disable this, set
+    ``clear_before_typing`` to False. The 'x' and 'y' values are absolute
+    values, scaled to the height and width of the screen.
 
     Args:
       x: The x-coordinate to type at.

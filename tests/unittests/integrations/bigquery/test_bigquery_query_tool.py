@@ -103,11 +103,11 @@ async def test_execute_sql_declaration_read_only(tool_settings):
           will be returned. Defaults to False.
 
     Returns:
-        dict: If `dry_run` is False, dictionary representing the result of the
+        dict: If ``dry_run`` is False, dictionary representing the result of the
               query. If the result contains the key "result_is_likely_truncated"
               with value True, it means that there may be additional rows matching
               the query not returned in the result.
-              If `dry_run` is True, dictionary with "dry_run_info" field
+              If ``dry_run`` is True, dictionary with "dry_run_info" field
               containing query information returned by BigQuery.
 
     Examples:
@@ -202,11 +202,11 @@ async def test_execute_sql_declaration_write(tool_settings):
           will be returned. Defaults to False.
 
     Returns:
-        dict: If `dry_run` is False, dictionary representing the result of the
+        dict: If ``dry_run`` is False, dictionary representing the result of the
               query. If the result contains the key "result_is_likely_truncated"
               with value True, it means that there may be additional rows matching
               the query not returned in the result.
-              If `dry_run` is True, dictionary with "dry_run_info" field
+              If ``dry_run`` is True, dictionary with "dry_run_info" field
               containing query information returned by BigQuery.
 
     Examples:
@@ -439,11 +439,11 @@ async def test_execute_sql_declaration_protected_write(tool_settings):
           will be returned. Defaults to False.
 
     Returns:
-        dict: If `dry_run` is False, dictionary representing the result of the
+        dict: If ``dry_run`` is False, dictionary representing the result of the
               query. If the result contains the key "result_is_likely_truncated"
               with value True, it means that there may be additional rows matching
               the query not returned in the result.
-              If `dry_run` is True, dictionary with "dry_run_info" field
+              If ``dry_run`` is True, dictionary with "dry_run_info" field
               containing query information returned by BigQuery.
 
     Examples:

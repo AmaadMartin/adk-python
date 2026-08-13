@@ -130,10 +130,10 @@ class LocalEvalService(BaseEvalService):
     """Initializes a LocalEvalService.
 
     Args:
-      app: Optional `App` that wraps `root_agent`. When provided, eval runs are
-        executed through a Runner built from the App, so `app.plugins`,
-        `app.context_cache_config`, and `app.resumability_config` are honored
-        during inference. When None, the legacy bare-agent path is used.
+      app: Optional ``App`` that wraps ``root_agent``. When provided, eval runs
+        are executed through a Runner built from the App, so ``app.plugins``,
+        ``app.context_cache_config``, and ``app.resumability_config`` are
+        honored during inference. When None, the legacy bare-agent path is used.
     """
     self._root_agent = root_agent
     self._app = app

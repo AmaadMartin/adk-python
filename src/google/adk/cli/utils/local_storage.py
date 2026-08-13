@@ -104,18 +104,19 @@ def create_local_artifact_service(
     per_agent: bool = False,
     app_name_to_dir: Optional[Mapping[str, str]] = None,
 ) -> BaseArtifactService:
-  """Creates a file-backed artifact service that persists data in `.adk/artifacts` folders.
+  """Creates a file-backed artifact service that persists data in
+  ``.adk/artifacts`` folders.
 
   Args:
-    base_dir: Directory whose `.adk` folder will store artifacts.
+    base_dir: Directory whose ``.adk`` folder will store artifacts.
     per_agent: If True, creates a PerAgentFileArtifactService that stores
-      artifacts in each agent's `.adk/artifacts` folder. If False, creates a
+      artifacts in each agent's ``.adk/artifacts`` folder. If False, creates a
       single FileArtifactService at base_dir/.adk/artifacts.
     app_name_to_dir: Optional mapping from logical app name to on-disk agent
       folder name. Only used when per_agent is True; defaults to identity.
 
   Returns:
-    A `BaseArtifactService` backed by the local filesystem.
+    A ``BaseArtifactService`` backed by the local filesystem.
   """
   if per_agent:
     logger.info("Using per-agent artifact storage rooted at %s", base_dir)
@@ -132,7 +133,7 @@ def create_local_artifact_service(
 
 
 class PerAgentDatabaseSessionService(BaseSessionService):
-  """Routes session storage to per-agent `.adk/session.db` files."""
+  """Routes session storage to per-agent ``.adk/session.db`` files."""
 
   def __init__(
       self,
@@ -259,7 +260,7 @@ class PerAgentDatabaseSessionService(BaseSessionService):
 
 
 class PerAgentFileArtifactService(BaseArtifactService):
-  """Routes artifact storage to per-agent `.adk/artifacts` folders."""
+  """Routes artifact storage to per-agent ``.adk/artifacts`` folders."""
 
   def __init__(
       self,
@@ -296,7 +297,7 @@ class PerAgentFileArtifactService(BaseArtifactService):
   async def _get_legacy_service(
       self, app_name: str
   ) -> Optional[BaseArtifactService]:
-    """Returns a reader for the pre-per-agent shared `.adk/artifacts` root.
+    """Returns a reader for the pre-per-agent shared ``.adk/artifacts`` root.
 
     Returns None for built-in agents (which already use that root) and when
     no legacy directory exists, so reads fall back only when there is legacy

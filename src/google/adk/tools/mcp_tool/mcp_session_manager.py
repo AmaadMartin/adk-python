@@ -157,7 +157,7 @@ class _StreamableHttpClientWrapper:
 
 
 def _has_cancelled_error_context(exc: BaseException) -> bool:
-  """Returns True if `exc` is/was caused by `asyncio.CancelledError`.
+  """Returns True if ``exc`` is/was caused by ``asyncio.CancelledError``.
 
   Cancellation can be translated into other exceptions during teardown (e.g.
   connection errors) while still retaining the original cancellation in an
@@ -346,7 +346,7 @@ def retry_on_errors(func):
   if the old one was disconnected.
 
   Cancellation is not retried and must be allowed to propagate. In async
-  runtimes, cancellation may surface as `asyncio.CancelledError` or as another
+  runtimes, cancellation may surface as ``asyncio.CancelledError`` or as another
   exception while the task is cancelling.
 
   Args:

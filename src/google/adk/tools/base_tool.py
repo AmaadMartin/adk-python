@@ -123,7 +123,7 @@ class BaseTool(ABC):
 
     NOTE:
       - Required if subclass uses the default implementation of
-        `process_llm_request` to add function declaration to LLM request.
+        ``process_llm_request`` to add function declaration to LLM request.
       - Otherwise, can be skipped, e.g. for a built-in GoogleSearch tool for
         Gemini.
 

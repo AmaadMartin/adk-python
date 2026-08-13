@@ -67,7 +67,7 @@ class ReplayManager:
 
     The index intentionally spans every invocation in the session so multi-turn
     conversation context stays visible during rehydration. Consumers that need
-    a single invocation must therefore filter by `invocation_id` themselves.
+    a single invocation must therefore filter by ``invocation_id`` themselves.
     """
     self._events_by_parent = {}
     self._transitive_events_by_parent = {}

@@ -141,7 +141,7 @@ class _ConformanceTestGemini(Gemini):
   """A mocked Gemini model for conformance test replay mode.
 
   This class is used to mock the Gemini model in conformance test replay mode.
-  It is a subclass of Gemini and overrides the `generate_content_async` method
+  It is a subclass of Gemini and overrides the ``generate_content_async`` method
   to
   return a mocked response from the provided recordings.
   """

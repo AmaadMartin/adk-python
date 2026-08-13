@@ -695,7 +695,7 @@ class BaseAgent(BaseNode, abc.ABC):
   ) -> SelfAgent:
     """Creates an agent from a config.
 
-    If sub-classes use a custom agent config, override `_parse_config` to
+    If sub-classes use a custom agent config, override ``_parse_config`` to
     return updated kwargs for the agent constructor.
 
     Args:

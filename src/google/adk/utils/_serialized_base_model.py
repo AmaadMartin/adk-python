@@ -27,8 +27,8 @@ class SerializedBaseModel(pydantic.BaseModel):
   conventions used in the web UI and external APIs, while allowing Python code
   to use snake_case.
 
-  Note: `model_dump_json()` is overridden to use `by_alias=True` by default to
-  ensure camelCase output in JSON serialization.
+  Note: ``model_dump_json()`` is overridden to use ``by_alias=True`` by default
+  to ensure camelCase output in JSON serialization.
   """
 
   model_config = pydantic.ConfigDict(

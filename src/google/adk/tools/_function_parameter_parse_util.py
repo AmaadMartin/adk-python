@@ -64,7 +64,7 @@ def _add_unevaluated_items_to_fixed_len_tuple_schema(
 ) -> dict[str, Any]:
   """Adds 'unevaluatedItems': False to schemas for fixed-length tuples.
 
-  For example, the schema for a parameter of type `tuple[float, float]` would
+  For example, the schema for a parameter of type ``tuple[float, float]`` would
   be:
   {
       "type": "array",
@@ -97,12 +97,12 @@ def _add_unevaluated_items_to_fixed_len_tuple_schema(
 def _normalize_tuple_schema_for_genai_schema(
     json_schema: Any,
 ) -> Any:
-  """Normalizes tuple schema keywords unsupported by `types.Schema`.
+  """Normalizes tuple schema keywords unsupported by ``types.Schema``.
 
-  Pydantic emits `prefixItems` for fixed-length tuples. `types.Schema` does not
-  support `prefixItems`, so we convert tuple item definitions into
-  `items.anyOf`. We also drop `unevaluatedItems`, which is unsupported by
-  `types.Schema`.
+  Pydantic emits ``prefixItems`` for fixed-length tuples. ``types.Schema`` does
+  not support ``prefixItems``, so we convert tuple item definitions into
+  ``items.anyOf``. We also drop ``unevaluatedItems``, which is unsupported by
+  ``types.Schema``.
 
   Args:
     json_schema: The JSON schema to normalize.

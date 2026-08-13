@@ -310,7 +310,7 @@ def _event_function_response_ids(event: Event) -> set[str]:
 
 
 def _longest_self_contained_prefix(events: list[Event]) -> list[Event]:
-  """Returns the longest prefix of `events` that is safe to compact.
+  """Returns the longest prefix of ``events`` that is safe to compact.
 
   Performs a single left-to-right pass tracking "open" obligations keyed by call
   id: a function call or a tool-confirmation / auth request opens one, and a
@@ -431,7 +431,7 @@ async def _run_compaction_for_token_threshold(
   """Runs post-invocation compaction based on a token threshold.
 
   If triggered, this compacts older raw events and keeps the last
-  `event_retention_size` raw events un-compacted.
+  ``event_retention_size`` raw events un-compacted.
   """
   if app.root_agent is None:
     return None
@@ -456,15 +456,15 @@ async def _run_compaction_for_sliding_window(
 
   This method implements the sliding window compaction logic. It determines
   if enough new invocations have occurred since the last compaction based on
-  `compaction_invocation_threshold`. If so, it selects a range of events to
-  compact based on `overlap_size`, and calls `maybe_compact_events` on the
+  ``compaction_invocation_threshold``. If so, it selects a range of events to
+  compact based on ``overlap_size``, and calls ``maybe_compact_events`` on the
   compactor.
 
   The compaction process is controlled by two parameters:
-  1.  `compaction_invocation_threshold`: The number of *new* user-initiated
+  1.  ``compaction_invocation_threshold``: The number of *new* user-initiated
   invocations that, once fully
       represented in the session's events, will trigger a compaction.
-  2.  `overlap_size`: The number of preceding invocations to include from the
+  2.  ``overlap_size``: The number of preceding invocations to include from the
   end of the last
       compacted range. This creates an overlap between consecutive compacted
       summaries,
@@ -475,55 +475,57 @@ async def _run_compaction_for_sliding_window(
   have been added to the session. It checks if a new compaction is needed.
 
   When a compaction is triggered:
-  -   The compactor identifies the range of `invocation_id`s to be summarized.
-  -   This range starts `overlap_size` invocations before the beginning of the
-      new block of `compaction_invocation_threshold` invocations and ends
+  -   The compactor identifies the range of ``invocation_id`` values to be
+      summarized.
+  -   This range starts ``overlap_size`` invocations before the beginning of the
+      new block of ``compaction_invocation_threshold`` invocations and ends
       with the last
       invocation
       in the current block.
-  -   A `CompactedEvent` is created, summarizing all events within this
+  -   A ``CompactedEvent`` is created, summarizing all events within this
   determined
-      `invocation_id` range. This `CompactedEvent` is then appended to the
+      ``invocation_id`` range. This ``CompactedEvent`` is then appended to the
       session.
 
-  Here is an example with `compaction_invocation_threshold = 2` and
-  `overlap_size = 1`:
-  Let's assume events are added for `invocation_id`s 1, 2, 3, and 4 in order.
+  Here is an example with ``compaction_invocation_threshold = 2`` and
+  ``overlap_size = 1``:
+  Let's assume events are added for ``invocation_id`` values 1, 2, 3, and 4 in
+  order.
 
-  1.  **After `invocation_id` 2 events are added:**
+  1.  **After** ``invocation_id`` **2 events are added:**
       -   The session now contains events for invocations 1 and 2. This
-      fulfills the `compaction_invocation_threshold = 2` criteria.
+      fulfills the ``compaction_invocation_threshold = 2`` criteria.
       -   Since this is the first compaction, the range starts from the
       beginning.
-      -   A `CompactedEvent` is generated, summarizing events within
-      `invocation_id` range [1, 2].
-      -   The session now contains: `[
+      -   A ``CompactedEvent`` is generated, summarizing events within
+      ``invocation_id`` range [1, 2].
+      -   The session now contains: ``[
           E(inv=1, role=user), E(inv=1, role=model),
           E(inv=2, role=user), E(inv=2, role=model),
-          CompactedEvent(inv=[1, 2])]`.
+          CompactedEvent(inv=[1, 2])]``.
 
-  2.  **After `invocation_id` 3 events are added:**
-      -   No compaction happens yet, because only 1 new invocation (`inv=3`)
+  2.  **After** ``invocation_id`` **3 events are added:**
+      -   No compaction happens yet, because only 1 new invocation (``inv=3``)
       has been completed since the last compaction, and
-      `compaction_invocation_threshold` is 2.
+      ``compaction_invocation_threshold`` is 2.
 
-  3.  **After `invocation_id` 4 events are added:**
+  3.  **After** ``invocation_id`` **4 events are added:**
       -   The session now contains new events for invocations 3 and 4, again
-      fulfilling `compaction_invocation_threshold = 2`.
-      -   The last `CompactedEvent` covered up to `invocation_id` 2. With
-      `overlap_size = 1`, the new compaction range
+      fulfilling ``compaction_invocation_threshold = 2``.
+      -   The last ``CompactedEvent`` covered up to ``invocation_id`` 2. With
+      ``overlap_size = 1``, the new compaction range
           will start one invocation before the new block (inv 3), which is
-          `invocation_id` 2.
-      -   The new compaction range is from `invocation_id` 2 to 4.
-      -   A new `CompactedEvent` is generated, summarizing events within
-      `invocation_id` range [2, 4].
-      -   The session now contains: `[
+          ``invocation_id`` 2.
+      -   The new compaction range is from ``invocation_id`` 2 to 4.
+      -   A new ``CompactedEvent`` is generated, summarizing events within
+      ``invocation_id`` range [2, 4].
+      -   The session now contains: ``[
           E(inv=1, role=user), E(inv=1, role=model),
           E(inv=2, role=user), E(inv=2, role=model),
           CompactedEvent(inv=[1, 2]),
           E(inv=3, role=user), E(inv=3, role=model),
           E(inv=4, role=user), E(inv=4, role=model),
-          CompactedEvent(inv=[2, 4])]`.
+          CompactedEvent(inv=[2, 4])]``.
 
 
   Args:

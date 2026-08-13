@@ -42,7 +42,7 @@ class VertexAiSearchTool(BaseTool):
 
   To dynamically customize the search configuration at runtime (e.g., set
   filter based on user context), subclass this tool and override the
-  `_build_vertex_ai_search_config` method.
+  ``_build_vertex_ai_search_config`` method.
 
   Example:
     ```python

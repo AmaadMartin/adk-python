@@ -78,9 +78,9 @@ async def start_as_current_node_span(
   """Creates a scope-based OpenTelemetry span, representing a node invocation.
 
   Implements emitting of the following spans:
-  - `invoke_agent {agent.name}`
-  - `invoke_workflow {workflow.name}`
-  - `invoke_node {node.name}`
+  - ``invoke_agent {agent.name}``
+  - ``invoke_workflow {workflow.name}``
+  - ``invoke_node {node.name}``
 
   invoke_agent spans align with OpenTelemetry Semantic Conventions (semconv)
   version 1.36 spans for backwards compatibility.
@@ -119,7 +119,9 @@ async def start_as_current_node_span(
 def _invoke_agent_span(
     context: Context, agent: BaseAgent
 ) -> Iterator[TelemetryContext]:
-  """Passes through an agent node; agents emit their own `invoke_agent` span."""
+  """Passes through an agent node; agents emit their own ``invoke_agent``
+  span.
+  """
   del agent
   token = context_api.attach(context.telemetry_context.otel_context)
   try:
@@ -132,7 +134,7 @@ def _invoke_agent_span(
 def _invoke_workflow_span(
     context: Context, workflow: Workflow
 ) -> Iterator[TelemetryContext]:
-  """Opens an `invoke_workflow` span plus its duration metric for ``node``."""
+  """Opens an ``invoke_workflow`` span plus its duration metric for ``node``."""
   with _use_invoke_workflow_span(
       workflow.name,
       context.session.id,
@@ -147,7 +149,7 @@ def _invoke_workflow_span(
 def _invoke_node_span(
     context: Context, node: BaseNode
 ) -> Iterator[TelemetryContext]:
-  """Opens an `invoke_node` span for a plain node."""
+  """Opens an ``invoke_node`` span for a plain node."""
   with tracer.start_as_current_span(
       f"invoke_node {node.name}",
       attributes={
@@ -179,7 +181,7 @@ def _use_invoke_workflow_span(
     *,
     otel_context: context_api.Context | None = None,
 ) -> Iterator[Span]:
-  """Opens an `invoke_workflow {workflow_name}` span."""
+  """Opens an ``invoke_workflow {workflow_name}`` span."""
   if otel_context is None:
     otel_context = context_api.get_current()
   # First workflow in the invocation is the root; subsequent ones are nested.

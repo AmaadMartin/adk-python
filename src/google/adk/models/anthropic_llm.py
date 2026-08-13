@@ -202,7 +202,7 @@ class AnthropicGenerateContentConfig(types.GenerateContentConfig):
     effort: The reasoning effort level for adaptive extended thinking. Set
       directly to guide the reasoning depth ("low", "medium", "high", "xhigh",
       "max"). This is the preferred alternative to the deprecated manual
-      `thinking_budget` on newer Claude models.
+      ``thinking_budget`` on newer Claude models.
   """
 
   effort: Optional[Literal["low", "medium", "high", "xhigh", "max"]] = Field(
@@ -235,15 +235,16 @@ def _build_effort_param(
   callers must use ``google.adk.models.AnthropicGenerateContentConfig`` and
   set the ``effort`` field directly.
   Using the standard ``thinking_config.thinking_level`` is explicitly
-  unsupported because the standard `ThinkingLevel` enum (4 levels) cannot map
+  unsupported because the standard ``ThinkingLevel`` enum (4 levels) cannot map
   consistently to Anthropic's 5 effort levels
   ("low", "medium", "high", "xhigh", "max").
 
-  Any attempt to set `thinking_level` will not be passed to the model and will
+  Any attempt to set ``thinking_level`` will not be passed to the model and will
   log a warning.
 
-  If `effort` is not set, we return `None`.
-  If `effort` and `thinking_level` are both set, `effort` takes precedence.
+  If ``effort`` is not set, we return ``None``.
+  If ``effort`` and ``thinking_level`` are both set, ``effort`` takes
+  precedence.
 
   Args:
     config: Optional GenerateContentConfig object.
@@ -726,11 +727,12 @@ class AnthropicLlm(BaseLlm):
 
   Note:
     Anthropic Claude supports 5 distinct effort levels ("low", "medium",
-    "high", "xhigh", "max") while the standard `ThinkingLevel` enum defines 4
+    "high", "xhigh", "max") while the standard ``ThinkingLevel`` enum defines 4
     levels (MINIMAL, LOW, MEDIUM, HIGH), the standard
-    `thinking_config.thinking_level` is not supported for Anthropic models.
-    To configure thinking effort, user must use `AnthropicGenerateContentConfig`
-    and set its `effort` field directly (e.g., `effort="xhigh"`).
+    ``thinking_config.thinking_level`` is not supported for Anthropic models.
+    To configure thinking effort, user must use
+    ``AnthropicGenerateContentConfig`` and set its ``effort`` field directly
+    (e.g., ``effort="xhigh"``).
 
   Attributes:
     model: The name of the Claude model.
@@ -1075,12 +1077,13 @@ class Claude(AnthropicLlm):
 
   Note:
     Because Anthropic Claude supports 5 distinct effort levels ("low", "medium",
-    "high", "xhigh", "max") while the standard `ThinkingLevel` enum defines 4
+    "high", "xhigh", "max") while the standard ``ThinkingLevel`` enum defines 4
     levels (MINIMAL, LOW, MEDIUM, HIGH), the standard
-    `thinking_config.thinking_level` is not supported for Anthropic models.
+    ``thinking_config.thinking_level`` is not supported for Anthropic models.
 
-    To configure thinking effort, user must use `AnthropicGenerateContentConfig`
-    and set its `effort` field directly (e.g., `effort="xhigh"`).
+    To configure thinking effort, user must use
+    ``AnthropicGenerateContentConfig`` and set its ``effort`` field directly
+    (e.g., ``effort="xhigh"``).
 
   Attributes:
     model: The name of the Claude model.

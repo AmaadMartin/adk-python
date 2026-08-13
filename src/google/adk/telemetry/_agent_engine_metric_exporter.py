@@ -190,7 +190,7 @@ def _floor_seconds() -> float:
 
 
 class _RequestDrivenMetricReader(metrics_export.MetricReader):
-  """A `MetricReader` whose collects are driven by the request lifecycle."""
+  """A ``MetricReader`` whose collects are driven by the request lifecycle."""
 
   def __init__(
       self,
@@ -455,7 +455,9 @@ def _metrics_flushing_span_processor(
     *,
     operation: str = "generate_content",
 ) -> SpanProcessor:
-  """Returns a span processor that collects on `generate_content` span starts."""
+  """Returns a span processor that collects on ``generate_content`` span
+  starts.
+  """
 
   class _MetricsFlushingSpanProcessor(SpanProcessor):
     """Fires a fire-and-forget collect on each matching span start (point 4)."""

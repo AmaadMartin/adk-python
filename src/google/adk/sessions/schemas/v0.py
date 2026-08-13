@@ -19,8 +19,8 @@ serialization. To migrate from the schemas in earlier ADK versions to this
 v0 schema, see
 https://github.com/google/adk-python/blob/main/docs/upgrading_from_1_22_0.md.
 
-The latest schema is defined in `v1.py`. That module uses JSON serialization
-for the EventActions data as well as other fields in the `events` table.
+The latest schema is defined in ``v1.py``. That module uses JSON serialization
+for the EventActions data as well as other fields in the ``events`` table.
 """
 
 from __future__ import annotations
@@ -174,7 +174,7 @@ class StorageSession(Base):
   def update_timestamp_tz(self) -> float:
     """Returns the update timestamp as a POSIX timestamp.
 
-    This is a compatibility alias for callers that used the pre-`main` API.
+    This is a compatibility alias for callers that used the pre-``main`` API.
     """
     sqlalchemy_session = inspect(self).session
     is_sqlite = bool(

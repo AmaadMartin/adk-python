@@ -37,7 +37,7 @@ from .base_credential_exchanger import BaseAuthCredentialExchanger
 class ServiceAccountCredentialExchanger(BaseAuthCredentialExchanger):
   """Fetches credentials for Google Service Account.
 
-  Uses the default service credential if `use_default_credential = True`.
+  Uses the default service credential if ``use_default_credential = True``.
   Otherwise, uses the service account credential provided in the auth
   credential.
 

@@ -61,8 +61,8 @@ class APIHubClient(BaseAPIHubClient):
     credential is used for sending request to API Hub API.
 
     Args:
-        access_token: Google Access token. Generate with gcloud cli `gcloud auth
-          print-access-token`. Useful for local testing.
+        access_token: Google Access token. Generate with gcloud cli ``gcloud
+          auth print-access-token``. Useful for local testing.
         service_account_json: The service account configuration as a dictionary.
           Required if not using default service credential.
     """

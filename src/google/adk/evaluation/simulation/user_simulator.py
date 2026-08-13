@@ -35,8 +35,8 @@ from ..evaluator import Evaluator
 class BaseUserSimulatorConfig(BaseModel):
   """Base class for configurations pertaining to user simulator.
 
-  Concrete subclasses MUST override `type` with a `Literal[...]` value
-  unique to that subclass (e.g. `Literal["llm_backed"]`).
+  Concrete subclasses MUST override ``type`` with a ``Literal[...]`` value
+  unique to that subclass (e.g. ``Literal["llm_backed"]``).
   """
 
   type: Optional[str] = Field(
@@ -154,18 +154,18 @@ def register_user_simulator(
     config_type: type[BaseUserSimulatorConfig],
     simulator_type: type[UserSimulator],
 ) -> None:
-  """Register a `UserSimulator` implementation for a given config subclass.
+  """Register a ``UserSimulator`` implementation for a given config subclass.
 
   This is the extension point for new user-simulator types. A new subclass
-  ships its own `BaseUserSimulatorConfig` subclass (with a unique
-  `Literal[...]` value for its `type` discriminator) and its own
-  `UserSimulator` subclass, then calls this function once at import time
+  ships its own ``BaseUserSimulatorConfig`` subclass (with a unique
+  ``Literal[...]`` value for its ``type`` discriminator) and its own
+  ``UserSimulator`` subclass, then calls this function once at import time
   (typically as an epilogue at the bottom of the simulator's own module) to
-  wire them together. `UserSimulatorProvider.provide` will then dispatch to
-  the new simulator whenever an `EvalConfig` carries a config of that type.
+  wire them together. ``UserSimulatorProvider.provide`` will then dispatch to
+  the new simulator whenever an ``EvalConfig`` carries a config of that type.
 
   Args:
-    config_type: The concrete `BaseUserSimulatorConfig` subclass.
-    simulator_type: The `UserSimulator` subclass that consumes it.
+    config_type: The concrete ``BaseUserSimulatorConfig`` subclass.
+    simulator_type: The ``UserSimulator`` subclass that consumes it.
   """
   _SIMULATOR_BY_CONFIG_TYPE[config_type] = simulator_type

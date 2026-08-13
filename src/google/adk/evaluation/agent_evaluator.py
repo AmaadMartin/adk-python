@@ -94,7 +94,7 @@ EXPECTED_TOOL_USE_COLUMN = "expected_tool_use"
 
 
 def load_json(file_path: str) -> Union[Dict[str, Any], List[Any]]:
-  with open(file_path, "r") as f:
+  with open(file_path, "r", encoding="utf-8") as f:
     return cast(Union[Dict[str, Any], List[Any]], json.load(f))
 
 
@@ -139,7 +139,7 @@ class AgentEvaluator:
     Args:
       agent_module: The path to python module that contains the definition of
         the agent. There is convention in place here, where the code is going to
-        look for 'root_agent' or `get_agent_async` in the loaded module.
+        look for 'root_agent' or ``get_agent_async`` in the loaded module.
       eval_set: The eval set.
       criteria: Evaluation criteria, a dictionary of metric names to their
         respective thresholds. This field is deprecated.
@@ -152,7 +152,7 @@ class AgentEvaluator:
         evaluation.
       artifact_service: The artifact service used to load artifacts during eval.
         Pre-load artifacts here and pin each eval case to a session id (via
-        `SessionInput.session_id`) to make them reachable. Defaults to an
+        ``SessionInput.session_id``) to make them reachable. Defaults to an
         in-memory service.
       output_file: If provided, per-invocation evaluation results (for both
         passing and failing metrics) are written to this path as a CSV file.
@@ -161,7 +161,7 @@ class AgentEvaluator:
       app_name: The application name used by eval set results manager while
         persisting eval set results.
       eval_set_results_manager: Optional manager used to persist the eval set
-        evaluation result as `*.evalset_result.json`.
+        evaluation result as ``*.evalset_result.json``.
     """
     if eval_set_results_manager is not None and not app_name:
       raise ValueError(
@@ -288,7 +288,7 @@ class AgentEvaluator:
       eval_dataset_file_path_or_dir: The eval data set. This can be either a
         string representing full path to the file containing eval dataset, or a
         directory that is recursively explored for all files that have a
-        `.test.json` suffix.
+        ``.test.json`` suffix.
       num_runs: Number of times all entries in the eval dataset should be
         assessed.
       agent_name: The name of the agent.
@@ -298,7 +298,7 @@ class AgentEvaluator:
         evaluation.
       artifact_service: The artifact service used to load artifacts during eval.
         Pre-load artifacts here and pin each eval case to a session id (via
-        `SessionInput.session_id`) to make them reachable. Defaults to an
+        ``SessionInput.session_id``) to make them reachable. Defaults to an
         in-memory service.
       output_file: If provided, per-invocation evaluation results are written to
         this path as a CSV file. Disabled by default. When the eval data spans
@@ -307,7 +307,7 @@ class AgentEvaluator:
       app_name: The application name used by eval set results manager while
         persisting eval set results.
       eval_set_results_manager: Optional manager used to persist the eval set
-        evaluation result as `*.evalset_result.json`.
+        evaluation result as ``*.evalset_result.json``.
     """
     if eval_set_results_manager is not None and not app_name:
       raise ValueError(
@@ -365,7 +365,7 @@ class AgentEvaluator:
         old_eval_data_file, eval_config, initial_session
     )
 
-    with open(new_eval_data_file, "w") as f:
+    with open(new_eval_data_file, "w", encoding="utf-8") as f:
       f.write(eval_set.model_dump_json(indent=2))
 
   @staticmethod
@@ -424,7 +424,7 @@ class AgentEvaluator:
   ) -> dict[str, Any]:
     initial_session: dict[str, Any] = {}
     if initial_session_file:
-      with open(initial_session_file, "r") as f:
+      with open(initial_session_file, "r", encoding="utf-8") as f:
         initial_session = json.loads(f.read())
     return initial_session
 
@@ -596,10 +596,10 @@ class AgentEvaluator:
   ) -> tuple[BaseAgent, Optional[App]]:
     """Returns the (agent_for_eval, app) pair for the given module.
 
-    If the module exposes an `App` instance via `agent.app`, that App is
-    returned alongside the agent to evaluate, so `app.plugins`, context-cache,
-    and resumability configs participate in the eval run. Otherwise `app` is
-    None and only the bare agent is returned. When `agent_name` is provided,
+    If the module exposes an ``App`` instance via ``agent.app``, that App is
+    returned alongside the agent to evaluate, so ``app.plugins``, context-cache,
+    and resumability configs participate in the eval run. Otherwise ``app`` is
+    None and only the bare agent is returned. When ``agent_name`` is provided,
     the returned agent is the corresponding sub-agent, but the App (if any) is
     still surfaced so its application-wide configuration is honored.
     """
@@ -856,9 +856,9 @@ class AgentEvaluator:
     """Returns failures that the per-invocation metric results cannot show.
 
     A run that produced no metric results at all, for example because
-    inferencing raised, leaves `_process_metrics_and_get_failures` with nothing
-    to derive a verdict from. The status recorded on the EvalCaseResult is the
-    only record that such a run failed, so we honor it here.
+    inferencing raised, leaves ``_process_metrics_and_get_failures`` with
+    nothing to derive a verdict from. The status recorded on the EvalCaseResult
+    is the only record that such a run failed, so we honor it here.
     """
     failed_runs = 0
     for eval_case_result in eval_results_per_eval_id:
@@ -888,7 +888,7 @@ class AgentEvaluator:
   ) -> list[dict[str, Any]]:
     """Flattens eval results into one row per metric per invocation.
 
-    The columns mirror the ones used in `_print_details`, with additional
+    The columns mirror the ones used in ``_print_details``, with additional
     identifier columns so that rows from different eval cases and metrics can be
     distinguished within a single CSV file.
     """

@@ -51,16 +51,16 @@ class BaseModelWithConfig(BaseModel, hide_input_in_errors=True):
   def __repr_args__(self) -> Iterator[tuple[str | None, Any]]:
     """Redacts the values of extra (unmodeled) fields from repr and str.
 
-    `extra="allow"` lets callers attach arbitrary keys to these credential
+    ``extra="allow"`` lets callers attach arbitrary keys to these credential
     models, and pydantic renders extras in repr unconditionally: marking a
-    declared field `repr=False` does nothing for a secret that arrives under an
-    unexpected key (e.g. a non-standard field in an OAuth2 token response).
+    declared field ``repr=False`` does nothing for a secret that arrives under
+    an unexpected key (e.g. a non-standard field in an OAuth2 token response).
     Redacting the values keeps them out of logs and out of error strings that
     reach the LLM, while still showing which keys were set.
 
     Yields:
-      `(name, value)` pairs to render, with the values of extra fields replaced
-      by a redaction placeholder.
+      ``(name, value)`` pairs to render, with the values of extra fields
+      replaced by a redaction placeholder.
     """
     extra = self.__pydantic_extra__ or {}
     for key, value in super().__repr_args__():

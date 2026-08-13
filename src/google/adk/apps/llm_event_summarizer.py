@@ -35,14 +35,14 @@ class LlmEventSummarizer(BaseEventsSummarizer):
 
   The actual logic for determining *when* to trigger compaction and *which*
   events form the sliding window (based on parameters like
-  `compaction_invocation_threshold` and `overlap_size` from
-  `EventsCompactionConfig`) is handled by an external component, such as an ADK
-  "Runner". This compactor focuses solely on generating a summary of the events
-  it receives.
+  ``compaction_invocation_threshold`` and ``overlap_size`` from
+  ``EventsCompactionConfig``) is handled by an external component, such as an
+  ADK "Runner". This compactor focuses solely on generating a summary of the
+  events it receives.
 
-  When `maybe_compact_events` is called with a list of events, this class
+  When ``maybe_compact_events`` is called with a list of events, this class
   formats the events, generates a summary using an LLM, and returns a new
-  `Event` containing the summary within an `EventCompaction`.
+  ``Event`` containing the summary within an ``EventCompaction``.
   """
 
   _DEFAULT_PROMPT_TEMPLATE = (
@@ -113,7 +113,7 @@ class LlmEventSummarizer(BaseEventsSummarizer):
     return '\n'.join(formatted_history)
 
   def _truncate(self, text: str) -> str:
-    """Caps `text` at the tool-content limit, marking dropped characters."""
+    """Caps ``text`` at the tool-content limit, marking dropped characters."""
     limit = self._MAX_TOOL_CONTENT_CHARS
     if len(text) <= limit:
       return text

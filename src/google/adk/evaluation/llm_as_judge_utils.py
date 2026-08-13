@@ -51,13 +51,13 @@ def get_text_from_content(
     *,
     include_intermediate_responses_in_final: bool = False,
 ) -> Optional[str]:
-  """Extracts text from a `Content` or an `Invocation`.
+  """Extracts text from a ``Content`` or an ``Invocation``.
 
-  When `content` is a `Content`, returns the concatenated text of its parts.
+  When ``content`` is a ``Content``, returns the concatenated text of its parts.
 
-  When `content` is an `Invocation`, returns the text of the invocation's final
-  response. If `include_intermediate_responses_in_final` is True, text from
-  intermediate invocation events (e.g. natural language emitted before tool
+  When ``content`` is an ``Invocation``, returns the text of the invocation's
+  final response. If ``include_intermediate_responses_in_final`` is True, text
+  from intermediate invocation events (e.g. natural language emitted before tool
   calls) is concatenated with the final response text.
   """
   if isinstance(content, Invocation):

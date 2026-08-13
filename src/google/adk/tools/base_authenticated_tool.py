@@ -36,8 +36,8 @@ logger = logging.getLogger("google_adk." + __name__)
 @experimental(FeatureName.BASE_AUTHENTICATED_TOOL)
 class BaseAuthenticatedTool(BaseTool):
   """A base tool class that handles authentication before the actual tool logic
-  gets called. Functions can accept a special `credential` argument which is the
-  credential ready for use.(Experimental)
+  gets called. Functions can accept a special ``credential`` argument which is
+  the credential ready for use.(Experimental)
   """
 
   def __init__(

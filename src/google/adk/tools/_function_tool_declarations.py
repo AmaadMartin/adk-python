@@ -15,10 +15,10 @@
 """Function tool declaration builder using Pydantic's JSON schema generation.
 
 This module provides a streamlined approach to building FunctionDeclaration
-objects by leveraging Pydantic's `create_model` and `model_json_schema()`
+objects by leveraging Pydantic's ``create_model`` and ``model_json_schema()``
 capabilities instead of manual type parsing.
 
-The GenAI SDK supports `parameters_json_schema` which accepts raw JSON schema,
+The GenAI SDK supports ``parameters_json_schema`` which accepts raw JSON schema,
 allowing us to delegate schema generation complexity to Pydantic.
 """
 
@@ -100,7 +100,7 @@ def _get_function_fields(
 def get_callable_name(func: Callable[..., Any]) -> str:
   """Returns the name a callable is advertised and registered under.
 
-  Callable objects carry no `__name__`, so they fall back to their class name.
+  Callable objects carry no ``__name__``, so they fall back to their class name.
   This is the single source of truth for both the declaration sent to the model
   and the key the tool is registered under: if the two disagree, the model is
   told about a tool it cannot invoke.
@@ -212,10 +212,11 @@ def build_function_declaration_with_json_schema(
   """Build a FunctionDeclaration using Pydantic's JSON schema generation.
 
   This function provides a simplified approach compared to manual type parsing.
-  It uses Pydantic's `create_model` to dynamically create a model from function
-  parameters, then uses `model_json_schema()` to generate the JSON schema.
+  It uses Pydantic's ``create_model`` to dynamically create a model from
+  function parameters, then uses ``model_json_schema()`` to generate the JSON
+  schema.
 
-  The generated schema is passed to `parameters_json_schema` which the GenAI
+  The generated schema is passed to ``parameters_json_schema`` which the GenAI
   SDK supports natively.
 
   Args:

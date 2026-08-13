@@ -78,7 +78,7 @@ _DEFAULT_TIMEOUT_SECONDS = 30.0
 class SqliteSpanExporter(SpanExporter):
   """Exports spans to a local SQLite database.
 
-  This is intended for local development (e.g. `adk web`) to allow reloading
+  This is intended for local development (e.g. ``adk web``) to allow reloading
   traces for older sessions after process restart.
   """
 

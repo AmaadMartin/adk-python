@@ -26,14 +26,14 @@ from pydantic import BaseModel
 def safe_json_serialize(obj: object) -> str:
   """Convert any Python object to a JSON-serializable type or string.
 
-  Handles Pydantic `BaseModel` instances (common as tool return types) by
-  calling `model_dump(mode="json")` before JSON encoding.
+  Handles Pydantic ``BaseModel`` instances (common as tool return types) by
+  calling ``model_dump(mode="json")`` before JSON encoding.
 
   Args:
     obj: The object to serialize.
 
   Returns:
-    The JSON-serialized object string or `<not serializable>` if the object
+    The JSON-serialized object string or ``<not serializable>`` if the object
     cannot be serialized.
   """
 
@@ -49,13 +49,13 @@ def safe_json_serialize(obj: object) -> str:
 
 
 def serialize_content(content: types.ContentUnion | None) -> AnyValue:
-  """Serialize a `types.ContentUnion` value into an OTel-friendly form.
+  """Serialize a ``types.ContentUnion`` value into an OTel-friendly form.
 
-  - `None` is preserved.
-  - Pydantic models are dumped via `model_dump()`.
+  - ``None`` is preserved.
+  - Pydantic models are dumped via ``model_dump()``.
   - Strings are returned as-is.
   - Lists are recursively serialized.
-  - Anything else falls back to `safe_json_serialize`.
+  - Anything else falls back to ``safe_json_serialize``.
   """
   if content is None:
     return None

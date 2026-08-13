@@ -32,14 +32,14 @@ logger = logging.getLogger("google_adk." + __name__)
 def _adjust_split_index_to_avoid_orphaned_function_responses(
     contents: Sequence[types.Content], split_index: int
 ) -> int:
-  """Moves `split_index` left until function calls/responses stay paired.
+  """Moves ``split_index`` left until function calls/responses stay paired.
 
-  When truncating context, we must avoid keeping a `function_response` while
-  dropping its matching preceding `function_call`.
+  When truncating context, we must avoid keeping a ``function_response`` while
+  dropping its matching preceding ``function_call``.
 
   Args:
     contents: Full conversation contents in chronological order.
-    split_index: Candidate split index (keep `contents[split_index:]`).
+    split_index: Candidate split index (keep ``contents[split_index:]``).
 
   Returns:
     A (possibly smaller) split index that preserves call/response pairs.
