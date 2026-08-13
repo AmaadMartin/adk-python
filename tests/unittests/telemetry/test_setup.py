@@ -16,7 +16,15 @@ import os
 from unittest import mock
 
 from google.adk.telemetry.setup import maybe_set_otel_providers
+from google.adk.telemetry.setup import otel_env_vars_enabled
 import pytest
+
+OTLP_ENDPOINT_ENV_VARS = (
+    "OTEL_EXPORTER_OTLP_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_METRICS_ENDPOINT",
+    "OTEL_EXPORTER_OTLP_LOGS_ENDPOINT",
+)
 
 
 @pytest.fixture
@@ -24,6 +32,13 @@ def mock_os_environ():
   initial_env = os.environ.copy()
   with mock.patch.dict(os.environ, initial_env, clear=False) as m:
     yield m
+
+
+@pytest.fixture
+def no_otlp_endpoint_env(monkeypatch: pytest.MonkeyPatch) -> None:
+  """Clears the OTLP endpoint variables the ambient environment may export."""
+  for env_var in OTLP_ENDPOINT_ENV_VARS:
+    monkeypatch.delenv(env_var, raising=False)
 
 
 @pytest.mark.parametrize(
@@ -117,3 +132,32 @@ def test_maybe_set_otel_providers(
   assert trace_provider_mock.call_count == (1 if should_setup_trace else 0)
   assert meter_provider_mock.call_count == (1 if should_setup_metrics else 0)
   assert logs_provider_mock.call_count == (1 if should_setup_logs else 0)
+
+
+@pytest.mark.parametrize(
+    "env_vars, expected",
+    [
+        ({"OTEL_EXPORTER_OTLP_ENDPOINT": "some-endpoint"}, True),
+        ({"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT": "some-endpoint"}, True),
+        ({"OTEL_EXPORTER_OTLP_METRICS_ENDPOINT": "some-endpoint"}, True),
+        ({"OTEL_EXPORTER_OTLP_LOGS_ENDPOINT": "some-endpoint"}, True),
+        ({}, False),
+        ({"OTEL_EXPORTER_OTLP_ENDPOINT": ""}, False),
+    ],
+)
+def test_otel_env_vars_enabled(
+    env_vars: dict[str, str],
+    expected: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    no_otlp_endpoint_env,  # pylint: disable=unused-argument,redefined-outer-name
+):
+  """Each OTLP endpoint variable opens the gate; an empty value does not."""
+  # Arrange.
+  for k, v in env_vars.items():
+    monkeypatch.setenv(k, v)
+
+  # Act.
+  enabled = otel_env_vars_enabled()
+
+  # Assert.
+  assert enabled is expected
