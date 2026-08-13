@@ -40,6 +40,12 @@ if TYPE_CHECKING:
 REQUEST_INPUT_FUNCTION_CALL_NAME = 'adk_request_input'
 REQUEST_CREDENTIAL_FUNCTION_CALL_NAME = 'adk_request_credential'
 
+RESPONSE_SCHEMA_ARG = 'response_schema'
+"""The wire key the response schema is written under."""
+
+_LEGACY_RESPONSE_SCHEMA_ARG = 'responseSchema'
+"""The spelling an older adk-js wrote; still read so those sessions resume."""
+
 _RESULT_KEY = 'result'
 """Key used to wrap non-dict values in a FunctionResponse dict."""
 
@@ -47,7 +53,7 @@ _RESULT_KEY = 'result'
 def create_request_input_event(request_input: RequestInput) -> Event:
   """Creates a RequestInput event from a RequestInput object."""
   args = request_input.model_dump(exclude={'response_schema'}, by_alias=True)
-  args['response_schema'] = (
+  args[RESPONSE_SCHEMA_ARG] = (
       schema_to_json_schema(request_input.response_schema)
       if request_input.response_schema is not None
       else None
@@ -67,6 +73,24 @@ def create_request_input_event(request_input: RequestInput) -> Event:
       ),
       long_running_tool_ids=[request_input.interrupt_id],
   )
+
+
+def get_response_schema_arg(args: Mapping[str, Any] | None) -> Any | None:
+  """Reads the response schema from `adk_request_input` function call args.
+
+  Args:
+    args: The function call's args, or None.
+
+  Returns:
+    The recorded JSON Schema, or None when neither spelling carries one.
+    `response_schema` wins when both are present.
+  """
+  if not args:
+    return None
+  schema = args.get(RESPONSE_SCHEMA_ARG)
+  if schema is None:
+    return args.get(_LEGACY_RESPONSE_SCHEMA_ARG)
+  return schema
 
 
 def has_request_input_function_call(event: Event) -> bool:

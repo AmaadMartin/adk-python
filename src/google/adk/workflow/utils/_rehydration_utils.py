@@ -29,6 +29,7 @@ from pydantic import ValidationError
 
 from ...events._node_path_builder import _NodePathBuilder
 from ...events.event import Event
+from ._workflow_hitl_utils import get_response_schema_arg
 from ._workflow_hitl_utils import REQUEST_INPUT_FUNCTION_CALL_NAME
 
 if TYPE_CHECKING:
@@ -100,7 +101,7 @@ def _extract_schema_from_event(event: Event, interrupt_id: str) -> Any | None:
         and fc.id == interrupt_id
         and fc.args is not None
     ):
-      return fc.args.get('response_schema')
+      return get_response_schema_arg(fc.args)
 
   return None
 

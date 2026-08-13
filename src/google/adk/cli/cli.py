@@ -42,6 +42,7 @@ from ..sessions.base_session_service import BaseSessionService
 from ..sessions.session import Session
 from ..utils.context_utils import Aclosing
 from ..utils.env_utils import is_env_enabled
+from ..workflow.utils._workflow_hitl_utils import get_response_schema_arg
 from .service_registry import load_services_module
 from .utils import envs
 from .utils.agent_loader import AgentLoader
@@ -142,7 +143,7 @@ def _prompt_for_function_call(
   """Prompts the user for a HITL function call and returns the response."""
   if fc_name == _REQUEST_INPUT:
     message = args.get('message') or 'Input requested'
-    schema = args.get('response_schema')
+    schema = get_response_schema_arg(args)
     click.echo(f'[HITL input] {message}')
     if schema:
       click.echo(f'  Schema: {json.dumps(schema)}')
