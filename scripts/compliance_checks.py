@@ -19,6 +19,7 @@ This script is used as a pre-commit hook and in CI to enforce coding standards.
 """
 
 import argparse
+import ast
 import os
 import re
 import sys
@@ -102,6 +103,42 @@ def check_mtls(content: str, filename: str) -> bool:
   return True
 
 
+def check_optional_import_guard(content: str) -> bool:
+  """A module-level pytest.importorskip must precede every ADK import.
+
+  Several ADK modules raise ImportError at import time when an optional
+  dependency is missing. pytest evaluates pytestmark only after the module body
+  runs, so importorskip is the one guard that can turn that into a skip instead
+  of a collection error. It only works if it runs before the ADK import.
+  """
+  try:
+    tree = ast.parse(content)
+  except SyntaxError:
+    return True  # Other tooling reports syntax errors.
+
+  guard_line = None
+  adk_import_lines = []
+  for node in tree.body:
+    if (
+        guard_line is None
+        and isinstance(node, ast.Expr)
+        and isinstance(node.value, ast.Call)
+        and isinstance(node.value.func, ast.Attribute)
+        and node.value.func.attr == 'importorskip'
+    ):
+      guard_line = node.lineno
+    elif isinstance(node, ast.ImportFrom):
+      if (node.module or '').startswith('google.adk'):
+        adk_import_lines.append(node.lineno)
+    elif isinstance(node, ast.Import):
+      if any(alias.name.startswith('google.adk') for alias in node.names):
+        adk_import_lines.append(node.lineno)
+
+  if guard_line is None:
+    return True
+  return all(line > guard_line for line in adk_import_lines)
+
+
 def main() -> None:
   parser = argparse.ArgumentParser(description=__doc__)
   parser.add_argument('files', nargs='*', help='Files to check')
@@ -143,6 +180,14 @@ def main() -> None:
       print(
           f'❌ {f}: Found hardcoded googleapis.com endpoints without mTLS'
           ' support.'
+      )
+      failed = True
+
+    if not check_optional_import_guard(content):
+      print(
+          f'❌ {f}: A google.adk import runs before pytest.importorskip, so the'
+          ' guard cannot prevent a collection error. Move the importorskip'
+          ' call above every google.adk import.'
       )
       failed = True
 

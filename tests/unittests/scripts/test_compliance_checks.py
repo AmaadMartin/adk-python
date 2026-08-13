@@ -41,6 +41,68 @@ def test_check_mtls_passes_with_mtls() -> None:
   assert compliance_checks.check_mtls(content, 'test_file.py') is True
 
 
+_GUARD = 'import pytest\npytest.importorskip("oci.generative_ai_inference")\n'
+_ADK_IMPORT = 'from google.adk.integrations.oci import OCIGenAILlm\n'
+
+
+def test_check_optional_import_guard_accepts_guard_before_adk_import() -> None:
+  assert (
+      compliance_checks.check_optional_import_guard(_GUARD + _ADK_IMPORT)
+      is True
+  )
+
+
+def test_check_optional_import_guard_rejects_guard_after_adk_import() -> None:
+  assert (
+      compliance_checks.check_optional_import_guard(_ADK_IMPORT + _GUARD)
+      is False
+  )
+
+
+def test_check_optional_import_guard_rejects_late_guard_for_plain_import() -> (
+    None
+):
+  content = 'import google.adk.runners\n' + _GUARD
+  assert compliance_checks.check_optional_import_guard(content) is False
+
+
+def test_check_optional_import_guard_ignores_a_file_with_no_guard() -> None:
+  assert compliance_checks.check_optional_import_guard(_ADK_IMPORT) is True
+
+
+def test_check_optional_import_guard_ignores_a_guard_inside_a_function() -> (
+    None
+):
+  content = _ADK_IMPORT + (
+      'def test_x():\n  pytest.importorskip("oci.generative_ai_inference")\n'
+  )
+  assert compliance_checks.check_optional_import_guard(content) is True
+
+
+def test_check_optional_import_guard_ignores_unparsable_source() -> None:
+  assert compliance_checks.check_optional_import_guard('def (:\n') is True
+
+
+def test_every_guarded_module_puts_its_guard_first() -> None:
+  guarded = [
+      path
+      for path in sorted(_REPO_ROOT.glob('tests/**/*.py'))
+      if 'importorskip' in path.read_text(encoding='utf-8')
+  ]
+  assert guarded, 'expected at least one module using pytest.importorskip'
+  offenders = [
+      str(path.relative_to(_REPO_ROOT))
+      for path in guarded
+      if not compliance_checks.check_optional_import_guard(
+          path.read_text(encoding='utf-8')
+      )
+  ]
+  assert not offenders, (
+      'These modules import google.adk before pytest.importorskip, so the'
+      f' guard cannot prevent a collection error: {offenders}'
+  )
+
+
 def test_mtls_exclusions_are_all_still_needed() -> None:
   assert _UNEXCLUDED_NAME not in compliance_checks._EXCLUDED_FROM_MTLS
   redundant: list[str] = []
