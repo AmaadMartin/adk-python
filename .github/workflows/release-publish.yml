@@ -66,13 +66,10 @@ jobs:
             echo "Semver version (main): $VERSION"
           fi
 
-      # Pin the release toolchain. Under "latest" this job and the artifact
-      # check job can install different uv builds from the same commit, so the
-      # wheel that was checked is not the wheel that is published. checksum is
-      # the sha256 of the x86_64 Linux archive; the setup-uv commit pinned
-      # above ships checksums only up to uv 0.10.10, so without it the download
-      # is never verified. Bump both values together with
-      # release-artifact-check.yml.
+      # Pinned so the artifact check and the publish job build with the same
+      # uv. checksum is the sha256 of the x86_64 Linux archive; the setup-uv
+      # commit above only bundles checksums up to uv 0.10.10. Bump both values
+      # together with release-artifact-check.yml.
       - name: Install uv
         uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7
         with:

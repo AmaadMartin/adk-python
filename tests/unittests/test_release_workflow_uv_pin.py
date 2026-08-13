@@ -14,10 +14,10 @@
 
 """Guard tests for the uv pin in the release workflows.
 
-Neither release workflow runs on a pull request, so these tests are the only
-automated protection the pin has. They fail when someone drops the pin back to
-``latest``, drops the download checksum, or bumps one workflow and forgets the
-other.
+Neither release workflow runs on an ordinary pull request to ``main``, so
+nothing else catches a commit that unpins uv before it reaches a release
+branch. These tests fail when someone drops the pin back to ``latest``, drops
+the download checksum, or bumps one workflow and forgets the other.
 """
 
 from __future__ import annotations
