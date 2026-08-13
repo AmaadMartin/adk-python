@@ -12,7 +12,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from types import SimpleNamespace
+import inspect
+import logging
+from unittest.mock import create_autospec
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -24,6 +26,27 @@ from kubernetes import config
 from kubernetes.client.rest import ApiException
 import pydantic
 import pytest
+import requests
+
+try:
+  from k8s_agent_sandbox import SandboxClient as RealSandboxClient
+  from k8s_agent_sandbox.commands.command_executor import CommandExecutor
+  from k8s_agent_sandbox.exceptions import SandboxRequestError
+  from k8s_agent_sandbox.exceptions import SandboxWarmPoolNotFoundError
+  from k8s_agent_sandbox.files.filesystem import Filesystem
+  from k8s_agent_sandbox.models import ExecutionResult
+  from k8s_agent_sandbox.models import SandboxGatewayConnectionConfig
+  from k8s_agent_sandbox.sandbox import Sandbox
+
+  _HAS_AGENT_SANDBOX = True
+except ImportError:
+  _HAS_AGENT_SANDBOX = False
+
+# The sandbox tests autospec the installed client, so they cannot run without
+# it. Skipping only them keeps the job-mode tests running everywhere.
+requires_agent_sandbox = pytest.mark.skipif(
+    not _HAS_AGENT_SANDBOX, reason="k8s-agent-sandbox is not installed"
+)
 
 
 @pytest.fixture
@@ -62,6 +85,34 @@ def mock_k8s_clients():
     }
 
 
+@pytest.fixture
+def mock_sandbox_client():
+  """Patches SandboxClient with a mock autospecced from the real class.
+
+  `create_autospec` on `Sandbox` leaves `commands` and `files` as plain
+  `MagicMock`s, because both are properties, so this fixture specs the two
+  nested engines itself. Without that, a call with a signature the real
+  library rejects still passes.
+  """
+  sandbox = create_autospec(Sandbox, instance=True)
+  sandbox.claim_name = "sandbox-claim-abc123"
+  sandbox.commands = create_autospec(CommandExecutor, instance=True)
+  sandbox.files = create_autospec(Filesystem, instance=True)
+  sandbox.commands.run.return_value = ExecutionResult(
+      stdout="sandbox stdout", stderr="", exit_code=0
+  )
+  client_class = create_autospec(RealSandboxClient)
+  client_class.return_value.create_sandbox.return_value = sandbox
+  with patch(
+      "google.adk.code_executors.gke_code_executor.SandboxClient", client_class
+  ):
+    yield {
+        "class": client_class,
+        "client": client_class.return_value,
+        "sandbox": sandbox,
+    }
+
+
 class TestGkeCodeExecutor:
   """Unit tests for the GkeCodeExecutor."""
 
@@ -75,7 +126,7 @@ class TestGkeCodeExecutor:
     assert executor.mem_limit == "512Mi"
     assert executor.executor_type == "job"
 
-  @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
+  @requires_agent_sandbox
   def test_init_with_overrides(self, mock_sandbox_client):
     """Tests that class attributes can be overridden at instantiation."""
     executor = GkeCodeExecutor(
@@ -90,7 +141,8 @@ class TestGkeCodeExecutor:
     assert executor.timeout_seconds == 60
     assert executor.cpu_limit == "1000m"
     assert executor.executor_type == "sandbox"
-    assert executor.sandbox_template == "python-sandbox-template"
+    assert executor.sandbox_warmpool == "python-sandbox-warmpool"
+    assert executor.sandbox_template is None
 
   def test_init_backward_compatibility(self):
     """Tests that the executor can be initialized with positional arguments."""
@@ -290,75 +342,79 @@ class TestGkeCodeExecutor:
     assert sec_context.read_only_root_filesystem is True
     assert sec_context.capabilities.drop == ["ALL"]
 
-  @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
+  @requires_agent_sandbox
   def test_execute_code_forks_to_sandbox(
       self,
       mock_sandbox_client,
       mock_invocation_context,
       mock_k8s_clients,
   ):
-    """Tests execute_code with executor_type='sandbox'.
-
-    Verifies that execute_code uses SandboxClient when executor_type is set to
-    'sandbox'.
-    """
-    # Setup Sandbox mock
-    mock_sandbox_instance = (
-        mock_sandbox_client.return_value.__enter__.return_value
-    )
-    mock_run_result = MagicMock()
-    mock_run_result.stdout = "sandbox stdout"
-    mock_run_result.stderr = None
-    mock_sandbox_instance.run.return_value = mock_run_result
-
-    # Instantiate with sandbox type
+    """Tests that execute_code provisions a sandbox from the warm pool."""
     executor = GkeCodeExecutor(executor_type="sandbox")
     code_input = CodeExecutionInput(code='print("sandbox")')
 
-    # Execute
     result = executor.execute_code(mock_invocation_context, code_input)
 
-    # Assertions
     assert result.stdout == "sandbox stdout"
-
-    # Verify SandboxClient was used
-    mock_sandbox_client.assert_called_once()
-    mock_sandbox_instance.run.assert_called_once()
-
-    # Verify Job path was NOT taken
+    mock_sandbox_client["client"].create_sandbox.assert_called_once_with(
+        warmpool="python-sandbox-warmpool",
+        namespace="default",
+        sandbox_ready_timeout=300,
+    )
     mock_k8s_clients["batch_v1"].create_namespaced_job.assert_not_called()
 
-  @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
+  @requires_agent_sandbox
+  def test_execute_in_sandbox_returns_stderr(
+      self,
+      mock_sandbox_client,
+      mock_invocation_context,
+  ):
+    """Tests that stderr from the sandbox run is propagated to the result."""
+    mock_sandbox_client["sandbox"].commands.run.return_value = ExecutionResult(
+        stdout="", stderr="oops\n", exit_code=1
+    )
+    executor = GkeCodeExecutor(executor_type="sandbox")
+    code_input = CodeExecutionInput(
+        code="import sys; print('oops', file=sys.stderr)"
+    )
+
+    result = executor.execute_code(mock_invocation_context, code_input)
+
+    assert result.stdout == ""
+    assert result.stderr == "oops\n"
+    mock_sandbox_client["sandbox"].files.write.assert_called_once_with(
+        "script.py", code_input.code, timeout=300
+    )
+    mock_sandbox_client["sandbox"].commands.run.assert_called_once_with(
+        "python3 script.py", timeout=300
+    )
+
+  @requires_agent_sandbox
   def test_execute_code_sandbox_connection_error(
       self,
       mock_sandbox_client,
       mock_invocation_context,
   ):
-    """Tests handling of exceptions from SandboxClient."""
-    # Setup Sandbox mock to raise exception
-    mock_sandbox_client.return_value.__enter__.side_effect = Exception(
+    """Tests that a non-RuntimeError sandbox failure propagates unchanged."""
+    mock_sandbox_client["client"].create_sandbox.side_effect = ValueError(
         "Connection failed"
     )
-
-    # Instantiate with sandbox type
     executor = GkeCodeExecutor(executor_type="sandbox")
     code_input = CodeExecutionInput(code='print("sandbox")')
 
-    # Execute & Assert
-    with pytest.raises(Exception, match="Connection failed"):
+    with pytest.raises(ValueError, match="Connection failed"):
       executor.execute_code(mock_invocation_context, code_input)
 
-  @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
+  @requires_agent_sandbox
   def test_execute_code_sandbox_runtime_error(
       self,
       mock_sandbox_client,
       mock_invocation_context,
   ):
-    """Tests handling of RuntimeError from SandboxClient."""
-    mock_sandbox_client.return_value.__enter__.side_effect = RuntimeError(
-        "Gateway not found"
+    """Tests that a SandboxError is rewrapped as an infrastructure error."""
+    mock_sandbox_client["client"].create_sandbox.side_effect = (
+        SandboxWarmPoolNotFoundError("Gateway not found")
     )
-
     executor = GkeCodeExecutor(executor_type="sandbox")
     code_input = CodeExecutionInput(code='print("sandbox")')
 
@@ -367,17 +423,16 @@ class TestGkeCodeExecutor:
     ):
       executor.execute_code(mock_invocation_context, code_input)
 
-  @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
+  @requires_agent_sandbox
   def test_execute_code_sandbox_timeout_error(
       self,
       mock_sandbox_client,
       mock_invocation_context,
   ):
-    """Tests handling of TimeoutError from SandboxClient."""
-    mock_sandbox_client.return_value.__enter__.side_effect = TimeoutError(
+    """Tests that a TimeoutError is returned as a result, not raised."""
+    mock_sandbox_client["client"].create_sandbox.side_effect = TimeoutError(
         "Execution timed out"
     )
-
     executor = GkeCodeExecutor(executor_type="sandbox")
     code_input = CodeExecutionInput(code='print("sandbox")')
 
@@ -386,7 +441,34 @@ class TestGkeCodeExecutor:
     assert result.stdout == ""
     assert "Sandbox timed out: Execution timed out" in result.stderr
 
-  @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
+  @requires_agent_sandbox
+  def test_execute_in_sandbox_reports_a_hung_script_as_a_timeout(
+      self,
+      mock_sandbox_client,
+      mock_invocation_context,
+  ):
+    """Tests that a wrapped read timeout returns a result, not an error.
+
+    A script that outruns `timeout_seconds` fails the HTTP request, and the
+    client re-raises that as a `SandboxRequestError`, which subclasses
+    `RuntimeError`. The executor must still report it as a timeout.
+    """
+    wrapped = SandboxRequestError("Failed to communicate with the sandbox.")
+    wrapped.__cause__ = requests.exceptions.ReadTimeout(
+        "Read timed out. (read timeout=300)"
+    )
+    mock_sandbox_client["sandbox"].commands.run.side_effect = wrapped
+    executor = GkeCodeExecutor(executor_type="sandbox")
+
+    result = executor.execute_code(
+        mock_invocation_context, CodeExecutionInput(code="while True: pass")
+    )
+
+    assert result.stdout == ""
+    assert "Sandbox timed out: " in result.stderr
+    mock_sandbox_client["sandbox"].terminate.assert_called_once_with()
+
+  @requires_agent_sandbox
   @patch("google.adk.code_executors.gke_code_executor.Watch")
   def test_execute_code_forks_to_job(
       self,
@@ -396,7 +478,6 @@ class TestGkeCodeExecutor:
       mock_k8s_clients,
   ):
     """Tests that execute_code uses K8s Job when executor_type='job'."""
-    # Setup K8s Job mocks (success path)
     mock_job = MagicMock()
     mock_job.status.succeeded = True
     mock_watch.return_value.stream.return_value = [{"object": mock_job}]
@@ -410,173 +491,193 @@ class TestGkeCodeExecutor:
         "job stdout"
     )
 
-    # Instantiate with job type
     executor = GkeCodeExecutor(executor_type="job")
     code_input = CodeExecutionInput(code='print("job")')
 
-    # Execute
     result = executor.execute_code(mock_invocation_context, code_input)
 
-    # Assertions
     assert result.stdout == "job stdout"
-
-    # Verify Job path WAS taken
     mock_k8s_clients["batch_v1"].create_namespaced_job.assert_called_once()
+    mock_sandbox_client["class"].assert_not_called()
 
-    # Verify SandboxClient was NOT used
-    mock_sandbox_client.assert_not_called()
-
-  @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
-  def test_execute_in_sandbox_returns_stderr(
+  @requires_agent_sandbox
+  def test_execute_in_sandbox_terminates_on_success(
       self,
       mock_sandbox_client,
       mock_invocation_context,
   ):
-    """Tests that stderr from the sandbox run is propagated to the result."""
-    # Setup Sandbox mock
-    mock_sandbox_instance = (
-        mock_sandbox_client.return_value.__enter__.return_value
-    )
-    mock_run_result = MagicMock()
-    mock_run_result.stdout = ""
-    mock_run_result.stderr = "oops\n"
-    mock_sandbox_instance.run.return_value = mock_run_result
-
-    # Instantiate with sandbox type
+    """Tests that a successful run still deletes the sandbox claim."""
     executor = GkeCodeExecutor(executor_type="sandbox")
-    code_input = CodeExecutionInput(
-        code="import sys; print('oops', file=sys.stderr)"
+
+    executor.execute_code(
+        mock_invocation_context, CodeExecutionInput(code='print("sandbox")')
     )
 
-    # Execute
-    result = executor.execute_code(mock_invocation_context, code_input)
+    mock_sandbox_client["sandbox"].terminate.assert_called_once_with()
 
-    # Assertions
-    assert result.stdout == ""
-    assert result.stderr == "oops\n"
-    mock_sandbox_instance.write.assert_called_with("script.py", code_input.code)
-    mock_sandbox_instance.run.assert_called_with(
-        "python3 script.py", timeout=300
-    )
-
-  @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
-  def test_sandbox_run_receives_configured_timeout(
+  @requires_agent_sandbox
+  def test_execute_in_sandbox_terminates_on_failure(
       self,
       mock_sandbox_client,
       mock_invocation_context,
   ):
-    """Tests that timeout_seconds bounds the sandbox execution request."""
-    mock_sandbox_instance = (
-        mock_sandbox_client.return_value.__enter__.return_value
+    """Tests that a failed run still deletes the sandbox claim."""
+    mock_sandbox_client["sandbox"].commands.run.side_effect = ValueError(
+        "run exploded"
     )
-    mock_sandbox_instance.run.return_value = MagicMock(stdout="", stderr=None)
+    executor = GkeCodeExecutor(executor_type="sandbox")
 
-    executor = GkeCodeExecutor(executor_type="sandbox", timeout_seconds=60)
-    code_input = CodeExecutionInput(code='print("sandbox")')
+    with pytest.raises(ValueError, match="run exploded"):
+      executor.execute_code(
+          mock_invocation_context, CodeExecutionInput(code='print("sandbox")')
+      )
 
-    executor.execute_code(mock_invocation_context, code_input)
+    mock_sandbox_client["sandbox"].terminate.assert_called_once_with()
 
-    mock_sandbox_instance.run.assert_called_once_with(
-        "python3 script.py", timeout=60
+  @requires_agent_sandbox
+  def test_execute_in_sandbox_swallows_terminate_failure(
+      self,
+      mock_sandbox_client,
+      mock_invocation_context,
+      caplog,
+  ):
+    """Tests that a cleanup failure warns and keeps the execution result."""
+    mock_sandbox_client["sandbox"].terminate.side_effect = ValueError(
+        "claim already gone"
+    )
+    executor = GkeCodeExecutor(executor_type="sandbox")
+
+    with caplog.at_level(logging.WARNING):
+      result = executor.execute_code(
+          mock_invocation_context, CodeExecutionInput(code='print("sandbox")')
+      )
+
+    assert result.stdout == "sandbox stdout"
+    assert "sandbox-claim-abc123" in caplog.text
+    assert "claim already gone" in caplog.text
+
+  @requires_agent_sandbox
+  def test_execute_in_sandbox_uses_gateway_connection_config(
+      self,
+      mock_sandbox_client,
+      mock_invocation_context,
+  ):
+    """Tests that a named gateway reaches the client as a gateway config."""
+    executor = GkeCodeExecutor(
+        executor_type="sandbox", sandbox_gateway_name="external-http-gateway"
     )
 
-  @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
+    executor.execute_code(
+        mock_invocation_context, CodeExecutionInput(code='print("sandbox")')
+    )
+
+    mock_sandbox_client["class"].assert_called_once_with(
+        connection_config=SandboxGatewayConnectionConfig(
+            gateway_name="external-http-gateway"
+        )
+    )
+
+  @requires_agent_sandbox
+  def test_execute_in_sandbox_defaults_to_local_tunnel(
+      self,
+      mock_sandbox_client,
+      mock_invocation_context,
+  ):
+    """Tests that an unset gateway leaves the client on its own default."""
+    executor = GkeCodeExecutor(executor_type="sandbox")
+
+    executor.execute_code(
+        mock_invocation_context, CodeExecutionInput(code='print("sandbox")')
+    )
+
+    mock_sandbox_client["class"].assert_called_once_with(connection_config=None)
+
+  @requires_agent_sandbox
+  def test_execute_in_sandbox_applies_timeout_seconds(
+      self,
+      mock_sandbox_client,
+      mock_invocation_context,
+  ):
+    """Tests that timeout_seconds bounds readiness, upload and execution."""
+    executor = GkeCodeExecutor(executor_type="sandbox", timeout_seconds=600)
+
+    executor.execute_code(
+        mock_invocation_context, CodeExecutionInput(code='print("sandbox")')
+    )
+
+    assert (
+        mock_sandbox_client["client"].create_sandbox.call_args.kwargs[
+            "sandbox_ready_timeout"
+        ]
+        == 600
+    )
+    assert (
+        mock_sandbox_client["sandbox"].files.write.call_args.kwargs["timeout"]
+        == 600
+    )
+    assert (
+        mock_sandbox_client["sandbox"].commands.run.call_args.kwargs["timeout"]
+        == 600
+    )
+
+  @requires_agent_sandbox
   def test_sandbox_run_uses_default_timeout(
       self,
       mock_sandbox_client,
       mock_invocation_context,
   ):
     """Tests that the field default, not the client's own 60s, is sent."""
-    mock_sandbox_instance = (
-        mock_sandbox_client.return_value.__enter__.return_value
-    )
-    mock_sandbox_instance.run.return_value = MagicMock(stdout="", stderr=None)
-
     executor = GkeCodeExecutor(executor_type="sandbox")
-    code_input = CodeExecutionInput(code='print("sandbox")')
 
-    executor.execute_code(mock_invocation_context, code_input)
+    executor.execute_code(
+        mock_invocation_context, CodeExecutionInput(code='print("sandbox")')
+    )
 
-    mock_sandbox_instance.run.assert_called_once_with(
+    mock_sandbox_client["sandbox"].commands.run.assert_called_once_with(
         "python3 script.py", timeout=300
     )
 
-  @patch("google.adk.code_executors.gke_code_executor.SandboxClient")
-  def test_sandbox_client_constructed_without_timeout(
-      self,
-      mock_sandbox_client,
-      mock_invocation_context,
-  ):
-    """Tests that timeout_seconds does not reach the readiness bounds.
-
-    The client's constructor timeouts bound cluster readiness, not the code,
-    so they keep their library defaults.
-    """
-    mock_sandbox_instance = (
-        mock_sandbox_client.return_value.__enter__.return_value
-    )
-    mock_sandbox_instance.run.return_value = MagicMock(stdout="", stderr=None)
-
-    executor = GkeCodeExecutor(executor_type="sandbox", timeout_seconds=60)
-    code_input = CodeExecutionInput(code='print("sandbox")')
-
-    executor.execute_code(mock_invocation_context, code_input)
-
-    mock_sandbox_client.assert_called_once_with(
-        template_name="python-sandbox-template",
-        gateway_name=None,
-        namespace="default",
-    )
-
-  def test_sandbox_run_timeout_fits_the_client_signature(
-      self,
-      mock_invocation_context,
-  ):
-    """Tests the sandbox path against a client that declares real signatures.
-
-    A MagicMock accepts any keyword, so it cannot show that the executor
-    calls a client that declares `run(command, timeout=60)` and
-    `write(path, content, timeout=60)`, as k8s-agent-sandbox does.
-    """
-    init_calls: list[tuple[str, str, str | None]] = []
-    write_calls: list[tuple[str, str]] = []
-    run_calls: list[tuple[str, int]] = []
-
-    class FakeSandboxClient:
-      """Records the calls the executor makes, with no mocking."""
-
-      def __init__(
-          self,
-          template_name: str,
-          namespace: str = "default",
-          gateway_name: str | None = None,
-      ):
-        init_calls.append((template_name, namespace, gateway_name))
-
-      def __enter__(self) -> "FakeSandboxClient":
-        return self
-
-      def __exit__(self, *exc_info: object) -> None:
-        return None
-
-      def write(self, path: str, content: str, timeout: int = 60) -> None:
-        write_calls.append((path, content))
-
-      def run(self, command: str, timeout: int = 60) -> SimpleNamespace:
-        run_calls.append((command, timeout))
-        return SimpleNamespace(stdout="fake stdout", stderr="")
-
-    with patch(
-        "google.adk.code_executors.gke_code_executor.SandboxClient",
-        FakeSandboxClient,
-    ):
-      executor = GkeCodeExecutor(executor_type="sandbox", timeout_seconds=45)
-      result = executor.execute_code(
-          mock_invocation_context, CodeExecutionInput(code="print('hi')")
+  @requires_agent_sandbox
+  def test_sandbox_template_is_deprecated_alias(self, mock_sandbox_client):
+    """Tests that a legacy sandbox_template warns and names the warm pool."""
+    with pytest.warns(DeprecationWarning, match="sandbox_warmpool"):
+      executor = GkeCodeExecutor(
+          executor_type="sandbox", sandbox_template="legacy-pool"
       )
 
-    assert result.stdout == "fake stdout"
-    assert init_calls == [("python-sandbox-template", "default", None)]
-    assert run_calls == [("python3 script.py", 45)]
-    # The executor sends no timeout on the upload; only execution is bounded.
-    assert write_calls == [("script.py", "print('hi')")]
+    assert executor.sandbox_warmpool == "legacy-pool"
+
+  @requires_agent_sandbox
+  def test_sandbox_warmpool_wins_over_template(self, mock_sandbox_client):
+    """Tests that an explicit sandbox_warmpool overrides the legacy alias."""
+    with pytest.warns(DeprecationWarning, match="sandbox_warmpool"):
+      executor = GkeCodeExecutor(
+          executor_type="sandbox",
+          sandbox_template="legacy-pool",
+          sandbox_warmpool="python-sandbox-warmpool",
+      )
+
+    assert executor.sandbox_warmpool == "python-sandbox-warmpool"
+
+
+@requires_agent_sandbox
+def test_sandbox_client_api_shape():
+  """Pins the k8s-agent-sandbox surface the executor is written against.
+
+  This fails the day the dependency floor moves past a release that renames
+  or drops one of these members, which is how the previous client generation
+  went unnoticed.
+  """
+  create_sandbox = inspect.signature(RealSandboxClient.create_sandbox)
+  assert "warmpool" in create_sandbox.parameters
+  assert (
+      "connection_config"
+      in inspect.signature(RealSandboxClient.__init__).parameters
+  )
+  assert "claim_name" in inspect.signature(Sandbox.__init__).parameters
+  assert "timeout" in inspect.signature(CommandExecutor.run).parameters
+  assert "timeout" in inspect.signature(Filesystem.write).parameters
+  for member in ("commands", "files", "terminate"):
+    assert hasattr(Sandbox, member)
+  assert {"stdout", "stderr"} <= set(ExecutionResult.model_fields)
+  assert "gateway_name" in SandboxGatewayConnectionConfig.model_fields
