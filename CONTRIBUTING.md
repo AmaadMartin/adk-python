@@ -197,11 +197,13 @@ part before or alongside your code PR.
 
 1. **Run unit tests locally (Fast):**
 
-   If you just want to run tests quickly while developing, run `pytest`:
+   A bare `pytest` from the repo root runs the unit suite, because `testpaths` in `pyproject.toml` points at `tests/unittests`. Pass the path to be explicit:
 
    ```shell
    pytest ./tests/unittests
    ```
+
+   `tests/integration` and `tests/remote` are not part of the default run. They need live cloud credentials and extras that `uv sync --extra test` does not install. Run them by path when you have that environment.
 
 1. **Run multi-version unit tests (Required before PR):**
 
