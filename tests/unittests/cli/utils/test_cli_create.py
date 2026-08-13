@@ -42,6 +42,20 @@ class _Recorder:
     self.calls.append((args, kwargs))
 
 
+def _stub_prompt(
+    monkeypatch: pytest.MonkeyPatch, return_value: str
+) -> List[Dict[str, Any]]:
+  """Replaces click.prompt with a stub and returns its captured kwargs."""
+  captured: List[Dict[str, Any]] = []
+
+  def _fake_prompt(*_args: Any, **kwargs: Any) -> str:
+    captured.append(kwargs)
+    return return_value
+
+  monkeypatch.setattr(click, "prompt", _fake_prompt)
+  return captured
+
+
 # Fixtures
 @pytest.fixture(autouse=True)
 def _mute_click(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -318,6 +332,89 @@ def test_prompt_for_google_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
   """Prompt should return the API-key input."""
   monkeypatch.setattr(click, "prompt", lambda *a, **k: "api-key")
   assert _onboarding.prompt_for_google_api_key(None) == "api-key"
+
+
+def test_prompt_for_google_api_key_hides_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """The API-key prompt hides the typed characters and the default."""
+  captured = _stub_prompt(monkeypatch, "api-key")
+
+  assert _onboarding.prompt_for_google_api_key(None) == "api-key"
+
+  assert len(captured) == 1
+  assert captured[0]["hide_input"] is True
+  assert captured[0]["show_default"] is False
+
+
+def test_prompt_for_google_cloud_does_not_hide_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """The project-ID prompt keeps echoing input and showing its default."""
+  monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "env-proj")
+  captured = _stub_prompt(monkeypatch, "test-proj")
+
+  assert _onboarding.prompt_for_google_cloud(None) == "test-proj"
+
+  assert len(captured) == 1
+  assert captured[0]["hide_input"] is False
+  assert captured[0]["show_default"] is True
+
+
+def test_prompt_for_google_cloud_region_does_not_hide_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """The region prompt keeps echoing input and showing its default."""
+  monkeypatch.setenv("GOOGLE_CLOUD_LOCATION", "europe-west4")
+  captured = _stub_prompt(monkeypatch, "asia-northeast1")
+
+  assert _onboarding.prompt_for_google_cloud_region(None) == "asia-northeast1"
+
+  assert len(captured) == 1
+  assert captured[0]["hide_input"] is False
+  assert captured[0]["show_default"] is True
+
+
+def test_prompt_for_google_api_key_does_not_echo_env_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """Real click.prompt keeps an env-sourced key out of the prompt line."""
+  monkeypatch.setenv("GOOGLE_API_KEY", "secret-key-value")
+  # click >= 8.3 hands the whole prompt line to `hidden_prompt_func`, while
+  # older click echoes the line first and passes only a space, so record both
+  # sources. `click.termui` keeps its own `echo` binding, which the autouse
+  # `_mute_click` fixture does not replace.
+  shown = _Recorder()
+
+  def _fake_hidden_prompt(text: str) -> str:
+    shown(text)
+    return ""
+
+  monkeypatch.setattr(click.termui, "hidden_prompt_func", _fake_hidden_prompt)
+  monkeypatch.setattr(click.termui, "echo", shown)
+
+  assert _onboarding.prompt_for_google_api_key(None) == "secret-key-value"
+
+  written = "".join(str(args[0]) for args, _ in shown.calls)
+  assert "Enter Google API key" in written
+  assert "secret-key-value" not in written
+
+
+def test_prompt_str_retries_on_blank_hidden_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """A whitespace-only hidden answer is rejected and the prompt repeats."""
+  answers = iter(["   ", "real-key"])
+  recorder = _Recorder()
+
+  def _fake_hidden_prompt(text: str) -> str:
+    recorder(text)
+    return next(answers)
+
+  monkeypatch.setattr(click.termui, "hidden_prompt_func", _fake_hidden_prompt)
+
+  assert _onboarding.prompt_str("Enter secret", hide_input=True) == "real-key"
+  assert len(recorder.calls) == 2
 
 
 def test_prompt_for_model_gemini(monkeypatch: pytest.MonkeyPatch) -> None:
