@@ -63,6 +63,29 @@ class ParsedOperation(BaseModel):
   auth_credential: Optional[AuthCredential] = None
   additional_context: Optional[Any] = None
 
+  def model_dump(self, **kwargs: Any) -> Dict[str, Any]:
+    """Dumps the model, defaulting to ``by_alias=True``.
+
+    ``operation`` and ``auth_scheme`` are fastapi OpenAPI models whose fields
+    are declared under aliases (``in_``/``in``, ``schema_``/``schema``,
+    ``ref``/``$ref``, ``type_``/``type``). Those models do not set
+    ``populate_by_name``, so a dump keyed by field name cannot be validated
+    back. Defaulting to ``by_alias=True`` keeps ``ParsedOperation``
+    round-trippable through ``model_validate``; pass ``by_alias=False``
+    explicitly to opt out. ``ConfigDict(serialize_by_alias=True)`` does not
+    work here, because it does not reach the nested models.
+    """
+    kwargs.setdefault("by_alias", True)
+    return super().model_dump(**kwargs)
+
+  def model_dump_json(self, **kwargs: Any) -> str:
+    """Serializes the model to JSON, defaulting to ``by_alias=True``.
+
+    See ``model_dump`` for why.
+    """
+    kwargs.setdefault("by_alias", True)
+    return super().model_dump_json(**kwargs)
+
 
 class OpenApiSpecParser:
   """Generates Python code, JSON schema, and callables for an OpenAPI operation.
