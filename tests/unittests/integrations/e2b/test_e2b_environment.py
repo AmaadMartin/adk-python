@@ -14,8 +14,6 @@
 
 """Tests for E2BEnvironment."""
 
-import inspect
-import typing
 from unittest import mock
 
 import e2b
@@ -26,23 +24,16 @@ from e2b import TimeoutException
 from google.adk.integrations.e2b._e2b_environment import E2BEnvironment
 import pytest
 
-
-def _autospec_property(cls: type, name: str) -> mock.MagicMock:
-  """Autospecs the object a property returns.
-
-  create_autospec() does not descend into properties -- the attribute comes
-  back as a bare MagicMock that accepts anything -- so the handler behind one
-  has to be specced from its own declared type.
-  """
-  hints = typing.get_type_hints(inspect.getattr_static(cls, name).fget)
-  return mock.create_autospec(hints['return'], instance=True, spec_set=True)
+from tests.unittests import autospec_utils
 
 
 def _make_sandbox(*, running: bool = True) -> mock.MagicMock:
   """Build an AsyncSandbox double specced against the installed e2b SDK."""
   sandbox = mock.create_autospec(e2b.AsyncSandbox, instance=True, spec_set=True)
-  sandbox.commands = _autospec_property(e2b.AsyncSandbox, 'commands')
-  sandbox.files = _autospec_property(e2b.AsyncSandbox, 'files')
+  sandbox.commands = autospec_utils.autospec_property(
+      e2b.AsyncSandbox, 'commands'
+  )
+  sandbox.files = autospec_utils.autospec_property(e2b.AsyncSandbox, 'files')
   # kill and set_timeout are class_method_variant descriptors. create_autospec
   # renders them as non-async mocks that still expect `self`, so awaiting one
   # raises TypeError. spec_set still rejects the name if the SDK drops it.

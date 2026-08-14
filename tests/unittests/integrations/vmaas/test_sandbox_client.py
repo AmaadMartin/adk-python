@@ -17,32 +17,12 @@
 import base64
 import json
 import unittest
-from unittest.mock import create_autospec
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from google.adk.integrations.vmaas.sandbox_client import SandboxClient
-import vertexai
 
-# The SDK exposes agent_engines and sandboxes as properties, and create_autospec
-# does not descend into a property. A probe client resolves the three classes so
-# each one can be specced, without deep-importing private modules.
-_PROBE_CLIENT = vertexai.Client(project="test-project", location="us-central1")
-_CLIENT_CLS = type(_PROBE_CLIENT)
-_AGENT_ENGINES_CLS = type(_PROBE_CLIENT.agent_engines)
-_SANDBOXES_CLS = type(_PROBE_CLIENT.agent_engines.sandboxes)
-
-
-def _make_vertexai_client() -> MagicMock:
-  """Builds a vertexai.Client double specced against the installed SDK."""
-  client = create_autospec(_CLIENT_CLS, instance=True, spec_set=True)
-  client.agent_engines = create_autospec(
-      _AGENT_ENGINES_CLS, instance=True, spec_set=True
-  )
-  client.agent_engines.sandboxes = create_autospec(
-      _SANDBOXES_CLS, instance=True, spec_set=True
-  )
-  return client
+from tests.unittests import autospec_utils
 
 
 def _make_response(data: dict) -> MagicMock:
@@ -57,7 +37,7 @@ class TestSandboxClient(unittest.IsolatedAsyncioTestCase):
 
   def setUp(self):
     """Set up test fixtures."""
-    self.mock_vertexai_client = _make_vertexai_client()
+    self.mock_vertexai_client = autospec_utils.make_vertexai_client()
     self.mock_sandbox = MagicMock()
     self.access_token = "test_token_12345"
     self.client = SandboxClient(

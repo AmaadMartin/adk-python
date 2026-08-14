@@ -17,7 +17,6 @@
 import time
 import unittest
 from unittest.mock import AsyncMock
-from unittest.mock import create_autospec
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -28,27 +27,8 @@ from google.adk.integrations.vmaas.sandbox_computer import _STATE_KEY_TOKEN_EXPI
 from google.adk.integrations.vmaas.sandbox_computer import AgentEngineSandboxComputer
 from google.adk.tools.computer_use.base_computer import ComputerEnvironment
 from google.adk.tools.computer_use.base_computer import ComputerState
-import vertexai
 
-# The SDK exposes agent_engines and sandboxes as properties, and create_autospec
-# does not descend into a property. A probe client resolves the three classes so
-# each one can be specced, without deep-importing private modules.
-_PROBE_CLIENT = vertexai.Client(project="test-project", location="us-central1")
-_CLIENT_CLS = type(_PROBE_CLIENT)
-_AGENT_ENGINES_CLS = type(_PROBE_CLIENT.agent_engines)
-_SANDBOXES_CLS = type(_PROBE_CLIENT.agent_engines.sandboxes)
-
-
-def _make_vertexai_client() -> MagicMock:
-  """Builds a vertexai.Client double specced against the installed SDK."""
-  client = create_autospec(_CLIENT_CLS, instance=True, spec_set=True)
-  client.agent_engines = create_autospec(
-      _AGENT_ENGINES_CLS, instance=True, spec_set=True
-  )
-  client.agent_engines.sandboxes = create_autospec(
-      _SANDBOXES_CLS, instance=True, spec_set=True
-  )
-  return client
+from tests.unittests import autospec_utils
 
 
 class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
@@ -162,7 +142,7 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
 
   def test_init_with_vertexai_client(self):
     """Test initialization with provided vertexai client."""
-    mock_client = _make_vertexai_client()
+    mock_client = autospec_utils.make_vertexai_client()
     computer = AgentEngineSandboxComputer(vertexai_client=mock_client)
     self.assertEqual(computer._client, mock_client)
 
@@ -213,7 +193,7 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     """Test _ensure_agent_engine creates new agent engine."""
     new_engine_name = "projects/test/locations/us-central1/reasoningEngines/new"
 
-    mock_client = _make_vertexai_client()
+    mock_client = autospec_utils.make_vertexai_client()
     mock_get_client.return_value = mock_client
 
     mock_engine = MagicMock()
@@ -242,7 +222,7 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     mock_sandbox.name = sandbox_name
     mock_to_thread.return_value = mock_sandbox
 
-    mock_client = _make_vertexai_client()
+    mock_client = autospec_utils.make_vertexai_client()
     mock_get_client.return_value = mock_client
 
     computer = AgentEngineSandboxComputer(sandbox_name=sandbox_name)
@@ -264,7 +244,7 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     mock_sandbox = MagicMock()
     mock_to_thread.return_value = mock_sandbox
 
-    mock_client = _make_vertexai_client()
+    mock_client = autospec_utils.make_vertexai_client()
     mock_get_client.return_value = mock_client
 
     computer = AgentEngineSandboxComputer()
@@ -304,7 +284,7 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     token_expiry = time.time() - 100
 
     mock_to_thread.return_value = new_token
-    mock_client = _make_vertexai_client()
+    mock_client = autospec_utils.make_vertexai_client()
     mock_get_client.return_value = mock_client
 
     computer = AgentEngineSandboxComputer(

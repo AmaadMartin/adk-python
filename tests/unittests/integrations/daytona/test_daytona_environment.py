@@ -14,8 +14,6 @@
 
 """Tests for DaytonaEnvironment."""
 
-import inspect
-import typing
 from unittest import mock
 
 import daytona
@@ -26,16 +24,7 @@ from daytona import DaytonaNotFoundError
 from google.adk.integrations.daytona._daytona_environment import DaytonaEnvironment
 import pytest
 
-
-def _autospec_property(cls: type, name: str) -> mock.MagicMock:
-  """Autospecs the object a property returns.
-
-  create_autospec() does not descend into properties -- the attribute comes
-  back as a bare MagicMock that accepts anything -- so the handler behind one
-  has to be specced from its own declared type.
-  """
-  hints = typing.get_type_hints(inspect.getattr_static(cls, name).fget)
-  return mock.create_autospec(hints["return"], instance=True, spec_set=True)
+from tests.unittests import autospec_utils
 
 
 def _make_sandbox() -> mock.MagicMock:
@@ -43,8 +32,10 @@ def _make_sandbox() -> mock.MagicMock:
   sandbox = mock.create_autospec(
       daytona.AsyncSandbox, instance=True, spec_set=True
   )
-  sandbox.process = _autospec_property(daytona.AsyncSandbox, "process")
-  sandbox.fs = _autospec_property(daytona.AsyncSandbox, "fs")
+  sandbox.process = autospec_utils.autospec_property(
+      daytona.AsyncSandbox, "process"
+  )
+  sandbox.fs = autospec_utils.autospec_property(daytona.AsyncSandbox, "fs")
   return sandbox
 
 

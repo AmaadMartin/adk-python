@@ -14,7 +14,6 @@
 
 import json
 import os
-from unittest.mock import create_autospec
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
@@ -24,28 +23,8 @@ from google.adk.code_executors.code_execution_utils import CodeExecutionInput
 from google.adk.code_executors.code_execution_utils import File
 from google.adk.sessions.session import Session
 import pytest
-import vertexai
 
-# The SDK exposes agent_engines and sandboxes as properties, and create_autospec
-# does not descend into a property. A probe client resolves the three classes so
-# each one can be specced, without deep-importing private modules. They are read
-# at import time because the tests below patch vertexai.Client itself.
-_PROBE_CLIENT = vertexai.Client(project="test-project", location="us-central1")
-_CLIENT_CLS = type(_PROBE_CLIENT)
-_AGENT_ENGINES_CLS = type(_PROBE_CLIENT.agent_engines)
-_SANDBOXES_CLS = type(_PROBE_CLIENT.agent_engines.sandboxes)
-
-
-def _make_vertexai_client() -> MagicMock:
-  """Builds a vertexai.Client double specced against the installed SDK."""
-  client = create_autospec(_CLIENT_CLS, instance=True, spec_set=True)
-  client.agent_engines = create_autospec(
-      _AGENT_ENGINES_CLS, instance=True, spec_set=True
-  )
-  client.agent_engines.sandboxes = create_autospec(
-      _SANDBOXES_CLS, instance=True, spec_set=True
-  )
-  return client
+from tests.unittests import autospec_utils
 
 
 @pytest.fixture
@@ -95,7 +74,7 @@ class TestAgentEngineSandboxCodeExecutor:
       mock_invocation_context,
   ):
     # Setup Mocks
-    mock_api_client = _make_vertexai_client()
+    mock_api_client = autospec_utils.make_vertexai_client()
     mock_vertexai_client.return_value = mock_api_client
     mock_response = MagicMock()
     mock_json_output = MagicMock()
@@ -156,7 +135,7 @@ class TestAgentEngineSandboxCodeExecutor:
       mock_invocation_context,
   ):
     """Input files must be sent under the 'content' key the SDK expects."""
-    mock_api_client = _make_vertexai_client()
+    mock_api_client = autospec_utils.make_vertexai_client()
     mock_vertexai_client.return_value = mock_api_client
     mock_response = MagicMock()
     mock_response.outputs = []
@@ -190,7 +169,7 @@ class TestAgentEngineSandboxCodeExecutor:
       mock_invocation_context,
   ):
     # Setup Mocks
-    mock_api_client = _make_vertexai_client()
+    mock_api_client = autospec_utils.make_vertexai_client()
     mock_vertexai_client.return_value = mock_api_client
 
     # Existing sandbox name stored in session, but get() will return None
@@ -255,7 +234,7 @@ class TestAgentEngineSandboxCodeExecutor:
       mock_invocation_context,
   ):
     # Setup Mocks
-    mock_api_client = _make_vertexai_client()
+    mock_api_client = autospec_utils.make_vertexai_client()
     mock_vertexai_client.return_value = mock_api_client
 
     # Existing sandbox name stored in session
@@ -324,7 +303,7 @@ class TestAgentEngineSandboxCodeExecutor:
       mock_invocation_context,
   ):
     # Setup Mocks
-    mock_api_client = _make_vertexai_client()
+    mock_api_client = autospec_utils.make_vertexai_client()
     mock_vertexai_client.return_value = mock_api_client
 
     # Mock create operation to return a sandbox resource name
@@ -385,7 +364,7 @@ class TestAgentEngineSandboxCodeExecutor:
       mock_invocation_context,
   ):
     """Input files are sent with 'content' and 'mime_type' keys (not 'contents'/'mimeType')."""
-    mock_api_client = _make_vertexai_client()
+    mock_api_client = autospec_utils.make_vertexai_client()
     mock_vertexai_client.return_value = mock_api_client
 
     mock_response = MagicMock()
@@ -455,7 +434,7 @@ class TestAgentEngineSandboxCodeExecutor:
   ):
     """Tests that Agent Engine is created lazily in execute_code."""
     # Setup Mocks
-    mock_api_client = _make_vertexai_client()
+    mock_api_client = autospec_utils.make_vertexai_client()
     mock_vertexai_client.return_value = mock_api_client
 
     # Mock Engine Creation
@@ -512,7 +491,7 @@ class TestAgentEngineSandboxCodeExecutor:
       self, mock_vertexai_client, mock_invocation_context
   ):
     """Tests error handling when auto-creating Agent Engine fails."""
-    mock_api_client = _make_vertexai_client()
+    mock_api_client = autospec_utils.make_vertexai_client()
     mock_vertexai_client.return_value = mock_api_client
     mock_api_client.agent_engines.create.side_effect = Exception(
         "Failed to auto-create Agent Engine"
