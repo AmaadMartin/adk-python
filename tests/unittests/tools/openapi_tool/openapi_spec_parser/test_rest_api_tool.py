@@ -13,8 +13,11 @@
 # limitations under the License.
 
 
+from http.server import BaseHTTPRequestHandler
+from http.server import HTTPServer
 import json
 import ssl
+import threading
 from unittest import mock
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -30,6 +33,7 @@ from google.adk.auth.auth_credential import AuthCredential
 from google.adk.auth.auth_credential import AuthCredentialTypes
 from google.adk.auth.auth_credential import HttpAuth
 from google.adk.auth.auth_credential import HttpCredentials
+from google.adk.auth.auth_schemes import AuthScheme
 from google.adk.features import FeatureName
 from google.adk.features._feature_registry import temporary_feature_override
 from google.adk.sessions.state import State
@@ -821,6 +825,242 @@ class TestRestApiTool:
     assert (
         request_params["headers"]["Content-Type"] == "application/octet-stream"
     )
+
+  def _body_tool(
+      self,
+      mime_type: str,
+      schema: OpenAPISchema,
+      endpoint: OperationEndpoint,
+      auth_credential: AuthCredential,
+      auth_scheme: AuthScheme,
+  ) -> RestApiTool:
+    """Builds a tool whose request body declares a single mime type."""
+    return RestApiTool(
+        name="test_tool",
+        description="test",
+        endpoint=endpoint,
+        operation=Operation(
+            operationId="test_op",
+            requestBody=RequestBody(
+                content={mime_type: MediaType(schema=schema)}
+            ),
+        ),
+        auth_credential=auth_credential,
+        auth_scheme=auth_scheme,
+    )
+
+  def test_prepare_request_params_string_body_omitted_omits_content_type(
+      self, sample_endpoint, sample_auth_scheme, sample_auth_credential
+  ):
+    schema = OpenAPISchema(type="string")
+    tool = self._body_tool(
+        "text/plain",
+        schema,
+        sample_endpoint,
+        sample_auth_credential,
+        sample_auth_scheme,
+    )
+    params = [
+        ApiParameter(
+            original_name="",
+            py_name="input_string",
+            param_location="body",
+            param_schema=schema,
+        )
+    ]
+
+    request_params = tool._prepare_request_params(params, {})
+
+    assert request_params["data"] is None
+    assert "Content-Type" not in request_params["headers"]
+
+  def test_prepare_request_params_octet_stream_body_omitted_omits_content_type(
+      self, sample_endpoint, sample_auth_scheme, sample_auth_credential
+  ):
+    schema = OpenAPISchema(type="string", format="binary")
+    tool = self._body_tool(
+        "application/octet-stream",
+        schema,
+        sample_endpoint,
+        sample_auth_credential,
+        sample_auth_scheme,
+    )
+    params = [
+        ApiParameter(
+            original_name="",
+            py_name="data",
+            param_location="body",
+            param_schema=schema,
+        )
+    ]
+
+    request_params = tool._prepare_request_params(params, {})
+
+    assert request_params["data"] is None
+    assert "Content-Type" not in request_params["headers"]
+
+  def test_prepare_request_params_json_array_body_omitted_omits_content_type(
+      self, sample_endpoint, sample_auth_scheme, sample_auth_credential
+  ):
+    schema = OpenAPISchema(type="array", items=OpenAPISchema(type="string"))
+    tool = self._body_tool(
+        "application/json",
+        schema,
+        sample_endpoint,
+        sample_auth_credential,
+        sample_auth_scheme,
+    )
+    params = [
+        ApiParameter(
+            original_name="array",
+            py_name="array",
+            param_location="body",
+            param_schema=schema,
+        )
+    ]
+
+    request_params = tool._prepare_request_params(params, {})
+
+    assert "json" not in request_params
+    assert "Content-Type" not in request_params["headers"]
+
+  def test_prepare_request_params_omitted_body_omits_content_type_on_the_wire(
+      self, sample_endpoint, sample_auth_scheme, sample_auth_credential
+  ):
+    schema = OpenAPISchema(type="string")
+    tool = self._body_tool(
+        "text/plain",
+        schema,
+        sample_endpoint,
+        sample_auth_credential,
+        sample_auth_scheme,
+    )
+    params = [
+        ApiParameter(
+            original_name="",
+            py_name="input_string",
+            param_location="body",
+            param_schema=schema,
+        )
+    ]
+
+    request_params = tool._prepare_request_params(params, {})
+
+    # Build the request httpx actually sends: an empty body must not advertise
+    # a media type.
+    request = httpx.Client().build_request(**request_params)
+    assert "content-type" not in request.headers
+    assert request.read() == b""
+
+  def test_prepare_request_params_empty_string_body_keeps_content_type(
+      self, sample_endpoint, sample_auth_scheme, sample_auth_credential
+  ):
+    schema = OpenAPISchema(type="string")
+    tool = self._body_tool(
+        "text/plain",
+        schema,
+        sample_endpoint,
+        sample_auth_credential,
+        sample_auth_scheme,
+    )
+    params = [
+        ApiParameter(
+            original_name="",
+            py_name="input_string",
+            param_location="body",
+            param_schema=schema,
+        )
+    ]
+
+    # An empty string is a supplied body, so it keeps advertising its type.
+    request_params = tool._prepare_request_params(params, {"input_string": ""})
+
+    assert request_params["data"] == ""
+    assert request_params["headers"]["Content-Type"] == "text/plain"
+
+  def test_prepare_request_params_omitted_body_keeps_default_content_type(
+      self, sample_endpoint, sample_auth_scheme, sample_auth_credential
+  ):
+    schema = OpenAPISchema(type="string")
+    tool = self._body_tool(
+        "text/plain",
+        schema,
+        sample_endpoint,
+        sample_auth_credential,
+        sample_auth_scheme,
+    )
+    tool.set_default_headers({"Content-Type": "application/xml"})
+    params = [
+        ApiParameter(
+            original_name="",
+            py_name="input_string",
+            param_location="body",
+            param_schema=schema,
+        )
+    ]
+
+    request_params = tool._prepare_request_params(params, {})
+
+    assert request_params["headers"]["Content-Type"] == "application/xml"
+
+  @pytest.mark.asyncio
+  async def test_call_omitted_body_reaches_a_real_server_untyped(self):
+    """A real server sees no Content-Type when the model omits the body."""
+    received = []
+
+    class _Handler(BaseHTTPRequestHandler):
+
+      def do_POST(self):
+        length = int(self.headers.get("Content-Length") or 0)
+        received.append({
+            "content_type": self.headers.get("Content-Type"),
+            "body": self.rfile.read(length),
+        })
+        payload = json.dumps({"status": "ok"}).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(payload)))
+        self.end_headers()
+        self.wfile.write(payload)
+
+      def log_message(self, format, *args):
+        """Keeps the server quiet so test output stays readable."""
+
+    server = HTTPServer(("127.0.0.1", 0), _Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+      tool = RestApiTool(
+          name="echo_tool",
+          description="Posts an optional text body.",
+          endpoint=OperationEndpoint(
+              base_url=f"http://127.0.0.1:{server.server_port}",
+              path="/echo",
+              method="POST",
+          ),
+          operation=Operation(
+              operationId="echo",
+              requestBody=RequestBody(
+                  content={
+                      "text/plain": MediaType(
+                          schema=OpenAPISchema(type="string")
+                      )
+                  }
+              ),
+          ),
+      )
+
+      omitted = await tool.call(args={}, tool_context=None)
+      supplied = await tool.call(args={"body": "hello"}, tool_context=None)
+    finally:
+      server.shutdown()
+      server.server_close()
+      thread.join()
+
+    assert omitted == {"status": "ok"}
+    assert supplied == {"status": "ok"}
+    assert received[0] == {"content_type": None, "body": b""}
+    assert received[1] == {"content_type": "text/plain", "body": b"hello"}
 
   def test_prepare_request_params_path_param(
       self, sample_endpoint, sample_auth_credential, sample_auth_scheme
