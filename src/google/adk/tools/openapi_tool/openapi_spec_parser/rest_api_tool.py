@@ -248,13 +248,18 @@ class RestApiTool(BaseTool):
   def from_parsed_operation_str(
       cls, parsed_operation_str: str
   ) -> "RestApiTool":
-    """Initializes the RestApiTool from a dict.
+    """Initializes the RestApiTool from a serialized ParsedOperation.
 
     Args:
-        parsed: A dict representation of a ParsedOperation object.
+        parsed_operation_str: A JSON string of a ParsedOperation object, as
+          produced by ``ParsedOperation.model_dump_json()``.
 
     Returns:
         A RestApiTool object.
+
+    Raises:
+        pydantic.ValidationError: If the string is not a valid serialized
+          ParsedOperation.
     """
     operation = ParsedOperation.model_validate_json(parsed_operation_str)
     return RestApiTool.from_parsed_operation(operation)
