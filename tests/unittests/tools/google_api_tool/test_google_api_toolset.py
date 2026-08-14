@@ -803,7 +803,10 @@ def _discovery_spec() -> Dict[str, Any]:
   return {
       "openapi": "3.0.0",
       "info": {"title": "Calendar API", "version": TEST_API_VERSION},
-      "servers": [{"url": "https://www.googleapis.com/calendar/v3"}],
+      # A reserved .test host (RFC 6761): if the transport under test is
+      # ever bypassed, the request fails to resolve instead of leaving the
+      # machine.
+      "servers": [{"url": "https://calendar.test/calendar/v3"}],
       "paths": {
           "/calendars/primary": {
               "get": {
@@ -887,7 +890,7 @@ async def test_supplied_factory_issues_the_request(
   assert result == {"id": "primary"}
   assert len(seen_requests) == 1
   assert seen_requests[0].url == httpx.URL(
-      "https://www.googleapis.com/calendar/v3/calendars/primary"
+      "https://calendar.test/calendar/v3/calendars/primary"
   )
   await tool_set.close()
 
