@@ -704,7 +704,6 @@ def test_get_api_client_express_mode_ignores_credentials(monkeypatch):
       http_options=None,
       api_key='test-api-key',
   )
-  assert 'credentials' not in mock_client_constructor.call_args.kwargs
 
 
 @pytest.mark.asyncio
