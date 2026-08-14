@@ -95,8 +95,7 @@ class AuthConfig(BaseModelWithConfig):
 
   An ADK-internal cache must not reuse either slot. A cached entry that is not
   yet ready to use would come back out of ``AuthHandler.get_auth_response`` as
-  if the user had just authorized. The OpenAPI tool therefore caches its
-  exchanged credential at ``<credential_key>_existing_exchanged_credential``.
+  if the user had just authorized.
   """
 
   def __init__(self, **data: Any) -> None:

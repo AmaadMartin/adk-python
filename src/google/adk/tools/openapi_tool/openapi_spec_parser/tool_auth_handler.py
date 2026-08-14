@@ -79,11 +79,8 @@ def _resolve_credential_key(
 class ToolContextCredentialStore:
   """Handles storage and retrieval of credentials within a ToolContext.
 
-  A configured ``credential_key`` selects the cache slot, but never owns it
-  outright: the credential is cached at
-  ``<credential_key>_existing_exchanged_credential``, never at
-  ``<credential_key>`` itself. See ``AuthConfig.credential_key`` for why the
-  bare slot is off limits. Without a configured key, the slot is derived from
+  A configured ``credential_key`` selects the cache slot through
+  ``_EXCHANGED_CREDENTIAL_KEY_SUFFIX``. Without one, the slot is derived from
   the auth scheme and the auth credential.
   """
 
@@ -171,9 +168,7 @@ class ToolContextCredentialStore:
     """Returns the session state slot that caches the exchanged credential."""
 
     # A key the developer named selects the slot: it is how they point several
-    # tools at one cached credential, or keep two apart. The suffix keeps the
-    # cache out of the bare `credential_key` slot, which belongs to the
-    # credential service and to the application.
+    # tools at one cached credential, or keep two apart.
     if self.credential_key:
       return f"{self.credential_key}{_EXCHANGED_CREDENTIAL_KEY_SUFFIX}"
 
