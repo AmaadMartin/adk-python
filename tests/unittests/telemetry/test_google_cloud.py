@@ -275,6 +275,30 @@ def test_get_gcp_span_exporter_mtls(
 
 
 @mock.patch.object(requests, "AuthorizedSession", autospec=True)
+def test_get_gcp_span_exporter_none_when_otlp_unavailable(
+    mock_session: mock.MagicMock,
+    caplog: pytest.LogCaptureFixture,
+):
+  """A missing OTLP exporter package disables tracing instead of raising."""
+  credentials = mock.create_autospec(
+      google.auth.credentials.Credentials, instance=True
+  )
+  # This module imports trace_exporter, so the submodule is already cached in
+  # sys.modules. Masking only the parent package would leave it importable.
+  masked_modules = {
+      "opentelemetry.exporter.otlp.proto.http": None,
+      "opentelemetry.exporter.otlp.proto.http.trace_exporter": None,
+  }
+
+  with mock.patch.dict("sys.modules", masked_modules):
+    assert _get_gcp_span_exporter(credentials) is None
+
+  assert "opentelemetry-exporter-otlp-proto-http" in caplog.text
+  # The guarded import returns before anything network-adjacent is built.
+  mock_session.assert_not_called()
+
+
+@mock.patch.object(requests, "AuthorizedSession", autospec=True)
 @mock.patch(
     "opentelemetry.exporter.otlp.proto.http.metric_exporter.OTLPMetricExporter",
     autospec=True,
@@ -438,6 +462,21 @@ def test_get_gcp_metrics_exporter_none_when_otlp_unavailable(
   )
 
   assert _get_gcp_metrics_exporter(("credentials", "project-id")) is None
+
+
+def test_get_gcp_exporters_skips_span_processor_when_otlp_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+):
+  """A disabled trace exporter must not put None into span_processors."""
+  monkeypatch.setattr("google.auth.default", lambda: ("", "project-id"))
+  monkeypatch.setattr(
+      "google.adk.telemetry.google_cloud._get_gcp_span_exporter",
+      lambda credentials: None,
+  )
+
+  otel_hooks = get_gcp_exporters(enable_cloud_tracing=True)
+
+  assert otel_hooks.span_processors == []
 
 
 @pytest.fixture(autouse=True)
