@@ -104,5 +104,11 @@ async def test_barrier_wait_timeout_on_divergence():
   # Use a fast timeout to keep the test rapid without mocking standard library functions
   barrier = ReplaySequenceBarrier(sequence, timeout_sec=0.01)
 
-  with pytest.raises(RuntimeError, match='Replay divergence detected'):
+  with pytest.raises(
+      RuntimeError, match='Replay divergence detected'
+  ) as excinfo:
     await barrier.wait('NodeB@1')
+
+  # Then the originating timeout survives as the cause, so a traceback shows
+  # why the barrier gave up.
+  assert isinstance(excinfo.value.__cause__, asyncio.TimeoutError)

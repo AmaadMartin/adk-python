@@ -42,11 +42,11 @@ class ReplaySequenceBarrier:
         await asyncio.wait_for(
             self.events[key].wait(), timeout=self.timeout_sec
         )
-      except asyncio.TimeoutError:
+      except asyncio.TimeoutError as err:
         raise RuntimeError(
             "Replay divergence detected: Timed out waiting for sequence key"
             f" '{key}' to be unblocked."
-        )
+        ) from err
 
   def check_and_advance(self, key: str) -> None:
     """Advance the sequence if the key matches the current expected execution."""
