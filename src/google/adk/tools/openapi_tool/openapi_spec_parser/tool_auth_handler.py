@@ -46,11 +46,45 @@ class AuthPreparationResult(BaseModel):
   auth_credential: Optional[AuthCredential] = None
 
 
-class ToolContextCredentialStore:
-  """Handles storage and retrieval of credentials within a ToolContext."""
+def _resolve_credential_key(
+    credential_key: Optional[str],
+    auth_credential: Optional[AuthCredential],
+    auth_scheme: Optional[AuthScheme],
+) -> Optional[str]:
+  """Returns the credential key the developer configured, if any.
 
-  def __init__(self, tool_context: ToolContext):
+  The auth models allow extra fields, so a key can also arrive as a
+  `credential_key` or `credentialKey` entry on the credential or the scheme.
+  """
+  if credential_key:
+    return credential_key
+
+  for obj in (auth_credential, auth_scheme):
+    if not obj or not obj.model_extra:
+      continue
+    for key in ("credential_key", "credentialKey"):
+      value = obj.model_extra.get(key)
+      if isinstance(value, str) and value:
+        return value
+
+  return None
+
+
+class ToolContextCredentialStore:
+  """Handles storage and retrieval of credentials within a ToolContext.
+
+  A configured `credential_key` names the session state slot outright: the
+  credential is read from and written to exactly that key. Without one, the
+  key is derived from the auth scheme and the auth credential.
+  """
+
+  def __init__(
+      self,
+      tool_context: ToolContext,
+      credential_key: Optional[str] = None,
+  ):
     self.tool_context = tool_context
+    self.credential_key = credential_key
 
   def _legacy_stable_digest(self, text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()[:16]
@@ -90,6 +124,11 @@ class ToolContextCredentialStore:
       auth_credential: Optional[AuthCredential],
   ) -> str:
     """Generates a unique key for the given auth scheme and credential."""
+
+    # A key the developer named wins over the derived one: it is how they
+    # point several tools at one credential, or keep two apart.
+    if self.credential_key:
+      return self.credential_key
 
     if auth_credential and auth_credential.oauth2:
       auth_credential = auth_credential.model_copy(deep=True)
@@ -133,8 +172,20 @@ class ToolContextCredentialStore:
     # session implementation, we don't want session to persist the token,
     # meanwhile we want the token shared across runs.
     serialized_credential = self.tool_context.state.get(token_key)
-    if serialized_credential:
+    # A configured key shares its slot with the prefixless lookup in
+    # `AuthHandler.get_auth_response`, where a raw token string is a valid
+    # value. Anything that is not a serialized credential is a cache miss, so
+    # `AuthHandler` still gets to read it.
+    if serialized_credential and isinstance(
+        serialized_credential, (dict, AuthCredential)
+    ):
       return AuthCredential.model_validate(serialized_credential)
+
+    if self.credential_key:
+      # A developer-named slot is exactly the slot: never migrate a
+      # digest-keyed credential into it, or one tool's cached credential
+      # silently shows up in another tool's named slot.
+      return None
 
     legacy_key = self._get_legacy_credential_key(auth_scheme, auth_credential)
     if legacy_key == token_key:
@@ -181,33 +232,23 @@ class ToolAuthHandler:
     self.auth_credential = (
         auth_credential.model_copy(deep=True) if auth_credential else None
     )
-    self._credential_key = credential_key
+    self._credential_key = _resolve_credential_key(
+        credential_key, self.auth_credential, self.auth_scheme
+    )
     self.credential_exchanger = (
         credential_exchanger or AutoAuthCredentialExchanger()
     )
     self.credential_store = credential_store
+    if credential_store and self._credential_key:
+      # The request slot and the cache slot are the same configured slot.
+      credential_store.credential_key = self._credential_key
     self.should_store_credential = True
-
-  def _get_credential_key_override(self) -> Optional[str]:
-    """Returns a user-provided credential_key if available."""
-    if self._credential_key:
-      return self._credential_key
-
-    for obj in (self.auth_credential, self.auth_scheme):
-      if not obj or not obj.model_extra:
-        continue
-      for key in ("credential_key", "credentialKey"):
-        value = obj.model_extra.get(key)
-        if isinstance(value, str) and value:
-          return value
-
-    return None
 
   def _build_auth_config(self) -> AuthConfig:
     return AuthConfig(
         auth_scheme=self.auth_scheme,
         raw_auth_credential=self.auth_credential,
-        credential_key=self._get_credential_key_override(),
+        credential_key=self._credential_key,
     )
 
   @classmethod
