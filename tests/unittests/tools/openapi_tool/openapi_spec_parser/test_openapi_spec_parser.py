@@ -15,7 +15,11 @@
 from typing import Any
 from typing import Dict
 
+from fastapi.openapi.models import Parameter
+from fastapi.openapi.models import RequestBody
+from fastapi.openapi.models import Schema
 from google.adk.tools.openapi_tool.openapi_spec_parser.openapi_spec_parser import OpenApiSpecParser
+from google.adk.tools.openapi_tool.openapi_spec_parser.openapi_spec_parser import ParsedOperation
 import pytest
 
 
@@ -866,3 +870,96 @@ def test_sanitize_schema_types_removes_all_invalid_list(openapi_spec_generator):
 
   # Type field should be removed entirely
   assert "type" not in sanitized["schema"]
+
+
+def test_parsed_operation_round_trips_through_json(openapi_spec_generator):
+  """A parsed operation must survive model_dump_json -> model_validate_json.
+
+  The fastapi models nest fields under aliases (``in``, ``schema``), which a
+  field-name dump cannot validate back.
+  """
+  openapi_spec = create_minimal_openapi_spec()
+  openapi_spec["paths"]["/test"]["get"]["parameters"] = [
+      {
+          "name": "param1",
+          "in": "query",
+          "required": True,
+          "schema": {"type": "string"},
+      },
+      {
+          "name": "param2",
+          "in": "header",
+          "schema": {"type": "integer"},
+      },
+  ]
+
+  parsed_operation = openapi_spec_generator.parse(openapi_spec)[0]
+  reloaded = ParsedOperation.model_validate_json(
+      parsed_operation.model_dump_json()
+  )
+
+  assert reloaded.name == "test_get"
+  parameters = reloaded.operation.parameters
+  assert parameters is not None
+  reloaded_parameters = []
+  for parameter in parameters:
+    # A Reference here would mean the payload re-validated into the wrong
+    # union member rather than into the modelled Parameter.
+    assert isinstance(parameter, Parameter)
+    assert parameter.schema_ is not None
+    reloaded_parameters.append(
+        (parameter.name, parameter.in_.value, parameter.schema_.type)
+    )
+
+  assert reloaded_parameters == [
+      ("param1", "query", "string"),
+      ("param2", "header", "integer"),
+  ]
+
+
+def test_parsed_operation_round_trip_preserves_nested_schema_keywords(
+    openapi_spec_generator,
+):
+  """A nested schema keyword declared under an alias must not be dropped.
+
+  ``Schema.not_`` and ``MediaType.schema_`` are aliased, and the fastapi models
+  allow extra keys, so a field-name dump reloads without error but leaves the
+  modelled attributes empty.
+  """
+  openapi_spec = create_minimal_openapi_spec()
+  openapi_spec["paths"]["/test"]["post"] = {
+      "operationId": "testPost",
+      "requestBody": {
+          "content": {
+              "application/json": {
+                  "schema": {
+                      "type": "object",
+                      "properties": {
+                          "name": {"type": "string", "not": {"type": "null"}}
+                      },
+                  }
+              }
+          }
+      },
+      "responses": {"200": {"description": "OK"}},
+  }
+
+  parsed_operations = openapi_spec_generator.parse(openapi_spec)
+  post_operation = next(
+      op for op in parsed_operations if op.name == "test_post"
+  )
+  reloaded = ParsedOperation.model_validate_json(
+      post_operation.model_dump_json()
+  )
+
+  request_body = reloaded.operation.requestBody
+  assert isinstance(request_body, RequestBody)
+  body_schema = request_body.content["application/json"].schema_
+  assert isinstance(body_schema, Schema)
+  assert body_schema.properties is not None
+  name_schema = body_schema.properties["name"]
+  assert isinstance(name_schema, Schema)
+  assert name_schema.not_ is not None
+  assert name_schema.not_.type == "null"
+  # The keyword must land on the modelled attribute, not in the extra keys.
+  assert name_schema.model_extra == {}

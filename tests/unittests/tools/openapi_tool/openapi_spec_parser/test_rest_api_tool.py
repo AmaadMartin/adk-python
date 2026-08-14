@@ -15,12 +15,15 @@
 
 import json
 import ssl
+from typing import List
+from typing import Tuple
 from unittest import mock
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from fastapi.openapi.models import APIKey
+from fastapi.openapi.models import APIKeyIn
 from fastapi.openapi.models import MediaType
 from fastapi.openapi.models import Operation
 from fastapi.openapi.models import Parameter as OpenAPIParameter
@@ -44,6 +47,7 @@ from google.adk.tools.tool_context import ToolContext
 from google.genai.types import FunctionDeclaration
 from google.genai.types import Schema
 import httpx
+from pydantic import ValidationError
 import pytest
 import requests
 
@@ -1897,6 +1901,208 @@ class TestRestApiToolFromParsedOperation:
 
     assert tool.auth_scheme == sample_auth_scheme
     assert tool.auth_credential == sample_auth_credential
+
+
+def _operation_with_parameters() -> Operation:
+  """An operation with a path and a query parameter, keyed by alias.
+
+  The fastapi OpenAPI models do not set ``populate_by_name``, so
+  ``Operation(in_=...)`` cannot populate ``Parameter.in_``; only the ``in``
+  alias can.
+  """
+  return Operation.model_validate({
+      "operationId": "getPet",
+      "description": "Get a pet.",
+      "parameters": [
+          {
+              "name": "petId",
+              "in": "path",
+              "required": True,
+              "schema": {"type": "string"},
+          },
+          {
+              "name": "verbose",
+              "in": "query",
+              "required": False,
+              "schema": {"type": "boolean"},
+          },
+      ],
+  })
+
+
+def _parameter_locations(operation: Operation) -> List[Tuple[str, str]]:
+  """The (name, location) pair of every parameter the operation declares.
+
+  Each entry must be a modelled ``Parameter``; a ``Reference`` here would mean
+  the round-trip re-validated the payload into the wrong union member.
+  """
+  assert operation.parameters is not None
+  locations = []
+  for parameter in operation.parameters:
+    assert isinstance(parameter, OpenAPIParameter)
+    locations.append((parameter.name, parameter.in_.value))
+  return locations
+
+
+def _api_parameters_for_operation() -> List[ApiParameter]:
+  return [
+      ApiParameter(
+          original_name="petId",
+          py_name="pet_id",
+          param_location="path",
+          param_schema=OpenAPISchema(type="string"),
+      ),
+      ApiParameter(
+          original_name="verbose",
+          py_name="verbose",
+          param_location="query",
+          param_schema=OpenAPISchema(type="boolean"),
+      ),
+  ]
+
+
+class TestParsedOperationRoundTrip:
+  """Tests that a dumped ParsedOperation can be validated back."""
+
+  def test_from_parsed_operation_str_round_trips_operation_with_parameters(
+      self,
+  ):
+    parsed = _build_parsed_operation(
+        _operation_with_parameters(),
+        parameters=_api_parameters_for_operation(),
+    )
+
+    tool = RestApiTool.from_parsed_operation_str(parsed.model_dump_json())
+
+    assert tool.name == "get_pet"
+    assert _parameter_locations(tool.operation) == [
+        ("petId", "path"),
+        ("verbose", "query"),
+    ]
+
+  def test_from_parsed_operation_str_round_trips_api_key_auth_scheme(self):
+    auth_scheme = APIKey.model_validate(
+        {"type": "apiKey", "in": "header", "name": "X-API-Key"}
+    )
+    auth_credential = AuthCredential(
+        auth_type=AuthCredentialTypes.HTTP,
+        http=HttpAuth(
+            scheme="bearer",
+            credentials=HttpCredentials(token="round-tripped-token"),
+        ),
+    )
+    parsed = _build_parsed_operation(
+        _operation_with_parameters(),
+        parameters=_api_parameters_for_operation(),
+        auth_scheme=auth_scheme,
+        auth_credential=auth_credential,
+    )
+
+    tool = RestApiTool.from_parsed_operation_str(parsed.model_dump_json())
+
+    # The union resolves an apiKey scheme to CustomAuthScheme in JSON mode, so
+    # assert on the wire form: the location must survive under "in", not "in_".
+    assert tool.auth_scheme is not None
+    assert tool.auth_scheme.model_dump(by_alias=True) == {
+        "type": "apiKey",
+        "description": None,
+        "in": "header",
+        "name": "X-API-Key",
+    }
+    credential = tool.auth_credential
+    assert credential is not None
+    assert credential.auth_type == AuthCredentialTypes.HTTP
+    assert credential.http is not None
+    assert credential.http.credentials.token == "round-tripped-token"
+
+  def test_model_dump_round_trips_api_key_auth_scheme(self):
+    parsed = _build_parsed_operation(
+        _operation_with_parameters(),
+        parameters=_api_parameters_for_operation(),
+        auth_scheme=APIKey.model_validate(
+            {"type": "apiKey", "in": "header", "name": "X-API-Key"}
+        ),
+    )
+
+    reloaded = ParsedOperation.model_validate(parsed.model_dump())
+
+    assert isinstance(reloaded.auth_scheme, APIKey)
+    assert reloaded.auth_scheme.in_ == APIKeyIn.header
+    assert reloaded.auth_scheme.name == "X-API-Key"
+
+  def test_auth_credential_dumps_camel_case_under_the_new_default(self):
+    # AuthCredential aliases to camelCase and sets populate_by_name, so the
+    # by_alias=True default changes its keys but not its round-trip.
+    parsed = _build_parsed_operation(
+        _operation_with_parameters(),
+        parameters=_api_parameters_for_operation(),
+        auth_credential=AuthCredential(
+            auth_type=AuthCredentialTypes.HTTP,
+            http=HttpAuth(
+                scheme="bearer",
+                credentials=HttpCredentials(token="token"),
+            ),
+        ),
+    )
+
+    dumped = json.loads(parsed.model_dump_json())["auth_credential"]
+
+    assert "authType" in dumped
+    assert "auth_type" not in dumped
+
+  def test_from_parsed_operation_str_rejects_malformed_json(self):
+    # ``endpoint`` is required; the classmethod must surface the failure.
+    payload = json.dumps({"name": "get_pet", "description": "Get a pet."})
+
+    with pytest.raises(ValidationError, match="endpoint"):
+      RestApiTool.from_parsed_operation_str(payload)
+
+  def test_model_dump_json_honours_explicit_by_alias_false(self):
+    parsed = _build_parsed_operation(
+        _operation_with_parameters(),
+        parameters=_api_parameters_for_operation(),
+    )
+
+    dumped = json.loads(parsed.model_dump_json(by_alias=False))
+    parameter = dumped["operation"]["parameters"][0]
+
+    assert "in_" in parameter
+    assert "in" not in parameter
+
+  def test_model_dump_round_trips(self):
+    parsed = _build_parsed_operation(
+        _operation_with_parameters(),
+        parameters=_api_parameters_for_operation(),
+    )
+
+    reloaded = ParsedOperation.model_validate(parsed.model_dump())
+
+    assert _parameter_locations(reloaded.operation) == [
+        ("petId", "path"),
+        ("verbose", "query"),
+    ]
+
+  def test_model_dump_honours_explicit_by_alias_false(self):
+    parsed = _build_parsed_operation(
+        _operation_with_parameters(),
+        parameters=_api_parameters_for_operation(),
+    )
+
+    parameter = parsed.model_dump(by_alias=False)["operation"]["parameters"][0]
+
+    assert "in_" in parameter
+    assert "in" not in parameter
+
+  def test_parsed_operation_own_field_names_are_not_aliased(self):
+    parsed = _build_parsed_operation(
+        _operation_with_parameters(),
+        parameters=_api_parameters_for_operation(),
+    )
+
+    dumped = json.loads(parsed.model_dump_json())
+
+    assert "return_value" in dumped
+    assert "additional_context" in dumped
 
 
 class TestRestApiToolAuthConfiguration:
