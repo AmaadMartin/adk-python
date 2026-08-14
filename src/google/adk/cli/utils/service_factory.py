@@ -197,7 +197,7 @@ def create_session_service_from_options(
     # Fallback to DatabaseSessionService if the registry doesn't support the
     # session service URI scheme. This keeps support for SQLAlchemy-compatible
     # databases like AlloyDB or Cloud Spanner without explicit registration.
-    from ...sessions.database_session_service import DatabaseSessionService
+    from ...sessions import DatabaseSessionService
 
     fallback_kwargs = dict(kwargs)
     fallback_kwargs.pop("agents_dir", None)

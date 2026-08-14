@@ -18,13 +18,10 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-try:
-  from sqlalchemy import create_engine as create_sync_engine
-  from sqlalchemy import inspect
-  from sqlalchemy import text
-  from sqlalchemy.engine import make_url
-except ImportError:
-  pass
+from sqlalchemy import create_engine as create_sync_engine
+from sqlalchemy import inspect
+from sqlalchemy import text
+from sqlalchemy.engine import make_url
 
 if TYPE_CHECKING:
   from sqlalchemy.engine import Connection
