@@ -88,8 +88,10 @@ jobs:
           echo "Updated version.py to ${PEP440_VERSION}"
           grep __version__ src/google/adk/version.py
 
+      # Pin the PEP 517 backend so the published wheel's metadata comes from a
+      # version named in the repository, not whatever the index serves today.
       - name: Build package
-        run: uv build
+        run: uv build --build-constraints build-constraints.txt
 
       - name: Publish to PyPI
         env:
