@@ -367,6 +367,7 @@ google-antigravity==0.1.7
 google-api-core==2.32.0
     # via
     #   -c constraints-3.12.txt.stable.tmp
+    #   google-adk (pyproject.toml)
     #   a2a-sdk
     #   google-api-python-client
     #   google-cloud-agentidentitycredentials
@@ -477,6 +478,7 @@ google-cloud-bigtable==2.41.0
 google-cloud-core==2.6.0
     # via
     #   -c constraints-3.12.txt.stable.tmp
+    #   google-adk (pyproject.toml)
     #   google-cloud-bigquery
     #   google-cloud-bigtable
     #   google-cloud-firestore
@@ -579,6 +581,7 @@ google-resumable-media==2.10.0
 googleapis-common-protos==1.75.0
     # via
     #   -c constraints-3.12.txt.stable.tmp
+    #   google-adk (pyproject.toml)
     #   a2a-sdk
     #   google-api-core
     #   google-cloud-audit-log
@@ -682,6 +685,7 @@ httpcore==1.0.9
 httplib2==0.32.0
     # via
     #   -c constraints-3.12.txt.stable.tmp
+    #   google-adk (pyproject.toml)
     #   google-api-python-client
     #   google-auth-httplib2
 httpx==0.28.1
@@ -818,6 +822,7 @@ langchain-community==0.4.2
 langchain-core==1.4.9
     # via
     #   -c constraints-3.12.txt.stable.tmp
+    #   google-adk (pyproject.toml)
     #   langchain-classic
     #   langchain-community
     #   langchain-text-splitters
@@ -870,6 +875,7 @@ litellm==1.85.7
 llama-index-core==0.14.23
     # via
     #   -c constraints-3.12.txt.stable.tmp
+    #   google-adk (pyproject.toml)
     #   llama-index-embeddings-google-genai
     #   llama-index-readers-file
 llama-index-embeddings-google-genai==0.5.1
@@ -1112,6 +1118,7 @@ opentelemetry-sdk==1.42.1
 opentelemetry-semantic-conventions==0.63b1
     # via
     #   -c constraints-3.12.txt.stable.tmp
+    #   google-adk (pyproject.toml)
     #   google-cloud-spanner
     #   opentelemetry-instrumentation
     #   opentelemetry-instrumentation-aiohttp-client
@@ -1325,6 +1332,7 @@ pydantic==2.13.4
 pydantic-core==2.46.4
     # via
     #   -c constraints-3.12.txt.stable.tmp
+    #   google-adk (pyproject.toml)
     #   pydantic
 pydantic-settings==2.14.2
     # via
