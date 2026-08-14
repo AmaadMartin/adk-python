@@ -454,14 +454,11 @@ class RestApiTool(BaseTool):
         elif mime_type == "text/plain":
           body_kwargs["data"] = body_data
 
-        # A Content-Type describes content that is present, so it is only set
-        # when a body is sent. `body_data is None` means the model supplied no
-        # body, and every branch above then sends nothing; a type on that empty
-        # request is meaningless and some gateways reject it.
-        # For multipart/form-data the Content-Type is left unset in all cases so
-        # httpx can generate it from the `files` payload together with the
-        # required boundary parameter. Forcing a boundary-less header here would
-        # make the request body unparsable by the server.
+        # Only advertise a Content-Type when a body is actually sent: with
+        # `body_data is None` every branch above sends nothing, and some
+        # gateways reject a type on an empty request. multipart/form-data is
+        # always left unset so httpx can generate it with the boundary its
+        # `files` payload needs.
         if (
             body_data is not None
             and mime_type
