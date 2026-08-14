@@ -37,9 +37,29 @@ pytestmark = pytest.mark.skipif(
 _LAZY_PACKAGES = (
     'google.adk',
     'google.adk.agents',
+    'google.adk.apps',
+    'google.adk.artifacts',
     'google.adk.cli',
     'google.adk.cli.utils',
+    'google.adk.memory',
+    'google.adk.plugins',
     'google.adk.workflow',
+)
+
+# Packages that hand-roll __getattr__, because they remap the ImportError of a
+# missing extra, warn, or register a provider. Star-importing them would
+# resolve every export and import those extras, so dir(), which resolves
+# nothing, is the only contract this suite can assert for them.
+_DIR_ONLY_LAZY_PACKAGES = (
+    'google.adk.a2a.agent',
+    'google.adk.auth',
+    'google.adk.code_executors',
+    'google.adk.evaluation.simulation',
+    'google.adk.models',
+    'google.adk.sessions',
+    'google.adk.skills',
+    'google.adk.tools',
+    'google.adk.tools.retrieval',
 )
 
 
@@ -134,6 +154,39 @@ for module_name in {_LAZY_PACKAGES!r}:
 """)
 
   assert result.returncode == 0, result.stderr
+
+
+def test_lazy_packages_list_exports_in_dir():
+  """dir() lists every advertised export, so autodoc and completion see it."""
+  result = run_isolated(f"""
+import importlib
+
+for module_name in {_DIR_ONLY_LAZY_PACKAGES!r}:
+  package = importlib.import_module(module_name)
+  assert set(package.__all__).issubset(dir(package)), module_name
+""")
+
+  assert result.returncode == 0, result.stderr
+
+
+def test_lazy_dir_does_not_import_optional_providers():
+  """Introspection stays lazy: dir() must not resolve the members it lists."""
+  assert_modules_unloaded(
+      """
+import google.adk.models
+
+dir(google.adk.models)
+""",
+      ('anthropic', 'litellm'),
+  )
+
+
+def test_models_dir_keeps_eagerly_exported_request_types():
+  """__dir__ replaces the default listing, so eager names must survive it."""
+  import google.adk.models as models_module
+
+  assert 'LlmRequest' in dir(models_module)
+  assert 'LlmResponse' in dir(models_module)
 
 
 def test_lazy_packages_resolve_subpackages_as_attributes():

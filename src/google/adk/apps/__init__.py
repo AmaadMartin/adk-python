@@ -14,8 +14,9 @@
 
 from __future__ import annotations
 
-import importlib
 from typing import TYPE_CHECKING
+
+from ..utils import _lazy
 
 if TYPE_CHECKING:
   from ._configs import ResumabilityConfig
@@ -27,13 +28,9 @@ __all__ = [
 ]
 
 _LAZY_MEMBERS: dict[str, str] = {
-    'App': 'app',
-    'ResumabilityConfig': '_configs',
+    'App': '.app',
+    'ResumabilityConfig': '._configs',
 }
 
 
-def __getattr__(name: str):
-  if name in _LAZY_MEMBERS:
-    module = importlib.import_module(f'{__name__}.{_LAZY_MEMBERS[name]}')
-    return vars(module)[name]
-  raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
+__getattr__, __dir__ = _lazy.accessors(globals(), _LAZY_MEMBERS)

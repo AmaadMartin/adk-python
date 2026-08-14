@@ -28,6 +28,18 @@ from .base_auth_provider import BaseAuthProvider
 if TYPE_CHECKING:
   from .auth_handler import AuthHandler
 
+__all__ = [
+    "AuthConfig",
+    "AuthCredential",
+    "AuthCredentialTypes",
+    "AuthHandler",
+    "AuthScheme",
+    "AuthSchemeType",
+    "BaseAuthProvider",
+    "OAuth2Auth",
+    "OpenIdConnectWithConfig",
+]
+
 
 def __getattr__(name: str) -> type[AuthHandler]:
   if name == "AuthHandler":
@@ -35,3 +47,7 @@ def __getattr__(name: str) -> type[AuthHandler]:
 
     return AuthHandler
   raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+
+
+def __dir__() -> list[str]:
+  return sorted(set(globals()) | set(__all__))

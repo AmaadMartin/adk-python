@@ -14,9 +14,9 @@
 
 from __future__ import annotations
 
-import importlib
 from typing import TYPE_CHECKING
 
+from ..utils import _lazy
 from ..utils._dependency import missing_extra
 from .base_memory_service import BaseMemoryService
 
@@ -33,14 +33,10 @@ __all__ = [
 ]
 
 _LAZY_MEMBERS: dict[str, str] = {
-    'InMemoryMemoryService': 'in_memory_memory_service',
-    'VertexAiMemoryBankService': 'vertex_ai_memory_bank_service',
-    'VertexAiRagMemoryService': 'vertex_ai_rag_memory_service',
+    'InMemoryMemoryService': '.in_memory_memory_service',
+    'VertexAiMemoryBankService': '.vertex_ai_memory_bank_service',
+    'VertexAiRagMemoryService': '.vertex_ai_rag_memory_service',
 }
 
 
-def __getattr__(name: str) -> object:
-  if name in _LAZY_MEMBERS:
-    module = importlib.import_module(f'{__name__}.{_LAZY_MEMBERS[name]}')
-    return vars(module)[name]
-  raise AttributeError(f'module {__name__!r} has no attribute {name!r}')
+__getattr__, __dir__ = _lazy.accessors(globals(), _LAZY_MEMBERS)
