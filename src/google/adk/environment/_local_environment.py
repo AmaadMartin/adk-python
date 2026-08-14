@@ -21,7 +21,10 @@ import logging
 import os
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tempfile
+from typing import TypedDict
 
 from typing_extensions import override
 
@@ -30,6 +33,17 @@ from ._base_environment import BaseEnvironment
 from ._base_environment import ExecutionResult
 
 logger = logging.getLogger('google_adk.' + __name__)
+
+
+class _PopenKwargs(TypedDict, total=False):
+  """Platform-specific spawn options for ``create_subprocess_shell``.
+
+  A ``TypedDict`` rather than a plain ``dict``, because ``mypy`` checks a
+  ``**dict[str, int]`` splat against every keyword parameter of the callee and
+  rejects it.
+  """
+
+  creationflags: int
 
 
 @experimental
@@ -99,12 +113,22 @@ class LocalEnvironment(BaseEnvironment):
     if self._env_vars:
       proc_env.update(self._env_vars)
 
+    popen_kwargs: _PopenKwargs = {}
+    if sys.platform == 'win32':
+      # `create_subprocess_shell` runs the command through cmd.exe, a console
+      # binary, so Windows allocates a visible console window whenever the host
+      # process has none (a GUI app, a service, pythonw.exe). Both streams are
+      # piped and stdin is never written, so the child needs no console. The
+      # constant does not exist on POSIX, hence the guard.
+      popen_kwargs['creationflags'] = subprocess.CREATE_NO_WINDOW
+
     proc = await asyncio.create_subprocess_shell(
         command,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         cwd=self._working_dir,
         env=proc_env,
+        **popen_kwargs,
     )
 
     timed_out = False
