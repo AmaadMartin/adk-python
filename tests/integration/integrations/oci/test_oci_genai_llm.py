@@ -28,12 +28,17 @@ Optional:
 import json
 import os
 
+import pytest
+
+# The module under test raises ImportError when the oci SDK is absent, so the
+# import below is unsafe without it; oci ships only in the oci/all extras.
+pytest.importorskip("oci", reason="Requires oci (google-adk[oci])")
+
 from google.adk.integrations.oci._oci_genai_llm import OCIGenAILlm
 from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 from google.genai.types import Content
 from google.genai.types import Part
-import pytest
 
 # ---------------------------------------------------------------------------
 # Skip the entire module when required env vars are absent
