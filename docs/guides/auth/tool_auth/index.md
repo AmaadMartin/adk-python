@@ -29,6 +29,24 @@ Two classes describe what is needed, and `AuthConfig` pairs them:
 the LLM flow pauses the invocation and later resumes the waiting call, and a
 `BaseCredentialService` remembers the credential between turns.
 
+### Why the scheme types come from FastAPI
+
+ADK re-exports FastAPI's security-scheme models instead of defining its own, so
+you work with one set of classes on both sides of an `AuthConfig`.
+`AuthSchemeType` is `fastapi.openapi.models.SecuritySchemeType` itself, the same
+object, so `scheme.type_ == SecuritySchemeType.oauth2` holds. Passing a
+`fastapi.openapi.models` instance to `AuthConfig` stores that same instance, so
+`isinstance(config.auth_scheme, OAuth2)` holds on the way back out. The cost is
+an import: anything that imports `AuthConfig` loads FastAPI and Starlette.
+
+That cost is accepted deliberately. FastAPI is a core dependency of ADK anyway,
+for the `adk web` server, so local models would defer an import without removing
+a package. They would also break the two guarantees above without raising
+anything: a look-alike enum never compares equal to FastAPI's, and an
+`isinstance` check against a FastAPI class stops matching. The decision changes
+only if ADK drops FastAPI from its core dependencies, or if a major release
+carries a documented migration for the change of type.
+
 ## Get started
 
 This agent has one tool that needs an OAuth2 access token. Running it prints the
