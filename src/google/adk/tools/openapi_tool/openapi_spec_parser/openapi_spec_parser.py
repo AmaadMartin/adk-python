@@ -72,13 +72,8 @@ class ParsedOperation(BaseModel):
     ``populate_by_name``, so a dump keyed by field name cannot be validated
     back. Defaulting to ``by_alias=True`` keeps ``ParsedOperation``
     round-trippable through ``model_validate``; pass ``by_alias=False``
-    explicitly to opt out.
-
-    Args:
-        **kwargs: Keyword arguments forwarded to ``BaseModel.model_dump``.
-
-    Returns:
-        The dumped model.
+    explicitly to opt out. ``ConfigDict(serialize_by_alias=True)`` does not
+    work here, because it does not reach the nested models.
     """
     kwargs.setdefault("by_alias", True)
     return super().model_dump(**kwargs)
@@ -87,12 +82,6 @@ class ParsedOperation(BaseModel):
     """Serializes the model to JSON, defaulting to ``by_alias=True``.
 
     See ``model_dump`` for why.
-
-    Args:
-        **kwargs: Keyword arguments forwarded to ``BaseModel.model_dump_json``.
-
-    Returns:
-        The serialized model.
     """
     kwargs.setdefault("by_alias", True)
     return super().model_dump_json(**kwargs)
