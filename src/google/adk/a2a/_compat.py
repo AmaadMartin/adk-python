@@ -733,7 +733,7 @@ async def send_message(
     smr = SendMessageRequest()
     smr.message.CopyFrom(request)
     if request_metadata:
-      smr.metadata.Clear()
+      # ``smr`` was just constructed, so there is nothing to clear first.
       ParseDict(request_metadata, smr.metadata)
     async with Aclosing(client.send_message(smr, context=context)) as agen:
       async for item in agen:
