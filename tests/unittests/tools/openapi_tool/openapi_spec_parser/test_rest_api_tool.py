@@ -15,6 +15,8 @@
 
 import json
 import ssl
+from typing import List
+from typing import Tuple
 from unittest import mock
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -30,11 +32,13 @@ from google.adk.auth.auth_credential import AuthCredential
 from google.adk.auth.auth_credential import AuthCredentialTypes
 from google.adk.auth.auth_credential import HttpAuth
 from google.adk.auth.auth_credential import HttpCredentials
+from google.adk.auth.auth_schemes import AuthScheme
 from google.adk.features import FeatureName
 from google.adk.features._feature_registry import temporary_feature_override
 from google.adk.sessions.state import State
 from google.adk.tools.openapi_tool.auth.auth_helpers import token_to_scheme_credential
 from google.adk.tools.openapi_tool.common.common import ApiParameter
+from google.adk.tools.openapi_tool.openapi_spec_parser.openapi_spec_parser import OpenApiSpecParser
 from google.adk.tools.openapi_tool.openapi_spec_parser.openapi_spec_parser import OperationEndpoint
 from google.adk.tools.openapi_tool.openapi_spec_parser.openapi_spec_parser import ParsedOperation
 from google.adk.tools.openapi_tool.openapi_spec_parser.operation_parser import OperationParser
@@ -152,6 +156,71 @@ def sample_auth_credential():
       "apikey", "header", "", "sample_auth_credential_internal_test"
   )
   return credential
+
+
+# A spec that exercises both halves of path containment end to end: a templated
+# server URL that must be resolved at parse time, and a path parameter whose
+# value must stay inside its own segment.
+_PETS_SPEC_WITH_TEMPLATED_SERVER = {
+    "openapi": "3.1.0",
+    "info": {"title": "Pets", "version": "1.0.0"},
+    "servers": [{
+        "url": "https://{region}.api.example.com",
+        "variables": {"region": {"default": "us", "enum": ["us", "eu"]}},
+    }],
+    "paths": {
+        "/pets/{pet_id}": {
+            "get": {
+                "operationId": "getPet",
+                "parameters": [{
+                    "name": "pet_id",
+                    "in": "path",
+                    "required": True,
+                    "schema": {"type": "string"},
+                }],
+                "responses": {
+                    "200": {
+                        "description": "ok",
+                        "content": {
+                            "application/json": {"schema": {"type": "string"}}
+                        },
+                    }
+                },
+            }
+        }
+    },
+}
+
+
+def build_path_param_tool(
+    auth_credential: AuthCredential,
+    auth_scheme: AuthScheme,
+    base_url: str = "https://example.com",
+) -> Tuple[RestApiTool, List[ApiParameter]]:
+  """Builds a tool whose path template holds a single ``{user_id}`` parameter.
+
+  Mirrors the setup of ``test_prepare_request_params_path_param`` so that the
+  path-parameter encoding tests differ only in their kwargs and assertions.
+  """
+  tool = RestApiTool(
+      name="test_tool",
+      description="Test Tool",
+      endpoint=OperationEndpoint(
+          base_url=base_url, path="/test/{user_id}", method="get"
+      ),
+      operation=Operation(operationId="test_op"),
+      auth_credential=auth_credential,
+      auth_scheme=auth_scheme,
+  )
+  params = [
+      ApiParameter(
+          original_name="user_id",
+          py_name="user_id",
+          param_location="path",
+          param_schema=OpenAPISchema(type="string"),
+      )
+  ]
+  return tool, params
 
 
 class TestRestApiToolLegacy:
@@ -853,6 +922,232 @@ class TestRestApiTool:
     assert (
         request_params["url"] == "https://example.com/test/123"
     )  # Path param replaced
+
+  def test_prepare_request_params_path_param_traversal_is_encoded(
+      self, sample_auth_credential, sample_auth_scheme
+  ):
+    tool, params = build_path_param_tool(
+        sample_auth_credential, sample_auth_scheme
+    )
+
+    request_params = tool._prepare_request_params(
+        params, {"user_id": "../../admin/export"}
+    )
+
+    url = request_params["url"]
+    assert url == "https://example.com/test/..%2F..%2Fadmin%2Fexport"
+    # httpx no longer collapses the dot segments, because there are none left.
+    assert str(httpx.URL(url)) == url
+    assert httpx.URL(url).host == "example.com"
+
+  @pytest.mark.parametrize(
+      "value, expected_segment", [(".", "%2E"), ("..", "%2E%2E")]
+  )
+  def test_prepare_request_params_path_param_dot_segment_is_encoded(
+      self, value, expected_segment, sample_auth_credential, sample_auth_scheme
+  ):
+    tool, params = build_path_param_tool(
+        sample_auth_credential, sample_auth_scheme
+    )
+
+    request_params = tool._prepare_request_params(params, {"user_id": value})
+
+    url = request_params["url"]
+    assert url == f"https://example.com/test/{expected_segment}"
+    # Still one literal segment rather than a relative reference resolving to
+    # the parent path or the API root.
+    assert httpx.URL(url).path == f"/test/{value}"
+
+  def test_prepare_request_params_path_param_cannot_smuggle_query_params(
+      self, sample_auth_credential, sample_auth_scheme
+  ):
+    tool, params = build_path_param_tool(
+        sample_auth_credential, sample_auth_scheme
+    )
+
+    request_params = tool._prepare_request_params(
+        params, {"user_id": "x?role=admin&debug=true"}
+    )
+
+    assert (
+        request_params["url"]
+        == "https://example.com/test/x%3Frole%3Dadmin%26debug%3Dtrue"
+    )
+    # The critical assertion: the embedded-query block that follows substitution
+    # promotes a query string found in the assembled URL into real query
+    # parameters, so nothing the model supplied may reach it.
+    assert request_params["params"] == {}
+
+  def test_prepare_request_params_path_param_cannot_truncate_with_fragment(
+      self, sample_auth_credential, sample_auth_scheme
+  ):
+    tool, params = build_path_param_tool(
+        sample_auth_credential, sample_auth_scheme
+    )
+
+    request_params = tool._prepare_request_params(params, {"user_id": "a#frag"})
+
+    # The URL keeps the whole value instead of being truncated at the fragment.
+    url = request_params["url"]
+    assert url == "https://example.com/test/a%23frag"
+    assert httpx.URL(url).path == "/test/a#frag"
+
+  @pytest.mark.parametrize(
+      "value",
+      ["hello world", "ünïcode", "a/b", "a&b=c", "100%", "a+b", "日本語"],
+  )
+  def test_prepare_request_params_path_param_round_trips_special_characters(
+      self, value, sample_auth_credential, sample_auth_scheme
+  ):
+    """This is an encoder, not a filter: every value must survive intact."""
+    tool, params = build_path_param_tool(
+        sample_auth_credential, sample_auth_scheme
+    )
+
+    request_params = tool._prepare_request_params(params, {"user_id": value})
+
+    # httpx decodes the raw path back to exactly what the model supplied.
+    assert httpx.URL(request_params["url"]).path == f"/test/{value}"
+
+  @pytest.mark.parametrize("value", ["123", "a-b_c.d~e"])
+  def test_prepare_request_params_path_param_safe_value_unchanged(
+      self, value, sample_auth_credential, sample_auth_scheme
+  ):
+    tool, params = build_path_param_tool(
+        sample_auth_credential, sample_auth_scheme
+    )
+
+    request_params = tool._prepare_request_params(params, {"user_id": value})
+
+    assert request_params["url"] == f"https://example.com/test/{value}"
+
+  @pytest.mark.parametrize(
+      "value, expected_segment", [(42, "42"), (True, "True"), (None, "None")]
+  )
+  def test_prepare_request_params_path_param_non_string_values(
+      self, value, expected_segment, sample_auth_credential, sample_auth_scheme
+  ):
+    """Stringification is unchanged from what ``str.format`` produced."""
+    tool, params = build_path_param_tool(
+        sample_auth_credential, sample_auth_scheme
+    )
+
+    request_params = tool._prepare_request_params(params, {"user_id": value})
+
+    assert (
+        request_params["url"] == f"https://example.com/test/{expected_segment}"
+    )
+
+  @pytest.mark.parametrize(
+      "value", ["evil.example.com", "//evil.example.com/x", "@evil.example.com"]
+  )
+  def test_prepare_request_params_path_param_never_reaches_host(
+      self, value, sample_auth_credential, sample_auth_scheme
+  ):
+    tool, params = build_path_param_tool(
+        sample_auth_credential, sample_auth_scheme
+    )
+
+    request_params = tool._prepare_request_params(params, {"user_id": value})
+
+    assert httpx.URL(request_params["url"]).host == "example.com"
+
+  def test_prepare_request_params_path_param_not_substituted_into_base_url(
+      self, sample_auth_credential, sample_auth_scheme
+  ):
+    """Pins the substitute-then-prefix ordering that keeps the host invariant."""
+    tool, params = build_path_param_tool(
+        sample_auth_credential,
+        sample_auth_scheme,
+        base_url="https://{user_id}.example.com",
+    )
+
+    request_params = tool._prepare_request_params(
+        params, {"user_id": "evil.attacker.test"}
+    )
+
+    # Only the path template is substituted; the host keeps its literal braces
+    # so a path parameter can never redirect the request to another origin.
+    assert (
+        request_params["url"]
+        == "https://{user_id}.example.com/test/evil.attacker.test"
+    )
+
+  def test_prepare_request_params_path_param_encodes_percent(
+      self, sample_auth_credential, sample_auth_scheme
+  ):
+    tool, params = build_path_param_tool(
+        sample_auth_credential, sample_auth_scheme
+    )
+
+    request_params = tool._prepare_request_params(params, {"user_id": "%2e%2e"})
+
+    # The model cannot smuggle in its own percent-escapes.
+    assert request_params["url"] == "https://example.com/test/%252e%252e"
+
+  def test_prepare_request_params_query_param_encoding_unchanged(
+      self, sample_endpoint, sample_auth_credential, sample_auth_scheme
+  ):
+    """Only path values are encoded; httpx still encodes the query itself."""
+    tool = RestApiTool(
+        name="test_tool",
+        description="Test Tool",
+        endpoint=sample_endpoint,
+        operation=Operation(operationId="test_op"),
+        auth_credential=sample_auth_credential,
+        auth_scheme=sample_auth_scheme,
+    )
+    params = [
+        ApiParameter(
+            original_name="filter",
+            py_name="filter",
+            param_location="query",
+            param_schema=OpenAPISchema(type="string"),
+        )
+    ]
+
+    request_params = tool._prepare_request_params(
+        params, {"filter": "../../admin?x=1"}
+    )
+
+    assert request_params["params"] == {"filter": "../../admin?x=1"}
+
+  @pytest.mark.asyncio
+  async def test_call_end_to_end_contains_hostile_path_param(
+      self, mock_tool_context
+  ):
+    """Proves containment on the wire, through the real parser and httpx."""
+    captured: List[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+      captured.append(request)
+      return httpx.Response(200, json={"ok": True})
+
+    parsed = OpenApiSpecParser().parse(_PETS_SPEC_WITH_TEMPLATED_SERVER)[0]
+    tool = RestApiTool.from_parsed_operation(
+        parsed,
+        httpx_client_factory=lambda: httpx.AsyncClient(
+            transport=httpx.MockTransport(handler)
+        ),
+    )
+
+    await tool.call(
+        args={"pet_id": "../../admin/export"}, tool_context=mock_tool_context
+    )
+    await tool.call(
+        args={"pet_id": "x?role=admin"}, tool_context=mock_tool_context
+    )
+
+    # The templated server variable is resolved, and neither hostile value
+    # escaped its path segment once httpx normalized the request URL.
+    assert captured[0].url.host == "us.api.example.com"
+    assert str(captured[0].url) == (
+        "https://us.api.example.com/pets/..%2F..%2Fadmin%2Fexport"
+    )
+    assert str(captured[1].url) == (
+        "https://us.api.example.com/pets/x%3Frole%3Dadmin"
+    )
+    assert captured[1].url.params.get("role") is None
 
   def test_prepare_request_params_header_param(
       self,

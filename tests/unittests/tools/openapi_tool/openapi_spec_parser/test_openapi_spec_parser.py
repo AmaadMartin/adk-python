@@ -306,6 +306,101 @@ def test_parse_spec_with_no_servers(openapi_spec_generator):
   assert parsed_operations[0].endpoint.base_url == ""
 
 
+def test_parse_spec_with_templated_server_url_resolves_default(
+    openapi_spec_generator,
+):
+  """A templated server URL is resolved from its declared default."""
+  openapi_spec = create_minimal_openapi_spec()
+  openapi_spec["servers"] = [{
+      "url": "https://{region}.api.example.com",
+      "variables": {"region": {"default": "us", "enum": ["us", "eu"]}},
+  }]
+
+  parsed_operations = openapi_spec_generator.parse(openapi_spec)
+
+  base_url = parsed_operations[0].endpoint.base_url
+  assert base_url == "https://us.api.example.com"
+  assert "{" not in base_url
+
+
+def test_parse_spec_with_multiple_server_variables(openapi_spec_generator):
+  """Every placeholder in the server URL is substituted."""
+  openapi_spec = create_minimal_openapi_spec()
+  openapi_spec["servers"] = [{
+      "url": "https://{region}.api.example.com/{basePath}",
+      "variables": {
+          "region": {"default": "eu"},
+          "basePath": {"default": "v2"},
+      },
+  }]
+
+  parsed_operations = openapi_spec_generator.parse(openapi_spec)
+
+  assert (
+      parsed_operations[0].endpoint.base_url == "https://eu.api.example.com/v2"
+  )
+
+
+def test_parse_spec_with_server_variable_enum_only(openapi_spec_generator):
+  """A variable with an enum but no default resolves to its first entry."""
+  openapi_spec = create_minimal_openapi_spec()
+  openapi_spec["servers"] = [{
+      "url": "https://{region}.api.example.com",
+      "variables": {"region": {"enum": ["eu", "us"]}},
+  }]
+
+  parsed_operations = openapi_spec_generator.parse(openapi_spec)
+
+  assert parsed_operations[0].endpoint.base_url == "https://eu.api.example.com"
+
+
+@pytest.mark.parametrize(
+    "variables",
+    [
+        pytest.param({}, id="variable_not_declared"),
+        pytest.param({"region": {}}, id="no_default_and_no_enum"),
+        pytest.param({"region": {"enum": []}}, id="empty_enum"),
+        pytest.param({"region": "us"}, id="variable_entry_not_a_mapping"),
+    ],
+)
+def test_parse_spec_with_unresolvable_server_variable_raises(
+    openapi_spec_generator, variables
+):
+  """An unresolvable placeholder fails at parse time, not at connect time."""
+  openapi_spec = create_minimal_openapi_spec()
+  openapi_spec["servers"] = [
+      {"url": "https://{region}.api.example.com", "variables": variables}
+  ]
+
+  with pytest.raises(ValueError, match="region"):
+    openapi_spec_generator.parse(openapi_spec)
+
+
+def test_parse_spec_with_non_templated_server_url_unchanged(
+    openapi_spec_generator,
+):
+  """A plain URL is returned as authored even when variables are declared."""
+  openapi_spec = create_minimal_openapi_spec()
+  openapi_spec["servers"] = [{
+      "url": "https://api.example.com",
+      "variables": {"region": {"default": "us"}},
+  }]
+
+  parsed_operations = openapi_spec_generator.parse(openapi_spec)
+
+  assert parsed_operations[0].endpoint.base_url == "https://api.example.com"
+
+
+def test_parse_spec_with_relative_server_url_unchanged(openapi_spec_generator):
+  """Relative server URLs are legal OpenAPI and must keep parsing."""
+  openapi_spec = create_minimal_openapi_spec()
+  openapi_spec["servers"] = [{"url": "/v1"}]
+
+  parsed_operations = openapi_spec_generator.parse(openapi_spec)
+
+  assert parsed_operations[0].endpoint.base_url == "/v1"
+
+
 def test_parse_spec_with_description(openapi_spec_generator):
   openapi_spec = create_minimal_openapi_spec()
   expected_description = "This is a test description."
