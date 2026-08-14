@@ -132,9 +132,8 @@ class _ContentLlmRequestProcessor(BaseLlmRequestProcessor):
         invocation_context, llm_request, instruction_related_contents
     )
 
-    # Maintain async generator behavior
-    if False:  # Ensures it behaves as a generator
-      yield  # This is a no-op but maintains generator structure
+    return
+    yield  # AsyncGenerator requires a yield in function body.
 
 
 request_processor = _ContentLlmRequestProcessor()
