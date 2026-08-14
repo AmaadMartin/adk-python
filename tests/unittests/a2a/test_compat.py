@@ -18,14 +18,18 @@ The shim's contract is that, for every SDK shape it claims to support, it
 returns the normalized form, and for a shape it does not recognize it fails
 loudly instead of silently returning ``None``.
 
-Only one a2a-sdk major is installed at a time, so the branch for the *other*
-major can only be exercised where the shim is duck-typed: those tests flip
-``_compat.IS_A2A_V1`` and feed the shim the protobuf objects that branch
-expects. Branches that import 1.x-only SDK symbols are not reachable here.
+Only one a2a-sdk major is installed at a time. The branch for the *installed*
+major is exercised against real SDK objects, behind ``v03_only`` or ``v1_only``.
+The branch for the *other* major can only be exercised where the shim is
+duck-typed: those tests flip ``_compat.IS_A2A_V1`` and feed the shim the
+protobuf objects that branch expects.
 """
 
 from __future__ import annotations
 
+from datetime import datetime
+from datetime import timezone
+import inspect
 import json
 
 from a2a.client.client_factory import ClientFactory
@@ -41,6 +45,10 @@ import pytest
 
 v03_only = pytest.mark.skipif(
     _compat.IS_A2A_V1, reason='0.3-only SDK object shapes'
+)
+
+v1_only = pytest.mark.skipif(
+    not _compat.IS_A2A_V1, reason='1.x-only SDK object shapes'
 )
 
 
@@ -454,3 +462,212 @@ def test_part_kind_label_is_fixed_on_v03_and_concrete_on_v1(monkeypatch):
   # 1.x has no wrapper type, so the label is the concrete class name.
   monkeypatch.setattr(_compat, 'IS_A2A_V1', True)
   assert _compat.part_kind_label(file_part) == 'Part'
+
+
+# -----------------------------------------------------------------------------
+# 1.x in-place proto writes
+#
+# On 1.x every destination is already a protobuf field, so the shim parses into
+# it instead of building a throwaway message and copying it over. These tests
+# use the real SDK protos, so they only run where 1.x is installed.
+# -----------------------------------------------------------------------------
+class _RecordingClient:
+  """Records the request the shim hands to the 1.x SDK client."""
+
+  def __init__(self):
+    self.request = None
+
+  async def send_message(self, request, *, context=None):
+    self.request = request
+    yield request
+
+
+@v1_only
+def test_make_data_part_v1_parses_the_dict_into_the_value_field():
+  part = _compat.make_data_part(data={'a': 1, 'nested': {'b': 'c'}})
+
+  # A dict must land in the ``struct_value`` member of the ``Value`` oneof.
+  assert part.data.WhichOneof('kind') == 'struct_value'
+  assert _compat.data_part_dict(part) == {'a': 1, 'nested': {'b': 'c'}}
+
+
+@v1_only
+def test_make_data_part_v1_empty_dict_still_sets_the_struct_value():
+  part = _compat.make_data_part(data={})
+
+  assert part.data.WhichOneof('kind') == 'struct_value'
+  assert _compat.data_part_dict(part) == {}
+
+
+@v1_only
+def test_make_data_part_v1_with_metadata_populates_both_fields():
+  part = _compat.make_data_part(data={'a': 1}, metadata={'m': 'v'})
+
+  assert _compat.data_part_dict(part) == {'a': 1}
+  assert _compat.part_metadata(part) == {'m': 'v'}
+
+
+@v1_only
+def test_set_part_metadata_v1_parses_into_the_struct_field():
+  part = _compat.make_data_part(data={'a': 1})
+
+  _compat.set_part_metadata(part, {'m': 'v'})
+
+  assert _compat.part_metadata(part) == {'m': 'v'}
+
+
+@v1_only
+def test_set_part_metadata_v1_replaces_existing_keys():
+  part = _compat.make_data_part(data={'a': 1}, metadata={'old': 1})
+
+  _compat.set_part_metadata(part, {'new': 2})
+
+  # The write is a replacement, not a merge.
+  assert _compat.part_metadata(part) == {'new': 2}
+
+
+@v1_only
+def test_set_part_metadata_v1_empty_mapping_keeps_the_field_present():
+  # ``part_metadata`` reads through ``HasField``, so an empty write must still
+  # mark the submessage present or the reader would diverge.
+  part = _compat.make_data_part(data={'a': 1})
+
+  _compat.set_part_metadata(part, {})
+
+  assert part.HasField('metadata')
+  assert _compat.part_metadata(part) == {}
+
+
+@v1_only
+async def test_send_message_v1_parses_request_metadata_into_the_request():
+  client = _RecordingClient()
+  message = _compat.make_message(message_id='m-1', role='user')
+
+  async for _ in _compat.send_message(
+      client, request=message, request_metadata={'m': 'v'}
+  ):
+    pass
+
+  assert dict(client.request.metadata) == {'m': 'v'}
+
+
+@v1_only
+async def test_send_message_v1_without_metadata_leaves_the_field_unset():
+  client = _RecordingClient()
+  message = _compat.make_message(message_id='m-1', role='user')
+
+  async for _ in _compat.send_message(client, request=message):
+    pass
+
+  assert not client.request.HasField('metadata')
+
+
+@v1_only
+def test_set_event_metadata_v1_parses_into_the_real_event_struct():
+  event = _compat.make_task_status_update_event(
+      task_id='task-1',
+      context_id='ctx-1',
+      status=_compat.make_task_status(_compat.TS_WORKING),
+  )
+
+  _compat.set_event_metadata(event, {'a': 'b'})
+
+  assert _compat.meta_to_dict(event.metadata) == {'a': 'b'}
+
+
+@v1_only
+@pytest.mark.parametrize('metadata', [None, {}])
+def test_set_event_metadata_v1_empty_leaves_existing_metadata_intact(metadata):
+  # The early-out matters more now that the write clears the field first.
+  event = _compat.make_task_status_update_event(
+      task_id='task-1',
+      context_id='ctx-1',
+      status=_compat.make_task_status(_compat.TS_WORKING),
+  )
+  _compat.set_event_metadata(event, {'already': 'here'})
+
+  _compat.set_event_metadata(event, metadata)
+
+  assert _compat.meta_to_dict(event.metadata) == {'already': 'here'}
+
+
+@v1_only
+@pytest.mark.parametrize('metadata', [None, {}])
+def test_set_struct_metadata_v1_empty_leaves_existing_metadata_intact(metadata):
+  artifact = _compat.make_artifact(artifact_id='artifact-1')
+  _compat.set_struct_metadata(artifact, {'already': 'here'})
+
+  _compat.set_struct_metadata(artifact, metadata)
+
+  assert _compat.meta_to_dict(artifact.metadata) == {'already': 'here'}
+
+
+@v1_only
+def test_set_struct_metadata_v1_replaces_existing_keys():
+  artifact = _compat.make_artifact(artifact_id='artifact-1')
+  _compat.set_struct_metadata(artifact, {'old': 1})
+
+  _compat.set_struct_metadata(artifact, {'new': 2})
+
+  assert _compat.meta_to_dict(artifact.metadata) == {'new': 2}
+
+
+# -----------------------------------------------------------------------------
+# make_task_status timestamp coercion (1.x)
+# -----------------------------------------------------------------------------
+def _status_datetime(status) -> datetime:
+  return status.timestamp.ToDatetime(tzinfo=timezone.utc)
+
+
+@v1_only
+def test_make_task_status_v1_parses_an_iso_string_timestamp():
+  moment = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+
+  status = _compat.make_task_status(
+      _compat.TS_WORKING, timestamp=moment.isoformat()
+  )
+
+  assert _status_datetime(status) == moment
+
+
+@v1_only
+def test_make_task_status_v1_writes_a_datetime_timestamp():
+  moment = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+
+  status = _compat.make_task_status(_compat.TS_WORKING, timestamp=moment)
+
+  assert _status_datetime(status) == moment
+
+
+@v1_only
+def test_make_task_status_v1_copies_an_existing_proto_timestamp():
+  moment = datetime(2026, 1, 2, 3, 4, 5, tzinfo=timezone.utc)
+  # Take a real proto ``Timestamp`` from the shim itself rather than importing
+  # the generated well-known type, which is what this change removed.
+  source = _compat.make_task_status(_compat.TS_WORKING, timestamp=moment)
+
+  status = _compat.make_task_status(
+      _compat.TS_WORKING, timestamp=source.timestamp
+  )
+
+  assert _status_datetime(status) == moment
+
+
+@v1_only
+@pytest.mark.parametrize('timestamp', [None, 'now'])
+def test_make_task_status_v1_falls_back_to_the_current_time(timestamp):
+  # ``None`` means "now", and an unparseable string degrades to "now" rather
+  # than raising at the caller.
+  before = datetime.now(timezone.utc)
+
+  status = _compat.make_task_status(_compat.TS_WORKING, timestamp=timestamp)
+
+  after = datetime.now(timezone.utc)
+  assert before <= _status_datetime(status) <= after
+
+
+def test_compat_never_imports_the_generated_well_known_types():
+  # The shim writes into proto fields it already holds, so it must not reach
+  # for ``struct_pb2``/``timestamp_pb2``. Vendored builds cannot import those
+  # under that spelling, and no behavioural test can catch a regression here.
+  assert '_pb2' not in inspect.getsource(_compat)

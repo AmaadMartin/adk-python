@@ -77,27 +77,6 @@ def _as_factory(target: type[_T]) -> Callable[..., _T]:
   return cast(Callable[..., _T], target)
 
 
-def _make_proto_timestamp(dt: Optional[datetime] = None) -> Any:
-  """Build a google.protobuf.Timestamp from a datetime (or now). 1.x only."""
-  from google.protobuf import timestamp_pb2
-
-  ts = timestamp_pb2.Timestamp()
-  ts.FromDatetime(dt or datetime.now(timezone.utc))
-  return ts
-
-
-def _make_proto_value_from_dict(d: dict[str, Any]) -> Any:
-  """Wrap a plain dict as a google.protobuf.Value (struct_value). 1.x only."""
-  from google.protobuf.struct_pb2 import Struct
-  from google.protobuf.struct_pb2 import Value
-
-  v = Value()
-  s = Struct()
-  ParseDict(d, s)
-  v.struct_value.CopyFrom(s)
-  return v
-
-
 def _proto_to_dict(msg: Any) -> dict[str, Any]:
   """Convert a protobuf message (e.g. Struct/Value) to a plain dict."""
   result: dict[str, Any] = MessageToDict(msg)
@@ -248,11 +227,15 @@ def part_metadata(p: Part) -> dict[str, Any]:
 
 
 def set_part_metadata(p: Part, metadata: dict[str, Any]) -> None:
-  """Writes a Part's metadata."""
-  if IS_A2A_V1:
-    from google.protobuf.struct_pb2 import Struct
+  """Writes a Part's metadata.
 
-    p.metadata.CopyFrom(ParseDict(metadata, Struct()))
+  0.3.x: ``metadata`` lives on ``p.root`` (a pydantic field) and is assigned.
+  1.x:   ``p.metadata`` is a proto ``Struct`` field and is parsed into in
+         place. ``Clear()`` first keeps the write a replacement, not a merge.
+  """
+  if IS_A2A_V1:
+    p.metadata.Clear()
+    ParseDict(metadata, p.metadata)
   else:
     p.root.metadata = metadata
 
@@ -319,7 +302,9 @@ def make_data_part(
   """Builds a structured-data Part."""
   if IS_A2A_V1:
     p = Part()
-    p.data.CopyFrom(_make_proto_value_from_dict(data))
+    # ``p.data`` is already a proto ``Value``; parsing a dict into it sets the
+    # ``struct_value`` member directly.
+    ParseDict(data, p.data)
     if metadata:
       set_part_metadata(p, metadata)
     return p
@@ -744,12 +729,12 @@ async def send_message(
   """
   if IS_A2A_V1:
     from a2a.types import SendMessageRequest
-    from google.protobuf.struct_pb2 import Struct
 
     smr = SendMessageRequest()
     smr.message.CopyFrom(request)
     if request_metadata:
-      smr.metadata.CopyFrom(ParseDict(request_metadata, Struct()))
+      smr.metadata.Clear()
+      ParseDict(request_metadata, smr.metadata)
     async with Aclosing(client.send_message(smr, context=context)) as agen:
       async for item in agen:
         yield item
@@ -1048,7 +1033,7 @@ def make_task_status(
   """
   if IS_A2A_V1:
     ts = TaskStatus(state=state)
-    ts.timestamp.CopyFrom(_coerce_proto_timestamp(timestamp))
+    _set_proto_timestamp(ts.timestamp, timestamp)
     if message is not None:
       ts.message.CopyFrom(message)
     return ts
@@ -1063,19 +1048,32 @@ def make_task_status(
     return TaskStatus(**kwargs)
 
 
-def _coerce_proto_timestamp(timestamp: Any) -> Any:
-  """Return a proto Timestamp from a str/datetime/Timestamp/None (1.x only)."""
+def _set_proto_timestamp(field: Any, timestamp: Any) -> None:
+  """Populates a proto Timestamp field from a str/datetime/Timestamp/None.
+
+  Writes into the caller's existing field instead of building a new
+  ``Timestamp``, so the shim needs no generated well-known-type module.
+  1.x only.
+
+  Args:
+    field: The destination ``google.protobuf.Timestamp`` field.
+    timestamp: A proto ``Timestamp``, an ISO-format string, a ``datetime``, or
+      ``None`` for the current time. An unparseable string also falls back to
+      the current time.
+  """
+  if hasattr(timestamp, "seconds"):  # already a proto Timestamp
+    field.CopyFrom(timestamp)
+    return
   if timestamp is None:
-    return _make_proto_timestamp()
-  if isinstance(timestamp, str):
+    dt = datetime.now(timezone.utc)
+  elif isinstance(timestamp, str):
     try:
       dt = datetime.fromisoformat(timestamp)
     except ValueError:
       dt = datetime.now(timezone.utc)
-    return _make_proto_timestamp(dt)
-  if hasattr(timestamp, "seconds"):  # already a proto Timestamp
-    return timestamp
-  return _make_proto_timestamp(timestamp)  # assume datetime
+  else:
+    dt = timestamp  # assume datetime
+  field.FromDatetime(dt)
 
 
 def make_task_status_update_event(
@@ -1112,14 +1110,14 @@ def set_event_metadata(event: Any, metadata: dict[str, Any]) -> None:
   """Set metadata on an A2A event.
 
   0.3.x: ``event.metadata`` is a plain dict (pydantic model field).
-  1.x:   ``event.metadata`` is a proto ``Struct`` field; use ``CopyFrom``.
+  1.x:   ``event.metadata`` is a proto ``Struct`` field; it is parsed into in
+         place.
   """
   if not metadata:
     return
   if IS_A2A_V1:
-    from google.protobuf.struct_pb2 import Struct
-
-    event.metadata.CopyFrom(ParseDict(metadata, Struct()))
+    event.metadata.Clear()
+    ParseDict(metadata, event.metadata)
   else:
     event.metadata = metadata
 
@@ -1165,14 +1163,13 @@ def set_struct_metadata(obj: Any, metadata: dict[str, Any]) -> None:
   artifacts).
 
   0.3.x: ``obj.metadata`` is a plain dict (pydantic field) → assign directly.
-  1.x:   ``obj.metadata`` is a proto ``Struct`` field → use ``CopyFrom``.
+  1.x:   ``obj.metadata`` is a proto ``Struct`` field → parse into it in place.
   """
   if not metadata:
     return
   if IS_A2A_V1:
-    from google.protobuf.struct_pb2 import Struct
-
-    obj.metadata.CopyFrom(ParseDict(dict(metadata), Struct()))
+    obj.metadata.Clear()
+    ParseDict(dict(metadata), obj.metadata)
   else:
     obj.metadata = dict(metadata)
 
