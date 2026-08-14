@@ -126,6 +126,33 @@ def test_database_session_service_fails_on_creation():
     assert "sqlalchemy" in str(exc_info.value)
 
 
+def _import_without_sqlalchemy(module_name: str) -> None:
+  """Imports module_name in an interpreter state where sqlalchemy is missing.
+
+  ``importlib.import_module`` re-executes the module through the loader.
+  ``from <package> import <submodule>`` would instead return the stale module
+  object the parent package still holds as an attribute.
+  """
+  with mock.patch.dict("sys.modules", {"sqlalchemy": None}):
+    # Popped inside the patch so mock.patch.dict restores the entry on exit.
+    sys.modules.pop(module_name, None)
+    importlib.import_module(module_name)
+
+
+def test_database_session_service_import_reports_missing_extra():
+  """Verify importing the module without sqlalchemy names the extra."""
+  with pytest.raises(ImportError, match=r"google-adk\[db\]"):
+    _import_without_sqlalchemy("google.adk.sessions.database_session_service")
+
+
+def test_schema_check_utils_import_reports_missing_extra():
+  """Verify the schema check helper names the extra instead of half-loading."""
+  with pytest.raises(ImportError, match=r"google-adk\[db\]"):
+    _import_without_sqlalchemy(
+        "google.adk.sessions.migration._schema_check_utils"
+    )
+
+
 def test_vertex_ai_session_service_fails_on_creation():
   """Verify that creating VertexAiSessionService without extra fails using mocks."""
   try:

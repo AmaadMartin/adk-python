@@ -45,8 +45,10 @@ try:
   from sqlalchemy.ext.asyncio import AsyncSession as DatabaseSessionFactory
   from sqlalchemy.ext.asyncio import create_async_engine
   from sqlalchemy.pool import StaticPool
-except ImportError:
-  pass
+except ImportError as e:
+  from ..utils._dependency import missing_extra
+
+  raise missing_extra("sqlalchemy", "db") from e
 from typing_extensions import override
 
 from . import _session_util
@@ -317,13 +319,6 @@ class DatabaseSessionService(BaseSessionService):
       ValueError: If neither or both db_url and db_engine are provided, or if
         engine creation fails.
     """
-    try:
-      import sqlalchemy  # noqa: F401
-    except ImportError as e:
-      from ..utils._dependency import missing_extra
-
-      raise missing_extra("sqlalchemy", "db") from e
-
     if (db_url is None) == (db_engine is None):
       raise ValueError(
           "Exactly one of 'db_url' or 'db_engine' must be provided."

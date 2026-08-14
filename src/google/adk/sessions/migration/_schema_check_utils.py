@@ -23,8 +23,10 @@ try:
   from sqlalchemy import inspect
   from sqlalchemy import text
   from sqlalchemy.engine import make_url
-except ImportError:
-  pass
+except ImportError as e:
+  from ...utils._dependency import missing_extra
+
+  raise missing_extra("sqlalchemy", "db") from e
 
 if TYPE_CHECKING:
   from sqlalchemy.engine import Connection
