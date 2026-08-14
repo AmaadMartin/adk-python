@@ -1794,6 +1794,13 @@ def web_options():
     )
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
+      # The two logo options are only meaningful as a pair. Truthiness (not `is
+      # None`) mirrors the server-side check in ApiServer._setup_runtime_config.
+      if bool(kwargs.get("logo_text")) != bool(kwargs.get("logo_image_url")):
+        raise click.UsageError(
+            "Both --logo-text and --logo-image-url must be provided when"
+            " configuring a custom logo."
+        )
       return func(*args, **kwargs)
 
     return wrapper

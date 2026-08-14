@@ -1613,6 +1613,92 @@ def test_cli_web_passes_service_uris(
 
 
 @pytest.mark.parametrize(
+    "logo_flags",
+    [
+        ["--logo-text", "My Co"],
+        ["--logo-image-url", "https://example.com/logo.png"],
+        ["--logo-text", "", "--logo-image-url", "https://example.com/logo.png"],
+    ],
+    ids=["logo_text_only", "logo_image_url_only", "empty_logo_text"],
+)
+def test_cli_web_rejects_half_specified_logo_options(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    _patch_uvicorn: _Recorder,
+    logo_flags: List[str],
+) -> None:
+  """`adk web` should fail with a usage error when only one logo flag is set."""
+  agents_dir = tmp_path / "agents"
+  agents_dir.mkdir()
+
+  mock_get_app = _Recorder()
+  monkeypatch.setattr("google.adk.cli.fast_api.get_fast_api_app", mock_get_app)
+
+  runner = CliRunner()
+  result = runner.invoke(
+      cli_tools_click.main, ["web", str(agents_dir), *logo_flags]
+  )
+
+  assert result.exit_code == 2
+  assert isinstance(result.exception, SystemExit)
+  assert "Error:" in result.output
+  assert "--logo-text" in result.output
+  assert "--logo-image-url" in result.output
+  assert mock_get_app.calls == []
+  assert _patch_uvicorn.calls == []
+
+
+def test_cli_web_accepts_both_logo_options(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _patch_uvicorn: _Recorder
+) -> None:
+  """`adk web` should forward both logo options to get_fast_api_app."""
+  agents_dir = tmp_path / "agents"
+  agents_dir.mkdir()
+
+  mock_get_app = _Recorder()
+  monkeypatch.setattr("google.adk.cli.fast_api.get_fast_api_app", mock_get_app)
+
+  runner = CliRunner()
+  result = runner.invoke(
+      cli_tools_click.main,
+      [
+          "web",
+          str(agents_dir),
+          "--logo-text",
+          "My Co",
+          "--logo-image-url",
+          "https://example.com/logo.png",
+      ],
+  )
+
+  assert result.exit_code == 0
+  assert mock_get_app.calls
+  called_kwargs = mock_get_app.calls[0][1]
+  assert called_kwargs.get("logo_text") == "My Co"
+  assert called_kwargs.get("logo_image_url") == "https://example.com/logo.png"
+
+
+def test_cli_web_accepts_neither_logo_option(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, _patch_uvicorn: _Recorder
+) -> None:
+  """`adk web` should start without logo options and forward no logo config."""
+  agents_dir = tmp_path / "agents"
+  agents_dir.mkdir()
+
+  mock_get_app = _Recorder()
+  monkeypatch.setattr("google.adk.cli.fast_api.get_fast_api_app", mock_get_app)
+
+  runner = CliRunner()
+  result = runner.invoke(cli_tools_click.main, ["web", str(agents_dir)])
+
+  assert result.exit_code == 0
+  assert mock_get_app.calls
+  called_kwargs = mock_get_app.calls[0][1]
+  assert called_kwargs.get("logo_text") is None
+  assert called_kwargs.get("logo_image_url") is None
+
+
+@pytest.mark.parametrize(
     "flag",
     ["--allow-unsafe-unpickling", "--allow_unsafe_unpickling"],
 )
