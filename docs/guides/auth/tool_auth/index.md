@@ -244,6 +244,13 @@ alternative, keeping the credential in session state under the same key.
 *   **Session state is not a secret store.** `SessionStateCredentialService`
     puts tokens wherever session state lives.
 *   **`AuthConfig.get_credential_key()` is deprecated.** Set `credential_key`.
+*   **The scheme types are FastAPI's.** `AuthSchemeType` *is*
+    `fastapi.openapi.models.SecuritySchemeType`, and `AuthConfig` stores the
+    instance you pass, so `scheme.type_ == SecuritySchemeType.oauth2` and
+    `isinstance(config.auth_scheme, OAuth2)` both hold. The cost is that
+    importing `AuthConfig` loads FastAPI and Starlette — both already core ADK
+    dependencies. This changes only if ADK drops FastAPI from its core
+    dependencies, or a major release carries a documented migration.
 
 ## Related samples
 
