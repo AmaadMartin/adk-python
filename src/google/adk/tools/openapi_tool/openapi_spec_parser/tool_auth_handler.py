@@ -37,6 +37,12 @@ logger = logging.getLogger("google_adk." + __name__)
 
 AuthPreparationState = Literal["pending", "done"]
 
+# Suffix that keeps the tool's exchanged-credential cache out of the slots that
+# `AuthConfig.credential_key` names. Those slots hold a ready-to-use credential
+# owned by the credential service or by the application; this cache holds a
+# credential that still needs conversion.
+_EXCHANGED_CREDENTIAL_KEY_SUFFIX = "_existing_exchanged_credential"
+
 
 class AuthPreparationResult(BaseModel):
   """Result of the credential preparation process."""
@@ -73,9 +79,9 @@ def _resolve_credential_key(
 class ToolContextCredentialStore:
   """Handles storage and retrieval of credentials within a ToolContext.
 
-  A configured `credential_key` names the session state slot outright: the
-  credential is read from and written to exactly that key. Without one, the
-  key is derived from the auth scheme and the auth credential.
+  A configured ``credential_key`` selects the cache slot through
+  ``_EXCHANGED_CREDENTIAL_KEY_SUFFIX``. Without one, the slot is derived from
+  the auth scheme and the auth credential.
   """
 
   def __init__(
@@ -116,19 +122,14 @@ class ToolContextCredentialStore:
         if auth_credential
         else ""
     )
-    return f"{scheme_name}_{credential_name}_existing_exchanged_credential"
+    return f"{scheme_name}_{credential_name}{_EXCHANGED_CREDENTIAL_KEY_SUFFIX}"
 
-  def get_credential_key(
+  def _get_digest_credential_key(
       self,
       auth_scheme: Optional[AuthScheme],
       auth_credential: Optional[AuthCredential],
   ) -> str:
-    """Generates a unique key for the given auth scheme and credential."""
-
-    # A key the developer named wins over the derived one: it is how they
-    # point several tools at one credential, or keep two apart.
-    if self.credential_key:
-      return self.credential_key
+    """Derives the cache slot from the auth scheme and the auth credential."""
 
     if auth_credential and auth_credential.oauth2:
       auth_credential = auth_credential.model_copy(deep=True)
@@ -157,7 +158,21 @@ class ToolContextCredentialStore:
     # persisted. temp: namespace will be cleared after current run. but tool
     # want access token to be there stored across runs
 
-    return f"{scheme_name}_{credential_name}_existing_exchanged_credential"
+    return f"{scheme_name}_{credential_name}{_EXCHANGED_CREDENTIAL_KEY_SUFFIX}"
+
+  def get_credential_key(
+      self,
+      auth_scheme: Optional[AuthScheme],
+      auth_credential: Optional[AuthCredential],
+  ) -> str:
+    """Returns the session state slot that caches the exchanged credential."""
+
+    # A key the developer named selects the slot: it is how they point several
+    # tools at one cached credential, or keep two apart.
+    if self.credential_key:
+      return f"{self.credential_key}{_EXCHANGED_CREDENTIAL_KEY_SUFFIX}"
+
+    return self._get_digest_credential_key(auth_scheme, auth_credential)
 
   def get_credential(
       self,
@@ -172,31 +187,26 @@ class ToolContextCredentialStore:
     # session implementation, we don't want session to persist the token,
     # meanwhile we want the token shared across runs.
     serialized_credential = self.tool_context.state.get(token_key)
-    # A configured key shares its slot with the prefixless lookup in
-    # `AuthHandler.get_auth_response`, where a raw token string is a valid
-    # value. Anything that is not a serialized credential is a cache miss, so
-    # `AuthHandler` still gets to read it.
-    if serialized_credential and isinstance(
-        serialized_credential, (dict, AuthCredential)
-    ):
+    if serialized_credential:
       return AuthCredential.model_validate(serialized_credential)
 
-    if self.credential_key:
-      # A developer-named slot is exactly the slot: never migrate a
-      # digest-keyed credential into it, or one tool's cached credential
-      # silently shows up in another tool's named slot.
-      return None
+    # Slots this credential may already sit in: the digest slot, used while no
+    # credential_key was configured, and the pre-SHA256 legacy slot. When
+    # several tools share a credential_key, the first one to miss migrates its
+    # own cached credential into the shared slot. That sharing is what the
+    # developer asked for by naming one key. Without a credential_key the
+    # digest slot is the current slot, and re-reading it is a miss again.
+    for previous_key in (
+        self._get_digest_credential_key(auth_scheme, auth_credential),
+        self._get_legacy_credential_key(auth_scheme, auth_credential),
+    ):
+      serialized_credential = self.tool_context.state.get(previous_key)
+      if serialized_credential:
+        # Migrate to the current key for future lookups.
+        self.tool_context.state[token_key] = serialized_credential
+        return AuthCredential.model_validate(serialized_credential)
 
-    legacy_key = self._get_legacy_credential_key(auth_scheme, auth_credential)
-    if legacy_key == token_key:
-      return None
-    serialized_legacy_credential = self.tool_context.state.get(legacy_key)
-    if not serialized_legacy_credential:
-      return None
-
-    # Migrate to the current key for future lookups.
-    self.tool_context.state[token_key] = serialized_legacy_credential
-    return AuthCredential.model_validate(serialized_legacy_credential)
+    return None
 
   def store_credential(
       self,

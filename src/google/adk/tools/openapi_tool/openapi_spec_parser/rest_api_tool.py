@@ -165,8 +165,8 @@ class RestApiTool(BaseTool):
           request. Mirrors the pattern exposed for MCP by
           ``StreamableHTTPConnectionParams.httpx_client_factory``.
         credential_key: Optional stable key naming the session state slot that
-          holds both the interactive auth request and the cached exchanged
-          credential.
+          holds the interactive auth request, and from which the exchanged
+          credential's cache slot is derived.
     """
     # Gemini restrict the length of function name to be less than 64 characters
     self.name = name[:60]

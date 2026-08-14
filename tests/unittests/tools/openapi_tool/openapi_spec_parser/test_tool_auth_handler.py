@@ -197,8 +197,11 @@ async def test_a_supplied_store_caches_under_the_configured_key():
   result = await handler.prepare_auth_credentials()
 
   assert result.state == 'done'
-  cached = AuthCredential.model_validate(tool_context.state['my_tool_tokens'])
+  cached = AuthCredential.model_validate(
+      tool_context.state['my_tool_tokens_existing_exchanged_credential']
+  )
   assert cached.api_key == 'supplied_store_api_key'
+  assert 'my_tool_tokens' not in tool_context.state
 
 
 @pytest.mark.asyncio
@@ -220,12 +223,15 @@ async def test_exchanged_credential_is_cached_under_the_configured_key():
   result = await handler.prepare_auth_credentials()
 
   assert result.state == 'done'
-  cached = AuthCredential.model_validate(tool_context.state['my_tool_tokens'])
+  cached = AuthCredential.model_validate(
+      tool_context.state['my_tool_tokens_existing_exchanged_credential']
+  )
   assert cached.api_key == 'test_api_key'
-  # The named slot is the only cache slot: no digest-derived key was written.
+  # The derived slot is the only cache slot: no digest-derived key was
+  # written, and the credential service slot stays empty.
   assert set(tool_context.state.to_dict()) == {
       'temp:my_tool_tokens',
-      'my_tool_tokens',
+      'my_tool_tokens_existing_exchanged_credential',
   }
 
 
@@ -261,7 +267,7 @@ async def test_second_handler_with_same_key_reads_back_across_schemes(
   assert result.state == 'done'
   assert result.auth_credential.api_key == 'shared_api_key'
   cache_slots = [key for key in session.state if not key.startswith('temp:')]
-  assert cache_slots == ['shared_tool_tokens']
+  assert cache_slots == ['shared_tool_tokens_existing_exchanged_credential']
 
 
 @pytest.mark.asyncio
@@ -289,12 +295,14 @@ async def test_two_credential_keys_get_two_cache_slots():
     assert (await handler.prepare_auth_credentials()).state == 'done'
 
   for credential_key, api_key in keys_to_api_keys.items():
-    cached = AuthCredential.model_validate(session.state[credential_key])
+    cached = AuthCredential.model_validate(
+        session.state[f'{credential_key}_existing_exchanged_credential']
+    )
     assert cached.api_key == api_key
 
 
 @pytest.mark.asyncio
-async def test_raw_token_string_in_the_named_slot_is_not_a_cache_hit():
+async def test_raw_token_string_in_the_named_slot_is_left_for_auth_handler():
   """A raw token string is the prefixless value AuthHandler still reads."""
   api_key_scheme, _ = token_to_scheme_credential(
       'apikey', 'header', 'X-API-Key', 'unused'
@@ -312,20 +320,23 @@ async def test_raw_token_string_in_the_named_slot_is_not_a_cache_hit():
 
   assert result.state == 'done'
   assert result.auth_credential.api_key == 'raw_token_string'
-  # The slot now holds the serialized credential, so the next run is a hit.
-  cached = AuthCredential.model_validate(tool_context.state['my_tool_tokens'])
+  # The cache never overwrites the slot the application seeded.
+  assert tool_context.state['my_tool_tokens'] == 'raw_token_string'
+  cached = AuthCredential.model_validate(
+      tool_context.state['my_tool_tokens_existing_exchanged_credential']
+  )
   assert cached.api_key == 'raw_token_string'
 
 
 @pytest.mark.asyncio
-async def test_credential_dict_in_the_named_slot_wins_over_the_auth_response():
-  """The store owns the shared slot when it holds a serialized credential."""
+async def test_cached_credential_wins_over_the_auth_response():
+  """A hit in the derived slot short-circuits the auth response."""
   api_key_scheme, cached_credential = token_to_scheme_credential(
       'apikey', 'header', 'X-API-Key', 'cached_api_key'
   )
   tool_context = create_mock_tool_context()
-  tool_context.state['my_tool_tokens'] = cached_credential.model_dump(
-      exclude_none=True
+  tool_context.state['my_tool_tokens_existing_exchanged_credential'] = (
+      cached_credential.model_dump(exclude_none=True)
   )
   tool_context.state['temp:my_tool_tokens'] = AuthCredential(
       auth_type=AuthCredentialTypes.API_KEY, api_key='fresh_api_key'
@@ -341,6 +352,7 @@ async def test_credential_dict_in_the_named_slot_wins_over_the_auth_response():
 
   assert result.state == 'done'
   assert result.auth_credential.api_key == 'cached_api_key'
+  assert 'my_tool_tokens' not in tool_context.state
 
 
 @pytest.mark.asyncio
@@ -362,7 +374,9 @@ async def test_credential_key_on_the_credential_selects_the_cache_slot(
   result = await handler.prepare_auth_credentials()
 
   assert result.state == 'done'
-  cached = AuthCredential.model_validate(tool_context.state['extra_named_slot'])
+  cached = AuthCredential.model_validate(
+      tool_context.state['extra_named_slot_existing_exchanged_credential']
+  )
   assert cached.api_key == 'extra_api_key'
 
 
@@ -386,9 +400,100 @@ async def test_credential_key_on_the_scheme_selects_the_cache_slot():
 
   assert result.state == 'done'
   cached = AuthCredential.model_validate(
-      tool_context.state['scheme_named_slot']
+      tool_context.state['scheme_named_slot_existing_exchanged_credential']
   )
   assert cached.api_key == 'scheme_api_key'
+
+
+def test_configured_key_namespaces_the_cache_slot(
+    openid_connect_scheme, openid_connect_credential
+):
+  """The cache slot is derived from the key, and never equal to it."""
+  store = ToolContextCredentialStore(
+      create_mock_tool_context(), credential_key='my_slot'
+  )
+
+  key = store.get_credential_key(
+      openid_connect_scheme, openid_connect_credential
+  )
+
+  assert key == 'my_slot_existing_exchanged_credential'
+  assert key != 'my_slot'
+  assert key != 'temp:my_slot'
+
+
+def test_shared_configured_key_shares_the_cache_slot(openid_connect_scheme):
+  """Two unrelated scheme and credential pairs land in one slot."""
+  tool_context = create_mock_tool_context()
+  api_key_scheme, api_key_credential = token_to_scheme_credential(
+      'apikey', 'header', 'X-API-Key', 'some_api_key'
+  )
+  _, openid_credential = get_mock_openid_scheme_credential()
+  store = ToolContextCredentialStore(tool_context, credential_key='shared')
+
+  assert store.get_credential_key(
+      api_key_scheme, api_key_credential
+  ) == store.get_credential_key(openid_connect_scheme, openid_credential)
+
+
+def test_digest_keyed_credential_is_migrated_to_the_namespaced_slot(
+    openid_connect_scheme, openid_connect_credential
+):
+  """Configuring a key must not lose a credential cached under the digest."""
+  _, cached_credential = token_to_scheme_credential(
+      'oauth2Token', 'header', 'bearer', '123123123'
+  )
+  tool_context = create_mock_tool_context()
+  digest_key = ToolContextCredentialStore(tool_context).get_credential_key(
+      openid_connect_scheme, openid_connect_credential
+  )
+  tool_context.state[digest_key] = cached_credential.model_dump(
+      exclude_none=True
+  )
+
+  named_store = ToolContextCredentialStore(
+      tool_context, credential_key='my_slot'
+  )
+  migrated = named_store.get_credential(
+      openid_connect_scheme, openid_connect_credential
+  )
+
+  assert migrated == cached_credential
+  assert (
+      AuthCredential.model_validate(
+          tool_context.state['my_slot_existing_exchanged_credential']
+      )
+      == cached_credential
+  )
+  # The migration copies; it does not delete the source entry.
+  assert tool_context.state[digest_key] == cached_credential.model_dump(
+      exclude_none=True
+  )
+
+
+def test_no_cached_credential_returns_none(
+    openid_connect_scheme, openid_connect_credential
+):
+  """Every fallback slot misses, so the store reports no credential."""
+  store = ToolContextCredentialStore(
+      create_mock_tool_context(), credential_key='my_slot'
+  )
+
+  assert (
+      store.get_credential(openid_connect_scheme, openid_connect_credential)
+      is None
+  )
+
+
+def test_get_credential_without_tool_context_returns_none(
+    openid_connect_scheme, openid_connect_credential
+):
+  store = ToolContextCredentialStore(None, credential_key='my_slot')
+
+  assert (
+      store.get_credential(openid_connect_scheme, openid_connect_credential)
+      is None
+  )
 
 
 def test_empty_credential_key_falls_back_to_the_derived_key(
@@ -409,9 +514,10 @@ def test_empty_credential_key_falls_back_to_the_derived_key(
   )
 
 
-def test_configured_key_does_not_adopt_a_legacy_keyed_credential(
+def test_configured_key_migrates_a_legacy_keyed_credential(
     openid_connect_scheme, openid_connect_credential
 ):
+  """Naming a key must not force a re-consent for an already cached token."""
   _, legacy_credential = token_to_scheme_credential(
       'oauth2Token', 'header', 'bearer', '123123123'
   )
@@ -426,13 +532,18 @@ def test_configured_key_does_not_adopt_a_legacy_keyed_credential(
   named_store = ToolContextCredentialStore(
       tool_context, credential_key='named_slot'
   )
-
-  assert (
-      named_store.get_credential(
-          openid_connect_scheme, openid_connect_credential
-      )
-      is None
+  migrated = named_store.get_credential(
+      openid_connect_scheme, openid_connect_credential
   )
+
+  assert migrated == legacy_credential
+  assert (
+      AuthCredential.model_validate(
+          tool_context.state['named_slot_existing_exchanged_credential']
+      )
+      == legacy_credential
+  )
+  # The credential service slot is never written by the cache.
   assert 'named_slot' not in tool_context.state
 
 
