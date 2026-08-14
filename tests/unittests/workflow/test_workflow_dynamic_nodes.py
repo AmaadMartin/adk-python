@@ -1103,7 +1103,7 @@ async def test_workflow_resume_does_not_rerun_completed_llm_agent():
   """
   from google.adk.agents.llm_agent import LlmAgent
 
-  from tests.unittests import testing_utils
+  from .. import testing_utils
 
   # Given a workflow with an LlmAgent and a mock model
   mock_model = testing_utils.MockModel.create(
@@ -1222,7 +1222,7 @@ async def test_inner_llm_agent_node_input_survives_tool_round_trip():
   from google.adk.agents.llm_agent import LlmAgent
   from google.adk.tools import FunctionTool
 
-  from tests.unittests import testing_utils
+  from .. import testing_utils
 
   USER_PHRASE = 'lookup price for token MARKER-7Z9'
 

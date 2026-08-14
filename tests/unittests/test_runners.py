@@ -45,7 +45,7 @@ from google.adk.tools.base_toolset import BaseToolset
 from google.genai import types
 import pytest
 
-from tests.unittests import testing_utils
+from . import testing_utils
 
 TEST_APP_ID = "test_app"
 TEST_USER_ID = "test_user"

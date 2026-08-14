@@ -29,7 +29,7 @@ from google.adk.tools.exit_loop_tool import exit_loop
 from google.genai.types import Part
 import pytest
 
-from tests.unittests import testing_utils
+from .. import testing_utils
 
 
 def transfer_call_part(agent_name: str) -> Part:

@@ -23,8 +23,8 @@ from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 import pytest
 
-from tests.unittests import testing_utils
-from tests.unittests.agents.llm.event_utils import text_parts
+from .. import testing_utils
+from .llm.event_utils import text_parts
 
 _USER_ID = 'test_user'
 _SESSION_ID = 'test_session'

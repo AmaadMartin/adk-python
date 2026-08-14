@@ -36,8 +36,8 @@ from google.adk.workflow._workflow import Workflow
 from google.genai import types
 import pytest
 
-from tests.unittests import testing_utils
-from tests.unittests.workflow import workflow_testing_utils
+from . import workflow_testing_utils
+from .. import testing_utils
 
 
 def long_running_tool_func():
