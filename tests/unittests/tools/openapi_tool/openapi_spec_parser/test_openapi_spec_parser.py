@@ -906,7 +906,7 @@ def test_parsed_operation_round_trips_through_json(openapi_spec_generator):
     # A Reference here would mean the payload re-validated into the wrong
     # union member rather than into the modelled Parameter.
     assert isinstance(parameter, Parameter)
-    assert parameter.schema_ is not None
+    assert isinstance(parameter.schema_, Schema)
     reloaded_parameters.append(
         (parameter.name, parameter.in_.value, parameter.schema_.type)
     )
@@ -959,7 +959,7 @@ def test_parsed_operation_round_trip_preserves_nested_schema_keywords(
   assert body_schema.properties is not None
   name_schema = body_schema.properties["name"]
   assert isinstance(name_schema, Schema)
-  assert name_schema.not_ is not None
+  assert isinstance(name_schema.not_, Schema)
   assert name_schema.not_.type == "null"
   # The keyword must land on the modelled attribute, not in the extra keys.
   assert name_schema.model_extra == {}
