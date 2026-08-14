@@ -1699,6 +1699,47 @@ def test_cli_web_accepts_neither_logo_option(
 
 
 @pytest.mark.parametrize(
+    ("logo_text_flag", "logo_image_url_flag"),
+    [
+        ("--logo-text", "--logo-image-url"),
+        ("--logo_text", "--logo_image_url"),
+    ],
+)
+def test_cli_web_accepts_logo_options_in_either_spelling(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    _patch_uvicorn: _Recorder,
+    logo_text_flag: str,
+    logo_image_url_flag: str,
+) -> None:
+  """`adk web` takes the logo options in kebab-case and snake_case alike."""
+  agents_dir = tmp_path / "agents"
+  agents_dir.mkdir()
+
+  mock_get_app = _Recorder()
+  monkeypatch.setattr("google.adk.cli.fast_api.get_fast_api_app", mock_get_app)
+
+  runner = CliRunner()
+  result = runner.invoke(
+      cli_tools_click.main,
+      [
+          "web",
+          str(agents_dir),
+          logo_text_flag,
+          "Acme",
+          logo_image_url_flag,
+          "https://example.com/logo.png",
+      ],
+  )
+
+  assert result.exit_code == 0, (result.output, repr(result.exception))
+  assert mock_get_app.calls
+  called_kwargs = mock_get_app.calls[0][1]
+  assert called_kwargs.get("logo_text") == "Acme"
+  assert called_kwargs.get("logo_image_url") == "https://example.com/logo.png"
+
+
+@pytest.mark.parametrize(
     "flag",
     ["--allow-unsafe-unpickling", "--allow_unsafe_unpickling"],
 )
