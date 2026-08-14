@@ -85,15 +85,20 @@ def test_barrier_advance_out_of_order_ignored():
 
 @pytest.mark.asyncio
 async def test_barrier_wait_non_existent_key():
-  """Verifies that waiting on a key not in sequence does not block."""
+  """Verifies that waiting on a key not in sequence returns without blocking."""
   sequence = ['NodeA@1']
   barrier = ReplaySequenceBarrier(sequence)
 
-  # When a key not in sequence waits, it passes instantly
-  await barrier.wait('NonExistent@1')
+  # When a key not in sequence waits, it must return promptly. The bound turns
+  # a regression into a fast TimeoutError instead of a hang, and it is 15x
+  # below the barrier's own default timeout so this bound fires first.
+  await asyncio.wait_for(barrier.wait('NonExistent@1'), timeout=1)
 
-  # No blocks, successfully completes!
-  assert True
+  # Then the barrier state is untouched by the unknown key
+  assert list(barrier.events) == sequence
+  assert 'NonExistent@1' not in barrier.events
+  assert barrier.current_index == 0
+  assert barrier.events['NodeA@1'].is_set()
 
 
 @pytest.mark.asyncio
