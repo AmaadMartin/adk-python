@@ -35,6 +35,7 @@ from google.adk.sessions.vertex_ai_session_service import _extract_short_session
 from google.adk.sessions.vertex_ai_session_service import _validate_session_id
 from google.adk.sessions.vertex_ai_session_service import VertexAiSessionService
 from google.api_core import exceptions as api_core_exceptions
+from google.auth.credentials import Credentials
 from google.genai import types as genai_types
 from google.genai.errors import ClientError
 import pydantic
@@ -603,6 +604,7 @@ def mock_vertex_ai_session_service(
     location: Optional[str] = 'test-location',
     agent_engine_id: Optional[str] = None,
     express_mode_api_key: Optional[str] = None,
+    credentials: Optional[Credentials] = None,
 ):
   """Creates a mock Vertex AI Session service for testing."""
   return VertexAiSessionService(
@@ -610,6 +612,7 @@ def mock_vertex_ai_session_service(
       location=location,
       agent_engine_id=agent_engine_id,
       express_mode_api_key=express_mode_api_key,
+      credentials=credentials,
   )
 
 
@@ -653,6 +656,53 @@ async def test_initialize_with_project_location_and_api_key_error():
       'Cannot specify project or location and express_mode_api_key. Either use'
       ' project and location, or just the express_mode_api_key.'
       in str(excinfo.value)
+  )
+
+
+def test_get_api_client_passes_credentials_through():
+  mock_credentials = mock.MagicMock(spec=Credentials)
+  session_service = mock_vertex_ai_session_service(credentials=mock_credentials)
+
+  with mock.patch('vertexai.Client') as mock_client_constructor:
+    session_service._get_api_client()
+
+  mock_client_constructor.assert_called_once_with(
+      project='test-project',
+      location='test-location',
+      http_options=None,
+      credentials=mock_credentials,
+  )
+
+
+def test_get_api_client_defaults_credentials_to_none():
+  session_service = mock_vertex_ai_session_service()
+
+  with mock.patch('vertexai.Client') as mock_client_constructor:
+    session_service._get_api_client()
+
+  mock_client_constructor.assert_called_once_with(
+      project='test-project',
+      location='test-location',
+      http_options=None,
+      credentials=None,
+  )
+
+
+def test_get_api_client_express_mode_ignores_credentials(monkeypatch):
+  monkeypatch.setenv('GOOGLE_GENAI_USE_ENTERPRISE', '1')
+  session_service = mock_vertex_ai_session_service(
+      project=None,
+      location=None,
+      express_mode_api_key='test-api-key',
+      credentials=mock.MagicMock(spec=Credentials),
+  )
+
+  with mock.patch('vertexai.Client') as mock_client_constructor:
+    session_service._get_api_client()
+
+  mock_client_constructor.assert_called_once_with(
+      http_options=None,
+      api_key='test-api-key',
   )
 
 

@@ -25,6 +25,7 @@ from typing import Optional
 from typing import TYPE_CHECKING
 from typing import Union
 
+from google.auth.credentials import Credentials
 from google.genai import types
 from google.genai.errors import ClientError
 import pydantic
@@ -131,6 +132,7 @@ class VertexAiSessionService(BaseSessionService):
       agent_engine_id: Optional[str] = None,
       *,
       express_mode_api_key: Optional[str] = None,
+      credentials: Optional[Credentials] = None,
   ):
     """Initializes the VertexAiSessionService.
 
@@ -143,6 +145,10 @@ class VertexAiSessionService(BaseSessionService):
         be used. It will only be used if GOOGLE_GENAI_USE_ENTERPRISE is true. Do
         not use Google AI Studio API key for this field. For more details, visit
         https://cloud.google.com/vertex-ai/generative-ai/docs/start/express-mode/overview
+      credentials: The credentials to use when calling the Sessions API, e.g.
+        credentials obtained via Workload Identity Federation outside of GCP.
+        If not provided, Application Default Credentials are used. Ignored in
+        Express Mode, which authenticates via express_mode_api_key instead.
     """
     try:
       import vertexai  # noqa: F401
@@ -154,6 +160,7 @@ class VertexAiSessionService(BaseSessionService):
     self._project = project
     self._location = location
     self._agent_engine_id = agent_engine_id
+    self._credentials = credentials
     self._express_mode_api_key = get_express_mode_api_key(
         project, location, express_mode_api_key
     )
@@ -535,6 +542,7 @@ class VertexAiSessionService(BaseSessionService):
         project=self._project,
         location=self._location,
         http_options=self._api_client_http_options_override(),
+        credentials=self._credentials,
     ).aio
 
 
