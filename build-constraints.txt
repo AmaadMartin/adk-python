@@ -1,0 +1,14 @@
+# Build backend pin for the release jobs.
+#
+# `uv build` resolves [build-system] requires in pyproject.toml fresh on every
+# run, so without this the wheel's METADATA, file layout and RECORD are
+# whatever flit-core the index serves that day. Passed via
+# `uv build --build-constraints` from .github/workflows/release-*.yml.
+#
+# pyproject.toml keeps a range so a downstream packager can still build the
+# sdist with the flit-core they have; this file freezes only our releases.
+#
+# To bump: change the version here in its own PR, build the wheel before and
+# after, and diff the unzipped contents plus RECORD so the metadata delta is
+# reviewed rather than discovered after publishing.
+flit-core==3.12.0

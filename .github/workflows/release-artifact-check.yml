@@ -70,8 +70,10 @@ jobs:
         with:
           python-version: "3.11"
 
+      # Pin the PEP 517 backend so the wheel this job inspects is produced by
+      # the same flit-core as the wheel the publish job uploads.
       - name: Build distributions
-        run: uv build
+        run: uv build --build-constraints build-constraints.txt
 
       - name: Read candidate version
         id: version

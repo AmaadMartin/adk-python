@@ -2,7 +2,11 @@
 build-backend = "flit_core.buildapi"
 # Build system specify which backend is used to build/install the project (flit,
 # poetry, setuptools,...). All backends are supported by `pip install`
-requires = [ "flit-core>=3.8,<4" ]
+# The floor is 3.10: flit-core 3.9 and earlier call ast.Str, which Python 3.14
+# removed, so they cannot build this project across the supported interpreter
+# range. Release builds pin one exact version in build-constraints.txt; this
+# stays a range so a downstream source build uses the flit-core it has.
+requires = [ "flit-core>=3.10,<4" ]
 
 [project]
 # Project metadata. Available keys are documented at:
