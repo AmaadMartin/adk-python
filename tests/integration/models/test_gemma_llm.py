@@ -50,7 +50,7 @@ def gemma_request():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("llm_backend", ["GOOGLE_AI"])
+@pytest.mark.parametrize("llm_backend", ["GOOGLE_AI"], indirect=True)
 async def test_generate_content_async(gemma_llm, gemma_request):
   async for response in gemma_llm.generate_content_async(gemma_request):
     assert isinstance(response, LlmResponse)
