@@ -21,6 +21,8 @@ import logging
 import os
 from pathlib import Path
 import shutil
+import subprocess
+import sys
 import tempfile
 
 from typing_extensions import override
@@ -99,12 +101,22 @@ class LocalEnvironment(BaseEnvironment):
     if self._env_vars:
       proc_env.update(self._env_vars)
 
+    creationflags = 0
+    if sys.platform == 'win32':
+      # `create_subprocess_shell` runs the command through cmd.exe, a console
+      # binary, so Windows allocates a visible console window when the host
+      # process has none (a GUI app, a service, pythonw.exe). Both streams are
+      # piped and stdin is never written, so the child needs no console. The
+      # constant does not exist on POSIX, hence the guard.
+      creationflags = subprocess.CREATE_NO_WINDOW
+
     proc = await asyncio.create_subprocess_shell(
         command,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         cwd=self._working_dir,
         env=proc_env,
+        creationflags=creationflags,
     )
 
     timed_out = False
