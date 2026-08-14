@@ -13,10 +13,9 @@
 
 from __future__ import annotations
 
-import importlib
-from typing import Any
 from typing import TYPE_CHECKING
 
+from ..utils import _lazy
 from .base_plugin import BasePlugin
 from .plugin_manager import PluginManager
 
@@ -36,15 +35,11 @@ __all__ = [
 ]
 
 _LAZY_MEMBERS: dict[str, str] = {
-    "DebugLoggingPlugin": "debug_logging_plugin",
-    "LoggingPlugin": "logging_plugin",
-    "ReflectAndRetryModelPlugin": "_reflect_retry_model_plugin",
-    "ReflectAndRetryToolPlugin": "reflect_retry_tool_plugin",
+    "DebugLoggingPlugin": ".debug_logging_plugin",
+    "LoggingPlugin": ".logging_plugin",
+    "ReflectAndRetryModelPlugin": "._reflect_retry_model_plugin",
+    "ReflectAndRetryToolPlugin": ".reflect_retry_tool_plugin",
 }
 
 
-def __getattr__(name: str) -> Any:
-  if name in _LAZY_MEMBERS:
-    module = importlib.import_module(f"{__name__}.{_LAZY_MEMBERS[name]}")
-    return vars(module)[name]
-  raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
+__getattr__, __dir__ = _lazy.accessors(globals(), _LAZY_MEMBERS)

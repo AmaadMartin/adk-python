@@ -69,3 +69,7 @@ def __getattr__(name: str) -> Any:
     )
     return skill_toolset.DEFAULT_SKILL_SYSTEM_INSTRUCTION
   raise AttributeError(f"module {__name__} has no attribute {name}")
+
+
+def __dir__() -> list[str]:
+  return sorted(set(globals()) | set(__all__))
