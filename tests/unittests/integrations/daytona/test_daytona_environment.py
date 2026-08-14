@@ -14,6 +14,8 @@
 
 """Tests for DaytonaEnvironment."""
 
+import inspect
+import typing
 from unittest import mock
 
 import daytona
@@ -25,15 +27,24 @@ from google.adk.integrations.daytona._daytona_environment import DaytonaEnvironm
 import pytest
 
 
+def _autospec_property(cls: type, name: str) -> mock.MagicMock:
+  """Autospecs the object a property returns.
+
+  create_autospec() does not descend into properties -- the attribute comes
+  back as a bare MagicMock that accepts anything -- so the handler behind one
+  has to be specced from its own declared type.
+  """
+  hints = typing.get_type_hints(inspect.getattr_static(cls, name).fget)
+  return mock.create_autospec(hints["return"], instance=True, spec_set=True)
+
+
 def _make_sandbox() -> mock.MagicMock:
-  """Build a mock AsyncSandbox with async method stubs."""
-  sandbox = mock.MagicMock(name="AsyncSandbox")
-  sandbox.delete = mock.AsyncMock()
-  sandbox.process.exec = mock.AsyncMock()
-  sandbox.fs.download_file = mock.AsyncMock()
-  sandbox.fs.upload_file = mock.AsyncMock()
-  sandbox.fs.create_folder = mock.AsyncMock()
-  sandbox.refresh_activity = mock.AsyncMock()
+  """Build an AsyncSandbox double specced against the installed daytona SDK."""
+  sandbox = mock.create_autospec(
+      daytona.AsyncSandbox, instance=True, spec_set=True
+  )
+  sandbox.process = _autospec_property(daytona.AsyncSandbox, "process")
+  sandbox.fs = _autospec_property(daytona.AsyncSandbox, "fs")
   return sandbox
 
 
@@ -45,9 +56,10 @@ def _sandbox() -> mock.MagicMock:
 @pytest.fixture(name="daytona_patch")
 def _daytona_patch(sandbox: mock.MagicMock):
   """Patch AsyncDaytona to return a mock client."""
-  mock_client = mock.MagicMock(name="AsyncDaytona")
-  mock_client.create = mock.AsyncMock(return_value=sandbox)
-  mock_client.close = mock.AsyncMock()
+  mock_client = mock.create_autospec(
+      daytona.AsyncDaytona, instance=True, spec_set=True
+  )
+  mock_client.create.return_value = sandbox
 
   with mock.patch.object(daytona, "AsyncDaytona", autospec=True) as mock_class:
     mock_class.return_value = mock_client
