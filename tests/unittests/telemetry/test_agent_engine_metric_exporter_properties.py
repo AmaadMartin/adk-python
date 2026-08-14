@@ -81,7 +81,7 @@ from hypothesis import note
 from hypothesis import settings
 from hypothesis import strategies as st
 
-from tests.unittests.telemetry.test_agent_engine_metric_exporter import _Harness
+from .test_agent_engine_metric_exporter import _Harness
 
 _PERIOD_S = 60.0  # guidepost grid (OTel default export interval).
 _FLOOR_S = 3.0  # hard floor on collect spacing (I2).

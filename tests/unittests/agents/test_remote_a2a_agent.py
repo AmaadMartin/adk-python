@@ -4208,7 +4208,7 @@ class TestRemoteA2aAgentWorkflowOutput:
     from google.adk.workflow._join_node import JoinNode
     from google.adk.workflow._workflow import Workflow
 
-    from tests.unittests import testing_utils
+    from .. import testing_utils
 
     workflow = Workflow(
         name="wf",
@@ -4267,7 +4267,7 @@ class TestRemoteA2aAgentWorkflowOutput:
     from google.adk.workflow._join_node import JoinNode
     from google.adk.workflow._workflow import Workflow
 
-    from tests.unittests import testing_utils
+    from .. import testing_utils
 
     workflow = Workflow(
         name="wf",

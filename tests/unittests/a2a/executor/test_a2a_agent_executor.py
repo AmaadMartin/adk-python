@@ -39,7 +39,7 @@ from google.genai.types import Content
 from google.genai.types import Part
 import pytest
 
-from tests.unittests import testing_utils
+from ... import testing_utils
 
 
 def _get_meta_val(metadata, key):
