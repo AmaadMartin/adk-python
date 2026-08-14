@@ -1506,7 +1506,7 @@ class DevServer(ApiServer):
 
     return workflows
 
-  def get_fast_api_app(self, **kwargs):
+  def get_fast_api_app(self, **kwargs: Any) -> FastAPI:
     """Override to add dev endpoints after production endpoints.
 
     Calls parent's get_fast_api_app() to get the base app with production
