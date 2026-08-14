@@ -36,10 +36,8 @@ class BigQueryToolset(GoogleApiToolset):
     tool_filter: Optional filter to include only specific tools or use a predicate function.
     service_account: Optional service account for authentication.
     tool_name_prefix: Optional prefix to add to all tool names in this toolset.
-    httpx_client_factory: Optional zero-argument callable returning an
-      ``httpx.AsyncClient`` used for every API call made by this toolset's
-      tools. See ``GoogleApiToolset`` for the full contract, including how it
-      interacts with mTLS client certificates.
+    httpx_client_factory: Optional callable returning the ``httpx.AsyncClient``
+      used for this toolset's API calls. See ``GoogleApiToolset``.
   """
 
   def __init__(
@@ -73,10 +71,8 @@ class CalendarToolset(GoogleApiToolset):
     tool_filter: Optional filter to include only specific tools or use a predicate function.
     service_account: Optional service account for authentication.
     tool_name_prefix: Optional prefix to add to all tool names in this toolset.
-    httpx_client_factory: Optional zero-argument callable returning an
-      ``httpx.AsyncClient`` used for every API call made by this toolset's
-      tools. See ``GoogleApiToolset`` for the full contract, including how it
-      interacts with mTLS client certificates.
+    httpx_client_factory: Optional callable returning the ``httpx.AsyncClient``
+      used for this toolset's API calls. See ``GoogleApiToolset``.
   """
 
   def __init__(
@@ -110,10 +106,8 @@ class GmailToolset(GoogleApiToolset):
     tool_filter: Optional filter to include only specific tools or use a predicate function.
     service_account: Optional service account for authentication.
     tool_name_prefix: Optional prefix to add to all tool names in this toolset.
-    httpx_client_factory: Optional zero-argument callable returning an
-      ``httpx.AsyncClient`` used for every API call made by this toolset's
-      tools. See ``GoogleApiToolset`` for the full contract, including how it
-      interacts with mTLS client certificates.
+    httpx_client_factory: Optional callable returning the ``httpx.AsyncClient``
+      used for this toolset's API calls. See ``GoogleApiToolset``.
   """
 
   def __init__(
@@ -147,10 +141,8 @@ class YoutubeToolset(GoogleApiToolset):
     tool_filter: Optional filter to include only specific tools or use a predicate function.
     service_account: Optional service account for authentication.
     tool_name_prefix: Optional prefix to add to all tool names in this toolset.
-    httpx_client_factory: Optional zero-argument callable returning an
-      ``httpx.AsyncClient`` used for every API call made by this toolset's
-      tools. See ``GoogleApiToolset`` for the full contract, including how it
-      interacts with mTLS client certificates.
+    httpx_client_factory: Optional callable returning the ``httpx.AsyncClient``
+      used for this toolset's API calls. See ``GoogleApiToolset``.
   """
 
   def __init__(
@@ -184,10 +176,8 @@ class SlidesToolset(GoogleApiToolset):
     tool_filter: Optional filter to include only specific tools or use a predicate function.
     service_account: Optional service account for authentication.
     tool_name_prefix: Optional prefix to add to all tool names in this toolset.
-    httpx_client_factory: Optional zero-argument callable returning an
-      ``httpx.AsyncClient`` used for every API call made by this toolset's
-      tools. See ``GoogleApiToolset`` for the full contract, including how it
-      interacts with mTLS client certificates.
+    httpx_client_factory: Optional callable returning the ``httpx.AsyncClient``
+      used for this toolset's API calls. See ``GoogleApiToolset``.
   """
 
   def __init__(
@@ -221,10 +211,8 @@ class SheetsToolset(GoogleApiToolset):
     tool_filter: Optional filter to include only specific tools or use a predicate function.
     service_account: Optional service account for authentication.
     tool_name_prefix: Optional prefix to add to all tool names in this toolset.
-    httpx_client_factory: Optional zero-argument callable returning an
-      ``httpx.AsyncClient`` used for every API call made by this toolset's
-      tools. See ``GoogleApiToolset`` for the full contract, including how it
-      interacts with mTLS client certificates.
+    httpx_client_factory: Optional callable returning the ``httpx.AsyncClient``
+      used for this toolset's API calls. See ``GoogleApiToolset``.
   """
 
   def __init__(
@@ -258,10 +246,8 @@ class DocsToolset(GoogleApiToolset):
     tool_filter: Optional filter to include only specific tools or use a predicate function.
     service_account: Optional service account for authentication.
     tool_name_prefix: Optional prefix to add to all tool names in this toolset.
-    httpx_client_factory: Optional zero-argument callable returning an
-      ``httpx.AsyncClient`` used for every API call made by this toolset's
-      tools. See ``GoogleApiToolset`` for the full contract, including how it
-      interacts with mTLS client certificates.
+    httpx_client_factory: Optional callable returning the ``httpx.AsyncClient``
+      used for this toolset's API calls. See ``GoogleApiToolset``.
   """
 
   def __init__(

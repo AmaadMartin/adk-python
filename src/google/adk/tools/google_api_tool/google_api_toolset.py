@@ -97,15 +97,14 @@ class GoogleApiToolset(BaseToolset):
     self._httpx_client_factory = httpx_client_factory
     use_client_cert = use_client_cert_effective()
 
-    if httpx_client_factory is not None:
-      if use_client_cert:
-        logger.warning(
-            'An httpx_client_factory was supplied for the %s API toolset, so'
-            ' ADK will not attach the mTLS client certificate. Configure the'
-            ' certificate on the client returned by your factory if this API'
-            ' requires mutual TLS.',
-            api_name,
-        )
+    if use_client_cert and httpx_client_factory is not None:
+      logger.warning(
+          'An httpx_client_factory was supplied for the %s API toolset, so ADK'
+          ' will not attach the mTLS client certificate. Configure the'
+          ' certificate on the client returned by your factory if this API'
+          ' requires mutual TLS.',
+          api_name,
+      )
     elif use_client_cert:
       self._mtls_certs = MtlsClientCerts()
       cert_path, key_path, passphrase = self._mtls_certs.get_certs()
