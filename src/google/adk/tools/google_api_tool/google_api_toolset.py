@@ -31,6 +31,7 @@ from ...tools.base_toolset import ToolPredicate
 from ...utils._mtls_utils import MtlsClientCerts
 from ...utils._mtls_utils import use_client_cert_effective
 from ..openapi_tool import OpenAPIToolset
+from ..openapi_tool.openapi_spec_parser.rest_api_tool import HttpxClientFactory
 from .google_api_tool import GoogleApiTool
 from .googleapi_to_openapi_converter import GoogleApiToOpenApiConverter
 
@@ -56,6 +57,16 @@ class GoogleApiToolset(BaseToolset):
       executed by this toolset.
     additional_scopes: Optional list of additional scopes to request.
     discovery_url: Optional custom discovery URL to use for the API.
+    httpx_client_factory: Optional zero-argument callable returning an
+      ``httpx.AsyncClient`` to use for every API call made by this toolset's
+      tools. Use it to configure proxies, a custom CA bundle, HTTP/2, event
+      hooks or a custom transport. The returned client is used as an async
+      context manager and closed after each request, so the factory must return
+      a fresh client on every call. When supplied, the factory takes precedence
+      over ADK's automatic mTLS client-certificate handling: ADK does not load
+      or attach the certificate, and the factory is responsible for configuring
+      ``cert=`` if the API requires mutual TLS. Defaults to ``None``, in which
+      case the existing behaviour is unchanged.
   """
 
   def __init__(
@@ -71,6 +82,7 @@ class GoogleApiToolset(BaseToolset):
       additional_headers: Optional[Dict[str, str]] = None,
       additional_scopes: Optional[List[str]] = None,
       discovery_url: Optional[str] = None,
+      httpx_client_factory: Optional[HttpxClientFactory] = None,
   ):
     super().__init__(tool_filter=tool_filter, tool_name_prefix=tool_name_prefix)
     self.api_name = api_name
@@ -82,10 +94,19 @@ class GoogleApiToolset(BaseToolset):
     self._additional_scopes = additional_scopes
     self._discovery_url = discovery_url
 
-    self._httpx_client_factory = None
+    self._httpx_client_factory = httpx_client_factory
     use_client_cert = use_client_cert_effective()
 
-    if use_client_cert:
+    if httpx_client_factory is not None:
+      if use_client_cert:
+        logger.warning(
+            'An httpx_client_factory was supplied for the %s API toolset, so'
+            ' ADK will not attach the mTLS client certificate. Configure the'
+            ' certificate on the client returned by your factory if this API'
+            ' requires mutual TLS.',
+            api_name,
+        )
+    elif use_client_cert:
       self._mtls_certs = MtlsClientCerts()
       cert_path, key_path, passphrase = self._mtls_certs.get_certs()
       if cert_path and key_path:

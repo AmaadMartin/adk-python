@@ -21,6 +21,7 @@ from typing import Union
 
 from ...auth.auth_credential import ServiceAccount
 from ..base_toolset import ToolPredicate
+from ..openapi_tool.openapi_spec_parser.rest_api_tool import HttpxClientFactory
 from .google_api_toolset import GoogleApiToolset
 
 logger = logging.getLogger("google_adk." + __name__)
@@ -35,6 +36,10 @@ class BigQueryToolset(GoogleApiToolset):
     tool_filter: Optional filter to include only specific tools or use a predicate function.
     service_account: Optional service account for authentication.
     tool_name_prefix: Optional prefix to add to all tool names in this toolset.
+    httpx_client_factory: Optional zero-argument callable returning an
+      ``httpx.AsyncClient`` used for every API call made by this toolset's
+      tools. See ``GoogleApiToolset`` for the full contract, including how it
+      interacts with mTLS client certificates.
   """
 
   def __init__(
@@ -44,6 +49,8 @@ class BigQueryToolset(GoogleApiToolset):
       tool_filter: Optional[Union[ToolPredicate, List[str]]] = None,
       service_account: Optional[ServiceAccount] = None,
       tool_name_prefix: Optional[str] = None,
+      *,
+      httpx_client_factory: Optional[HttpxClientFactory] = None,
   ):
     super().__init__(
         "bigquery",
@@ -53,6 +60,7 @@ class BigQueryToolset(GoogleApiToolset):
         tool_filter,
         service_account,
         tool_name_prefix,
+        httpx_client_factory=httpx_client_factory,
     )
 
 
@@ -65,6 +73,10 @@ class CalendarToolset(GoogleApiToolset):
     tool_filter: Optional filter to include only specific tools or use a predicate function.
     service_account: Optional service account for authentication.
     tool_name_prefix: Optional prefix to add to all tool names in this toolset.
+    httpx_client_factory: Optional zero-argument callable returning an
+      ``httpx.AsyncClient`` used for every API call made by this toolset's
+      tools. See ``GoogleApiToolset`` for the full contract, including how it
+      interacts with mTLS client certificates.
   """
 
   def __init__(
@@ -74,6 +86,8 @@ class CalendarToolset(GoogleApiToolset):
       tool_filter: Optional[Union[ToolPredicate, List[str]]] = None,
       service_account: Optional[ServiceAccount] = None,
       tool_name_prefix: Optional[str] = None,
+      *,
+      httpx_client_factory: Optional[HttpxClientFactory] = None,
   ):
     super().__init__(
         "calendar",
@@ -83,6 +97,7 @@ class CalendarToolset(GoogleApiToolset):
         tool_filter,
         service_account,
         tool_name_prefix,
+        httpx_client_factory=httpx_client_factory,
     )
 
 
@@ -95,6 +110,10 @@ class GmailToolset(GoogleApiToolset):
     tool_filter: Optional filter to include only specific tools or use a predicate function.
     service_account: Optional service account for authentication.
     tool_name_prefix: Optional prefix to add to all tool names in this toolset.
+    httpx_client_factory: Optional zero-argument callable returning an
+      ``httpx.AsyncClient`` used for every API call made by this toolset's
+      tools. See ``GoogleApiToolset`` for the full contract, including how it
+      interacts with mTLS client certificates.
   """
 
   def __init__(
@@ -104,6 +123,8 @@ class GmailToolset(GoogleApiToolset):
       tool_filter: Optional[Union[ToolPredicate, List[str]]] = None,
       service_account: Optional[ServiceAccount] = None,
       tool_name_prefix: Optional[str] = None,
+      *,
+      httpx_client_factory: Optional[HttpxClientFactory] = None,
   ):
     super().__init__(
         "gmail",
@@ -113,6 +134,7 @@ class GmailToolset(GoogleApiToolset):
         tool_filter,
         service_account,
         tool_name_prefix,
+        httpx_client_factory=httpx_client_factory,
     )
 
 
@@ -125,6 +147,10 @@ class YoutubeToolset(GoogleApiToolset):
     tool_filter: Optional filter to include only specific tools or use a predicate function.
     service_account: Optional service account for authentication.
     tool_name_prefix: Optional prefix to add to all tool names in this toolset.
+    httpx_client_factory: Optional zero-argument callable returning an
+      ``httpx.AsyncClient`` used for every API call made by this toolset's
+      tools. See ``GoogleApiToolset`` for the full contract, including how it
+      interacts with mTLS client certificates.
   """
 
   def __init__(
@@ -134,6 +160,8 @@ class YoutubeToolset(GoogleApiToolset):
       tool_filter: Optional[Union[ToolPredicate, List[str]]] = None,
       service_account: Optional[ServiceAccount] = None,
       tool_name_prefix: Optional[str] = None,
+      *,
+      httpx_client_factory: Optional[HttpxClientFactory] = None,
   ):
     super().__init__(
         "youtube",
@@ -143,6 +171,7 @@ class YoutubeToolset(GoogleApiToolset):
         tool_filter,
         service_account,
         tool_name_prefix,
+        httpx_client_factory=httpx_client_factory,
     )
 
 
@@ -155,6 +184,10 @@ class SlidesToolset(GoogleApiToolset):
     tool_filter: Optional filter to include only specific tools or use a predicate function.
     service_account: Optional service account for authentication.
     tool_name_prefix: Optional prefix to add to all tool names in this toolset.
+    httpx_client_factory: Optional zero-argument callable returning an
+      ``httpx.AsyncClient`` used for every API call made by this toolset's
+      tools. See ``GoogleApiToolset`` for the full contract, including how it
+      interacts with mTLS client certificates.
   """
 
   def __init__(
@@ -164,6 +197,8 @@ class SlidesToolset(GoogleApiToolset):
       tool_filter: Optional[Union[ToolPredicate, List[str]]] = None,
       service_account: Optional[ServiceAccount] = None,
       tool_name_prefix: Optional[str] = None,
+      *,
+      httpx_client_factory: Optional[HttpxClientFactory] = None,
   ):
     super().__init__(
         "slides",
@@ -173,6 +208,7 @@ class SlidesToolset(GoogleApiToolset):
         tool_filter,
         service_account,
         tool_name_prefix,
+        httpx_client_factory=httpx_client_factory,
     )
 
 
@@ -185,6 +221,10 @@ class SheetsToolset(GoogleApiToolset):
     tool_filter: Optional filter to include only specific tools or use a predicate function.
     service_account: Optional service account for authentication.
     tool_name_prefix: Optional prefix to add to all tool names in this toolset.
+    httpx_client_factory: Optional zero-argument callable returning an
+      ``httpx.AsyncClient`` used for every API call made by this toolset's
+      tools. See ``GoogleApiToolset`` for the full contract, including how it
+      interacts with mTLS client certificates.
   """
 
   def __init__(
@@ -194,6 +234,8 @@ class SheetsToolset(GoogleApiToolset):
       tool_filter: Optional[Union[ToolPredicate, List[str]]] = None,
       service_account: Optional[ServiceAccount] = None,
       tool_name_prefix: Optional[str] = None,
+      *,
+      httpx_client_factory: Optional[HttpxClientFactory] = None,
   ):
     super().__init__(
         "sheets",
@@ -203,6 +245,7 @@ class SheetsToolset(GoogleApiToolset):
         tool_filter,
         service_account,
         tool_name_prefix,
+        httpx_client_factory=httpx_client_factory,
     )
 
 
@@ -215,6 +258,10 @@ class DocsToolset(GoogleApiToolset):
     tool_filter: Optional filter to include only specific tools or use a predicate function.
     service_account: Optional service account for authentication.
     tool_name_prefix: Optional prefix to add to all tool names in this toolset.
+    httpx_client_factory: Optional zero-argument callable returning an
+      ``httpx.AsyncClient`` used for every API call made by this toolset's
+      tools. See ``GoogleApiToolset`` for the full contract, including how it
+      interacts with mTLS client certificates.
   """
 
   def __init__(
@@ -224,6 +271,8 @@ class DocsToolset(GoogleApiToolset):
       tool_filter: Optional[Union[ToolPredicate, List[str]]] = None,
       service_account: Optional[ServiceAccount] = None,
       tool_name_prefix: Optional[str] = None,
+      *,
+      httpx_client_factory: Optional[HttpxClientFactory] = None,
   ):
     super().__init__(
         "docs",
@@ -233,4 +282,5 @@ class DocsToolset(GoogleApiToolset):
         tool_filter,
         service_account,
         tool_name_prefix,
+        httpx_client_factory=httpx_client_factory,
     )
