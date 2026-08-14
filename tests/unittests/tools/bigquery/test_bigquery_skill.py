@@ -12,14 +12,18 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Tests for the pre-packaged BigQuery skill."""
+"""Tests for the pre-packaged BigQuery skills."""
 
 from __future__ import annotations
 
 import re
+from unittest import mock
 
 from google.adk.skills._utils import _validate_skill_dir
+from google.adk.tools import tool_context
+from google.adk.tools.bigquery.bigquery_skill import _GRAPH_SKILL_DIR
 from google.adk.tools.bigquery.bigquery_skill import _SKILL_DIR
+from google.adk.tools.bigquery.bigquery_skill import get_bigquery_graph_skill
 from google.adk.tools.bigquery.bigquery_skill import get_bigquery_skill
 from google.adk.tools.skill_toolset import ListSkillsTool
 from google.adk.tools.skill_toolset import LoadSkillResourceTool
@@ -114,3 +118,98 @@ def test_skill_frontmatter_has_metadata():
   skill = get_bigquery_skill()
   assert "author" in skill.frontmatter.metadata
   assert "version" in skill.frontmatter.metadata
+
+
+def test_get_bigquery_graph_skill_returns_valid_skill():
+  """Verify get_bigquery_graph_skill returns a Skill with expected fields."""
+  skill = get_bigquery_graph_skill()
+
+  assert skill.name == "bigquery-graph"
+  assert skill.description
+  assert len(skill.description) > 0
+  assert skill.instructions
+  assert len(skill.instructions) > 0
+
+
+def test_graph_skill_name_matches_spec():
+  """Verify graph skill name is kebab-case and matches directory name."""
+  skill = get_bigquery_graph_skill()
+
+  # Name must be kebab-case
+  assert re.fullmatch(r"[a-z][a-z0-9]*(-[a-z0-9]+)*", skill.name)
+
+  # Name must match the directory name
+  assert skill.name == _GRAPH_SKILL_DIR.name
+
+
+def test_graph_skill_has_expected_references():
+  """Verify the nested graph reference files are present and non-empty."""
+  skill = get_bigquery_graph_skill()
+
+  expected_refs = {
+      "semantic_queries.md",
+      "graph_schema/best_practices.md",
+      "graph_schema/ddl_reference.md",
+      "graph_schema/feature_parity.md",
+      "graph_schema/graph_schema_ddl_advisor.md",
+  }
+  actual_refs = set(skill.resources.list_references())
+
+  assert expected_refs == actual_refs
+
+  for ref_name in expected_refs:
+    content = skill.resources.get_reference(ref_name)
+    assert content is not None, f"Reference {ref_name} returned None"
+    assert len(content) > 0, f"Reference {ref_name} is empty"
+
+
+def test_graph_skill_passes_validation():
+  """Verify the graph skill directory passes ADK's built-in validator."""
+  problems = _validate_skill_dir(_GRAPH_SKILL_DIR)
+  assert not problems, f"Validation problems: {problems}"
+
+
+def test_graph_skill_frontmatter_has_license():
+  """Verify the graph skill includes a license field."""
+  skill = get_bigquery_graph_skill()
+  assert skill.frontmatter.license == "Apache-2.0"
+
+
+def test_graph_skill_frontmatter_has_metadata():
+  """Verify the graph skill includes author and version metadata."""
+  skill = get_bigquery_graph_skill()
+  assert "author" in skill.frontmatter.metadata
+  assert "version" in skill.frontmatter.metadata
+
+
+@pytest.mark.asyncio
+async def test_graph_skill_works_with_skill_toolset():
+  """Verify the graph skill integrates with SkillToolset and yields 4 tools."""
+  skill = get_bigquery_graph_skill()
+  toolset = SkillToolset(skills=[skill])
+
+  tools = await toolset.get_tools()
+  assert len(tools) == 4
+
+  tool_types = {type(t) for t in tools}
+  expected_types = {
+      ListSkillsTool,
+      LoadSkillTool,
+      LoadSkillResourceTool,
+      RunSkillScriptTool,
+  }
+  assert tool_types == expected_types
+
+
+@pytest.mark.asyncio
+async def test_both_bigquery_skills_load_into_one_toolset():
+  """Verify both packaged skills are distinct and visible to a model."""
+  toolset = SkillToolset(
+      skills=[get_bigquery_skill(), get_bigquery_graph_skill()]
+  )
+  ctx = mock.create_autospec(tool_context.ToolContext, instance=True)
+
+  result = await ListSkillsTool(toolset).run_async(args={}, tool_context=ctx)
+
+  assert "bigquery-ai-ml" in result
+  assert "bigquery-graph" in result
