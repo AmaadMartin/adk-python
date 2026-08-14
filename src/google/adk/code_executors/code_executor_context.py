@@ -41,6 +41,7 @@ class CodeExecutorContext:
   """The persistent context used to configure the code executor."""
 
   _context: dict[str, Any]
+  _written_keys: set[str]
 
   def __init__(self, session_state: _SessionState) -> None:
     """Initializes the code executor context.
@@ -50,15 +51,22 @@ class CodeExecutorContext:
     """
     self._context = self._get_code_executor_context(session_state)
     self._session_state = session_state
+    self._written_keys = set()
 
   def get_state_delta(self) -> dict[str, Any]:
     """Gets the state delta to update in the persistent session state.
 
+    The delta holds the code executor context plus every session state key this
+    instance has written, so that a caller can persist them on an event.
+
     Returns:
-      The state delta to update in the persistent session state.
+      The state delta to update in the persistent session state. Each value is
+      a deep copy, so later writes do not mutate an earlier snapshot.
     """
-    context_to_update = copy.deepcopy(self._context)
-    return {_CONTEXT_KEY: context_to_update}
+    state_delta: dict[str, Any] = {_CONTEXT_KEY: copy.deepcopy(self._context)}
+    for key in self._written_keys:
+      state_delta[key] = copy.deepcopy(self._session_state[key])
+    return state_delta
 
   def get_execution_id(self) -> str | None:
     """Gets the session ID for the code executor.
@@ -122,12 +130,12 @@ class CodeExecutorContext:
     )
     for input_file in input_files:
       stored_files.append(dataclasses.asdict(input_file))
-    self._session_state[_INPUT_FILE_KEY] = stored_files
+    self._set_session_state(_INPUT_FILE_KEY, stored_files)
 
   def clear_input_files(self) -> None:
     """Removes the input files and processed file names to the code executor context."""
     if _INPUT_FILE_KEY in self._session_state:
-      self._session_state[_INPUT_FILE_KEY] = []
+      self._set_session_state(_INPUT_FILE_KEY, [])
     if _PROCESSED_FILE_NAMES_KEY in self._context:
       self._context[_PROCESSED_FILE_NAMES_KEY] = []
 
@@ -157,7 +165,7 @@ class CodeExecutorContext:
         dict[str, int], self._session_state.get(_ERROR_COUNT_KEY, {})
     )
     stored_counts[invocation_id] = self.get_error_count(invocation_id) + 1
-    self._session_state[_ERROR_COUNT_KEY] = stored_counts
+    self._set_session_state(_ERROR_COUNT_KEY, stored_counts)
 
   def reset_error_count(self, invocation_id: str) -> None:
     """Resets the error count from the session state.
@@ -171,7 +179,7 @@ class CodeExecutorContext:
     if stored_counts is None:
       return
     stored_counts.pop(invocation_id, None)
-    self._session_state[_ERROR_COUNT_KEY] = stored_counts
+    self._set_session_state(_ERROR_COUNT_KEY, stored_counts)
 
   def update_code_execution_result(
       self,
@@ -200,7 +208,17 @@ class CodeExecutorContext:
         'timestamp': int(datetime.datetime.now().timestamp()),
     })
     stored_results[invocation_id] = invocation_results
-    self._session_state[_CODE_EXECUTION_RESULTS_KEY] = stored_results
+    self._set_session_state(_CODE_EXECUTION_RESULTS_KEY, stored_results)
+
+  def _set_session_state(self, key: str, value: Any) -> None:
+    """Writes a session state key and records it for the state delta.
+
+    Args:
+      key: The session state key to write.
+      value: The value to write.
+    """
+    self._session_state[key] = value
+    self._written_keys.add(key)
 
   def _get_code_executor_context(
       self, session_state: _SessionState
