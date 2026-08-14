@@ -24,10 +24,13 @@ from unittest import mock
 
 from google.adk.agents.readonly_context import ReadonlyContext
 from google.adk.code_executors.base_code_executor import BaseCodeExecutor
+from google.adk.code_executors.code_execution_utils import CodeExecutionInput
 from google.adk.code_executors.code_execution_utils import CodeExecutionResult
 from google.adk.code_executors.unsafe_local_code_executor import UnsafeLocalCodeExecutor
 from google.adk.environment import BaseEnvironment
+from google.adk.events import EventActions
 from google.adk.models import llm_request as llm_request_model
+from google.adk.sessions.state import State
 from google.adk.skills import models
 from google.adk.tools import skill_toolset
 from google.adk.tools import tool_context
@@ -724,9 +727,9 @@ async def test_load_resource_failures_isolated_per_invocation(mock_skill1):
 
   shared_state = {}
   ctx_a = _make_tool_context_with_agent(invocation_id="inv_a")
-  ctx_a.state = shared_state
+  ctx_a.state = State(shared_state, ctx_a.actions.state_delta)
   ctx_b = _make_tool_context_with_agent(invocation_id="inv_b")
-  ctx_b.state = shared_state
+  ctx_b.state = State(shared_state, ctx_b.actions.state_delta)
 
   # invocation A: one failure — counter for inv_a reaches 1 (soft).
   result_a = await tool.run_async(
@@ -764,7 +767,9 @@ async def test_load_resource_counter_uses_temp_prefix(mock_skill1):
 
   # The counter key must start with `temp:` so it is trimmed from the event
   # delta and never reaches durable storage.
-  guard_keys = [k for k in ctx.state if "skill_resource_not_found_count" in k]
+  guard_keys = [
+      k for k in ctx.state.to_dict() if "skill_resource_not_found_count" in k
+  ]
   assert guard_keys, "Failure counter did not write a tracking key."
   assert all(k.startswith("temp:") for k in guard_keys)
 
@@ -781,7 +786,8 @@ def _make_tool_context_with_agent(agent=None, invocation_id="test_invocation"):
   ctx._invocation_context.agent_states = {}
   ctx.agent_name = "test_agent"
   ctx.invocation_id = invocation_id
-  ctx.state = {}
+  ctx.actions = EventActions()
+  ctx.state = State({}, ctx.actions.state_delta)
   return ctx
 
 
@@ -792,6 +798,23 @@ def _make_mock_executor(stdout="", stderr=""):
       stdout=stdout, stderr=stderr
   )
   return executor
+
+
+class _SandboxRecordingCodeExecutor(BaseCodeExecutor):
+  """A code executor that records a sandbox name on the caller's context."""
+
+  fail: bool = False
+
+  def execute_code(
+      self,
+      invocation_context,
+      code_execution_input: CodeExecutionInput,
+  ) -> CodeExecutionResult:
+    assert code_execution_input.code_executor_context is not None
+    code_execution_input.code_executor_context.set_sandbox_name("sandbox-1")
+    if self.fail:
+      raise RuntimeError("boom")
+    return CodeExecutionResult(stdout="ok")
 
 
 @pytest.mark.asyncio
@@ -919,9 +942,9 @@ async def test_execute_script_failures_isolated_per_invocation(mock_skill1):
 
   shared_state = {}
   ctx_a = _make_tool_context_with_agent(invocation_id="inv_a")
-  ctx_a.state = shared_state
+  ctx_a.state = State(shared_state, ctx_a.actions.state_delta)
   ctx_b = _make_tool_context_with_agent(invocation_id="inv_b")
-  ctx_b.state = shared_state
+  ctx_b.state = State(shared_state, ctx_b.actions.state_delta)
 
   # invocation A: one failure — counter for inv_a reaches 1 (soft).
   result_a = await tool.run_async(
@@ -960,7 +983,9 @@ async def test_execute_script_counter_uses_temp_prefix(mock_skill1):
 
   # The counter key must start with `temp:` so it is trimmed from the event
   # delta and never reaches durable storage.
-  guard_keys = [k for k in ctx.state if "skill_script_not_found_count" in k]
+  guard_keys = [
+      k for k in ctx.state.to_dict() if "skill_script_not_found_count" in k
+  ]
   assert guard_keys, "Failure counter did not write a tracking key."
   assert all(k.startswith("temp:") for k in guard_keys)
 
@@ -1287,6 +1312,122 @@ async def test_execute_script_agent_executor_fallback(mock_skill1):
   )
   assert result["stdout"] == "from agent\n"
   agent_executor.execute_code.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_execute_script_publishes_code_executor_state_delta(mock_skill1):
+  """A sandbox name the executor records reaches the tool's state delta."""
+  executor = _SandboxRecordingCodeExecutor()
+  toolset = skill_toolset.SkillToolset([mock_skill1], code_executor=executor)
+  tool = skill_toolset.RunSkillScriptTool(toolset)
+  ctx = _make_tool_context_with_agent()
+
+  result = await tool.run_async(
+      args={"skill_name": "skill1", "file_path": "run.py"},
+      tool_context=ctx,
+  )
+
+  assert result["status"] == "success"
+  assert (
+      ctx.actions.state_delta["_code_execution_context"]["sandbox_name"]
+      == "sandbox-1"
+  )
+
+
+@pytest.mark.asyncio
+async def test_execute_script_adds_no_state_delta_when_nothing_recorded(
+    mock_skill1,
+):
+  """An executor that records nothing must leave the state delta empty."""
+  executor = _make_mock_executor(stdout="hello\n")
+  toolset = skill_toolset.SkillToolset([mock_skill1], code_executor=executor)
+  tool = skill_toolset.RunSkillScriptTool(toolset)
+  ctx = _make_tool_context_with_agent()
+
+  result = await tool.run_async(
+      args={"skill_name": "skill1", "file_path": "run.py"},
+      tool_context=ctx,
+  )
+
+  assert result["status"] == "success"
+  assert ctx.actions.state_delta == {}
+
+
+@pytest.mark.asyncio
+async def test_execute_script_does_not_republish_existing_code_execution_state(
+    mock_skill1,
+):
+  """State the code execution flow already recorded is not republished."""
+  executor = _make_mock_executor(stdout="hello\n")
+  toolset = skill_toolset.SkillToolset([mock_skill1], code_executor=executor)
+  tool = skill_toolset.RunSkillScriptTool(toolset)
+  ctx = _make_tool_context_with_agent()
+  ctx.state = State(
+      {"_code_execution_context": {"execution_session_id": "session-1"}},
+      ctx.actions.state_delta,
+  )
+
+  result = await tool.run_async(
+      args={"skill_name": "skill1", "file_path": "run.py"},
+      tool_context=ctx,
+  )
+
+  assert result["status"] == "success"
+  assert ctx.actions.state_delta == {}
+
+
+@pytest.mark.asyncio
+async def test_execute_script_publishes_state_delta_when_execution_raises(
+    mock_skill1,
+):
+  """A sandbox is recorded even when the script executor raises out."""
+
+  async def _raise_after_recording(*args, code_executor_context, **kwargs):
+    code_executor_context.set_sandbox_name("sandbox-1")
+    raise RuntimeError("boom")
+
+  executor = _make_mock_executor()
+  toolset = skill_toolset.SkillToolset([mock_skill1], code_executor=executor)
+  tool = skill_toolset.RunSkillScriptTool(toolset)
+  ctx = _make_tool_context_with_agent()
+
+  with mock.patch.object(
+      skill_toolset._SkillScriptCodeExecutor,
+      "execute_script_async",
+      _raise_after_recording,
+  ):
+    with pytest.raises(RuntimeError, match="boom"):
+      await tool.run_async(
+          args={"skill_name": "skill1", "file_path": "run.py"},
+          tool_context=ctx,
+      )
+
+  assert (
+      ctx.actions.state_delta["_code_execution_context"]["sandbox_name"]
+      == "sandbox-1"
+  )
+
+
+@pytest.mark.asyncio
+async def test_execute_script_publishes_state_delta_when_script_fails(
+    mock_skill1,
+):
+  """A sandbox created by a failing script is still recorded."""
+  executor = _SandboxRecordingCodeExecutor(fail=True)
+  toolset = skill_toolset.SkillToolset([mock_skill1], code_executor=executor)
+  tool = skill_toolset.RunSkillScriptTool(toolset)
+  ctx = _make_tool_context_with_agent()
+
+  result = await tool.run_async(
+      args={"skill_name": "skill1", "file_path": "run.py"},
+      tool_context=ctx,
+  )
+
+  assert result["error_code"] == "EXECUTION_ERROR"
+  assert (
+      ctx.actions.state_delta["_code_execution_context"]["sandbox_name"]
+      == "sandbox-1"
+  )
 
 
 @pytest.mark.asyncio

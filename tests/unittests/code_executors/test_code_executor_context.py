@@ -86,6 +86,52 @@ def test_set_execution_id(empty_state: State):
   assert ctx.get_execution_id() == "new_session_id"
 
 
+def test_get_sandbox_name_not_exists(empty_state: State):
+  """Test getting the sandbox name when it doesn't exist."""
+  ctx = CodeExecutorContext(empty_state)
+  assert ctx.get_sandbox_name() is None
+
+
+def test_get_sandbox_name_exists():
+  """Test getting a sandbox name seeded in the session state."""
+  state = State({"_code_execution_context": {"sandbox_name": "sandbox1"}}, {})
+  ctx = CodeExecutorContext(state)
+  assert ctx.get_sandbox_name() == "sandbox1"
+
+
+def test_set_sandbox_name(empty_state: State):
+  """Test setting a sandbox name."""
+  ctx = CodeExecutorContext(empty_state)
+  ctx.set_sandbox_name("sandbox1")
+  assert ctx.get_sandbox_name() == "sandbox1"
+
+
+def test_set_sandbox_name_overwrites(empty_state: State):
+  """Test that setting a sandbox name twice keeps the last one."""
+  ctx = CodeExecutorContext(empty_state)
+  ctx.set_sandbox_name("sandbox1")
+  ctx.set_sandbox_name("sandbox2")
+  assert ctx.get_sandbox_name() == "sandbox2"
+
+
+def test_sandbox_name_is_included_in_state_delta(empty_state: State):
+  """Test that the sandbox name reaches the published state delta."""
+  ctx = CodeExecutorContext(empty_state)
+  ctx.set_sandbox_name("sandbox1")
+  assert ctx.get_state_delta() == {
+      "_code_execution_context": {"sandbox_name": "sandbox1"}
+  }
+
+
+def test_set_sandbox_name_does_not_write_top_level_state_key(
+    empty_state: State,
+):
+  """Test that the sandbox name is not written as a top-level state key."""
+  ctx = CodeExecutorContext(empty_state)
+  ctx.set_sandbox_name("sandbox1")
+  assert "sandbox_name" not in empty_state
+
+
 def test_get_processed_file_names_exists(
     context_with_data: CodeExecutorContext,
 ):

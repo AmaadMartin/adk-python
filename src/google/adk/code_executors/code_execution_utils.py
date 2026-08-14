@@ -20,8 +20,14 @@ import base64
 import binascii
 import copy
 import dataclasses
+from typing import TYPE_CHECKING
 
 from google.genai import types
+
+if TYPE_CHECKING:
+  # Imported for typing only: code_executor_context imports File from this
+  # module at runtime.
+  from .code_executor_context import CodeExecutorContext
 
 
 @dataclasses.dataclass(frozen=True)
@@ -61,6 +67,16 @@ class CodeExecutionInput:
   execution_id: str | None = None
   """
   The execution ID for the stateful code execution.
+  """
+
+  code_executor_context: CodeExecutorContext | None = None
+  """
+  The caller's code executor context.
+
+  Executors that must persist state across invocations write it here; the
+  caller publishes ``get_state_delta()`` on the event it emits. When None, such
+  state is not persisted and the executor falls back to per-execution
+  behaviour.
   """
 
 

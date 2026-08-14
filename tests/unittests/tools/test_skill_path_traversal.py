@@ -24,6 +24,8 @@ from unittest import mock
 from google.adk.agents.base_agent import BaseAgent
 from google.adk.code_executors.base_code_executor import BaseCodeExecutor
 from google.adk.code_executors.code_execution_utils import CodeExecutionResult
+from google.adk.events import EventActions
+from google.adk.sessions.state import State
 from google.adk.skills import models
 from google.adk.tools import skill_toolset
 from google.adk.tools import tool_context
@@ -41,7 +43,8 @@ def _make_tool_context_with_agent(
   ctx._invocation_context.agent_states = {}
   ctx.agent_name = "test_agent"
   ctx.invocation_id = invocation_id
-  ctx.state = {}
+  ctx.actions = EventActions()
+  ctx.state = State({}, ctx.actions.state_delta)
   return ctx
 
 

@@ -28,6 +28,7 @@ from .code_execution_utils import File
 
 _CONTEXT_KEY = '_code_execution_context'
 _SESSION_ID_KEY = 'execution_session_id'
+_SANDBOX_NAME_KEY = 'sandbox_name'
 _PROCESSED_FILE_NAMES_KEY = 'processed_input_files'
 _INPUT_FILE_KEY = '_code_executor_input_files'
 _ERROR_COUNT_KEY = '_code_executor_error_counts'
@@ -75,6 +76,23 @@ class CodeExecutorContext:
       session_id: The session ID for the code executor.
     """
     self._context[_SESSION_ID_KEY] = session_id
+
+  def get_sandbox_name(self) -> str | None:
+    """Gets the code execution sandbox resource name.
+
+    Returns:
+      The sandbox resource name recorded in the code executor context, or None
+      if no sandbox has been recorded.
+    """
+    return cast(str | None, self._context.get(_SANDBOX_NAME_KEY))
+
+  def set_sandbox_name(self, sandbox_name: str) -> None:
+    """Sets the code execution sandbox resource name.
+
+    Args:
+      sandbox_name: The sandbox resource name to record.
+    """
+    self._context[_SANDBOX_NAME_KEY] = sandbox_name
 
   def get_processed_file_names(self) -> list[str]:
     """Gets the processed file names from the session state.

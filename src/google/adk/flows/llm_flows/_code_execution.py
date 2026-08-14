@@ -260,6 +260,7 @@ async def _run_pre_processor(
             execution_id=_get_or_set_execution_id(
                 invocation_context, code_executor_context
             ),
+            code_executor_context=code_executor_context,
         ),
     )
     logger.debug('Executed code:\n```\n%s\n```', code_str)
@@ -379,6 +380,7 @@ async def _run_post_processor(
           execution_id=_get_or_set_execution_id(
               invocation_context, code_executor_context
           ),
+          code_executor_context=code_executor_context,
       ),
   )
   logger.debug('Executed code:\n```\n%s\n```', code_str)

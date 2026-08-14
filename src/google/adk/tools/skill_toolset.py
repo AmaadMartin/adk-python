@@ -37,6 +37,7 @@ from typing_extensions import override
 from ..agents.readonly_context import ReadonlyContext
 from ..code_executors.base_code_executor import BaseCodeExecutor
 from ..code_executors.code_execution_utils import CodeExecutionInput
+from ..code_executors.code_executor_context import CodeExecutorContext
 from ..skills import models
 from ..skills import prompt
 from ..skills import SkillRegistry
@@ -542,6 +543,8 @@ class _SkillScriptCodeExecutor:
       script_args: dict[str, Any] | list[str] | None,
       short_options: dict[str, Any] | None = None,
       positional_args: list[str] | None = None,
+      *,
+      code_executor_context: CodeExecutorContext,
   ) -> dict[str, Any]:
     """Prepares and executes the script using the base executor.
 
@@ -554,6 +557,8 @@ class _SkillScriptCodeExecutor:
         long options or a list of strings.
       short_options: Optional short options (single hyphen) as key-value pairs.
       positional_args: Optional positional arguments.
+      code_executor_context: The code executor context the executor records
+        cross-invocation state on, such as a created sandbox resource name.
 
     Returns:
       A dictionary containing execution results (stdout, stderr, status).
@@ -579,7 +584,9 @@ class _SkillScriptCodeExecutor:
       result = await asyncio.to_thread(
           self._base_executor.execute_code,
           invocation_context,
-          CodeExecutionInput(code=code),
+          CodeExecutionInput(
+              code=code, code_executor_context=code_executor_context
+          ),
       )
 
       stdout = result.stdout
@@ -1062,14 +1069,28 @@ class RunSkillScriptTool(BaseTool):
     script_executor = _SkillScriptCodeExecutor(
         code_executor, self._toolset._script_timeout  # pylint: disable=protected-access
     )
-    return await script_executor.execute_script_async(
-        tool_context._invocation_context,  # pylint: disable=protected-access
-        skill,
-        file_path,
-        script_args,
-        short_options,
-        positional_args,  # pylint: disable=protected-access
-    )
+    # Read the state through a plain dict: building the context over the live
+    # State would write an empty placeholder into the tool's state delta.
+    code_executor_context = CodeExecutorContext(tool_context.state.to_dict())
+    # get_state_delta() deep-copies, so this snapshot survives the execution.
+    baseline_state_delta = code_executor_context.get_state_delta()
+    try:
+      return await script_executor.execute_script_async(
+          tool_context._invocation_context,  # pylint: disable=protected-access
+          skill,
+          file_path,
+          script_args,
+          short_options,
+          positional_args,
+          code_executor_context=code_executor_context,
+      )
+    finally:
+      # Publish the context even when the script fails, so a sandbox the
+      # executor created is still recorded. An execution that records nothing
+      # must not add a state delta.
+      state_delta = code_executor_context.get_state_delta()
+      if state_delta != baseline_state_delta:
+        tool_context.actions.state_delta.update(state_delta)
 
   async def _ensure_skill_materialized_in_env(
       self, skill: models.Skill, file_path: str, env: BaseEnvironment
