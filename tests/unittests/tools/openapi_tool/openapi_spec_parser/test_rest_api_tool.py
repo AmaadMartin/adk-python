@@ -13,8 +13,11 @@
 # limitations under the License.
 
 
+from http.server import BaseHTTPRequestHandler
+from http.server import ThreadingHTTPServer
 import json
 import ssl
+import threading
 from unittest import mock
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -135,6 +138,30 @@ def sample_return_parameter():
       param_location="query",
       param_schema=OpenAPISchema(type="string"),
       is_required=True,
+  )
+
+
+@pytest.fixture
+def array_body_operation():
+  """An array request body on an operation that also has an `array` query parameter."""
+  return Operation(
+      operationId="bulk_create",
+      parameters=[
+          OpenAPIParameter(**{
+              "name": "array",
+              "in": "query",
+              "schema": OpenAPISchema(type="string"),
+          })
+      ],
+      requestBody=RequestBody(
+          content={
+              "application/json": MediaType(
+                  schema=OpenAPISchema(
+                      type="array", items=OpenAPISchema(type="string")
+                  )
+              )
+          }
+      ),
   )
 
 
@@ -612,6 +639,139 @@ class TestRestApiTool:
     request_params = tool._prepare_request_params(params, kwargs)
 
     assert request_params["json"] == ["item1", "item2"]
+
+  def test_prepare_request_params_array_body_with_conflicting_query_param(
+      self,
+      sample_endpoint,
+      sample_auth_scheme,
+      sample_auth_credential,
+      array_body_operation,
+  ):
+    """The array body is sent even after dedupe renames its py_name."""
+    tool = RestApiTool(
+        name="test_tool",
+        description="test",
+        endpoint=sample_endpoint,
+        operation=array_body_operation,
+        auth_credential=sample_auth_credential,
+        auth_scheme=sample_auth_scheme,
+    )
+    params = OperationParser(array_body_operation).get_parameters()
+    # The dedupe order is the point of this test, so pin it: the query
+    # parameter keeps `array` and the body parameter becomes `array_0`.
+    assert [p.py_name for p in params if p.param_location == "body"] == [
+        "array_0"
+    ]
+    assert [p.py_name for p in params if p.param_location == "query"] == [
+        "array"
+    ]
+
+    request_params = tool._prepare_request_params(
+        params, {"array_0": ["item1", "item2"], "array": "q"}
+    )
+
+    assert request_params["json"] == ["item1", "item2"]
+    assert request_params["params"] == {"array": "q"}
+    assert request_params["headers"]["Content-Type"] == "application/json"
+
+  def test_prepare_request_params_array_body_omitted(
+      self,
+      sample_endpoint,
+      sample_auth_scheme,
+      sample_auth_credential,
+      array_body_operation,
+  ):
+    """An omitted array body stays absent from the request."""
+    tool = RestApiTool(
+        name="test_tool",
+        description="test",
+        endpoint=sample_endpoint,
+        operation=array_body_operation,
+        auth_credential=sample_auth_credential,
+        auth_scheme=sample_auth_scheme,
+    )
+    params = OperationParser(array_body_operation).get_parameters()
+
+    request_params = tool._prepare_request_params(params, {})
+
+    assert "json" not in request_params
+
+  def test_prepare_request_params_array_without_body_parameter(
+      self,
+      sample_endpoint,
+      sample_auth_scheme,
+      sample_auth_credential,
+      array_body_operation,
+  ):
+    """An array operation with no body parameter sends no body."""
+    tool = RestApiTool(
+        name="test_tool",
+        description="test",
+        endpoint=sample_endpoint,
+        operation=array_body_operation,
+        auth_credential=sample_auth_credential,
+        auth_scheme=sample_auth_scheme,
+    )
+    params = [
+        ApiParameter(
+            original_name="array",
+            py_name="array",
+            param_location="query",
+            param_schema=OpenAPISchema(type="string"),
+        )
+    ]
+
+    request_params = tool._prepare_request_params(params, {"array": "q"})
+
+    assert "json" not in request_params
+    assert request_params["params"] == {"array": "q"}
+
+  @pytest.mark.asyncio
+  async def test_call_sends_array_body_with_conflicting_query_param(
+      self, array_body_operation
+  ):
+    """The array body reaches a real HTTP server over the wire."""
+    received = {}
+
+    class _RecordingHandler(BaseHTTPRequestHandler):
+
+      def do_POST(self):
+        length = int(self.headers.get("Content-Length", 0))
+        raw_body = self.rfile.read(length)
+        received["body"] = json.loads(raw_body) if raw_body else None
+        received["path"] = self.path
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(b'{"created": 2}')
+
+      def log_message(self, format, *args):
+        """Keeps the server request log out of the test output."""
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), _RecordingHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    try:
+      tool = RestApiTool(
+          name="bulk_create",
+          description="test",
+          endpoint=OperationEndpoint(
+              base_url=f"http://127.0.0.1:{server.server_address[1]}",
+              path="/items",
+              method="post",
+          ),
+          operation=array_body_operation,
+      )
+
+      result = await tool.call(
+          args={"array_0": ["item1", "item2"], "array": "q"}, tool_context=None
+      )
+    finally:
+      server.shutdown()
+      server.server_close()
+
+    assert received["body"] == ["item1", "item2"]
+    assert received["path"] == "/items?array=q"
+    assert result == {"created": 2}
 
   def test_prepare_request_params_string(
       self, sample_endpoint, sample_auth_credential, sample_auth_scheme

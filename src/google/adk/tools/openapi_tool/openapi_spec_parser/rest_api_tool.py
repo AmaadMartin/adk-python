@@ -430,8 +430,11 @@ class RestApiTool(BaseTool):
 
         elif schema.type == "array":
           for param in parameters:
-            if param.param_location == "body" and param.py_name == "array":
-              body_data = kwargs.get("array")
+            # The parser emits exactly one body parameter for an array request
+            # body, and its py_name may have been deduped (e.g. to `array_0`)
+            # against a same-named query parameter, so match on location alone.
+            if param.param_location == "body":
+              body_data = kwargs.get(param.py_name)
               break
         else:  # like string
           for param in parameters:

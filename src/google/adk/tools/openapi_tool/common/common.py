@@ -58,7 +58,8 @@ class ApiParameter(BaseModel):
   param_location: str
   param_schema: Union[str, Schema]
   description: Optional[str] = ''
-  py_name: Optional[str] = ''
+  # `model_post_init` fills this in when it is empty, so it is never None.
+  py_name: str = ''
   type_value: type[Any] = Field(default=None, init_var=False)
   type_hint: str = Field(default=None, init_var=False)
   required: bool = False
