@@ -89,13 +89,15 @@ class GoogleApiToolset(BaseToolset):
       self._mtls_certs = MtlsClientCerts()
       cert_path, key_path, passphrase = self._mtls_certs.get_certs()
       if cert_path and key_path:
+        # httpx 0.28 deprecated `cert=`; an ssl context is the supported way to
+        # present a client certificate. Build it once here rather than once per
+        # request, and hand the passphrase over untouched -- load_cert_chain
+        # takes bytes, so a non-UTF-8 passphrase needs no decoding.
+        ssl_context = httpx.create_ssl_context()
+        ssl_context.load_cert_chain(cert_path, key_path, passphrase)
 
         def client_factory() -> httpx.AsyncClient:
-          if passphrase:
-            return httpx.AsyncClient(
-                cert=(cert_path, key_path, passphrase)  # type: ignore[arg-type]
-            )
-          return httpx.AsyncClient(cert=(cert_path, key_path))
+          return httpx.AsyncClient(verify=ssl_context)
 
         self._httpx_client_factory = client_factory
 
