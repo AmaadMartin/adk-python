@@ -37,6 +37,7 @@ pytestmark = pytest.mark.skipif(
 _LAZY_PACKAGES = (
     'google.adk',
     'google.adk.agents',
+    'google.adk.auth',
     'google.adk.cli',
     'google.adk.cli.utils',
     'google.adk.workflow',
@@ -92,8 +93,53 @@ _LAZY_PACKAGES = (
                 'uvicorn',
             ),
         ),
+        (
+            'google.adk.agents.llm_agent',
+            (
+                'fastapi',
+                'google.adk.auth.auth_schemes',
+                'google.adk.auth.auth_tool',
+                'starlette',
+            ),
+        ),
+        (
+            'google.adk.flows.llm_flows.functions',
+            (
+                'fastapi',
+                'google.adk.auth.auth_schemes',
+                'google.adk.auth.auth_tool',
+                'starlette',
+            ),
+        ),
+        (
+            'google.adk.runners',
+            (
+                'fastapi',
+                'google.adk.auth.auth_schemes',
+                'google.adk.auth.auth_tool',
+                'starlette',
+            ),
+        ),
+        (
+            'google.adk.auth.base_auth_provider',
+            (
+                'fastapi',
+                'google.adk.auth.auth_schemes',
+                'google.adk.auth.auth_tool',
+                'starlette',
+            ),
+        ),
     ],
-    ids=('root', 'agents', 'workflow', 'cli_commands'),
+    ids=(
+        'root',
+        'agents',
+        'workflow',
+        'cli_commands',
+        'llm_agent',
+        'llm_flows_functions',
+        'runners',
+        'base_auth_provider',
+    ),
 )
 def test_package_import_defers_unrelated_runtime(
     module_name: str, forbidden: tuple[str, ...]

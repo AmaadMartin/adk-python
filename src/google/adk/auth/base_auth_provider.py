@@ -20,12 +20,12 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
   from .auth_schemes import AuthScheme
+  from .auth_tool import AuthConfig
 
 from ..agents.callback_context import CallbackContext
 from ..features import experimental
 from ..features import FeatureName
 from .auth_credential import AuthCredential
-from .auth_tool import AuthConfig
 
 
 @experimental(FeatureName.PLUGGABLE_AUTH)

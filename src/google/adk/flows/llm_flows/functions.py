@@ -40,8 +40,6 @@ from google.genai import types
 
 from ...agents.active_streaming_tool import ActiveStreamingTool
 from ...agents.live_request_queue import LiveRequestQueue
-from ...auth.auth_tool import AuthConfig
-from ...auth.auth_tool import AuthToolArguments
 from ...events.event import Event
 from ...events.event_actions import EventActions
 from ...telemetry import _instrumentation
@@ -59,6 +57,7 @@ from ._invocation_utils import require_agent_name as _require_agent_name
 if TYPE_CHECKING:
   from ...agents.invocation_context import InvocationContext
   from ...agents.llm_agent import LlmAgent
+  from ...auth.auth_tool import AuthConfig
 
 AF_FUNCTION_CALL_ID_PREFIX = 'adk-'
 REQUEST_EUC_FUNCTION_CALL_NAME = 'adk_request_credential'
@@ -334,6 +333,10 @@ def build_auth_request_event(
   Returns:
     Event with auth request function calls.
   """
+  # Deferred: auth_tool builds on fastapi, and importing it at module scope
+  # would put FastAPI on the core runtime import path.
+  from ...auth.auth_tool import AuthToolArguments
+
   parts: list[types.Part] = []
   long_running_tool_ids: set[str] = set()
 
