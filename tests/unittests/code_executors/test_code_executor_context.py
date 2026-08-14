@@ -306,3 +306,118 @@ def test_mocked_session_state_is_not_rejected():
   ctx.increment_error_count("invocation")
   ctx.reset_error_count("invocation")
   ctx.update_code_execution_result("invocation", "code", "stdout", "")
+
+
+def test_get_state_delta_includes_input_files(empty_state: State):
+  """Added input files reach the state delta."""
+  ctx = CodeExecutorContext(empty_state)
+  ctx.add_input_files([File(name="new.dat", content="Yg==")])
+
+  delta = ctx.get_state_delta()
+
+  assert delta["_code_executor_input_files"] == [{
+      "name": "new.dat",
+      "content": "Yg==",
+      "mime_type": "text/plain",
+  }]
+
+
+def test_get_state_delta_includes_error_count_increment(empty_state: State):
+  """An incremented error count reaches the state delta."""
+  ctx = CodeExecutorContext(empty_state)
+  ctx.increment_error_count("inv")
+
+  delta = ctx.get_state_delta()
+
+  assert delta["_code_executor_error_counts"] == {"inv": 1}
+
+
+def test_get_state_delta_includes_error_count_reset(
+    context_with_data: CodeExecutorContext,
+):
+  """A reset error count reaches the state delta as a removal."""
+  context_with_data.reset_error_count("invocationA")
+
+  delta = context_with_data.get_state_delta()
+
+  assert delta["_code_executor_error_counts"] == {}
+
+
+def test_get_state_delta_includes_code_execution_results(empty_state: State):
+  """A recorded code execution result reaches the state delta."""
+  ctx = CodeExecutorContext(empty_state)
+  ctx.update_code_execution_result("inv", "code", "out", "")
+
+  delta = ctx.get_state_delta()
+
+  results = delta["_code_execution_results"]["inv"]
+  assert len(results) == 1
+  assert results[0]["code"] == "code"
+  assert results[0]["result_stdout"] == "out"
+  assert results[0]["result_stderr"] == ""
+
+
+def test_get_state_delta_includes_cleared_input_files(
+    context_with_data: CodeExecutorContext,
+):
+  """Clearing input files reaches the state delta."""
+  context_with_data.clear_input_files()
+
+  delta = context_with_data.get_state_delta()
+
+  assert delta["_code_executor_input_files"] == []
+  assert delta["_code_execution_context"]["processed_input_files"] == []
+
+
+def test_get_state_delta_omits_unread_keys(
+    context_with_data: CodeExecutorContext,
+):
+  """A context that only reads reports no session state key."""
+  assert context_with_data.get_input_files()
+  assert context_with_data.get_error_count("invocationA") == 2
+
+  delta = context_with_data.get_state_delta()
+
+  assert set(delta) == {"_code_execution_context"}
+
+
+def test_get_state_delta_omits_reset_when_no_error_counts(empty_state: State):
+  """Resetting an absent error count records no key."""
+  ctx = CodeExecutorContext(empty_state)
+  ctx.reset_error_count("inv")
+
+  delta = ctx.get_state_delta()
+
+  assert set(delta) == {"_code_execution_context"}
+
+
+def test_get_state_delta_snapshot_is_not_aliased(empty_state: State):
+  """A later write does not mutate an earlier state delta snapshot."""
+  ctx = CodeExecutorContext(empty_state)
+  ctx.add_input_files([File(name="first.dat", content="Yg==")])
+  delta = ctx.get_state_delta()
+
+  ctx.add_input_files([File(name="second.dat", content="Yw==")])
+
+  assert len(delta["_code_executor_input_files"]) == 1
+  assert len(ctx.get_state_delta()["_code_executor_input_files"]) == 2
+
+
+def test_get_state_delta_reports_writes_on_resumed_session():
+  """Writes over state restored from a previous turn reach the state delta."""
+  value = {
+      "_code_execution_context": {"execution_session_id": "session123"},
+      "_code_executor_error_counts": {"inv": 1},
+  }
+  state = State(value, {})
+  ctx = CodeExecutorContext(state)
+
+  ctx.set_execution_id("session456")
+  ctx.increment_error_count("inv")
+
+  delta = ctx.get_state_delta()
+
+  assert delta["_code_execution_context"]["execution_session_id"] == (
+      "session456"
+  )
+  assert delta["_code_executor_error_counts"] == {"inv": 2}

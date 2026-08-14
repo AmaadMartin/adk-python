@@ -480,17 +480,18 @@ async def _post_process_code_execution_result(
           ),
       ],
   )
-  event_actions = EventActions(
-      state_delta=code_executor_context.get_state_delta()
-  )
-
-  # Handle code execution error retry.
+  # Handle code execution error retry. This runs before the state delta is
+  # taken, so the emitted event carries the updated error count.
   if code_execution_result.stderr:
     code_executor_context.increment_error_count(
         invocation_context.invocation_id
     )
   else:
     code_executor_context.reset_error_count(invocation_context.invocation_id)
+
+  event_actions = EventActions(
+      state_delta=code_executor_context.get_state_delta()
+  )
 
   # Handle output files.
   for output_file in code_execution_result.output_files:
