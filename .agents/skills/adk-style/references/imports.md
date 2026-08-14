@@ -6,6 +6,9 @@
   `from ..agents.llm_agent import LlmAgent`
 - **Tests** (`tests/`): use absolute imports.
   `from google.adk.agents.llm_agent import LlmAgent`
+  - This means the library under test. Import a **test helper** relatively:
+    `from . import testing_utils`, not `from tests.unittests import
+    testing_utils`. The absolute form needs the repository root on `sys.path`.
 - **Import from the module, not the package.** `from ..agents.llm_agent import
   LlmAgent`, never `from ..agents import LlmAgent`. Importing through
   `__init__.py` inside the framework creates import cycles and forces the
