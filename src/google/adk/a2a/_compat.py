@@ -231,10 +231,9 @@ def set_part_metadata(p: Part, metadata: dict[str, Any]) -> None:
 
   0.3.x: ``metadata`` lives on ``p.root`` (a pydantic field) and is assigned.
   1.x:   ``p.metadata`` is a proto ``Struct`` field and is parsed into in
-         place. ``Clear()`` first keeps the write a replacement, not a merge.
+         place.
   """
   if IS_A2A_V1:
-    p.metadata.Clear()
     ParseDict(metadata, p.metadata)
   else:
     p.root.metadata = metadata
@@ -733,7 +732,6 @@ async def send_message(
     smr = SendMessageRequest()
     smr.message.CopyFrom(request)
     if request_metadata:
-      # ``smr`` was just constructed, so there is nothing to clear first.
       ParseDict(request_metadata, smr.metadata)
     async with Aclosing(client.send_message(smr, context=context)) as agen:
       async for item in agen:
@@ -1116,7 +1114,6 @@ def set_event_metadata(event: Any, metadata: dict[str, Any]) -> None:
   if not metadata:
     return
   if IS_A2A_V1:
-    event.metadata.Clear()
     ParseDict(metadata, event.metadata)
   else:
     event.metadata = metadata
@@ -1168,7 +1165,6 @@ def set_struct_metadata(obj: Any, metadata: dict[str, Any]) -> None:
   if not metadata:
     return
   if IS_A2A_V1:
-    obj.metadata.Clear()
     ParseDict(dict(metadata), obj.metadata)
   else:
     obj.metadata = dict(metadata)

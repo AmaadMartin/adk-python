@@ -520,10 +520,11 @@ def test_set_part_metadata_v1_parses_into_the_struct_field():
 def test_set_part_metadata_v1_replaces_existing_keys():
   part = _compat.make_data_part(data={'a': 1}, metadata={'old': 1})
 
-  _compat.set_part_metadata(part, {'new': 2})
+  # Two keys, so a per-key write that dropped the previous one would show up.
+  _compat.set_part_metadata(part, {'new': 2, 'also': 3})
 
   # The write is a replacement, not a merge.
-  assert _compat.part_metadata(part) == {'new': 2}
+  assert _compat.part_metadata(part) == {'new': 2, 'also': 3}
 
 
 @v1_only
@@ -607,9 +608,9 @@ def test_set_struct_metadata_v1_replaces_existing_keys():
   artifact = _compat.make_artifact(artifact_id='artifact-1')
   _compat.set_struct_metadata(artifact, {'old': 1})
 
-  _compat.set_struct_metadata(artifact, {'new': 2})
+  _compat.set_struct_metadata(artifact, {'new': 2, 'also': 3})
 
-  assert _compat.meta_to_dict(artifact.metadata) == {'new': 2}
+  assert _compat.meta_to_dict(artifact.metadata) == {'new': 2, 'also': 3}
 
 
 # -----------------------------------------------------------------------------
