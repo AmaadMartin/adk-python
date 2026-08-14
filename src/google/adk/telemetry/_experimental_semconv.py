@@ -468,7 +468,7 @@ def _tool_definition_from_mcp_tool(tool: McpTool) -> FunctionToolDefinition:
 def _to_tool_definitions(
     tool: types.ToolUnion,
 ) -> list[ToolDefinition]:
-  """Synchronously converts a single tool entry into ``ToolDefinition``s.
+  """Synchronously converts a single tool entry into ``ToolDefinition`` values.
 
   By the time telemetry inspects ``llm_request.config.tools``, ADK's tool
   pipeline has already materialized every ``BaseTool`` (including
@@ -553,7 +553,7 @@ def _operation_details_attributes_no_content(
 def _resolve_tool_definitions(
     tools: Sequence[types.ToolUnion],
 ) -> list[ToolDefinition]:
-  """Flattens a sequence of tools into a list of ``ToolDefinition``s."""
+  """Flattens a sequence of tools into a list of ``ToolDefinition`` values."""
   resolved: list[ToolDefinition] = []
   for tool in tools:
     for de in _to_tool_definitions(tool):

@@ -123,7 +123,7 @@ def resolve_error_type(error: BaseException) -> str:
   """Derives a higher-resolution ``error.type`` label for a failure.
 
   Prefers, in order: a pre-classified ``error_type`` carried by ADK errors; the
-  HTTP status code for ``google.genai`` ``APIError``s (e.g. ``429``, since the
+  HTTP status code for a ``google.genai`` ``APIError`` (e.g. ``429``, since the
   SDK collapses every 4xx into ``ClientError`` and every 5xx into
   ``ServerError``); finally the class name.
   """

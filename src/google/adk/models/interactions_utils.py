@@ -765,10 +765,10 @@ def convert_interaction_to_llm_response(
 class _StreamState:
   """Accumulates streamed parts and grounding data across SSE events.
 
-  ``parts`` collects ``types.Part``s in arrival order to assemble the final
-  ``Content``. The grounding fields accumulate google_search / citation data
-  that maps to ``grounding_metadata`` (a top-level ``LlmResponse`` field, not a
-  part) so it can be reattached to the final, persisted event.
+  ``parts`` collects ``types.Part`` values in arrival order to assemble the
+  final ``Content``. The grounding fields accumulate google_search / citation
+  data that maps to ``grounding_metadata`` (a top-level ``LlmResponse`` field,
+  not a part) so it can be reattached to the final, persisted event.
   """
 
   parts: list[types.Part] = dataclasses.field(default_factory=list)
@@ -1492,7 +1492,7 @@ async def _create_interactions(
 
   This is the shared transport + conversion loop. The caller assembles
   ``create_kwargs`` (``model`` or ``agent``, ``input``, ``tools``, etc.); this
-  helper owns issuing the call and mapping the stream to ``LlmResponse``s.
+  helper owns issuing the call and mapping the stream to ``LlmResponse`` values.
 
   Args:
     api_client: The Google GenAI client.
