@@ -858,7 +858,7 @@ async def test_parallel_worker_cancellation_on_worker_failure(
         raise
       yield f'Success {node_input}'
 
-  from tests.unittests.workflow.workflow_testing_utils import TestingNode
+  from .workflow_testing_utils import TestingNode
 
   node_list = TestingNode(name='NodeList', output=['fail', 'slow'])
   node_parallel = node(

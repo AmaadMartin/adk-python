@@ -648,7 +648,7 @@ async def test_mcp_stdio_agent_no_runtime_error(mocker):
   from mcp import StdioServerParameters
 
   # Mock LLM responses to avoid real API calls
-  from tests.unittests.testing_utils import MockModel
+  from ..testing_utils import MockModel
 
   mock_responses = [
       genai_types.Content(

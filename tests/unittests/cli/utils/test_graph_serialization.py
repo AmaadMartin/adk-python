@@ -31,7 +31,7 @@ from google.adk.workflow import START
 from google.adk.workflow import Workflow
 import pytest
 
-from tests.unittests.workflow.workflow_testing_utils import TestingNode
+from ...workflow.workflow_testing_utils import TestingNode
 
 
 def test_serialize_edges_with_routing_map() -> None:
