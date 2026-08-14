@@ -83,6 +83,7 @@ class GoogleApiToolset(BaseToolset):
     self._discovery_url = discovery_url
 
     self._httpx_client_factory = None
+    self._mtls_certs: Optional[MtlsClientCerts] = None
     use_client_cert = use_client_cert_effective()
 
     if use_client_cert:
@@ -171,5 +172,5 @@ class GoogleApiToolset(BaseToolset):
   async def close(self) -> None:
     if self._openapi_toolset:
       await self._openapi_toolset.close()
-    if hasattr(self, '_mtls_certs') and self._mtls_certs:
+    if self._mtls_certs:
       self._mtls_certs.close()
