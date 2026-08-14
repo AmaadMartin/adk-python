@@ -18,7 +18,6 @@
 # addlicense is an optional Go binary
 # (go install github.com/google/addlicense@latest). When it is not installed
 # the hook warns and passes, so a missing Go toolchain never blocks a commit.
-# CI catches any missing headers instead.
 
 if ! command -v addlicense >/dev/null 2>&1; then
   echo "Warning: addlicense not installed, skipping"
