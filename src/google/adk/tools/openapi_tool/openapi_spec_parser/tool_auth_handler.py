@@ -199,13 +199,12 @@ class ToolContextCredentialStore:
     # credential_key was configured, and the pre-SHA256 legacy slot. When
     # several tools share a credential_key, the first one to miss migrates its
     # own cached credential into the shared slot. That sharing is what the
-    # developer asked for by naming one key.
+    # developer asked for by naming one key. Without a credential_key the
+    # digest slot is the current slot, and re-reading it is a miss again.
     for previous_key in (
         self._get_digest_credential_key(auth_scheme, auth_credential),
         self._get_legacy_credential_key(auth_scheme, auth_credential),
     ):
-      if previous_key == token_key:
-        continue
       serialized_credential = self.tool_context.state.get(previous_key)
       if serialized_credential:
         # Migrate to the current key for future lookups.
