@@ -14,7 +14,9 @@
 
 import asyncio
 import hashlib
+from io import StringIO
 import json
+import pickle
 import sys
 import time
 from unittest.mock import ANY
@@ -904,6 +906,16 @@ class TestMCPSessionManager:
     new_lock = unpickled._session_lock
     assert isinstance(new_lock, asyncio.Lock)
     assert new_lock is not lock
+
+  def test_pickle_mcp_session_manager_defaults_errlog_when_stream_dropped(self):
+    """__getstate__ pops _errlog, so __setstate__ must guard with hasattr."""
+    manager = MCPSessionManager(
+        self.mock_stdio_connection_params, errlog=StringIO()
+    )
+
+    unpickled = pickle.loads(pickle.dumps(manager))
+
+    assert unpickled._errlog is sys.stderr
 
   @pytest.mark.asyncio
   async def test_get_mtls_transport_flag_off(self):

@@ -669,6 +669,23 @@ class TestMcpToolset:
     for tool in tools:
       assert tool._progress_callback == my_progress_callback
 
+  @pytest.mark.asyncio
+  async def test_get_tools_forwards_none_progress_callback_when_unset(self):
+    """Test that get_tools forwards a None progress_callback to each tool."""
+    mock_tools = [MockMCPTool("tool1"), MockMCPTool("tool2")]
+    self.mock_session.list_tools = AsyncMock(
+        return_value=MockListToolsResult(mock_tools)
+    )
+
+    toolset = McpToolset(connection_params=self.mock_stdio_params)
+    toolset._mcp_session_manager = self.mock_session_manager
+
+    tools = await toolset.get_tools()
+
+    assert len(tools) == 2
+    for tool in tools:
+      assert tool._progress_callback is None
+
   def test_init_with_progress_callback_factory(self):
     """Test initialization with a ProgressCallbackFactory."""
 
@@ -957,6 +974,16 @@ class TestMcpToolset:
     unpickled = pickle.loads(pickled)
     assert unpickled._connection_params == self.mock_stdio_params
     assert unpickled._errlog == sys.stderr
+
+  def test_pickle_mcp_toolset_defaults_errlog_when_stream_dropped(self):
+    """__getstate__ pops _errlog, so __setstate__ must guard with hasattr."""
+    toolset = McpToolset(
+        connection_params=self.mock_stdio_params, errlog=StringIO()
+    )
+
+    unpickled = pickle.loads(pickle.dumps(toolset))
+
+    assert unpickled._errlog is sys.stderr
 
 
 class TestMcpToolsetHttpDebug:

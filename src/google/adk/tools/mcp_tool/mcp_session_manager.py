@@ -1080,7 +1080,7 @@ class MCPSessionManager:
     self._session_id_to_key = {}
     self._active_debug_lists = {}
     self._lock_map_lock = threading.Lock()
-    # If _errlog was removed during pickling, default to sys.stderr
+    # __getstate__ pops _errlog, so it is absent here: hasattr is required.
     if not hasattr(self, '_errlog') or self._errlog is None:
       self._errlog = sys.stderr
 

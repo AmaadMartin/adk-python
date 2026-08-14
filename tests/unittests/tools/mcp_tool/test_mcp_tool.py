@@ -1167,6 +1167,34 @@ class TestMCPTool:
     assert factory_calls[0][1] is tool_context
 
   @pytest.mark.asyncio
+  async def test_run_async_impl_without_progress_callback_forwards_none(self):
+    """Test that an unconfigured progress_callback reaches call_tool as None."""
+    tool = MCPTool(
+        mcp_tool=self.mock_mcp_tool,
+        mcp_session_manager=self.mock_session_manager,
+    )
+
+    mcp_response = CallToolResult(
+        content=[TextContent(type="text", text="success")]
+    )
+    self.mock_session.call_tool = AsyncMock(return_value=mcp_response)
+
+    tool_context = Mock(spec=ToolContext)
+    args = {"param1": "test_value"}
+
+    result = await tool._run_async_impl(
+        args=args, tool_context=tool_context, credential=None
+    )
+
+    assert result == mcp_response.model_dump(exclude_none=True, mode="json")
+    self.mock_session.call_tool.assert_called_once_with(
+        "test_tool",
+        arguments=args,
+        progress_callback=None,
+        meta=None,
+    )
+
+  @pytest.mark.asyncio
   async def test_run_async_require_confirmation_callable_with_context_type(
       self,
   ):
