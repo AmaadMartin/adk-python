@@ -40,6 +40,8 @@ is_exempt_from_unit_guide() {
   local filename="$2"
   local pattern
   for pattern in "${EXEMPT_GUIDE_PATTERNS[@]}"; do
+    # shellcheck disable=SC2053  # $pattern is a glob on purpose; quoting it
+    # would turn these exemptions into literal string comparisons.
     if [[ "$rel_path" == $pattern ]] || [[ "$filename" == $pattern ]]; then
       return 0
     fi
@@ -118,7 +120,7 @@ while read -r file; do
             fi
 
             # Check 2: Enforce unit guide rule
-            rel_path="${abs_file#$ADK_REAL_ROOT/}"
+            rel_path="${abs_file#"$ADK_REAL_ROOT"/}"
             rel_dir=$(dirname "$rel_path")
 
             if ! is_exempt_from_unit_guide "$rel_path" "$filename" && [[ "$has_no_unit_guide_tag" == false ]]; then

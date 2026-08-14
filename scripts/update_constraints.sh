@@ -41,6 +41,7 @@ done
 # Ensure uv is in PATH
 export PATH="$HOME/.local/bin:$PATH"
 
+# shellcheck disable=SC2329  # Invoked indirectly by the EXIT trap below.
 cleanup() {
   rm -f constraints-*.tmp
 }

@@ -62,8 +62,7 @@ fi
 
 # --- 1. Run alembic init ---
 echo "Running 'alembic init ${ALEMBIC_DIR}'..."
-alembic init ${ALEMBIC_DIR}
-if [ $? -ne 0 ]; then
+if ! alembic init "${ALEMBIC_DIR}"; then
     echo "Error: 'alembic init' failed. Is alembic installed?"
     exit 1
 fi
@@ -73,8 +72,7 @@ echo ""
 # --- 2. Set sqlalchemy.url in alembic.ini ---
 echo "Configuring ${INI_FILE}..."
 # Use a different delimiter (#) for sed to avoid escaping slashes in the URL
-sed -i.bak "s#sqlalchemy.url = driver://user:pass@localhost/dbname#sqlalchemy.url = ${DB_URL}#" "${INI_FILE}"
-if [ $? -ne 0 ]; then
+if ! sed -i.bak "s#sqlalchemy.url = driver://user:pass@localhost/dbname#sqlalchemy.url = ${DB_URL}#" "${INI_FILE}"; then
     echo "Error: Failed to set sqlalchemy.url in ${INI_FILE}."
     exit 1
 fi
@@ -84,15 +82,13 @@ echo "  Set sqlalchemy.url"
 echo "Configuring ${ENV_FILE}..."
 
 # Edit 1: Uncomment and replace the model import line
-sed -i.bak "s/# from myapp import mymodel/from ${MODEL_PATH} import Base/" "${ENV_FILE}"
-if [ $? -ne 0 ]; then
+if ! sed -i.bak "s/# from myapp import mymodel/from ${MODEL_PATH} import Base/" "${ENV_FILE}"; then
     echo "Error: Failed to set model import in ${ENV_FILE}."
     exit 1
 fi
 
 # Edit 2: Set the target_metadata to use the imported Base
-sed -i.bak "s/target_metadata = None/target_metadata = Base.metadata/" "${ENV_FILE}"
-if [ $? -ne 0 ]; then
+if ! sed -i.bak "s/target_metadata = None/target_metadata = Base.metadata/" "${ENV_FILE}"; then
     echo "Error: Failed to set target_metadata in ${ENV_FILE}."
     exit 1
 fi
@@ -107,8 +103,7 @@ rm "${ENV_FILE}.bak"
 
 # --- 5. Run alembic stamp head ---
 echo "Running 'alembic stamp head'..."
-alembic stamp head
-if [ $? -ne 0 ]; then
+if ! alembic stamp head; then
     echo "Error: 'alembic stamp head' failed."
     exit 1
 fi
@@ -117,8 +112,7 @@ echo ""
 
 # --- 6. Run alembic upgrade ---
 echo "Running 'alembic revision --autogenerate'..."
-alembic revision --autogenerate -m "ADK session DB upgrade"
-if [ $? -ne 0 ]; then
+if ! alembic revision --autogenerate -m "ADK session DB upgrade"; then
     echo "Error: 'alembic revision' failed."
     exit 1
 fi
@@ -127,7 +121,7 @@ echo ""
 
 # --- 7. Add import statement to version files ---
 echo "Adding import statement to version files..."
-for f in ${ALEMBIC_DIR}/versions/*.py; do
+for f in "${ALEMBIC_DIR}"/versions/*.py; do
   if [ -f "$f" ]; then
     # Check if the first line is already the import statement
     FIRST_LINE=$(head -n 1 "$f")
@@ -146,8 +140,7 @@ echo ""
 
 # --- 8. Run alembic upgrade ---
 echo "running 'alembic upgrade'..."
-alembic upgrade head
-if [ $? -ne 0 ]; then
+if ! alembic upgrade head; then
     echo "Error: 'alembic upgrade' failed. "
     exit 1
 fi
