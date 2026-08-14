@@ -28,12 +28,21 @@ Optional:
 import json
 import os
 
+import pytest
+
+# The provider imports the optional oci SDK at import time, and a module-level
+# pytestmark cannot stop that. Guard on the third-party submodule the provider
+# actually uses, so a test environment without google-adk[oci] skips this file
+# instead of failing collection.
+pytest.importorskip(
+    "oci.generative_ai_inference", reason="Requires oci (google-adk[oci])"
+)
+
 from google.adk.integrations.oci._oci_genai_llm import OCIGenAILlm
 from google.adk.models.llm_request import LlmRequest
 from google.genai import types
 from google.genai.types import Content
 from google.genai.types import Part
-import pytest
 
 # ---------------------------------------------------------------------------
 # Skip the entire module when required env vars are absent
