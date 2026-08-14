@@ -679,6 +679,35 @@ class TestGetAuthResponse:
     assert result.auth_type == AuthCredentialTypes.OAUTH2
     assert result.oauth2.access_token == "ya29.mock_token_from_dict_no_prefix"
 
+  def test_get_auth_response_ignores_tool_credential_cache_slot(
+      self, auth_config, oauth2_credentials_with_auth_uri
+  ):
+    """The OpenAPI tool's cache slot must stay invisible to this method."""
+    handler = AuthHandler(auth_config)
+    state = MockState()
+    credential_key = auth_config.credential_key
+    state[f"{credential_key}_existing_exchanged_credential"] = (
+        oauth2_credentials_with_auth_uri
+    )
+
+    result = handler.get_auth_response(state)
+
+    assert result is None
+
+  def test_get_auth_response_prefers_temp_slot_over_prefixless(
+      self, auth_config, oauth2_credentials_with_auth_uri
+  ):
+    """The in-flight auth response wins over the durable slot."""
+    handler = AuthHandler(auth_config)
+    state = MockState()
+    credential_key = auth_config.credential_key
+    state["temp:" + credential_key] = oauth2_credentials_with_auth_uri
+    state[credential_key] = "durable_token"
+
+    result = handler.get_auth_response(state)
+
+    assert result == oauth2_credentials_with_auth_uri
+
   def test_get_auth_response_api_key_str(self):
     """Test retrieving a string token under apiKey scheme wraps it as APIKey."""
     auth_scheme = APIKey(**{"name": "X-API-Key", "in": APIKeyIn.header})

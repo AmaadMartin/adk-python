@@ -114,8 +114,9 @@ class OpenAPIToolset(BaseToolset):
         AuthCredential or use helpers in
         ``google.adk.tools.openapi_tool.auth.auth_helpers``
       credential_key: Optional stable key naming the session state slot that
-        holds both the interactive auth request and the cached exchanged
-        credential, shared by all tools in this toolset.
+        holds the interactive auth request, shared by all tools in this
+        toolset. The exchanged credential is cached at the derived slot
+        ``<credential_key>_existing_exchanged_credential``.
       tool_filter: The filter used to filter the tools in the toolset. It can be
         either a tool predicate or a list of tool names of the tools to expose.
       tool_name_prefix: The prefix to prepend to the names of the tools returned

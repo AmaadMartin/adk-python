@@ -103,7 +103,9 @@ class AuthHandler:
       if isinstance(val, str) and val:
         return self._build_credential_from_string(val)
 
-    # 2. Try reading the credential key without the 'temp:' prefix
+    # 2. Try reading the credential key without the 'temp:' prefix. This slot
+    # belongs to the credential service and to the application. See
+    # AuthConfig.credential_key for the slots ADK internals may not reuse.
     val = state.get(credential_key, None)
     if val is not None:
       if isinstance(val, AuthCredential):

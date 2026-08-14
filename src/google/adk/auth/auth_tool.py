@@ -79,6 +79,24 @@ class AuthConfig(BaseModelWithConfig):
   credential_key: Optional[str] = None
   """A user specified key used to load and save this credential in a credential
   service.
+
+  The key names two session state slots, and both hold a credential that is
+  ready to use:
+
+  * ``temp:<credential_key>`` holds the in-flight auth response.
+    ``AuthHandler.parse_and_store_auth_response`` writes it and
+    ``AuthHandler.get_auth_response`` reads it first. The ``temp:`` prefix
+    drops it at the end of the invocation.
+  * ``<credential_key>`` is the durable slot.
+    ``SessionStateCredentialService`` reads and writes it, an application may
+    pre-seed it with an ``AuthCredential``, a credential dict or a raw token
+    string, and ``AuthHandler.get_auth_response`` falls back to it when the
+    ``temp:`` slot is empty.
+
+  An ADK-internal cache must not reuse either slot. A cached entry that is not
+  yet ready to use would come back out of ``AuthHandler.get_auth_response`` as
+  if the user had just authorized. The OpenAPI tool therefore caches its
+  exchanged credential at ``<credential_key>_existing_exchanged_credential``.
   """
 
   def __init__(self, **data: Any) -> None:
