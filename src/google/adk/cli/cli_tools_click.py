@@ -1779,12 +1779,14 @@ def web_options():
   def decorator(func):
     @click.option(
         "--logo-text",
+        "--logo_text",
         type=str,
         help="Optional. The text to display in the logo of the web UI.",
         default=None,
     )
     @click.option(
         "--logo-image-url",
+        "--logo_image_url",
         type=str,
         help=(
             "Optional. The URL of the image to display in the logo of the"
