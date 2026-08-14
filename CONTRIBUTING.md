@@ -184,8 +184,8 @@ part before or alongside your code PR.
    pre-commit install
    ```
 
-   The pre-commit hooks run `isort`, `pyink`, `addlicense`, and
-   `mdformat` automatically on each commit.
+   The pre-commit hooks run `isort`, `pyink`, `addlicense`, `mdformat`,
+   `codespell` and `shellcheck` automatically on each commit.
 
 1. **Create virtual environment and install dependencies:**
 
