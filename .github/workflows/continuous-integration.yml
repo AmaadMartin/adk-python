@@ -170,6 +170,16 @@ jobs:
       - name: List installed packages
         run: uv pip list
 
+      - name: Check that every test module still imports
+        # CI only runs tests/unittests, so a module elsewhere under tests/ that
+        # imports an optional dependency at module scope stays broken until a
+        # contributor runs a bare `pytest`. Collection imports every test module
+        # without running anything. The output is one line per test, so only
+        # show it when something actually failed.
+        run: |
+          uv run pytest --collect-only -q tests/ > collect.log 2>&1 \
+            || { tail -n 40 collect.log; exit 1; }
+
       - name: Run unit tests with pytest
         run: |
           uv run pytest tests/unittests \
