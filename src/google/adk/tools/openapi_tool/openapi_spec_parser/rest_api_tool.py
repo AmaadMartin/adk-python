@@ -419,7 +419,9 @@ class RestApiTool(BaseTool):
     request_body = self.operation.requestBody
     if request_body:
       for mime_type, media_type_object in request_body.content.items():
+        # A media type object may omit the schema, which means an untyped body.
         schema = media_type_object.schema_
+        schema = schema if isinstance(schema, Schema) else Schema()
         body_data = None
 
         if schema.type == "object":
