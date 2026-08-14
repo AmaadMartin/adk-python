@@ -161,16 +161,16 @@ class TestExecuteConsoleWindow:
     assert spawn.call_args.kwargs["creationflags"] == _CREATE_NO_WINDOW
 
   @pytest.mark.asyncio
-  async def test_execute_omits_creationflags_on_posix(
+  async def test_execute_passes_no_creation_flags_on_posix(
       self, env: LocalEnvironment, monkeypatch: pytest.MonkeyPatch
   ):
-    """On POSIX the shell is spawned without any creation flags."""
+    """On POSIX the shell is spawned with the no-op creation flags value."""
     monkeypatch.setattr(sys, "platform", "linux")
     spawn = _patch_spawn(monkeypatch)
 
     await env.execute("echo hi")
 
-    assert "creationflags" not in spawn.call_args.kwargs
+    assert spawn.call_args.kwargs["creationflags"] == 0
 
   @pytest.mark.asyncio
   async def test_execute_still_pipes_output_into_the_working_directory(
