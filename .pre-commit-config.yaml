@@ -43,11 +43,8 @@ repos:
     hooks:
       - id: addlicense
         name: addlicense
-        entry: >
-          bash -c 'if command -v addlicense >/dev/null 2>&1;
-          then addlicense -c "Google LLC" -l apache "$@";
-          else echo "Warning: addlicense not installed, skipping"; fi' --
-        language: system
+        entry: scripts/addlicense.sh
+        language: script
         files: \.(py|sh)$
       - id: check-new-py-prefix
         name: Check new Python files have _ prefix and unit guide
