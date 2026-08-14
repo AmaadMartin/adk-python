@@ -375,3 +375,176 @@ def test_get_content_as_bytes_returns_bytes_unchanged():
 def test_get_content_as_bytes_base64_decodes_str():
   """Text output files arrive base64-encoded and are decoded to raw bytes."""
   assert get_content_as_bytes('aGVsbG8gd29ybGQ=') == b'hello world'
+
+
+class _FixedResultCodeExecutor(BaseCodeExecutor):
+  """A code executor that returns the same result for every execution."""
+
+  result: CodeExecutionResult
+
+  def execute_code(
+      self,
+      invocation_context,
+      code_execution_input: CodeExecutionInput,
+  ) -> CodeExecutionResult:
+    return self.result
+
+
+def _llm_response_with_code(code: str) -> LlmResponse:
+  """Builds a model response carrying a single python code block."""
+  return LlmResponse(
+      content=types.Content(parts=[types.Part(text=f'```python\n{code}\n```')])
+  )
+
+
+async def _run_post_processor_events(
+    invocation_context, llm_response: LlmResponse
+) -> list[Any]:
+  """Drives the response processor and returns the events it emits."""
+  return [
+      event
+      async for event in response_processor.run_async(
+          invocation_context, llm_response
+      )
+  ]
+
+
+@pytest.mark.asyncio
+async def test_post_processor_event_carries_execution_results():
+  """The result event's state delta carries the execution results history."""
+  code_executor = _FixedResultCodeExecutor(
+      result=CodeExecutionResult(stdout='hello'), stateful=True
+  )
+  agent = Agent(name='test_agent', code_executor=code_executor)
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content='test message'
+  )
+
+  events = await _run_post_processor_events(
+      invocation_context, _llm_response_with_code('print("hello")')
+  )
+
+  state_delta = events[-1].actions.state_delta
+  assert state_delta['_code_execution_context']['execution_session_id'] == (
+      invocation_context.session.id
+  )
+  results = state_delta['_code_execution_results']['test_id']
+  assert len(results) == 1
+  assert results[0]['code'] == 'print("hello")'
+  assert results[0]['result_stdout'] == 'hello'
+
+
+@pytest.mark.asyncio
+async def test_post_processor_event_carries_error_count_increment():
+  """A failed execution reports its error count on the same event."""
+  code_executor = _FixedResultCodeExecutor(
+      result=CodeExecutionResult(stderr='boom')
+  )
+  agent = Agent(name='test_agent', code_executor=code_executor)
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content='test message'
+  )
+
+  events = await _run_post_processor_events(
+      invocation_context, _llm_response_with_code('raise SystemExit')
+  )
+
+  state_delta = events[-1].actions.state_delta
+  assert state_delta['_code_executor_error_counts']['test_id'] == 1
+
+
+@pytest.mark.asyncio
+async def test_post_processor_event_carries_error_count_reset():
+  """A successful execution reports the cleared error count on the event."""
+  code_executor = _FixedResultCodeExecutor(
+      result=CodeExecutionResult(stdout='hello')
+  )
+  agent = Agent(name='test_agent', code_executor=code_executor)
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content='test message'
+  )
+  invocation_context.session.state['_code_executor_error_counts'] = {
+      'test_id': 1
+  }
+
+  events = await _run_post_processor_events(
+      invocation_context, _llm_response_with_code('print("hello")')
+  )
+
+  state_delta = events[-1].actions.state_delta
+  assert 'test_id' not in state_delta['_code_executor_error_counts']
+
+
+@pytest.mark.asyncio
+async def test_pre_processor_event_carries_input_files_and_processed_names():
+  """The pre-processor event's state delta carries the input file cache."""
+  code_executor = _FixedResultCodeExecutor(
+      result=CodeExecutionResult(stdout='hello'), optimize_data_file=True
+  )
+  agent = Agent(name='test_agent', code_executor=code_executor)
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content='test message'
+  )
+  llm_request = LlmRequest(
+      contents=[
+          types.Content(
+              role='user',
+              parts=[
+                  types.Part(
+                      inline_data=types.Blob(
+                          mime_type='text/csv', data=b'col1,col2\n1,2\n'
+                      )
+                  )
+              ],
+          )
+      ]
+  )
+
+  events = [
+      event
+      async for event in request_processor.run_async(
+          invocation_context, llm_request
+      )
+  ]
+
+  state_delta = events[-1].actions.state_delta
+  input_files = state_delta['_code_executor_input_files']
+  assert [file['name'] for file in input_files] == ['data_1_1.csv']
+  assert state_delta['_code_execution_context']['processed_input_files'] == [
+      'data_1_1.csv'
+  ]
+  assert state_delta['_code_execution_results']['test_id']
+
+
+@pytest.mark.asyncio
+async def test_code_executor_state_survives_session_round_trip():
+  """Code executor state emitted on events reaches the session store."""
+  code_executor = _FixedResultCodeExecutor(
+      result=CodeExecutionResult(stderr='boom'), stateful=True
+  )
+  agent = Agent(name='test_agent', code_executor=code_executor)
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content='test message'
+  )
+  session_service = invocation_context.session_service
+
+  events = await _run_post_processor_events(
+      invocation_context, _llm_response_with_code('raise SystemExit')
+  )
+  for event in events:
+    await session_service.append_event(
+        session=invocation_context.session, event=event
+    )
+
+  stored = await session_service.get_session(
+      app_name='test_app',
+      user_id='test_user',
+      session_id=invocation_context.session.id,
+  )
+  assert stored.state['_code_execution_context']['execution_session_id'] == (
+      invocation_context.session.id
+  )
+  assert stored.state['_code_executor_error_counts'] == {'test_id': 1}
+  assert stored.state['_code_execution_results']['test_id'][0]['code'] == (
+      'raise SystemExit'
+  )
