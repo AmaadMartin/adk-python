@@ -16,6 +16,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from fastapi.openapi.models import APIKey
 from fastapi.openapi.models import APIKeyIn
 from fastapi.openapi.models import HTTPBase
@@ -28,18 +30,22 @@ from fastapi.openapi.models import OAuthFlowPassword
 from fastapi.openapi.models import OAuthFlows
 from fastapi.openapi.models import OpenIdConnect
 from fastapi.openapi.models import SecuritySchemeType
-from google.adk.auth import AuthConfig
 from google.adk.auth.auth_schemes import AuthScheme
 from google.adk.auth.auth_schemes import AuthSchemeType
 from google.adk.auth.auth_schemes import OAuthGrantType
 from google.adk.auth.auth_schemes import OpenIdConnectWithConfig
+from google.adk.auth.auth_tool import AuthConfig
+from pydantic import BaseModel
 import pytest
 
 _TOKEN_URL = 'https://example.com/token'
 _AUTH_URL = 'https://example.com/authorize'
 _OIDC_URL = 'https://example.com/.well-known/openid-configuration'
 
-_JSON_DUMP_ARGS = {'by_alias': True, 'exclude_none': True, 'mode': 'json'}
+
+def _json_dump(scheme: BaseModel) -> dict[str, Any]:
+  """Dumps a scheme the way `_stable_model_digest` does, for comparison."""
+  return scheme.model_dump(by_alias=True, exclude_none=True, mode='json')
 
 
 def _oauth2_scheme() -> OAuth2:
@@ -124,7 +130,7 @@ def test_grant_type_values_are_the_oauth2_wire_names():
 # here without raising anything, so each test is a guard against that.
 
 
-def test_auth_scheme_type_is_fastapi_security_scheme_type():
+def test_auth_scheme_type_is_fastapi_security_scheme_type() -> None:
   """User code compares `scheme.type_` against FastAPI's enum members.
 
   `SecuritySchemeType` is a plain `Enum`, so a look-alike ADK enum would
@@ -134,7 +140,7 @@ def test_auth_scheme_type_is_fastapi_security_scheme_type():
   assert AuthSchemeType is SecuritySchemeType
 
 
-def test_auth_config_preserves_a_fastapi_scheme_instance():
+def test_auth_config_preserves_a_fastapi_scheme_instance() -> None:
   """The scheme a caller hands to `AuthConfig` comes back out unchanged."""
   scheme = _oauth2_scheme()
 
@@ -145,7 +151,7 @@ def test_auth_config_preserves_a_fastapi_scheme_instance():
   assert config.auth_scheme.type_ == SecuritySchemeType.oauth2
 
 
-def test_auth_scheme_union_accepts_isinstance_checks():
+def test_auth_scheme_union_accepts_isinstance_checks() -> None:
   """`AuthScheme` is a union a caller can use in an `isinstance` check."""
   assert isinstance(_oauth2_scheme(), AuthScheme)
 
@@ -177,10 +183,10 @@ def test_auth_scheme_union_accepts_isinstance_checks():
     ],
 )
 def test_auth_config_round_trip_preserves_the_scheme_class(
-    scheme, expected_type
-):
+    scheme: BaseModel, expected_type: type[BaseModel]
+) -> None:
   """A scheme dumped to JSON and revalidated returns the same class."""
-  dumped = scheme.model_dump(**_JSON_DUMP_ARGS)
+  dumped = _json_dump(scheme)
 
   config = AuthConfig.model_validate({'auth_scheme': dumped})
 
@@ -197,24 +203,28 @@ def test_auth_config_round_trip_preserves_the_scheme_class(
         ),
     ],
 )
-def test_credential_key_is_stable_across_a_json_round_trip(scheme):
+def test_credential_key_is_stable_across_a_json_round_trip(
+    scheme: BaseModel,
+) -> None:
   """A drifting `credential_key` orphans every credential already stored."""
   before = AuthConfig(auth_scheme=scheme).credential_key
-  dumped = scheme.model_dump(**_JSON_DUMP_ARGS)
+  dumped = _json_dump(scheme)
 
   after = AuthConfig.model_validate({'auth_scheme': dumped}).credential_key
 
   assert after == before
 
 
-def test_open_id_connect_with_config_serialises_snake_case_field_names():
+def test_open_id_connect_with_config_serialises_snake_case_field_names() -> (
+    None
+):
   """`OpenIdConnectWithConfig` extends FastAPI's `SecurityBase`, not ADK's
   `BaseModelWithConfig`, so it has no `to_camel` alias generator.
 
   Rebasing it on `BaseModelWithConfig` would emit `authorizationEndpoint` and
   change every derived `credential_key`.
   """
-  dumped = _open_id_connect_with_config_scheme().model_dump(**_JSON_DUMP_ARGS)
+  dumped = _json_dump(_open_id_connect_with_config_scheme())
 
   assert dumped == {
       'type': 'openIdConnect',
