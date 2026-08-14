@@ -45,8 +45,10 @@ dependencies = [
   # and opentelemetry.sdk._logs), which carries no compatibility guarantee.
   "opentelemetry-api>=1.39,<=1.43",
   "opentelemetry-sdk>=1.39,<=1.43",
+  "opentelemetry-semantic-conventions>=0.60b0", # Ships opentelemetry.semconv, which the telemetry package imports; 0.60b0 is the release opentelemetry-sdk 1.39 pins.
   "packaging>=21",
   "pydantic>=2.12,<3",
+  "pydantic-core>=2.41",                        # pydantic does not re-export to_jsonable_python, which events/event_actions.py imports.
   "python-dotenv>=1,<2",
   "python-multipart>=0.0.9,<1",
   "pyyaml>=6.0.2,<7",
@@ -63,8 +65,10 @@ optional-dependencies.a2a = [
   "a2a-sdk>=0.3.4,<2",
 ]
 optional-dependencies.agent-identity = [
+  "google-api-core>=2.15",
   "google-cloud-agentidentitycredentials>=0.1,<0.2",
   "google-cloud-iamconnectorcredentials>=0.1,<0.2",
+  "googleapis-common-protos>=1.56.2",                # Ships google.longrunning.operations_pb2, imported by the IAM connector provider.
 ]
 # Union of every extra that unlocks a runtime feature. Excludes benchmark,
 # community, dev, docs and test, which exist to build, test or document ADK
@@ -80,12 +84,14 @@ optional-dependencies.all = [
   "e2b>=2,<3",
   "gepa>=0.1",
   "google-antigravity>=0.1,<0.2",
+  "google-api-core>=2.15",
   "google-api-python-client>=2.157,<3",
   "google-cloud-agentidentitycredentials>=0.1,<0.2",
   "google-cloud-aiplatform[agent-engines,evaluation]>=1.148.1,<2",
   "google-cloud-bigquery>=2.2",
   "google-cloud-bigquery-storage>=2",
   "google-cloud-bigtable>=2.39.1",
+  "google-cloud-core>=2.3",
   "google-cloud-dataplex>=1.7,<3",
   "google-cloud-discoveryengine>=0.13.12,<0.14",
   "google-cloud-eventarc-publishing>=0.10,<1",
@@ -99,12 +105,16 @@ optional-dependencies.all = [
   "google-cloud-speech>=2.30,<3",
   "google-cloud-storage>=2.18,<4",
   "google-cloud-texttospeech>=2.37",
+  "googleapis-common-protos>=1.56.2",
+  "httplib2>=0.19",
   "jinja2>=3.1.4,<4",
   "k8s-agent-sandbox>=0.1.1.post3",
   "kubernetes>=29",
+  "langchain-core>=0.3",
   "langgraph>=1.0.10,<2",
   "langgraph-checkpoint>=4.1.1,<5",
   "litellm>=1.84",
+  "llama-index-core>=0.12",
   "llama-index-embeddings-google-genai>=0.3",
   "llama-index-readers-file>=0.4",
   "lxml>=5.3",
@@ -143,8 +153,10 @@ optional-dependencies.benchmark = [
 # Everything BigQueryAgentAnalyticsPlugin needs. Separate from gcp because
 # pyarrow is a third of that extra's install size and only this plugin uses it.
 optional-dependencies.bigquery-analytics = [
+  "google-api-core>=2.15",
   "google-cloud-bigquery>=2.2",
   "google-cloud-bigquery-storage>=2",
+  "google-cloud-core>=2.3",           # Ships google.cloud.exceptions, imported by the plugin.
   "google-cloud-storage>=2.18,<4",
   "pyarrow>=14",
 ]
@@ -192,6 +204,7 @@ optional-dependencies.e2b = [
 ]
 optional-dependencies.eval = [
   "gepa>=0.1",
+  "google-api-core>=2.15",
   "google-cloud-aiplatform[evaluation]>=1.148",
   "google-cloud-texttospeech>=2.37",
   "jinja2>=3.1.4,<4",                           # For eval template rendering
@@ -208,9 +221,11 @@ optional-dependencies.extensions = [
   "google-cloud-firestore>=2.11,<3",                                 # For Firestore services
   "k8s-agent-sandbox>=0.1.1.post3",
   "kubernetes>=29",
+  "langchain-core>=0.3",                                             # For LangchainTool and LangGraphAgent; 0.3 is the first series with langchain_core.tools.structured.
   "langgraph>=1.0.10,<2",
   "langgraph-checkpoint>=4.1.1,<5",                                  # LangGraph's own floor still admits unsafe checkpoint deserialization.
   "litellm>=1.84",
+  "llama-index-core>=0.12",                                          # For FilesRetrieval; the lower of the two provider floors, because llama-index-readers-file 0.4.0 caps it below 0.13.
   "llama-index-embeddings-google-genai>=0.3",
   "llama-index-readers-file>=0.4",
   "lxml>=5.3",
@@ -220,10 +235,12 @@ optional-dependencies.extensions = [
   "toolbox-adk>=1,<2",
 ]
 optional-dependencies.gcp = [
+  "google-api-core>=2.15",
   "google-cloud-aiplatform[agent-engines]>=1.148.1,<2",
   "google-cloud-bigquery>=2.2",
   "google-cloud-bigquery-storage>=2",
   "google-cloud-bigtable>=2.39.1",
+  "google-cloud-core>=2.3",                                 # Ships google.cloud.exceptions, imported by the GCS eval managers.
   "google-cloud-dataplex>=1.7,<3",
   "google-cloud-discoveryengine>=0.13.12,<0.14",
   "google-cloud-eventarc-publishing>=0.10,<1",
@@ -324,6 +341,7 @@ optional-dependencies.test = [
 optional-dependencies.toolbox = [ "toolbox-adk>=1,<2" ]
 optional-dependencies.tools = [
   "google-api-python-client>=2.157,<3",
+  "httplib2>=0.19",                     # Imported by googleapi_to_openapi_converter.py.
 ]
 urls.changelog = "https://github.com/google/adk-python/blob/main/CHANGELOG.md"
 urls.documentation = "https://google.github.io/adk-docs/"

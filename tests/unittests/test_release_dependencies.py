@@ -20,6 +20,12 @@ regressions documented in the bare-install audit cannot silently re-emerge:
 * ``packaging`` MUST be declared in main deps (used at import-time by
   ``utils/model_name_utils.py`` and ``cli/cli_deploy.py``; reachable from
   ``from google.adk import Runner`` and from ``adk --help``).
+* ``opentelemetry-semantic-conventions`` and ``pydantic-core`` MUST be declared
+  in main deps; both are imported at module scope on the path reachable from
+  ``from google.adk import Runner``.
+* Every runtime extra MUST declare the distributions the modules it gates
+  import at module scope, rather than relying on a sibling dependency to
+  supply them.
 * ``ValidationError`` in ``environment_simulation_config`` MUST come from
   ``pydantic`` (which always installs alongside the package), NOT from the
   undeclared ``pydantic_core``.
@@ -54,6 +60,42 @@ import pytest
 _UNSAFE_CHECKPOINT_RELEASES = {
     'langgraph': (('0.2.60', '0.4.7', '1.0.9'), '1.0.10'),
     'langgraph-checkpoint': (('2.1.0', '3.0.0', '4.0.0', '4.1.0'), '4.1.1'),
+}
+
+# Distributions that first-party ADK modules import at module scope, keyed by
+# the runtime extra that gates those modules. Each entry pairs the distribution
+# with one importing module, so a failure names the code that breaks. These
+# arrive transitively today; the declaration is what keeps them arriving.
+_EXTRA_MODULE_SCOPE_IMPORTS = {
+    'agent-identity': (
+        (
+            'google-api-core',
+            (
+                'integrations/agent_identity/'
+                '_agent_identity_credentials_provider.py'
+            ),
+        ),
+        (
+            'googleapis-common-protos',
+            'integrations/agent_identity/_iam_connector_credentials_provider.py',
+        ),
+    ),
+    'bigquery-analytics': (
+        ('google-api-core', 'plugins/bigquery_agent_analytics_plugin.py'),
+        ('google-cloud-core', 'plugins/bigquery_agent_analytics_plugin.py'),
+    ),
+    'eval': (('google-api-core', 'evaluation/simulation/_cloud_tts_llm.py'),),
+    'extensions': (
+        ('langchain-core', 'integrations/langchain/langchain_tool.py'),
+        ('llama-index-core', 'tools/retrieval/files_retrieval.py'),
+    ),
+    'gcp': (
+        ('google-api-core', 'integrations/bigquery/client.py'),
+        ('google-cloud-core', 'evaluation/gcs_eval_sets_manager.py'),
+    ),
+    'tools': (
+        ('httplib2', 'tools/google_api_tool/googleapi_to_openapi_converter.py'),
+    ),
 }
 
 # Extras that ``all`` deliberately leaves out, for the reason recorded in the
@@ -197,6 +239,66 @@ def test_main_deps_include_packaging(pyproject: dict) -> None:
       'src/google/adk/cli/cli_deploy.py import it unguarded at module top '
       'level. Without this declaration, `pip install google-adk` is one '
       'transitive resolver change away from breaking on `import google.adk`.'
+  )
+
+
+def test_main_deps_include_opentelemetry_semantic_conventions(
+    pyproject: dict,
+) -> None:
+  """``opentelemetry.semconv`` is imported unguarded by core ADK telemetry."""
+  main_deps = _requirement_names(pyproject['project']['dependencies'])
+  assert 'opentelemetry-semantic-conventions' in main_deps, (
+      'opentelemetry-semantic-conventions must be declared in [project] '
+      'dependencies because src/google/adk/telemetry/tracing.py imports '
+      'opentelemetry.semconv unguarded at module top level, and runners.py '
+      'imports that module. Without this declaration the package arrives only '
+      'because opentelemetry-sdk happens to pin it, so `pip install '
+      'google-adk` is one upstream change away from breaking on '
+      '`from google.adk import Runner`.'
+  )
+
+
+def test_main_deps_include_pydantic_core(pyproject: dict) -> None:
+  """``pydantic_core`` is imported unguarded by core ADK events."""
+  main_deps = _requirement_names(pyproject['project']['dependencies'])
+  assert 'pydantic-core' in main_deps, (
+      'pydantic-core must be declared in [project] dependencies because '
+      'src/google/adk/events/event_actions.py imports to_jsonable_python from '
+      'pydantic_core unguarded at module top level, and pydantic does not '
+      're-export that function. Without this declaration the package arrives '
+      'only because pydantic happens to pin it, so `pip install google-adk` '
+      'is one upstream change away from breaking on `from google.adk import '
+      'Runner`.'
+  )
+
+
+@pytest.mark.parametrize(
+    ('extra', 'distribution', 'module'),
+    [
+        (extra, distribution, module)
+        for extra, entries in sorted(_EXTRA_MODULE_SCOPE_IMPORTS.items())
+        for distribution, module in entries
+    ],
+)
+def test_runtime_extra_declares_module_scope_imports(
+    pyproject: dict, extra: str, distribution: str, module: str
+) -> None:
+  """Each runtime extra declares what the modules it gates import.
+
+  A module-scope import that no extra declares works only while a sibling
+  dependency happens to supply it, which makes the install one resolver change
+  away from an ImportError the dependency graph never predicted.
+  """
+  specifier = _requirement_specifier(
+      pyproject['project']['optional-dependencies'][extra], distribution
+  )
+
+  assert specifier is not None, (
+      f'The {extra!r} extra must declare {distribution} because '
+      f'src/google/adk/{module} imports it at module scope. Without the '
+      f'declaration {distribution} arrives only transitively, so a resolver '
+      'change or an upstream dependency drop breaks `pip install '
+      f'"google-adk[{extra}]"`.'
   )
 
 
