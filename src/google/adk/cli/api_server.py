@@ -998,7 +998,7 @@ class ApiServer:
       register_processors: Callable[[TracerProvider], None] = lambda o: None,
       otel_to_cloud: bool = False,
       with_ui: bool = False,
-  ):
+  ) -> FastAPI:
     """Creates a FastAPI app for the ADK web server.
 
     By default it'll just return a FastAPI instance with the API server
