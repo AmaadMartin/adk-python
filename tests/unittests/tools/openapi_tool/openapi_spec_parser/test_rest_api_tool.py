@@ -15,6 +15,7 @@
 
 import json
 import ssl
+from typing import Optional
 from unittest import mock
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
@@ -24,6 +25,7 @@ from fastapi.openapi.models import APIKey
 from fastapi.openapi.models import MediaType
 from fastapi.openapi.models import Operation
 from fastapi.openapi.models import Parameter as OpenAPIParameter
+from fastapi.openapi.models import Reference
 from fastapi.openapi.models import RequestBody
 from fastapi.openapi.models import Schema as OpenAPISchema
 from google.adk.auth.auth_credential import AuthCredential
@@ -703,7 +705,7 @@ class TestRestApiTool:
 
   def _whole_body_tool(
       self,
-      schema: OpenAPISchema,
+      schema: Optional[OpenAPISchema],
       endpoint: OperationEndpoint,
       auth_credential: AuthCredential,
       auth_scheme: AuthScheme,
@@ -803,6 +805,104 @@ class TestRestApiTool:
     request_params = tool._prepare_request_params(params, {})
 
     assert "json" not in request_params
+
+  def test_prepare_request_params_media_type_without_schema(
+      self, sample_endpoint, sample_auth_credential, sample_auth_scheme
+  ):
+    """A media type object without a schema sends the payload as the body."""
+    tool = self._whole_body_tool(
+        None, sample_endpoint, sample_auth_credential, sample_auth_scheme
+    )
+    params = OperationParser(tool.operation).get_parameters()
+
+    request_params = tool._prepare_request_params(params, {"body": {"k": "v"}})
+
+    assert request_params["json"] == {"k": "v"}
+    assert request_params["headers"]["Content-Type"] == "application/json"
+
+  def test_prepare_request_params_media_type_without_schema_body_omitted(
+      self, sample_endpoint, sample_auth_credential, sample_auth_scheme
+  ):
+    """A schema-less body stays absent when the model supplies no payload."""
+    tool = self._whole_body_tool(
+        None, sample_endpoint, sample_auth_credential, sample_auth_scheme
+    )
+    params = OperationParser(tool.operation).get_parameters()
+
+    request_params = tool._prepare_request_params(params, {})
+
+    assert "json" not in request_params
+
+  def test_prepare_request_params_schema_reference(
+      self, sample_endpoint, sample_auth_credential, sample_auth_scheme
+  ):
+    """A body schema left as a Reference sends the payload."""
+    tool = RestApiTool(
+        name="test_tool",
+        description="Test Tool",
+        endpoint=sample_endpoint,
+        operation=Operation(
+            operationId="test_op",
+            requestBody=RequestBody(
+                content={
+                    "application/json": MediaType(
+                        schema=Reference(**{"$ref": "#/components/schemas/Foo"})
+                    )
+                }
+            ),
+        ),
+        auth_credential=sample_auth_credential,
+        auth_scheme=sample_auth_scheme,
+        # MediaType.schema_ is typed Schema | Reference | None, so mypy holds
+        # this branch open. OperationParser rejects a Reference before the
+        # request is built, so reaching it here needs the parse step skipped.
+        should_parse_operation=False,
+    )
+    params = [
+        ApiParameter(
+            original_name="body",
+            py_name="body",
+            param_location="body",
+            param_schema=OpenAPISchema(),
+        )
+    ]
+
+    request_params = tool._prepare_request_params(params, {"body": [1, 2]})
+
+    assert request_params["json"] == [1, 2]
+
+  @patch(
+      "google.adk.tools.openapi_tool.openapi_spec_parser.rest_api_tool._request"
+  )
+  @pytest.mark.asyncio
+  async def test_call_sends_schema_less_request_body(
+      self, mock_request, mock_tool_context, sample_endpoint
+  ):
+    """The whole call path sends a schema-less body as the JSON payload."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"status": "stored"}
+    mock_request.return_value = mock_response
+    tool = RestApiTool(
+        name="ingest",
+        description="Stores a free-form document.",
+        endpoint=sample_endpoint,
+        operation=Operation(
+            operationId="ingest",
+            requestBody=RequestBody(content={"application/json": MediaType()}),
+        ),
+    )
+    payload = {"title": "note", "tags": ["a"]}
+
+    result = await tool.call(
+        args={"body": payload}, tool_context=mock_tool_context
+    )
+
+    assert mock_request.call_args[1]["json"] == payload
+    assert (
+        mock_request.call_args[1]["headers"]["Content-Type"]
+        == "application/json"
+    )
+    assert result == {"status": "stored"}
 
   def test_prepare_request_params_form_data(
       self, sample_endpoint, sample_auth_scheme, sample_auth_credential
