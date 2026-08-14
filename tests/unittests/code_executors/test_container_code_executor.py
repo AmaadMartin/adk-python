@@ -22,6 +22,10 @@ import textwrap
 import time
 from unittest import mock
 
+from docker.client import DockerClient
+from docker.models.containers import Container
+from docker.models.containers import ContainerCollection
+from docker.models.containers import ExecResult
 from google.adk.code_executors import container_code_executor
 from google.adk.code_executors.code_execution_utils import CodeExecutionInput
 from google.adk.code_executors.container_code_executor import ContainerCodeExecutor
@@ -29,18 +33,31 @@ import pydantic
 import pytest
 
 
-def _mock_docker_client():
-  """Returns a mock Docker client whose container passes python verification."""
-  client = mock.MagicMock()
-  container = mock.MagicMock()
+def _mock_docker_client() -> mock.MagicMock:
+  """Returns a Docker client double specced against the installed library.
+
+  `ContainerCollection.run` ends in `**kwargs`, so the hardening arguments
+  (`network_disabled`, `cap_drop`, `security_opt`) are not signature-checked.
+  The spec does pin that `containers`, `run`, `exec_run`, `stop` and `remove`
+  still exist, and that `demux` is a real `exec_run` parameter.
+  """
+  client = mock.create_autospec(DockerClient, instance=True, spec_set=True)
+  # create_autospec does not descend into `containers`, which is a property, so
+  # the collection behind it needs a spec of its own.
+  client.containers = mock.create_autospec(
+      ContainerCollection, instance=True, spec_set=True
+  )
+  container = mock.create_autospec(Container, instance=True, spec_set=True)
   # `_verify_python_installation` runs `exec_run(['which', 'python3'])` and
   # checks `exit_code == 0`.
-  container.exec_run.return_value = mock.MagicMock(exit_code=0)
+  container.exec_run.return_value = ExecResult(exit_code=0, output=b'')
   client.containers.run.return_value = container
   return client
 
 
-@mock.patch('google.adk.code_executors.container_code_executor.docker')
+@mock.patch(
+    'google.adk.code_executors.container_code_executor.docker', autospec=True
+)
 def test_container_is_hardened_by_default(mock_docker):
   """Networking is disabled and privileges are dropped by default."""
   client = _mock_docker_client()
@@ -56,7 +73,9 @@ def test_container_is_hardened_by_default(mock_docker):
   assert kwargs['security_opt'] == ['no-new-privileges']
 
 
-@mock.patch('google.adk.code_executors.container_code_executor.docker')
+@mock.patch(
+    'google.adk.code_executors.container_code_executor.docker', autospec=True
+)
 def test_container_network_can_be_explicitly_enabled(mock_docker):
   """Networking is left enabled when the caller opts in."""
   client = _mock_docker_client()
@@ -74,16 +93,16 @@ def _executed_command(container) -> list[str]:
   return args[0]
 
 
-@mock.patch('google.adk.code_executors.container_code_executor.docker')
+@mock.patch(
+    'google.adk.code_executors.container_code_executor.docker', autospec=True
+)
 def test_execute_code_bounds_execution_by_default(mock_docker):
   """Code runs under a finite timeout even when the caller sets none."""
   client = _mock_docker_client()
   mock_docker.from_env.return_value = client
   executor = ContainerCodeExecutor(image='test-image')
   container = client.containers.run.return_value
-  container.exec_run.return_value = mock.MagicMock(
-      exit_code=0, output=(b'', b'')
-  )
+  container.exec_run.return_value = ExecResult(exit_code=0, output=(b'', b''))
 
   executor.execute_code(mock.MagicMock(), CodeExecutionInput(code='x = 1'))
 
@@ -99,16 +118,16 @@ def test_execute_code_bounds_execution_by_default(mock_docker):
   ]
 
 
-@mock.patch('google.adk.code_executors.container_code_executor.docker')
+@mock.patch(
+    'google.adk.code_executors.container_code_executor.docker', autospec=True
+)
 def test_execute_code_passes_configured_timeout(mock_docker):
   """The inherited `timeout_seconds` bounds the in-container execution."""
   client = _mock_docker_client()
   mock_docker.from_env.return_value = client
   executor = ContainerCodeExecutor(image='test-image', timeout_seconds=7)
   container = client.containers.run.return_value
-  container.exec_run.return_value = mock.MagicMock(
-      exit_code=0, output=(b'', b'')
-  )
+  container.exec_run.return_value = ExecResult(exit_code=0, output=(b'', b''))
 
   executor.execute_code(
       mock.MagicMock(), CodeExecutionInput(code='while True: pass')
@@ -123,7 +142,9 @@ def test_execute_code_passes_configured_timeout(mock_docker):
   ]
 
 
-@mock.patch('google.adk.code_executors.container_code_executor.docker')
+@mock.patch(
+    'google.adk.code_executors.container_code_executor.docker', autospec=True
+)
 @pytest.mark.parametrize('timeout', [0, -1, None])
 def test_non_positive_timeout_is_rejected(mock_docker, timeout):
   """A timeout of 0 or None would mean no bound, so it is refused up front."""
@@ -133,14 +154,16 @@ def test_non_positive_timeout_is_rejected(mock_docker, timeout):
     ContainerCodeExecutor(image='test-image', timeout_seconds=timeout)
 
 
-@mock.patch('google.adk.code_executors.container_code_executor.docker')
+@mock.patch(
+    'google.adk.code_executors.container_code_executor.docker', autospec=True
+)
 def test_execute_code_reports_timeout(mock_docker):
   """A run the supervisor cut short is reported as a timeout."""
   client = _mock_docker_client()
   mock_docker.from_env.return_value = client
   executor = ContainerCodeExecutor(image='test-image', timeout_seconds=7)
   container = client.containers.run.return_value
-  container.exec_run.return_value = mock.MagicMock(
+  container.exec_run.return_value = ExecResult(
       exit_code=container_code_executor._TIMEOUT_EXIT_CODE, output=(b'', b'')
   )
 
@@ -151,14 +174,16 @@ def test_execute_code_reports_timeout(mock_docker):
   assert 'timed out after 7 seconds' in result.stderr
 
 
-@mock.patch('google.adk.code_executors.container_code_executor.docker')
+@mock.patch(
+    'google.adk.code_executors.container_code_executor.docker', autospec=True
+)
 def test_execute_code_reports_timeout_alongside_stderr(mock_docker):
   """Output written before the alarm fired does not hide the timeout."""
   client = _mock_docker_client()
   mock_docker.from_env.return_value = client
   executor = ContainerCodeExecutor(image='test-image', timeout_seconds=7)
   container = client.containers.run.return_value
-  container.exec_run.return_value = mock.MagicMock(
+  container.exec_run.return_value = ExecResult(
       exit_code=container_code_executor._TIMEOUT_EXIT_CODE,
       output=(b'', b'a warning from the code'),
   )

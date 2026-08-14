@@ -24,16 +24,18 @@ from daytona import DaytonaNotFoundError
 from google.adk.integrations.daytona._daytona_environment import DaytonaEnvironment
 import pytest
 
+from tests.unittests import autospec_utils
+
 
 def _make_sandbox() -> mock.MagicMock:
-  """Build a mock AsyncSandbox with async method stubs."""
-  sandbox = mock.MagicMock(name="AsyncSandbox")
-  sandbox.delete = mock.AsyncMock()
-  sandbox.process.exec = mock.AsyncMock()
-  sandbox.fs.download_file = mock.AsyncMock()
-  sandbox.fs.upload_file = mock.AsyncMock()
-  sandbox.fs.create_folder = mock.AsyncMock()
-  sandbox.refresh_activity = mock.AsyncMock()
+  """Build an AsyncSandbox double specced against the installed daytona SDK."""
+  sandbox = mock.create_autospec(
+      daytona.AsyncSandbox, instance=True, spec_set=True
+  )
+  sandbox.process = autospec_utils.autospec_property(
+      daytona.AsyncSandbox, "process"
+  )
+  sandbox.fs = autospec_utils.autospec_property(daytona.AsyncSandbox, "fs")
   return sandbox
 
 
@@ -45,9 +47,10 @@ def _sandbox() -> mock.MagicMock:
 @pytest.fixture(name="daytona_patch")
 def _daytona_patch(sandbox: mock.MagicMock):
   """Patch AsyncDaytona to return a mock client."""
-  mock_client = mock.MagicMock(name="AsyncDaytona")
-  mock_client.create = mock.AsyncMock(return_value=sandbox)
-  mock_client.close = mock.AsyncMock()
+  mock_client = mock.create_autospec(
+      daytona.AsyncDaytona, instance=True, spec_set=True
+  )
+  mock_client.create.return_value = sandbox
 
   with mock.patch.object(daytona, "AsyncDaytona", autospec=True) as mock_class:
     mock_class.return_value = mock_client

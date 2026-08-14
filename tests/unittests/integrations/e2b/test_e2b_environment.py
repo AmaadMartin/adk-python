@@ -16,6 +16,7 @@
 
 from unittest import mock
 
+import e2b
 from e2b import CommandExitException
 from e2b import CommandResult
 from e2b import FileNotFoundException
@@ -23,16 +24,22 @@ from e2b import TimeoutException
 from google.adk.integrations.e2b._e2b_environment import E2BEnvironment
 import pytest
 
+from tests.unittests import autospec_utils
+
 
 def _make_sandbox(*, running: bool = True) -> mock.MagicMock:
-  """Build a mock AsyncSandbox with async method stubs."""
-  sandbox = mock.MagicMock(name='AsyncSandbox')
-  sandbox.is_running = mock.AsyncMock(return_value=running)
-  sandbox.set_timeout = mock.AsyncMock()
+  """Build an AsyncSandbox double specced against the installed e2b SDK."""
+  sandbox = mock.create_autospec(e2b.AsyncSandbox, instance=True, spec_set=True)
+  sandbox.commands = autospec_utils.autospec_property(
+      e2b.AsyncSandbox, 'commands'
+  )
+  sandbox.files = autospec_utils.autospec_property(e2b.AsyncSandbox, 'files')
+  # kill and set_timeout are class_method_variant descriptors. create_autospec
+  # renders them as non-async mocks that still expect `self`, so awaiting one
+  # raises TypeError. spec_set still rejects the name if the SDK drops it.
   sandbox.kill = mock.AsyncMock(return_value=True)
-  sandbox.commands.run = mock.AsyncMock()
-  sandbox.files.read = mock.AsyncMock()
-  sandbox.files.write = mock.AsyncMock()
+  sandbox.set_timeout = mock.AsyncMock()
+  sandbox.is_running.return_value = running
   return sandbox
 
 
@@ -44,9 +51,8 @@ def _sandbox() -> mock.MagicMock:
 @pytest.fixture(name='create_patch')
 def _create_patch(sandbox: mock.MagicMock):
   """Patch AsyncSandbox.create to return the mock sandbox."""
-  with mock.patch(
-      'e2b.AsyncSandbox.create', new=mock.AsyncMock(return_value=sandbox)
-  ) as create:
+  with mock.patch.object(e2b.AsyncSandbox, 'create', autospec=True) as create:
+    create.return_value = sandbox
     yield create
 
 
@@ -210,10 +216,8 @@ async def test_lazy_recreate_when_expired(sandbox):
   fresh = _make_sandbox(running=True)
   fresh.files.read.return_value = b'fresh'
 
-  with mock.patch(
-      'e2b.AsyncSandbox.create',
-      new=mock.AsyncMock(side_effect=[expired, fresh]),
-  ) as create:
+  with mock.patch.object(e2b.AsyncSandbox, 'create', autospec=True) as create:
+    create.side_effect = [expired, fresh]
     env = E2BEnvironment()
     await env.initialize()  # -> expired
     data = await env.read_file('a.txt')  # detects dead, recreates -> fresh

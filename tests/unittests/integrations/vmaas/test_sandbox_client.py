@@ -22,6 +22,8 @@ from unittest.mock import patch
 
 from google.adk.integrations.vmaas.sandbox_client import SandboxClient
 
+from tests.unittests import autospec_utils
+
 
 def _make_response(data: dict) -> MagicMock:
   """Create a mock HttpResponse with a JSON body."""
@@ -35,7 +37,7 @@ class TestSandboxClient(unittest.IsolatedAsyncioTestCase):
 
   def setUp(self):
     """Set up test fixtures."""
-    self.mock_vertexai_client = MagicMock()
+    self.mock_vertexai_client = autospec_utils.make_vertexai_client()
     self.mock_sandbox = MagicMock()
     self.access_token = "test_token_12345"
     self.client = SandboxClient(

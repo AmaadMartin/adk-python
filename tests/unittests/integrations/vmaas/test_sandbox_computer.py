@@ -28,6 +28,8 @@ from google.adk.integrations.vmaas.sandbox_computer import AgentEngineSandboxCom
 from google.adk.tools.computer_use.base_computer import ComputerEnvironment
 from google.adk.tools.computer_use.base_computer import ComputerState
 
+from tests.unittests import autospec_utils
+
 
 class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
   """Tests for AgentEngineSandboxComputer."""
@@ -140,7 +142,7 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
 
   def test_init_with_vertexai_client(self):
     """Test initialization with provided vertexai client."""
-    mock_client = MagicMock()
+    mock_client = autospec_utils.make_vertexai_client()
     computer = AgentEngineSandboxComputer(vertexai_client=mock_client)
     self.assertEqual(computer._client, mock_client)
 
@@ -191,7 +193,7 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     """Test _ensure_agent_engine creates new agent engine."""
     new_engine_name = "projects/test/locations/us-central1/reasoningEngines/new"
 
-    mock_client = MagicMock()
+    mock_client = autospec_utils.make_vertexai_client()
     mock_get_client.return_value = mock_client
 
     mock_engine = MagicMock()
@@ -220,7 +222,7 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     mock_sandbox.name = sandbox_name
     mock_to_thread.return_value = mock_sandbox
 
-    mock_client = MagicMock()
+    mock_client = autospec_utils.make_vertexai_client()
     mock_get_client.return_value = mock_client
 
     computer = AgentEngineSandboxComputer(sandbox_name=sandbox_name)
@@ -242,7 +244,7 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     mock_sandbox = MagicMock()
     mock_to_thread.return_value = mock_sandbox
 
-    mock_client = MagicMock()
+    mock_client = autospec_utils.make_vertexai_client()
     mock_get_client.return_value = mock_client
 
     computer = AgentEngineSandboxComputer()
@@ -282,7 +284,7 @@ class TestAgentEngineSandboxComputer(unittest.IsolatedAsyncioTestCase):
     token_expiry = time.time() - 100
 
     mock_to_thread.return_value = new_token
-    mock_client = MagicMock()
+    mock_client = autospec_utils.make_vertexai_client()
     mock_get_client.return_value = mock_client
 
     computer = AgentEngineSandboxComputer(

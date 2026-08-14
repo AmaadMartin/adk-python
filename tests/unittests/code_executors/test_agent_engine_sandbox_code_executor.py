@@ -24,6 +24,8 @@ from google.adk.code_executors.code_execution_utils import File
 from google.adk.sessions.session import Session
 import pytest
 
+from tests.unittests import autospec_utils
+
 
 @pytest.fixture
 def mock_invocation_context() -> InvocationContext:
@@ -72,7 +74,7 @@ class TestAgentEngineSandboxCodeExecutor:
       mock_invocation_context,
   ):
     # Setup Mocks
-    mock_api_client = MagicMock()
+    mock_api_client = autospec_utils.make_vertexai_client()
     mock_vertexai_client.return_value = mock_api_client
     mock_response = MagicMock()
     mock_json_output = MagicMock()
@@ -133,7 +135,7 @@ class TestAgentEngineSandboxCodeExecutor:
       mock_invocation_context,
   ):
     """Input files must be sent under the 'content' key the SDK expects."""
-    mock_api_client = MagicMock()
+    mock_api_client = autospec_utils.make_vertexai_client()
     mock_vertexai_client.return_value = mock_api_client
     mock_response = MagicMock()
     mock_response.outputs = []
@@ -167,7 +169,7 @@ class TestAgentEngineSandboxCodeExecutor:
       mock_invocation_context,
   ):
     # Setup Mocks
-    mock_api_client = MagicMock()
+    mock_api_client = autospec_utils.make_vertexai_client()
     mock_vertexai_client.return_value = mock_api_client
 
     # Existing sandbox name stored in session, but get() will return None
@@ -232,7 +234,7 @@ class TestAgentEngineSandboxCodeExecutor:
       mock_invocation_context,
   ):
     # Setup Mocks
-    mock_api_client = MagicMock()
+    mock_api_client = autospec_utils.make_vertexai_client()
     mock_vertexai_client.return_value = mock_api_client
 
     # Existing sandbox name stored in session
@@ -301,7 +303,7 @@ class TestAgentEngineSandboxCodeExecutor:
       mock_invocation_context,
   ):
     # Setup Mocks
-    mock_api_client = MagicMock()
+    mock_api_client = autospec_utils.make_vertexai_client()
     mock_vertexai_client.return_value = mock_api_client
 
     # Mock create operation to return a sandbox resource name
@@ -362,7 +364,7 @@ class TestAgentEngineSandboxCodeExecutor:
       mock_invocation_context,
   ):
     """Input files are sent with 'content' and 'mime_type' keys (not 'contents'/'mimeType')."""
-    mock_api_client = MagicMock()
+    mock_api_client = autospec_utils.make_vertexai_client()
     mock_vertexai_client.return_value = mock_api_client
 
     mock_response = MagicMock()
@@ -432,7 +434,7 @@ class TestAgentEngineSandboxCodeExecutor:
   ):
     """Tests that Agent Engine is created lazily in execute_code."""
     # Setup Mocks
-    mock_api_client = MagicMock()
+    mock_api_client = autospec_utils.make_vertexai_client()
     mock_vertexai_client.return_value = mock_api_client
 
     # Mock Engine Creation
@@ -489,7 +491,7 @@ class TestAgentEngineSandboxCodeExecutor:
       self, mock_vertexai_client, mock_invocation_context
   ):
     """Tests error handling when auto-creating Agent Engine fails."""
-    mock_api_client = MagicMock()
+    mock_api_client = autospec_utils.make_vertexai_client()
     mock_vertexai_client.return_value = mock_api_client
     mock_api_client.agent_engines.create.side_effect = Exception(
         "Failed to auto-create Agent Engine"
