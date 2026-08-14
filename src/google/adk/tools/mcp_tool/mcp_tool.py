@@ -527,10 +527,7 @@ class McpTool(BaseAuthenticatedTool):
     Returns:
       The resolved progress callback, or None if not configured.
     """
-    if (
-        not hasattr(self, "_progress_callback")
-        or self._progress_callback is None
-    ):
+    if self._progress_callback is None:
       return None
 
     # Determine if callback is a factory by checking if it's a coroutine

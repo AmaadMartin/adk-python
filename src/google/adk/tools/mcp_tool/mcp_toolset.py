@@ -582,9 +582,7 @@ class McpToolset(BaseToolset):
           auth_credential=self._auth_credential,
           require_confirmation=self._require_confirmation,
           header_provider=self._header_provider,
-          progress_callback=self._progress_callback
-          if hasattr(self, "_progress_callback")
-          else None,
+          progress_callback=self._progress_callback,
       )
 
       if self._is_tool_selected(mcp_tool, readonly_context):
@@ -735,7 +733,7 @@ class McpToolset(BaseToolset):
   def __setstate__(self, state):
     """Custom unpickling to restore state."""
     self.__dict__.update(state)
-    # Default to sys.stderr if _errlog was removed during pickling
+    # __getstate__ pops _errlog, so it is absent here: hasattr is required.
     if not hasattr(self, "_errlog") or self._errlog is None:
       self._errlog = sys.stderr
 
