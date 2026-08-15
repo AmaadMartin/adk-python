@@ -272,6 +272,78 @@ def test_openid_dict_to_scheme_credential_missing_credential_fields():
     openid_dict_to_scheme_credential(config_dict, scopes, credential_dict)
 
 
+def test_openid_dict_to_scheme_credential_does_not_mutate_config_dict():
+  config_dict = {
+      "authorization_endpoint": "auth_url",
+      "token_endpoint": "token_url",
+  }
+  credential_dict = {
+      "client_id": "client_id",
+      "client_secret": "client_secret",
+      "redirect_uri": "redirect_uri",
+  }
+  scopes = ["scope1", "scope2"]
+  expected_config = dict(config_dict)
+  expected_credential = dict(credential_dict)
+
+  scheme, _ = openid_dict_to_scheme_credential(
+      config_dict, scopes, credential_dict
+  )
+
+  assert config_dict == expected_config
+  assert "scopes" not in config_dict
+  assert "openIdConnectUrl" not in config_dict
+  assert credential_dict == expected_credential
+  assert scheme.scopes == scopes
+  assert scheme.openIdConnectUrl == ""
+
+
+def test_openid_dict_to_scheme_credential_does_not_overwrite_caller_scopes():
+  config_dict = {
+      "authorization_endpoint": "auth_url",
+      "token_endpoint": "token_url",
+      "openIdConnectUrl": "openid_url",
+      "scopes": ["caller_scope"],
+  }
+  credential_dict = {
+      "client_id": "client_id",
+      "client_secret": "client_secret",
+  }
+  scopes = ["scope1", "scope2"]
+
+  scheme, _ = openid_dict_to_scheme_credential(
+      config_dict, scopes, credential_dict
+  )
+
+  assert config_dict["scopes"] == ["caller_scope"]
+  assert config_dict["openIdConnectUrl"] == "openid_url"
+  assert scheme.scopes == ["scope1", "scope2"]
+  assert scheme.openIdConnectUrl == "openid_url"
+
+
+def test_openid_dict_to_scheme_credential_reuses_config_dict_across_calls():
+  config_dict = {
+      "authorization_endpoint": "auth_url",
+      "token_endpoint": "token_url",
+  }
+  credential_dict = {
+      "client_id": "client_id",
+      "client_secret": "client_secret",
+  }
+  expected_config = dict(config_dict)
+
+  first_scheme, _ = openid_dict_to_scheme_credential(
+      config_dict, ["read"], credential_dict
+  )
+  second_scheme, _ = openid_dict_to_scheme_credential(
+      config_dict, ["write"], credential_dict
+  )
+
+  assert first_scheme.scopes == ["read"]
+  assert second_scheme.scopes == ["write"]
+  assert config_dict == expected_config
+
+
 @patch("httpx.get")
 def test_openid_url_to_scheme_credential(mock_get):
   mock_response = {
