@@ -36,10 +36,12 @@ from google.adk.artifacts.file_artifact_service import FileArtifactService
 from google.adk.artifacts.gcs_artifact_service import GcsArtifactService
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.errors.input_validation_error import InputValidationError
+from google.auth.credentials import AnonymousCredentials
 from google.cloud.exceptions import Forbidden
 from google.cloud.exceptions import NotFound
 from google.genai import types
 import pytest
+import requests
 
 Enum = enum.Enum
 
@@ -2139,9 +2141,7 @@ def _vanish_after_delete(blob: MockBlob) -> None:
 
 
 @pytest.mark.asyncio
-async def test_gcs_delete_artifact_tolerates_version_deleted_concurrently() -> (
-    None
-):
+async def test_gcs_delete_artifact_tolerates_a_vanished_version() -> None:
   """A version that vanishes between the list and the delete is not an error."""
   service = mock_gcs_artifact_service()
   scope = {"app_name": "app", "user_id": "user1", "session_id": "sess1"}
@@ -2160,9 +2160,7 @@ async def test_gcs_delete_artifact_tolerates_version_deleted_concurrently() -> (
 
 
 @pytest.mark.asyncio
-async def test_gcs_delete_artifact_tolerates_missing_user_namespaced_version() -> (
-    None
-):
+async def test_gcs_delete_artifact_tolerates_a_vanished_user_version() -> None:
   """The same race on a user-namespaced artifact is also not an error."""
   service = mock_gcs_artifact_service()
   scope = {"app_name": "app", "user_id": "user1"}
@@ -2196,6 +2194,79 @@ async def test_gcs_delete_artifact_propagates_permission_error() -> None:
 
   with pytest.raises(Forbidden, match="storage.objects.delete"):
     await service.delete_artifact(**scope, filename="notes.txt")
+
+
+def _http_response(
+    method: str,
+    url: str,
+    status_code: int,
+    payload: Optional[dict[str, Any]] = None,
+) -> requests.Response:
+  """Builds a real Response, so the client reads the status as it does live."""
+  response = requests.Response()
+  response.status_code = status_code
+  response.request = requests.Request(method=method, url=url).prepare()
+  response.headers["Content-Type"] = "application/json"
+  response._content = b"" if payload is None else json.dumps(payload).encode()
+  return response
+
+
+class StubGcsTransport:
+  """Answers the JSON API of GCS, so the real storage client can drive it.
+
+  The object listing reports two versions. Deleting version 0 answers a 404,
+  as GCS does for an object that another caller already deleted.
+  """
+
+  is_mtls = False
+
+  def __init__(self, prefix: str) -> None:
+    self._prefix = prefix
+    self.deleted_paths: list[str] = []
+
+  def request(self, url: str, method: str, **kwargs: Any) -> requests.Response:
+    if method == "DELETE":
+      object_path = url.split("/o/")[1].split("?")[0]
+      self.deleted_paths.append(object_path)
+      if object_path.endswith("%2F0"):
+        return _http_response(
+            method, url, 404, {"error": {"message": "No such object"}}
+        )
+      return _http_response(method, url, 204)
+    return _http_response(
+        method,
+        url,
+        200,
+        {"items": [{"name": f"{self._prefix}/{v}"} for v in (0, 1)]},
+    )
+
+
+@pytest.mark.asyncio
+async def test_gcs_delete_artifact_absorbs_a_404_from_the_real_client() -> None:
+  """The real storage client's 404 for a listed version is absorbed.
+
+  The other tests here fake the blob, so they can only prove that ADK handles
+  the exception it expects. This one drives the installed google-cloud-storage
+  client over a stub HTTP transport, so the 404 it turns into an exception is
+  the one a live bucket produces.
+  """
+  transport = StubGcsTransport("app/user1/sess1/notes.txt")
+  service = GcsArtifactService(
+      bucket_name="bucket",
+      project="test-project",
+      credentials=AnonymousCredentials(),
+      _http=transport,
+  )
+
+  await service.delete_artifact(
+      app_name="app", user_id="user1", session_id="sess1", filename="notes.txt"
+  )
+
+  # Version 1 was deleted after the 404 on version 0.
+  assert transport.deleted_paths == [
+      "app%2Fuser1%2Fsess1%2Fnotes.txt%2F0",
+      "app%2Fuser1%2Fsess1%2Fnotes.txt%2F1",
+  ]
 
 
 @pytest.mark.asyncio
