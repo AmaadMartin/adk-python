@@ -65,8 +65,11 @@ def _patch_types_and_runner(monkeypatch: pytest.MonkeyPatch) -> None:
   # Dummy Part / Content
   class _Part:
 
-    def __init__(self, text: str | None = "") -> None:
+    def __init__(
+        self, text: str | None = "", function_response: Any = None
+    ) -> None:
       self.text = text
+      self.function_response = function_response
 
   class _Content:
 
@@ -300,6 +303,55 @@ async def test_run_cli_save_session(
 
 
 @pytest.mark.asyncio
+async def test_run_cli_save_session_falls_back_to_session_id_on_eof(
+    fake_agent, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """An EOF at the save prompt should save under the live session id."""
+  parent_dir, folder_name = fake_agent
+
+  # Ctrl-D at the first prompt, so the save prompt also reads an empty stdin.
+  monkeypatch.setattr("builtins.input", mock.Mock(side_effect=EOFError))
+
+  await cli.run_cli(
+      agent_parent_dir=str(parent_dir),
+      agent_folder_name=folder_name,
+      input_file=None,
+      saved_session_file=None,
+      save_session=True,
+      session_id=None,
+  )
+
+  saved = list((Path(parent_dir) / folder_name).glob("*.session.json"))
+  assert len(saved) == 1
+  data = json.loads(saved[0].read_text())
+  assert saved[0].name == f"{data['id']}.session.json"
+
+
+@pytest.mark.asyncio
+async def test_run_cli_save_session_with_explicit_session_id_never_prompts(
+    fake_agent, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  """An explicit --session_id short-circuits the save prompt."""
+  parent_dir, folder_name = fake_agent
+
+  fake_input = mock.Mock(side_effect=EOFError)
+  monkeypatch.setattr("builtins.input", fake_input)
+
+  await cli.run_cli(
+      agent_parent_dir=str(parent_dir),
+      agent_folder_name=folder_name,
+      input_file=None,
+      saved_session_file=None,
+      save_session=True,
+      session_id="sess123",
+  )
+
+  assert (Path(parent_dir) / folder_name / "sess123.session.json").exists()
+  # Only the REPL prompt reads stdin; the save prompt is never reached.
+  assert fake_input.call_count == 1
+
+
+@pytest.mark.asyncio
 async def test_create_artifact_service_isolates_artifacts_per_agent(
     tmp_path: Path,
 ) -> None:
@@ -525,3 +577,166 @@ async def test_run_interactively_whitespace_and_exit(
 
   # verify: assistant echoed once with 'echo:hello'
   assert any("echo:hello" in m for m in echoed)
+
+
+@pytest.mark.asyncio
+async def test_run_interactively_exits_on_eof(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """Ctrl-D at the prompt should leave the loop and close the runner."""
+  session_service = InMemorySessionService()
+  sess = await session_service.create_session(app_name="dummy", user_id="u")
+
+  # fake user input: 'hello' -> Ctrl-D
+  monkeypatch.setattr(
+      "builtins.input", mock.Mock(side_effect=["hello", EOFError])
+  )
+
+  closed = {"value": False}
+
+  class _ClosingRunner(cli.Runner):
+    """Fake runner that records whether cleanup ran."""
+
+    async def close(self, *a: Any, **k: Any) -> None:
+      closed["value"] = True
+
+  monkeypatch.setattr(cli, "Runner", _ClosingRunner)
+
+  echoed: List[str] = []
+  monkeypatch.setattr(
+      click, "echo", lambda *a, **k: echoed.append(a[0] if a else "")
+  )
+
+  await cli.run_interactively(
+      BaseAgent(name="root"),
+      InMemoryArtifactService(),
+      sess,
+      session_service,
+      InMemoryCredentialService(),
+  )
+
+  assert sum("echo:hello" in m for m in echoed) == 1
+  assert closed["value"] is True
+
+
+@pytest.mark.asyncio
+async def test_run_interactively_exits_on_eof_at_hitl_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """Ctrl-D at a HITL prompt should abandon the turn, not re-dispatch it."""
+  session_service = InMemorySessionService()
+  sess = await session_service.create_session(app_name="dummy", user_id="u")
+
+  # fake user input: 'hello' -> Ctrl-D at the HITL prompt that follows.
+  monkeypatch.setattr(
+      "builtins.input", mock.Mock(side_effect=["hello", EOFError])
+  )
+
+  runs: List[Any] = []
+  closed: List[bool] = []
+
+  class _HitlRunner:
+    """Fake runner whose every turn requests human input."""
+
+    def __init__(self, *a: Any, **k: Any) -> None:
+      ...
+
+    async def run_async(self, *a: Any, **k: Any):
+      runs.append(k)
+      part = types.SimpleNamespace(
+          text=None,
+          function_call=types.SimpleNamespace(
+              id="fc1", name="adk_request_input", args={"message": "hi"}
+          ),
+      )
+      yield types.SimpleNamespace(
+          author="assistant",
+          content=types.SimpleNamespace(role="assistant", parts=[part]),
+          node_info=None,
+          long_running_tool_ids=["fc1"],
+      )
+
+    async def close(self, *a: Any, **k: Any) -> None:
+      closed.append(True)
+
+  monkeypatch.setattr(cli, "Runner", _HitlRunner)
+
+  await cli.run_interactively(
+      BaseAgent(name="root"),
+      InMemoryArtifactService(),
+      sess,
+      session_service,
+      InMemoryCredentialService(),
+  )
+
+  # The abandoned turn is never sent back to the runner.
+  assert len(runs) == 1
+  assert closed == [True]
+
+
+@pytest.mark.asyncio
+async def test_run_interactively_answers_hitl_prompt_then_exits_on_eof(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """An answered HITL prompt still resumes the turn; EOF only ends the loop."""
+  session_service = InMemorySessionService()
+  sess = await session_service.create_session(app_name="dummy", user_id="u")
+
+  # fake user input: 'hello' -> 'yes' at the HITL prompt -> Ctrl-D
+  monkeypatch.setattr(
+      "builtins.input", mock.Mock(side_effect=["hello", "yes", EOFError])
+  )
+
+  runs: List[Any] = []
+  closed: List[bool] = []
+
+  class _OneHitlTurnRunner:
+    """Fake runner that requests human input on its first turn only."""
+
+    def __init__(self, *a: Any, **k: Any) -> None:
+      ...
+
+    async def run_async(self, *a: Any, **k: Any):
+      runs.append(k["new_message"])
+      if len(runs) > 1:
+        yield types.SimpleNamespace(
+            author="assistant",
+            content=types.SimpleNamespace(
+                role="assistant",
+                parts=[types.SimpleNamespace(text="done", function_call=None)],
+            ),
+            node_info=None,
+            long_running_tool_ids=[],
+        )
+        return
+      part = types.SimpleNamespace(
+          text=None,
+          function_call=types.SimpleNamespace(
+              id="fc1", name="adk_request_input", args={"message": "hi"}
+          ),
+      )
+      yield types.SimpleNamespace(
+          author="assistant",
+          invocation_id="inv1",
+          content=types.SimpleNamespace(role="assistant", parts=[part]),
+          node_info=None,
+          long_running_tool_ids=["fc1"],
+      )
+
+    async def close(self, *a: Any, **k: Any) -> None:
+      closed.append(True)
+
+  monkeypatch.setattr(cli, "Runner", _OneHitlTurnRunner)
+
+  await cli.run_interactively(
+      BaseAgent(name="root"),
+      InMemoryArtifactService(),
+      sess,
+      session_service,
+      InMemoryCredentialService(),
+  )
+
+  # The answer is dispatched as a second turn carrying the function response.
+  assert len(runs) == 2
+  assert runs[1].parts[0].function_response.response == {"result": "yes"}
+  assert closed == [True]
