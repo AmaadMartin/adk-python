@@ -270,9 +270,8 @@ async def test_construct_payload_image_file_uri(client):
 
 
 @pytest.mark.asyncio
-async def test_generate_content_async_function_call_response(
-    client, llm_request
-):
+async def test_generate_content_async_tool_calls_response(client, llm_request):
+  """Tests the non-streaming OpenAI `tool_calls` array wire format."""
   # Mock response with tool call
   mock_response = AsyncMock(spec=httpx.Response)
   mock_response.json.return_value = {
@@ -413,6 +412,7 @@ async def test_generate_content_async_invalid_tool_call_type_raises_error(
 async def test_generate_content_async_function_call_response(
     client, llm_request
 ):
+  """Tests the deprecated singular `function_call` wire format."""
   # Mock response with deprecated function call
   mock_response = AsyncMock(spec=httpx.Response)
   mock_response.json.return_value = {
