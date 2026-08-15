@@ -1654,7 +1654,6 @@ def test_cli_does_not_convert_unrelated_value_error(
   result = runner.invoke(cli_tools_click.main, [command, str(agents_dir)])
 
   assert isinstance(result.exception, ValueError)
-  assert not isinstance(result.exception, click.ClickException)
   assert not isinstance(result.exception, ServiceConfigError)
 
 

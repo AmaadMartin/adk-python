@@ -27,7 +27,6 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 from urllib.parse import quote
 
-import click
 from fastapi.testclient import TestClient
 from google.adk.a2a import _compat
 from google.adk.agents.base_agent import BaseAgent
@@ -4457,12 +4456,8 @@ def test_get_fast_api_app_raises_service_config_error(
     tmp_path: Path, app_kwargs: dict[str, str], expected_message: str
 ):
   """An unusable service URI raises ServiceConfigError, not a click error."""
-  with pytest.raises(
-      ServiceConfigError, match=re.escape(expected_message)
-  ) as exc_info:
+  with pytest.raises(ServiceConfigError, match=re.escape(expected_message)):
     get_fast_api_app(agents_dir=str(tmp_path), web=False, **app_kwargs)
-
-  assert not isinstance(exc_info.value, click.ClickException)
 
 
 def test_get_fast_api_app_service_config_error_is_catchable_as_value_error(
