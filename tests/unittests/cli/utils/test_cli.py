@@ -499,6 +499,60 @@ async def test_run_cli_loads_dotenv_before_memory_service_creation(
   assert call_order.index("load_dotenv") < call_order.index("create_memory")
 
 
+async def _run_repl(
+    monkeypatch: pytest.MonkeyPatch, answers: List[str]
+) -> List[str]:
+  """Runs run_interactively on `answers` and returns the echoed lines."""
+  session_service = InMemorySessionService()
+  sess = await session_service.create_session(app_name="dummy", user_id="u")
+
+  replies = iter(answers)
+  monkeypatch.setattr("builtins.input", lambda *_a, **_k: next(replies))
+  echoed: List[str] = []
+  monkeypatch.setattr(click, "echo", lambda msg: echoed.append(msg))
+
+  await cli.run_interactively(
+      BaseAgent(name="root"),
+      InMemoryArtifactService(),
+      sess,
+      session_service,
+      InMemoryCredentialService(),
+  )
+  return echoed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("quit_word", ["exit ", " exit", "  exit  "])
+async def test_run_interactively_exits_on_padded_exit(
+    monkeypatch: pytest.MonkeyPatch, quit_word: str
+) -> None:
+  """A whitespace-padded 'exit' should quit without reaching the model."""
+  # The input iterator holds one line, so a second prompt would raise.
+  echoed = await _run_repl(monkeypatch, [quit_word])
+
+  assert echoed == []
+
+
+@pytest.mark.asyncio
+async def test_run_interactively_does_not_exit_on_case_variant(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """'EXIT' is an ordinary turn; matching stays case-sensitive."""
+  echoed = await _run_repl(monkeypatch, ["EXIT", "exit"])
+
+  assert any("echo:EXIT" in m for m in echoed)
+
+
+@pytest.mark.asyncio
+async def test_run_interactively_preserves_untrimmed_query(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """The model receives the raw line, padding included."""
+  echoed = await _run_repl(monkeypatch, ["  hello  ", "exit"])
+
+  assert any("echo:  hello  " in m for m in echoed)
+
+
 @pytest.mark.asyncio
 async def test_run_interactively_whitespace_and_exit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
