@@ -340,7 +340,10 @@ class RestApiTool(BaseTool):
     return credential_to_param(auth_scheme, auth_credential)
 
   def _prepare_request_params(
-      self, parameters: List[ApiParameter], kwargs: Dict[str, Any]
+      self,
+      parameters: List[ApiParameter],
+      kwargs: Dict[str, Any],
+      auth_credential: Optional[AuthCredential] = None,
   ) -> Dict[str, Any]:
     """Prepares the request parameters for the API call.
 
@@ -349,6 +352,8 @@ class RestApiTool(BaseTool):
           for the API call.
         kwargs: The keyword arguments passed to the call function from the Tool
           caller.
+        auth_credential: The credential resolved for this call, post-exchange.
+          Falls back to the credential configured on the tool when omitted.
 
     Returns:
         A dictionary containing the  request parameters for the API call. This
@@ -373,12 +378,17 @@ class RestApiTool(BaseTool):
     user_agent = f"google-adk/{adk_version} (tool: {self.name})"
     header_params["User-Agent"] = user_agent
 
+    # Merge the headers carried by the credential actually used for this call.
+    # The exchanged credential takes precedence over the configured one: it is
+    # where exchange-time headers live, e.g. the x-goog-user-project header a
+    # service account exchange derives from the ADC quota project.
+    effective_credential = auth_credential or self.auth_credential
     if (
-        self.auth_credential
-        and self.auth_credential.http
-        and self.auth_credential.http.additional_headers
+        effective_credential
+        and effective_credential.http
+        and effective_credential.http.additional_headers
     ):
-      header_params.update(self.auth_credential.http.additional_headers)
+      header_params.update(effective_credential.http.additional_headers)
 
     params_map: Dict[str, ApiParameter] = {p.py_name: p for p in parameters}
 
@@ -542,7 +552,9 @@ class RestApiTool(BaseTool):
         api_args.update(auth_args)
 
     # Got all parameters. Call the API.
-    request_params = self._prepare_request_params(api_params, api_args)
+    request_params = self._prepare_request_params(
+        api_params, api_args, auth_credential
+    )
     if self._ssl_verify is not None:
       request_params["verify"] = self._ssl_verify
 

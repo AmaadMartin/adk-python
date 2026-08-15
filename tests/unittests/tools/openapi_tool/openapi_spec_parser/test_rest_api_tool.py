@@ -30,6 +30,7 @@ from google.adk.auth.auth_credential import AuthCredential
 from google.adk.auth.auth_credential import AuthCredentialTypes
 from google.adk.auth.auth_credential import HttpAuth
 from google.adk.auth.auth_credential import HttpCredentials
+from google.adk.auth.auth_credential import ServiceAccount
 from google.adk.features import FeatureName
 from google.adk.features._feature_registry import temporary_feature_override
 from google.adk.sessions.state import State
@@ -41,6 +42,7 @@ from google.adk.tools.openapi_tool.openapi_spec_parser.operation_parser import O
 from google.adk.tools.openapi_tool.openapi_spec_parser.rest_api_tool import RestApiTool
 from google.adk.tools.openapi_tool.openapi_spec_parser.rest_api_tool import snake_to_lower_camel
 from google.adk.tools.tool_context import ToolContext
+import google.auth
 from google.genai.types import FunctionDeclaration
 from google.genai.types import Schema
 import httpx
@@ -940,6 +942,151 @@ class TestRestApiTool:
     request_params = tool._prepare_request_params(params, kwargs)
 
     assert request_params["headers"]["x-goog-user-project"] == "test-project"
+
+  @patch(
+      "google.adk.tools.openapi_tool.openapi_spec_parser.rest_api_tool._request"
+  )
+  @pytest.mark.asyncio
+  async def test_call_service_account_credential_sends_quota_project_header(
+      self,
+      mock_request,
+      monkeypatch,
+      mock_tool_context,
+      sample_endpoint,
+      sample_operation,
+  ):
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"result": "success"}
+    mock_request.return_value = mock_response
+    mock_credentials = MagicMock()
+    mock_credentials.token = "mock_access_token"
+    mock_credentials.quota_project_id = "quota-project"
+    monkeypatch.setattr(
+        google.auth,
+        "default",
+        MagicMock(return_value=(mock_credentials, "adc-project")),
+    )
+    auth_scheme, _ = token_to_scheme_credential(
+        "oauth2Token", "header", "Authorization", "token"
+    )
+    tool = RestApiTool(
+        name="test_tool",
+        description="Test Tool",
+        endpoint=sample_endpoint,
+        operation=sample_operation,
+        auth_scheme=auth_scheme,
+        auth_credential=AuthCredential(
+            auth_type=AuthCredentialTypes.SERVICE_ACCOUNT,
+            service_account=ServiceAccount(
+                use_default_credential=True,
+                scopes=["https://www.googleapis.com/auth/cloud-platform"],
+            ),
+        ),
+    )
+
+    result = await tool.call(args={}, tool_context=mock_tool_context)
+
+    assert result == {"result": "success"}
+    headers = mock_request.call_args.kwargs["headers"]
+    assert headers["x-goog-user-project"] == "quota-project"
+    assert headers["Authorization"] == "Bearer mock_access_token"
+
+  def test_prepare_request_params_prefers_exchanged_credential_headers(
+      self,
+      sample_endpoint,
+      sample_operation,
+      sample_auth_scheme,
+  ):
+    tool = RestApiTool(
+        name="test_tool",
+        description="Test Tool",
+        endpoint=sample_endpoint,
+        operation=sample_operation,
+        auth_scheme=sample_auth_scheme,
+        auth_credential=AuthCredential(
+            auth_type=AuthCredentialTypes.HTTP,
+            http=HttpAuth(
+                scheme="bearer",
+                credentials=HttpCredentials(),
+                additional_headers={"x-goog-user-project": "configured"},
+            ),
+        ),
+    )
+    exchanged_credential = AuthCredential(
+        auth_type=AuthCredentialTypes.HTTP,
+        http=HttpAuth(
+            scheme="bearer",
+            credentials=HttpCredentials(),
+            additional_headers={"x-goog-user-project": "exchanged"},
+        ),
+    )
+
+    request_params = tool._prepare_request_params([], {}, exchanged_credential)
+
+    assert request_params["headers"]["x-goog-user-project"] == "exchanged"
+
+  def test_prepare_request_params_auth_header_overrides_additional_headers(
+      self,
+      sample_endpoint,
+      sample_operation,
+      sample_auth_scheme,
+  ):
+    tool = RestApiTool(
+        name="test_tool",
+        description="Test Tool",
+        endpoint=sample_endpoint,
+        operation=sample_operation,
+        auth_scheme=sample_auth_scheme,
+    )
+    exchanged_credential = AuthCredential(
+        auth_type=AuthCredentialTypes.HTTP,
+        http=HttpAuth(
+            scheme="bearer",
+            credentials=HttpCredentials(),
+            additional_headers={"Authorization": "Bearer stale"},
+        ),
+    )
+    params = [
+        ApiParameter(
+            original_name="Authorization",
+            py_name="_auth_prefix_vaf_Authorization",
+            param_location="header",
+            param_schema=OpenAPISchema(type="string"),
+        )
+    ]
+    kwargs = {"_auth_prefix_vaf_Authorization": "Bearer fresh"}
+
+    request_params = tool._prepare_request_params(
+        params, kwargs, exchanged_credential
+    )
+
+    assert request_params["headers"]["Authorization"] == "Bearer fresh"
+
+  def test_prepare_request_params_falls_back_to_configured_credential(
+      self,
+      sample_endpoint,
+      sample_operation,
+      sample_auth_scheme,
+  ):
+    tool = RestApiTool(
+        name="test_tool",
+        description="Test Tool",
+        endpoint=sample_endpoint,
+        operation=sample_operation,
+        auth_scheme=sample_auth_scheme,
+        auth_credential=AuthCredential(
+            auth_type=AuthCredentialTypes.HTTP,
+            http=HttpAuth(
+                scheme="bearer",
+                credentials=HttpCredentials(),
+                additional_headers={"x-goog-user-project": "configured"},
+            ),
+        ),
+    )
+
+    request_params = tool._prepare_request_params([], {}, None)
+
+    assert request_params["headers"]["x-goog-user-project"] == "configured"
 
   def test_prepare_request_params_multiple_mime_types(
       self, sample_endpoint, sample_auth_credential, sample_auth_scheme
