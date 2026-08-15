@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -1531,3 +1532,159 @@ def test_to_agent_engine_shell_quotes_trigger_sources(
   dockerfile_content = (src_dir.parent / "tmp" / "Dockerfile").read_text()
   assert "--trigger_sources='pubsub; id #'" in dockerfile_content
   assert calls == ["client", "create", "update"]
+
+
+# adk_version and extra_packages Dockerfile field guards
+@pytest.mark.parametrize(
+    "value",
+    [
+        "1.2.0",
+        "v1.2",
+        "1!2.0+local.1",
+        "1.2.0rc1.post2.dev3",
+        "1.2.3-alpha.1",
+        "1.0+g1234abc_dirty",
+        "2024.1.1",
+    ],
+)
+def test_validate_adk_version_accepts_pep440_forms(value: str) -> None:
+  """Every shape a PEP 440 version can take is accepted."""
+  assert cli_deploy._validate_adk_version(value) is None
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "1.0\nRUN echo pwned",
+        '1.0" && echo pwned && echo "',
+        "1.0$(id)",
+        "1.0`id`",
+        "1.2.0 ",
+        "1.2.0\n",
+        "",
+    ],
+)
+def test_validate_adk_version_rejects_unsafe_values(value: str) -> None:
+  """A value that escapes the quoted shell word is rejected by flag name."""
+  with pytest.raises(click.ClickException, match="--adk_version"):
+    cli_deploy._validate_adk_version(value)
+
+
+@pytest.mark.parametrize(
+    "name", ["my_pkg", "helper.py", "my-data.v2", "pkg2", "p" * 128]
+)
+def test_validate_extra_package_name_accepts_ordinary_names(name: str) -> None:
+  """An ordinary path segment is accepted."""
+  assert cli_deploy._validate_extra_package_name(name, name) is None
+
+
+@pytest.mark.parametrize(
+    "name",
+    ['pkg"', "pkg\nRUN echo pwned", "pkg$(id)", "my pkg", "", "p" * 129],
+)
+def test_validate_extra_package_name_rejects_unsafe_names(name: str) -> None:
+  """A name that escapes the COPY instruction is rejected by flag name."""
+  with pytest.raises(click.ClickException, match="--extra_packages"):
+    cli_deploy._validate_extra_package_name(f"/tmp/{name}", name)
+
+
+def test_to_agent_engine_rejects_unsafe_adk_version(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: Callable[[bool, bool], Path],
+) -> None:
+  """An injected adk_version fails before the agent source is staged."""
+  monkeypatch.setattr(shutil, "rmtree", _Recorder())
+  calls: List[str] = []
+  monkeypatch.setitem(sys.modules, "vertexai", _make_counting_vertexai(calls))
+  src_dir = agent_dir(False, False)
+
+  with pytest.raises(click.ClickException, match="--adk_version"):
+    cli_deploy.to_agent_engine(
+        agent_folder=str(src_dir),
+        temp_folder="tmp",
+        project="my-gcp-project",
+        region="us-central1",
+        adk_version="1.0\nRUN echo pwned",
+    )
+
+  assert not calls
+  assert not (src_dir.parent / "tmp").exists()
+
+
+@pytest.mark.skipif(
+    os.name == "nt", reason="Windows filenames cannot contain these characters"
+)
+def test_to_agent_engine_rejects_unsafe_extra_package_name(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: Callable[[bool, bool], Path],
+) -> None:
+  """An injected extra_packages name fails before the entry is staged."""
+  monkeypatch.setattr(shutil, "rmtree", _Recorder())
+  calls: List[str] = []
+  monkeypatch.setitem(sys.modules, "vertexai", _make_counting_vertexai(calls))
+  src_dir = agent_dir(False, False)
+  evil_name = 'pkg"\nRUN echo pwned'
+  evil_pkg = src_dir.parent / evil_name
+  evil_pkg.mkdir()
+
+  with pytest.raises(click.ClickException, match="--extra_packages"):
+    cli_deploy.to_agent_engine(
+        agent_folder=str(src_dir),
+        temp_folder="tmp",
+        project="my-gcp-project",
+        region="us-central1",
+        adk_version="1.2.0",
+        extra_packages=[str(evil_pkg)],
+    )
+
+  assert not calls
+  assert not (src_dir.parent / "tmp" / evil_name).exists()
+  assert not (src_dir.parent / "tmp" / "Dockerfile").exists()
+
+
+def test_to_agent_engine_accepts_local_version_segment(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: Callable[[bool, bool], Path],
+) -> None:
+  """A PEP 440 local version segment still reaches the Dockerfile."""
+  monkeypatch.setattr(shutil, "rmtree", _Recorder())
+  calls: List[str] = []
+  monkeypatch.setitem(sys.modules, "vertexai", _make_counting_vertexai(calls))
+  src_dir = agent_dir(False, False)
+
+  cli_deploy.to_agent_engine(
+      agent_folder=str(src_dir),
+      temp_folder="tmp",
+      project="my-gcp-project",
+      region="us-central1",
+      adk_version="1.2.0+local.1",
+  )
+
+  dockerfile_content = (src_dir.parent / "tmp" / "Dockerfile").read_text()
+  assert 'RUN pip install "google-adk[a2a]==1.2.0+local.1"' in (
+      dockerfile_content
+  )
+
+
+def test_to_gke_rejects_unsafe_adk_version(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: Callable[[bool, bool], Path],
+    tmp_path: Path,
+) -> None:
+  """An injected adk_version fails before gcloud resolves the project."""
+  src_dir = agent_dir(False, False)
+  run_recorder = _Recorder()
+  monkeypatch.setattr(subprocess, "run", _gke_subprocess_mock(run_recorder))
+  monkeypatch.setattr(shutil, "rmtree", _Recorder())
+  kwargs = _to_gke_kwargs(src_dir, tmp_path)
+  kwargs["adk_version"] = "1.0\nRUN echo pwned"
+  # No project, so `_resolve_project` would shell out to gcloud. The guard
+  # has to run first for the recorder to stay empty.
+  kwargs["project"] = None
+
+  with pytest.raises(click.ClickException, match="--adk_version"):
+    cli_deploy.to_gke(**kwargs)
+
+  assert not run_recorder.calls
+  assert not (tmp_path / "out" / "Dockerfile").exists()
+  assert not (tmp_path / "out" / "deployment.yaml").exists()

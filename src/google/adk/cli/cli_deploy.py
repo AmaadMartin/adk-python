@@ -123,6 +123,13 @@ _SAFE_DOCKERFILE_TOKEN_RE: Final[re.Pattern[str]] = re.compile(
     r'[A-Za-z0-9_.-]{1,128}'
 )
 
+# A PEP 440 version is built only from these characters: letters for the
+# optional leading 'v' and for the rc/post/dev segments, '!' for the epoch and
+# '+' for the local segment. The plain token above is too strict for it, but
+# no legal version carries the whitespace, quote or '$' that would escape the
+# double-quoted shell word the version is interpolated into.
+_ADK_VERSION_PATTERN: Final[re.Pattern[str]] = re.compile(r'[A-Za-z0-9._!+-]+')
+
 
 def _assert_safe_dockerfile_token(value: Optional[str], field: str) -> None:
   """Rejects a value that cannot be embedded in the Dockerfile verbatim.
@@ -189,6 +196,52 @@ def _dockerfile_cmd_flag(flag: str, value: Optional[str]) -> str:
     return ''
   _assert_no_dockerfile_newline(value, flag.lstrip('-'))
   return f'{flag}={shlex.quote(value)}'
+
+
+def _validate_adk_version(adk_version: str) -> None:
+  """Rejects an ADK version that is unsafe to interpolate into a Dockerfile.
+
+  The value is written into `RUN pip install "google-adk[a2a]==<version>"` and
+  into the GKE deployment manifest, so it has to stay inside one shell word and
+  one YAML scalar. `packaging.version.parse` does not give that guarantee: its
+  regex is anchored with `\\s*`, so a value padded with a newline parses and
+  still ends the instruction it lands in.
+
+  Args:
+    adk_version: The version string to check.
+
+  Raises:
+    click.ClickException: If the value is not PEP 440 shaped.
+  """
+  if not _ADK_VERSION_PATTERN.fullmatch(adk_version):
+    raise click.ClickException(
+        f'Invalid --adk_version {adk_version!r}: expected a PEP 440 version'
+        " built from letters, digits and '.', '-', '_', '+', '!'."
+    )
+
+
+def _validate_extra_package_name(pkg: str, name: str) -> None:
+  """Rejects a staged extra_packages name that is unsafe in a COPY instruction.
+
+  The entry is copied to /app/<name>, and /app is on PYTHONPATH, so the name
+  has to be an ordinary path segment. It gets the plain-token rule above: on
+  Linux and macOS a filename may carry a quote, a '$' or a newline, and an
+  entry that resolves to a root path has no basename at all.
+
+  Args:
+    pkg: The extra_packages entry as the user or the config file wrote it, used
+      in the error message.
+    name: The basename the entry would be staged under.
+
+  Raises:
+    click.ClickException: If the name is not an ordinary path segment.
+  """
+  if not _SAFE_DOCKERFILE_TOKEN_RE.fullmatch(name):
+    raise click.ClickException(
+        f'Invalid --extra_packages entry {pkg!r}: it would be staged as'
+        f' {name!r}, which is not a valid package name. Use only letters,'
+        " digits, '.', '-' and '_', up to 128 characters."
+    )
 
 
 _AGENT_ENGINE_CLASS_METHODS = [
@@ -796,6 +849,7 @@ def to_cloud_run(
     click.ClickException: If a value that reaches the generated Dockerfile is
       unsafe to embed there.
   """
+  _validate_adk_version(adk_version)
   app_name = app_name or os.path.basename(agent_folder)
   _assert_safe_dockerfile_token(app_name, 'app_name')
   _assert_safe_dockerfile_token(project, 'project')
@@ -1077,6 +1131,7 @@ def to_agent_engine(
   if not adk_version:
     adk_version = _resolve_adk_version()
     click.echo(f'Using default ADK version: {adk_version}')
+  _validate_adk_version(adk_version)
 
   original_cwd = os.getcwd()
   agent_folder_abs = os.path.abspath(agent_folder)
@@ -1159,6 +1214,7 @@ def to_agent_engine(
       if not os.path.exists(pkg_src):
         raise click.ClickException(f'extra_packages path not found: {pkg}')
       base = os.path.basename(os.path.normpath(pkg_src))
+      _validate_extra_package_name(pkg, base)
       dst = os.path.join(temp_folder_path, base)
       # The Dockerfile is written after this loop, so it is not on disk yet.
       if os.path.exists(dst) or base == 'Dockerfile':
@@ -1475,6 +1531,7 @@ def to_gke(
     click.ClickException: If a value that reaches the generated Dockerfile is
       unsafe to embed there.
   """
+  _validate_adk_version(adk_version)
   click.secho(
       '\n🚀 Starting ADK Agent Deployment to GKE...', fg='cyan', bold=True
   )

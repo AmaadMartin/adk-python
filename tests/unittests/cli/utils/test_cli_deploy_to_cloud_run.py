@@ -532,3 +532,23 @@ def test_to_cloud_run_shell_quotes_cmd_values(
   )
   assert "--trigger_sources='pubsub; id #'" in dockerfile_content
   assert "--session_service_uri='sqlite:///a; id #'" in dockerfile_content
+
+
+def test_to_cloud_run_rejects_unsafe_adk_version(
+    monkeypatch: pytest.MonkeyPatch,
+    agent_dir: AgentDirFixture,
+    tmp_path: Path,
+) -> None:
+  """An injected adk_version fails before anything is deployed."""
+  src_dir = agent_dir(include_requirements=False, include_env=False)
+  run_recorder = _Recorder()
+  monkeypatch.setattr(subprocess, "run", run_recorder)
+  monkeypatch.setattr(shutil, "rmtree", _Recorder())
+  kwargs = _to_cloud_run_kwargs(src_dir, tmp_path)
+  kwargs["adk_version"] = "1.0\nRUN echo pwned"
+
+  with pytest.raises(click.ClickException, match="--adk_version"):
+    cli_deploy.to_cloud_run(**kwargs)
+
+  assert not run_recorder.calls
+  assert not (tmp_path / "Dockerfile").exists()
