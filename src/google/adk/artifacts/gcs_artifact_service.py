@@ -453,16 +453,8 @@ class GcsArtifactService(BaseArtifactService):
 
     A version that another actor already deleted counts as deleted, so the
     loop tolerates a not-found response and continues with the next version.
-
-    Args:
-        app_name: The name of the application.
-        user_id: The ID of the user.
-        session_id: The ID of the session, or None for a user namespace
-          artifact.
-        filename: The name of the artifact.
     """
-    # google-cloud-storage is an optional extra, so its exception hierarchy is
-    # imported here rather than at module level, as the client is in __init__.
+    # Imported lazily: google-cloud-storage is an optional extra.
     from google.cloud import exceptions as cloud_exceptions  # pylint: disable=g-import-not-at-top
 
     versions = self._list_versions(
@@ -479,10 +471,7 @@ class GcsArtifactService(BaseArtifactService):
       try:
         blob.delete()
       except cloud_exceptions.NotFound:
-        # Already deleted between the listing above and this call -- a
-        # concurrent delete_artifact, another process, or a lifecycle rule.
-        # The caller's postcondition holds, so move on to the next version
-        # instead of abandoning the ones that are left.
+        # Another actor deleted this version between the list and the delete.
         logger.debug(
             "Version %d of artifact %s was already deleted.", version, filename
         )
