@@ -17,6 +17,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import re
 import signal
 import tempfile
 from typing import Any
@@ -26,6 +27,7 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 from urllib.parse import quote
 
+import click
 from fastapi.testclient import TestClient
 from google.adk.a2a import _compat
 from google.adk.agents.base_agent import BaseAgent
@@ -34,6 +36,7 @@ from google.adk.agents.run_config import RunConfig
 from google.adk.artifacts.base_artifact_service import ArtifactVersion
 from google.adk.cli import fast_api as fast_api_module
 from google.adk.cli.fast_api import get_fast_api_app
+from google.adk.errors import ServiceConfigError
 from google.adk.errors.input_validation_error import InputValidationError
 from google.adk.errors.session_not_found_error import SessionNotFoundError
 from google.adk.evaluation.eval_case import EvalCase
@@ -4423,6 +4426,53 @@ def test_create_eval_set_legacy_route_creates_eval_set(
       mock_eval_sets_manager.get_eval_set("test_app", "legacy_eval_set")
       is not None
   )
+
+
+@pytest.mark.parametrize(
+    "app_kwargs, expected_message",
+    [
+        (
+            {"memory_service_uri": "unknown://x"},
+            "Unsupported memory service URI: unknown://x",
+        ),
+        (
+            {"artifact_service_uri": "unknown://x"},
+            "Unsupported artifact service URI: unknown://x",
+        ),
+        (
+            {"eval_storage_uri": "not-a-gs-uri"},
+            "Unsupported evals storage URI: not-a-gs-uri",
+        ),
+        (
+            {"memory_service_uri": "rag://"},
+            "Rag corpus can not be empty.",
+        ),
+        (
+            {"artifact_service_uri": "file://host/p"},
+            "file:// artifact URIs must reference the local filesystem.",
+        ),
+    ],
+)
+def test_get_fast_api_app_raises_service_config_error(
+    tmp_path: Path, app_kwargs: dict[str, str], expected_message: str
+):
+  """An unusable service URI raises ServiceConfigError, not a click error."""
+  with pytest.raises(
+      ServiceConfigError, match=re.escape(expected_message)
+  ) as exc_info:
+    get_fast_api_app(agents_dir=str(tmp_path), web=False, **app_kwargs)
+
+  assert not isinstance(exc_info.value, click.ClickException)
+
+
+def test_get_fast_api_app_service_config_error_is_catchable_as_value_error(
+    tmp_path: Path,
+):
+  """An embedder can catch the failure with a plain except ValueError."""
+  with pytest.raises(ValueError, match="Unsupported memory service URI"):
+    get_fast_api_app(
+        agents_dir=str(tmp_path), web=False, memory_service_uri="unknown://x"
+    )
 
 
 if __name__ == "__main__":

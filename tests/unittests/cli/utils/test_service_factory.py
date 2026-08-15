@@ -26,6 +26,7 @@ from google.adk.cli.service_registry import ServiceRegistry
 from google.adk.cli.utils.local_storage import PerAgentDatabaseSessionService
 from google.adk.cli.utils.local_storage import PerAgentFileArtifactService
 import google.adk.cli.utils.service_factory as service_factory
+from google.adk.errors import ServiceConfigError
 from google.adk.memory.in_memory_memory_service import InMemoryMemoryService
 from google.adk.sessions.database_session_service import DatabaseSessionService
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
@@ -219,12 +220,34 @@ def test_create_artifact_service_raises_on_unknown_scheme_when_strict(
   registry.create_artifact_service.return_value = None
   monkeypatch.setattr(service_factory, "get_service_registry", lambda: registry)
 
-  with pytest.raises(ValueError):
+  with pytest.raises(
+      ServiceConfigError, match="Unsupported artifact service URI"
+  ):
     service_factory.create_artifact_service_from_options(
         base_dir=tmp_path,
         artifact_service_uri="unknown://foo",
         strict_uri=True,
     )
+
+
+def test_create_artifact_service_wraps_registry_value_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  registry = mock.create_autospec(ServiceRegistry, instance=True, spec_set=True)
+  original = ValueError("file:// artifact URIs must include a path component.")
+  registry.create_artifact_service.side_effect = original
+  monkeypatch.setattr(service_factory, "get_service_registry", lambda: registry)
+
+  with pytest.raises(
+      ServiceConfigError, match="must include a path"
+  ) as exc_info:
+    service_factory.create_artifact_service_from_options(
+        base_dir=tmp_path,
+        artifact_service_uri="file://host/path",
+        strict_uri=True,
+    )
+
+  assert exc_info.value.__cause__ is original
 
 
 def test_create_memory_service_uses_registry(tmp_path: Path, monkeypatch):
@@ -269,11 +292,34 @@ def test_create_memory_service_raises_on_unknown_scheme(
   registry.create_memory_service.return_value = None
   monkeypatch.setattr(service_factory, "get_service_registry", lambda: registry)
 
-  with pytest.raises(ValueError):
+  with pytest.raises(
+      ServiceConfigError, match="Unsupported memory service URI"
+  ):
     service_factory.create_memory_service_from_options(
         base_dir=tmp_path,
         memory_service_uri="unknown://foo",
     )
+
+
+def test_create_memory_service_wraps_registry_value_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+  registry = mock.create_autospec(ServiceRegistry, instance=True, spec_set=True)
+  original = ValueError("Rag corpus can not be empty.")
+  registry.create_memory_service.side_effect = original
+  monkeypatch.setattr(service_factory, "get_service_registry", lambda: registry)
+
+  with pytest.raises(ServiceConfigError, match="Rag corpus") as exc_info:
+    service_factory.create_memory_service_from_options(
+        base_dir=tmp_path,
+        memory_service_uri="rag://",
+    )
+
+  assert exc_info.value.__cause__ is original
+
+
+def test_service_config_error_is_value_error() -> None:
+  assert issubclass(ServiceConfigError, ValueError)
 
 
 @pytest.mark.asyncio
