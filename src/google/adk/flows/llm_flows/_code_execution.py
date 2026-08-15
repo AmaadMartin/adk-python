@@ -233,7 +233,7 @@ async def _run_pre_processor(
     code_str = _get_data_file_preprocessing_code(file)
     # Skip for unsupported file or executor types.
     if not code_str:
-      return
+      continue
 
     # Emit the code to execute, and add it to the LLM request.
     code_content = types.Content(

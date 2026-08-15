@@ -40,6 +40,7 @@ from google.adk.flows.llm_flows._code_execution import response_processor
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
+from pydantic import Field
 import pytest
 
 from ... import testing_utils
@@ -75,6 +76,20 @@ class _RecordingCodeExecutor(BaseCodeExecutor):
     self.record.thread = threading.current_thread()
     self.started.set()
     self.record.released = self.release.wait(timeout=2)
+    return CodeExecutionResult(stdout='ok')
+
+
+class _CapturingCodeExecutor(BaseCodeExecutor):
+  """A code executor that records every execution input it receives."""
+
+  executions: list[CodeExecutionInput] = Field(default_factory=list)
+
+  def execute_code(
+      self,
+      invocation_context,
+      code_execution_input: CodeExecutionInput,
+  ) -> CodeExecutionResult:
+    self.executions.append(code_execution_input)
     return CodeExecutionResult(stdout='ok')
 
 
@@ -362,6 +377,60 @@ async def test_pre_processor_runs_execute_code_off_the_loop():
   ]
 
   assert record.thread is not threading.main_thread()
+
+
+@pytest.mark.asyncio
+async def test_pre_processor_skips_unsupported_file_and_still_processes_csv():
+  """An unsupported input file must not starve the other files of processing."""
+  code_executor = _CapturingCodeExecutor(optimize_data_file=True)
+  agent = Agent(name='test_agent', code_executor=code_executor)
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content='test message'
+  )
+  # `mime_type` defaults to 'text/plain', which has no preprocessing code.
+  CodeExecutorContext(invocation_context.session.state).add_input_files(
+      [File(name='notes.txt', content='bm90ZXM=')]
+  )
+
+  llm_request = LlmRequest(
+      contents=[
+          types.Content(
+              role='user',
+              parts=[
+                  types.Part(
+                      inline_data=types.Blob(
+                          mime_type='text/csv',
+                          data=b'col1,col2\n1,2\n',
+                      )
+                  )
+              ],
+          )
+      ]
+  )
+
+  events = [
+      event
+      async for event in request_processor.run_async(
+          invocation_context, llm_request
+      )
+  ]
+
+  event_texts = [
+      part.text
+      for event in events
+      for part in (event.content.parts if event.content else [])
+      if part.text
+  ]
+  assert 'Processing input file: `data_1_1.csv`' in event_texts
+  assert not any('notes.txt' in text for text in event_texts)
+  assert [
+      [file.name for file in execution.input_files]
+      for execution in code_executor.executions
+  ] == [['data_1_1.csv']]
+  processed_file_names = CodeExecutorContext(
+      invocation_context.session.state
+  ).get_processed_file_names()
+  assert processed_file_names == ['data_1_1.csv']
 
 
 def test_get_content_as_bytes_returns_bytes_unchanged():
