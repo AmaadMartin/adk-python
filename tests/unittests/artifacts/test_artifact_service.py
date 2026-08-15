@@ -36,6 +36,7 @@ from google.adk.artifacts.file_artifact_service import FileArtifactService
 from google.adk.artifacts.gcs_artifact_service import GcsArtifactService
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.errors.input_validation_error import InputValidationError
+from google.cloud.exceptions import Forbidden
 from google.cloud.exceptions import NotFound
 from google.genai import types
 import pytest
@@ -2124,6 +2125,77 @@ async def test_gcs_load_artifact_returns_none_for_missing_version() -> None:
       await service.load_artifact(**scope, filename="notes.txt", version=7)
       is None
   )
+
+
+def _vanish_after_delete(blob: MockBlob) -> None:
+  """Makes a blob answer a 404, as GCS does once the object is gone."""
+  original_delete = blob.delete
+
+  def _delete_already_gone() -> None:
+    original_delete()
+    raise NotFound(f"No such object: {blob.name}")
+
+  blob.delete = _delete_already_gone
+
+
+@pytest.mark.asyncio
+async def test_gcs_delete_artifact_tolerates_version_deleted_concurrently() -> (
+    None
+):
+  """A version that vanishes between the list and the delete is not an error."""
+  service = mock_gcs_artifact_service()
+  scope = {"app_name": "app", "user_id": "user1", "session_id": "sess1"}
+  for text in ("v0", "v1"):
+    await service.save_artifact(
+        **scope, filename="notes.txt", artifact=types.Part.from_text(text=text)
+    )
+
+  # Version 0 disappears after _list_versions has already reported it.
+  _vanish_after_delete(service.bucket.blob("app/user1/sess1/notes.txt/0"))
+
+  await service.delete_artifact(**scope, filename="notes.txt")
+
+  # Version 1 is gone too, so the 404 did not abort the loop.
+  assert await service.list_versions(**scope, filename="notes.txt") == []
+
+
+@pytest.mark.asyncio
+async def test_gcs_delete_artifact_tolerates_missing_user_namespaced_version() -> (
+    None
+):
+  """The same race on a user-namespaced artifact is also not an error."""
+  service = mock_gcs_artifact_service()
+  scope = {"app_name": "app", "user_id": "user1"}
+  for text in ("v0", "v1"):
+    await service.save_artifact(
+        **scope,
+        filename="user:notes.txt",
+        artifact=types.Part.from_text(text=text),
+    )
+
+  _vanish_after_delete(service.bucket.blob("app/user1/user/user:notes.txt/0"))
+
+  await service.delete_artifact(**scope, filename="user:notes.txt")
+
+  assert await service.list_versions(**scope, filename="user:notes.txt") == []
+
+
+@pytest.mark.asyncio
+async def test_gcs_delete_artifact_propagates_permission_error() -> None:
+  """A non-404 storage failure still surfaces to the caller."""
+  service = mock_gcs_artifact_service()
+  scope = {"app_name": "app", "user_id": "user1", "session_id": "sess1"}
+  await service.save_artifact(
+      **scope, filename="notes.txt", artifact=types.Part.from_text(text="v0")
+  )
+
+  def _denied() -> None:
+    raise Forbidden("caller lacks storage.objects.delete")
+
+  service.bucket.blob("app/user1/sess1/notes.txt/0").delete = _denied
+
+  with pytest.raises(Forbidden, match="storage.objects.delete"):
+    await service.delete_artifact(**scope, filename="notes.txt")
 
 
 @pytest.mark.asyncio

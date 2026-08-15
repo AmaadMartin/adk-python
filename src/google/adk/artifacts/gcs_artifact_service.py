@@ -449,6 +449,10 @@ class GcsArtifactService(BaseArtifactService):
       session_id: Optional[str],
       filename: str,
   ) -> None:
+    # Deferred for the same reason as google.cloud.storage in __init__:
+    # google-cloud-storage is an optional dependency of ADK.
+    from google.cloud import exceptions as cloud_exceptions  # pylint: disable=g-import-not-at-top
+
     versions = self._list_versions(
         app_name=app_name,
         user_id=user_id,
@@ -460,8 +464,14 @@ class GcsArtifactService(BaseArtifactService):
           app_name, user_id, filename, version, session_id
       )
       blob = self.bucket.blob(blob_name)
-      blob.delete()
-    return
+      try:
+        blob.delete()
+      except cloud_exceptions.NotFound:
+        # The version was listed but is already gone, because of a concurrent
+        # delete or a bucket lifecycle rule. The caller wanted the artifact
+        # gone either way, so deletion stays idempotent here as it is for the
+        # other artifact services.
+        logger.debug("Blob %s was already deleted, skipping.", blob_name)
 
   def _list_versions(
       self,
