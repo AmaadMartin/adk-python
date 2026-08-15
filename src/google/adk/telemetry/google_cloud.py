@@ -264,12 +264,26 @@ def _get_gcp_metrics_exporter(
 def _get_gcp_logs_exporter(
     project_id: str,
 ) -> LogRecordProcessor | None:
+  """Returns the Cloud Logging processor for the given project.
+
+  Returns None if the Cloud Logging exporter package is unavailable.
+
+  Args:
+    project_id: Project to which to write logs.
+  """
   if os.getenv("GOOGLE_CLOUD_AGENT_ENGINE_ID"):
     return _get_agent_engine_logs_exporter(
         project_id=project_id,
     )
 
-  from opentelemetry.exporter.cloud_logging import CloudLoggingExporter
+  try:
+    from opentelemetry.exporter.cloud_logging import CloudLoggingExporter
+  except (ImportError, AttributeError):
+    logger.warning(
+        "opentelemetry-exporter-gcp-logging is not installed; log export to"
+        " Google Cloud is disabled."
+    )
+    return None
 
   default_log_name = os.environ.get(
       _GCP_LOG_NAME_ENV_VARIABLE_NAME, _DEFAULT_LOG_NAME

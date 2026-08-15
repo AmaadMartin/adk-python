@@ -25,6 +25,7 @@ from google.adk.telemetry.google_cloud import _DEFAULT_MTLS_TELEMETRY_TRACES_ENP
 from google.adk.telemetry.google_cloud import _DEFAULT_TELEMETRY_METRICS_ENDPOINT
 from google.adk.telemetry.google_cloud import _DEFAULT_TELEMETRY_TRACES_ENPOINT
 from google.adk.telemetry.google_cloud import _get_api_endpoint
+from google.adk.telemetry.google_cloud import _get_gcp_logs_exporter
 from google.adk.telemetry.google_cloud import _get_gcp_metrics_exporter
 from google.adk.telemetry.google_cloud import _get_gcp_otlp_metric_exporter
 from google.adk.telemetry.google_cloud import _get_gcp_span_exporter
@@ -469,3 +470,91 @@ def test_agent_engine_uses_only_request_driven_reader(
 
   assert otel_hooks.metric_readers == [fake_state.reader]
   assert otel_hooks.span_processors == [fake_state.span_processor]
+
+
+def test_get_gcp_logs_exporter_none_when_cloud_logging_unavailable(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+  """A missing Cloud Logging exporter package disables logs instead of raising."""
+  monkeypatch.delenv("GOOGLE_CLOUD_AGENT_ENGINE_ID", raising=False)
+  # The package is installed in the test environment, so the import only fails
+  # once this exact module is masked out of sys.modules.
+  masked_modules = {"opentelemetry.exporter.cloud_logging": None}
+
+  with mock.patch.dict("sys.modules", masked_modules):
+    assert _get_gcp_logs_exporter(project_id="test-project") is None
+
+  assert "opentelemetry-exporter-gcp-logging" in caplog.text
+
+
+def test_get_gcp_exporters_skips_log_processor_when_logs_exporter_is_none(
+    monkeypatch: pytest.MonkeyPatch,
+):
+  """A disabled logs exporter must not put None into log_record_processors."""
+  monkeypatch.setattr("google.auth.default", lambda: ("", "project-id"))
+  monkeypatch.setattr(
+      "google.adk.telemetry.google_cloud._get_gcp_logs_exporter",
+      lambda project_id: None,
+  )
+
+  otel_hooks = get_gcp_exporters(enable_cloud_logging=True)
+
+  assert otel_hooks.log_record_processors == []
+
+
+def test_get_gcp_logs_exporter_delegates_on_agent_engine(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+  """On Agent Engine the new guard must not run: that branch has its own
+  exporter and its own guard."""
+  monkeypatch.setenv("GOOGLE_CLOUD_AGENT_ENGINE_ID", "engine-id")
+  agent_engine_processor = mock.MagicMock(name="agent_engine_processor")
+  monkeypatch.setattr(
+      "google.adk.telemetry.google_cloud._get_agent_engine_logs_exporter",
+      lambda project_id: agent_engine_processor,
+  )
+  masked_modules = {"opentelemetry.exporter.cloud_logging": None}
+
+  with mock.patch.dict("sys.modules", masked_modules):
+    processor = _get_gcp_logs_exporter(project_id="test-project")
+
+  assert processor is agent_engine_processor
+  assert "opentelemetry-exporter-gcp-logging" not in caplog.text
+
+
+@pytest.mark.parametrize(
+    "log_name_env_val, expected_log_name",
+    [
+        (None, "adk-otel"),
+        ("custom", "custom"),
+    ],
+)
+@mock.patch(
+    "opentelemetry.exporter.cloud_logging.CloudLoggingExporter", autospec=True
+)
+@mock.patch(
+    "google.adk.telemetry.google_cloud.BatchLogRecordProcessor", autospec=True
+)
+def test_get_gcp_logs_exporter_wraps_cloud_logging_exporter(
+    mock_batch: mock.MagicMock,
+    mock_exporter: mock.MagicMock,
+    log_name_env_val: Optional[str],
+    expected_log_name: str,
+    monkeypatch: pytest.MonkeyPatch,
+):
+  """The available exporter is built for the project and wrapped for batching."""
+  monkeypatch.delenv("GOOGLE_CLOUD_AGENT_ENGINE_ID", raising=False)
+  if log_name_env_val is None:
+    monkeypatch.delenv("GOOGLE_CLOUD_DEFAULT_LOG_NAME", raising=False)
+  else:
+    monkeypatch.setenv("GOOGLE_CLOUD_DEFAULT_LOG_NAME", log_name_env_val)
+
+  processor = _get_gcp_logs_exporter(project_id="test-project")
+
+  mock_exporter.assert_called_once_with(
+      project_id="test-project", default_log_name=expected_log_name
+  )
+  mock_batch.assert_called_once_with(mock_exporter.return_value)
+  assert processor is mock_batch.return_value
