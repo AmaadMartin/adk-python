@@ -65,8 +65,11 @@ def _patch_types_and_runner(monkeypatch: pytest.MonkeyPatch) -> None:
   # Dummy Part / Content
   class _Part:
 
-    def __init__(self, text: str | None = "") -> None:
+    def __init__(
+        self, text: str | None = "", function_response: Any = None
+    ) -> None:
       self.text = text
+      self.function_response = function_response
 
   class _Content:
 
@@ -576,19 +579,6 @@ async def test_run_interactively_whitespace_and_exit(
   assert any("echo:hello" in m for m in echoed)
 
 
-def _eof_after(answers: List[str]):
-  """Returns an input() stand-in that replays `answers`, then raises EOFError."""
-  replies = iter(answers)
-
-  def _fake_input(*_a: Any, **_k: Any) -> str:
-    try:
-      return next(replies)
-    except StopIteration as e:
-      raise EOFError() from e
-
-  return _fake_input
-
-
 @pytest.mark.asyncio
 async def test_run_interactively_exits_on_eof(
     monkeypatch: pytest.MonkeyPatch,
@@ -598,7 +588,9 @@ async def test_run_interactively_exits_on_eof(
   sess = await session_service.create_session(app_name="dummy", user_id="u")
 
   # fake user input: 'hello' -> Ctrl-D
-  monkeypatch.setattr("builtins.input", _eof_after(["hello"]))
+  monkeypatch.setattr(
+      "builtins.input", mock.Mock(side_effect=["hello", EOFError])
+  )
 
   closed = {"value": False}
 
@@ -636,7 +628,9 @@ async def test_run_interactively_exits_on_eof_at_hitl_prompt(
   sess = await session_service.create_session(app_name="dummy", user_id="u")
 
   # fake user input: 'hello' -> Ctrl-D at the HITL prompt that follows.
-  monkeypatch.setattr("builtins.input", _eof_after(["hello"]))
+  monkeypatch.setattr(
+      "builtins.input", mock.Mock(side_effect=["hello", EOFError])
+  )
 
   runs: List[Any] = []
   closed: List[bool] = []
@@ -689,15 +683,9 @@ async def test_run_interactively_answers_hitl_prompt_then_exits_on_eof(
   sess = await session_service.create_session(app_name="dummy", user_id="u")
 
   # fake user input: 'hello' -> 'yes' at the HITL prompt -> Ctrl-D
-  monkeypatch.setattr("builtins.input", _eof_after(["hello", "yes"]))
-
-  class _Part:
-
-    def __init__(self, text: Any = None, function_response: Any = None) -> None:
-      self.text = text
-      self.function_response = function_response
-
-  monkeypatch.setattr(cli.types, "Part", _Part)
+  monkeypatch.setattr(
+      "builtins.input", mock.Mock(side_effect=["hello", "yes", EOFError])
+  )
 
   runs: List[Any] = []
   closed: List[bool] = []
