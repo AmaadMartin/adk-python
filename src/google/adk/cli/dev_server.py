@@ -31,6 +31,7 @@ network, and never use it for a production or multi-user deployment.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import logging
 import os
@@ -72,6 +73,7 @@ from ..evaluation.eval_metrics import EvalStatus
 from ..evaluation.eval_metrics import MetricInfo
 from ..evaluation.eval_result import EvalSetResult
 from ..evaluation.eval_set import EvalSet
+from ..utils._dependency import missing_extra
 from ..utils._telemetry_config import read_telemetry_consent
 from ..utils._telemetry_config import write_telemetry_consent
 from .api_server import ApiServer
@@ -826,6 +828,10 @@ class DevServer(ApiServer):
         env["ADK_TEST_FOLDER"] = agent_dir
 
         try:
+          if importlib.util.find_spec("pytest") is None:
+            await queue.put(str(missing_extra("pytest", "test")) + "\n")
+            return
+
           process = await asyncio.create_subprocess_exec(
               *cmd_args,
               stdout=subprocess.PIPE,

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import builtins
 import hashlib
+import importlib.util
 import json
 import logging
 import os
@@ -2636,6 +2637,27 @@ def test_cli_test_exits_with_the_pytest_return_code(
   result = CliRunner().invoke(cli_tools_click.main, ["test", str(tmp_path)])
 
   assert result.exit_code == 3
+
+
+def test_cli_test_names_the_test_extra_when_pytest_is_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fake_pytest_run
+) -> None:
+  """Without pytest the command names the extra instead of spawning a child."""
+  real_find_spec = importlib.util.find_spec
+
+  def _fake_find_spec(name: str, *args: Any, **kwargs: Any):
+    if name == "pytest":
+      return None
+    return real_find_spec(name, *args, **kwargs)
+
+  monkeypatch.setattr(importlib.util, "find_spec", _fake_find_spec)
+
+  result = CliRunner().invoke(cli_tools_click.main, ["test", str(tmp_path)])
+
+  assert result.exit_code == 1
+  assert "pip install google-adk[test]" in result.output
+  assert "No module named pytest" not in result.output
+  assert fake_pytest_run.runs == []
 
 
 def test_cli_test_rebuild_skips_the_pytest_subprocess(

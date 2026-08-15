@@ -15,8 +15,10 @@
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import os
+from typing import Any
 from unittest.mock import AsyncMock
 from unittest.mock import MagicMock
 from unittest.mock import patch
@@ -155,3 +157,35 @@ def test_run_tests(test_client):
     content = response.content
     assert b"line1\n" in content
     assert b"line2\n" in content
+
+
+def test_run_tests_without_pytest_streams_the_test_extra(test_client):
+  """Without pytest the endpoint streams the extra and spawns no child."""
+  real_find_spec = importlib.util.find_spec
+
+  def _fake_find_spec(name: str, *args: Any, **kwargs: Any):
+    if name == "pytest":
+      return None
+    return real_find_spec(name, *args, **kwargs)
+
+  # The fake child exits immediately, so a regression that spawns it fails the
+  # assertions below instead of blocking the stream.
+  mock_process = MagicMock()
+  mock_process.stdout.readline = AsyncMock(return_value=b"")
+  mock_process.wait = AsyncMock(return_value=0)
+
+  with (
+      patch.object(importlib.util, "find_spec", _fake_find_spec),
+      patch(
+          "google.adk.cli.dev_server.asyncio.create_subprocess_exec",
+          new_callable=AsyncMock,
+      ) as mock_create_subprocess,
+  ):
+    mock_create_subprocess.return_value = mock_process
+
+    response = test_client.post("/dev/apps/test_app/tests/run", json={})
+
+    assert response.status_code == 200
+    assert b"pip install google-adk[test]" in response.content
+    assert b"No module named pytest" not in response.content
+    mock_create_subprocess.assert_not_called()
