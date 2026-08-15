@@ -208,9 +208,10 @@ async def run_interactively(
   while True:
     if next_message is None:
       query = input('[user]: ')
-      if not query or not query.strip():
+      trimmed = query.strip()
+      if not trimmed:
         continue
-      if query == 'exit':
+      if trimmed == 'exit':
         break
       next_message = types.Content(role='user', parts=[types.Part(text=query)])
 
