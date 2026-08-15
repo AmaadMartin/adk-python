@@ -430,15 +430,11 @@ def credential_to_param(
 def dict_to_auth_scheme(data: Dict[str, Any]) -> AuthScheme:
   """Converts a dictionary to a FastAPI AuthScheme object.
 
+  An `openIdConnect` dictionary carrying both flattened endpoints selects
+  `OpenIdConnectWithConfig`; any other `type` selects `CustomAuthScheme`.
+
   Args:
       data: The dictionary representing the security scheme.
-
-  An `openIdConnect` dictionary that carries the flattened endpoints
-  (`authorization_endpoint` and `token_endpoint`) becomes an
-  `OpenIdConnectWithConfig`, so the endpoints stay typed fields instead of
-  pydantic extras. A dictionary with any other `type` becomes a
-  `CustomAuthScheme`; `CredentialManager` rehydrates that into the registered
-  subclass.
 
   Returns:
       A AuthScheme object (APIKey, HTTPBase, HTTPBearer, OAuth2,
