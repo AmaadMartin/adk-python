@@ -68,23 +68,14 @@ def _restore_security_scheme_aliases(value: Any) -> Any:
   by default, which would otherwise leave the union unable to restore an
   ``APIKey``: no member accepts a ``type_`` key, so the payload falls through
   to whichever member absorbs every key as an extra.
-
-  Args:
-    value: The value being validated into an ``AuthScheme``.
-
-  Returns:
-    ``value`` unchanged unless it is a mapping that carries a field name whose
-    alias is absent, in which case a copy with the alias restored.
   """
   if not isinstance(value, dict):
     return value
-  restored = None
+  restored = dict(value)
   for field_name, alias in _FIELD_NAME_TO_ALIAS.items():
-    if field_name in value and alias not in value:
-      if restored is None:
-        restored = dict(value)
+    if field_name in restored and alias not in restored:
       restored[alias] = restored.pop(field_name)
-  return value if restored is None else restored
+  return restored
 
 
 # AuthSchemes contains SecuritySchemes from OpenAPI 3.0, an extra flattened
