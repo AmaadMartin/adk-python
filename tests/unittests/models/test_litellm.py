@@ -4211,9 +4211,10 @@ async def test_generate_content_async_stream_grounding_metadata(
 
 
 @pytest.mark.asyncio
-async def test_generate_content_async_stream_with_usage_metadata(
+async def test_generate_content_async_stream_sets_model_version(
     mock_completion, lite_llm_instance
 ):
+  """Tests that every streamed response carries the model version."""
 
   mock_completion.return_value = iter(STREAMING_MODEL_RESPONSE)
 
@@ -4313,6 +4314,7 @@ async def test_generate_content_async_stream_sets_finish_reason(
 async def test_generate_content_async_stream_with_usage_metadata(
     mock_completion, lite_llm_instance
 ):
+  """Tests that usage metadata is propagated in streaming mode."""
 
   streaming_model_response_with_usage_metadata = [
       *STREAMING_MODEL_RESPONSE,
@@ -4381,7 +4383,7 @@ async def test_generate_content_async_stream_with_usage_metadata(
 
 
 @pytest.mark.asyncio
-async def test_generate_content_async_stream_with_usage_metadata(
+async def test_generate_content_async_stream_with_cached_prompt_tokens(
     mock_completion, lite_llm_instance
 ):
   """Tests that cached prompt tokens are propagated in streaming mode."""
