@@ -503,6 +503,27 @@ def test_get_gcp_exporters_skips_log_processor_when_logs_exporter_is_none(
   assert otel_hooks.log_record_processors == []
 
 
+def test_get_gcp_logs_exporter_delegates_on_agent_engine(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+):
+  """On Agent Engine the new guard must not run: that branch has its own
+  exporter and its own guard."""
+  monkeypatch.setenv("GOOGLE_CLOUD_AGENT_ENGINE_ID", "engine-id")
+  agent_engine_processor = mock.MagicMock(name="agent_engine_processor")
+  monkeypatch.setattr(
+      "google.adk.telemetry.google_cloud._get_agent_engine_logs_exporter",
+      lambda project_id: agent_engine_processor,
+  )
+  masked_modules = {"opentelemetry.exporter.cloud_logging": None}
+
+  with mock.patch.dict("sys.modules", masked_modules):
+    processor = _get_gcp_logs_exporter(project_id="test-project")
+
+  assert processor is agent_engine_processor
+  assert "opentelemetry-exporter-gcp-logging" not in caplog.text
+
+
 @pytest.mark.parametrize(
     "log_name_env_val, expected_log_name",
     [
