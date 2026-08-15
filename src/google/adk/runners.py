@@ -2235,11 +2235,15 @@ class Runner:
     run_config = run_config or RunConfig()
     invocation_id = invocation_id or new_invocation_context_id()
 
-    if run_config.support_cfc and hasattr(self.agent, 'canonical_model'):
+    if run_config.support_cfc and hasattr(self.agent, 'canonical_live_model'):
       from .agents.llm_agent import LlmAgent
 
       cfc_agent = cast(LlmAgent, self.agent)
-      model_name = cfc_agent.canonical_model.model
+      # CFC runs over the live API (see RunConfig.support_cfc), so the model
+      # that serves the run is canonical_live_model. It differs from
+      # canonical_model only when no agent in the chain sets model, where the
+      # two fall back to different class defaults.
+      model_name = cfc_agent.canonical_live_model.model
       if not model_name.startswith('gemini-2'):
         raise ValueError(
             f'CFC is not supported for model: {model_name} in agent:'
