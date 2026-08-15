@@ -210,7 +210,7 @@ async def run_interactively(
       query = input('[user]: ')
       if not query or not query.strip():
         continue
-      if query == 'exit':
+      if query.strip() == 'exit':
         break
       next_message = types.Content(role='user', parts=[types.Part(text=query)])
 

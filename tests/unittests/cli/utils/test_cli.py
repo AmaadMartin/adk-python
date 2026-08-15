@@ -525,3 +525,51 @@ async def test_run_interactively_whitespace_and_exit(
 
   # verify: assistant echoed once with 'echo:hello'
   assert any("echo:hello" in m for m in echoed)
+
+
+@pytest.mark.asyncio
+async def test_run_interactively_exits_on_padded_exit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """run_interactively should exit on 'exit' that carries whitespace."""
+  session_service = InMemorySessionService()
+  sess = await session_service.create_session(app_name="dummy", user_id="u")
+  artifact_service = InMemoryArtifactService()
+  credential_service = InMemoryCredentialService()
+  root_agent = BaseAgent(name="root")
+
+  # fake user input: ' exit ' first, then a bare 'exit' that bounds the loop so
+  # an unfixed comparison fails the assertion below instead of hanging.
+  answers = iter([" exit ", "exit"])
+  monkeypatch.setattr("builtins.input", lambda *_a, **_k: next(answers, "exit"))
+
+  runs: List[Tuple[Tuple[Any, ...], Dict[str, Any]]] = []
+  closed: List[bool] = []
+
+  class _RecordingRunner:
+    """Runner fake that records every turn instead of calling a model."""
+
+    def __init__(self, *a: Any, **k: Any) -> None:
+      ...
+
+    async def run_async(self, *a: Any, **k: Any):
+      runs.append((a, k))
+      return
+      yield  # keeps run_async an async generator for Aclosing
+
+    async def close(self, *a: Any, **k: Any) -> None:
+      closed.append(True)
+
+  monkeypatch.setattr(cli, "Runner", _RecordingRunner)
+
+  echoed: list[str] = []
+  monkeypatch.setattr(click, "echo", lambda msg: echoed.append(msg))
+
+  await cli.run_interactively(
+      root_agent, artifact_service, sess, session_service, credential_service
+  )
+
+  # verify: no turn reached the runner, nothing was printed, runner closed
+  assert runs == []
+  assert echoed == []
+  assert closed == [True]
