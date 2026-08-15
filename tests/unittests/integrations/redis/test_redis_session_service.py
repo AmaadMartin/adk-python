@@ -16,6 +16,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 
 from google.adk.errors.already_exists_error import AlreadyExistsError
@@ -24,6 +25,7 @@ from google.adk.events.event import EventActions
 from google.adk.integrations.redis._config import RedisSessionServiceConfig
 from google.adk.integrations.redis._redis_session_service import RedisSessionService
 from google.adk.sessions.base_session_service import GetSessionConfig
+from google.adk.sessions.session import Session
 import pytest
 
 
@@ -258,6 +260,94 @@ async def test_list_sessions(session_service):
   resp_all = await session_service.list_sessions(app_name="app1")
   session_ids_all = {s.id for s in resp_all.sessions}
   assert session_ids_all == {"s1", "s2", "s3"}
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_ordered_by_last_update_time(session_service):
+  for session_id in ("a", "b", "c"):
+    await session_service.create_session(
+        app_name="app1",
+        user_id="u1",
+        session_id=session_id,
+    )
+
+  session_a = await session_service.get_session(
+      app_name="app1", user_id="u1", session_id="a"
+  )
+  assert session_a is not None
+  # Guarantees the bumped timestamp is strictly greater than the creation
+  # timestamps, even on a coarse clock.
+  await asyncio.sleep(0.01)
+  await session_service.append_event(
+      session_a, Event(invocation_id="invocation", author="user")
+  )
+
+  resp = await session_service.list_sessions(app_name="app1", user_id="u1")
+
+  assert [s.id for s in resp.sessions] == ["b", "c", "a"]
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_tie_break_is_deterministic(
+    fake_redis, session_service
+):
+  # Sessions that share a timestamp, seeded in an order that does not match
+  # the expected output.
+  seeded = (
+      ("u2", "s1", 100.0),
+      ("u1", "s2", 100.0),
+      ("u1", "s1", 100.0),
+      ("u1", "s0", 50.0),
+  )
+  for user_id, session_id, last_update_time in seeded:
+    await fake_redis.set(
+        session_service._session_key("app1", user_id, session_id),
+        Session(
+            id=session_id,
+            app_name="app1",
+            user_id=user_id,
+            state={},
+            events=[],
+            last_update_time=last_update_time,
+        ).model_dump_json(),
+    )
+
+  resp = await session_service.list_sessions(app_name="app1")
+
+  assert [(s.user_id, s.id) for s in resp.sessions] == [
+      ("u1", "s0"),
+      ("u1", "s1"),
+      ("u1", "s2"),
+      ("u2", "s1"),
+  ]
+
+
+@pytest.mark.asyncio
+async def test_list_sessions_ordered_across_users(session_service):
+  for user_id, session_id in (
+      ("u1", "s1"),
+      ("u2", "s2"),
+      ("u1", "s3"),
+      ("u2", "s4"),
+  ):
+    await session_service.create_session(
+        app_name="app1",
+        user_id=user_id,
+        session_id=session_id,
+    )
+
+  session_s2 = await session_service.get_session(
+      app_name="app1", user_id="u2", session_id="s2"
+  )
+  assert session_s2 is not None
+  await asyncio.sleep(0.01)
+  await session_service.append_event(
+      session_s2, Event(invocation_id="invocation", author="user")
+  )
+
+  resp = await session_service.list_sessions(app_name="app1")
+
+  assert [s.id for s in resp.sessions] == ["s1", "s3", "s4", "s2"]
 
 
 @pytest.mark.asyncio
