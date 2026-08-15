@@ -28,14 +28,18 @@ from google.adk import runners
 from google.adk.agents.base_agent import BaseAgent
 from google.adk.agents.context_cache_config import ContextCacheConfig
 from google.adk.agents.invocation_context import InvocationContext
+from google.adk.agents.live_request_queue import LiveRequestQueue
 from google.adk.agents.llm_agent import LlmAgent
 from google.adk.agents.run_config import RunConfig
 from google.adk.apps.app import App
 from google.adk.apps.app import ResumabilityConfig
 from google.adk.artifacts.in_memory_artifact_service import InMemoryArtifactService
 from google.adk.cli.utils.agent_loader import AgentLoader
+from google.adk.code_executors.built_in_code_executor import BuiltInCodeExecutor
 from google.adk.errors.session_not_found_error import SessionNotFoundError
 from google.adk.events.event import Event
+from google.adk.models.base_llm import BaseLlm
+from google.adk.models.registry import LLMRegistry
 from google.adk.plugins.base_plugin import BasePlugin
 from google.adk.runners import Runner
 from google.adk.sessions.base_session_service import GetSessionConfig
@@ -2401,6 +2405,168 @@ async def test_run_async_rejects_user_function_call():
     async with aclosing(agen) as a:
       async for _ in a:
         pass
+
+
+class LegacyCanonicalModelAgent(MockAgent):
+  """A duck-typed agent with only the non-live canonical model property."""
+
+  @property
+  def canonical_model(self) -> BaseLlm:
+    return LLMRegistry.new_llm("gemini-1.5-pro")
+
+
+class TestRunnerCfcGate:
+  """CFC runs over the live API, so the gate must read the live model."""
+
+  def setup_method(self):
+    self.session_service = InMemorySessionService()
+    self.artifact_service = InMemoryArtifactService()
+    self.session = Session(
+        id=TEST_SESSION_ID,
+        app_name=TEST_APP_ID,
+        user_id=TEST_USER_ID,
+        events=[],
+    )
+
+  def _runner(self, agent: BaseAgent) -> Runner:
+    return Runner(
+        app_name=TEST_APP_ID,
+        agent=agent,
+        session_service=self.session_service,
+        artifact_service=self.artifact_service,
+    )
+
+  async def test_run_live_cfc_error_names_the_live_default_model(self):
+    """A model-less agent must be refused by the live model id it would use."""
+    agent = LlmAgent(name="cfc_agent")
+    runner = self._runner(agent)
+    await self.session_service.create_session(
+        app_name=TEST_APP_ID, user_id=TEST_USER_ID, session_id=TEST_SESSION_ID
+    )
+
+    agen = runner.run_live(
+        user_id=TEST_USER_ID,
+        session_id=TEST_SESSION_ID,
+        live_request_queue=LiveRequestQueue(),
+        run_config=RunConfig(support_cfc=True),
+    )
+    with pytest.raises(
+        ValueError, match=LlmAgent.DEFAULT_LIVE_MODEL
+    ) as excinfo:
+      await agen.__anext__()
+    await agen.aclose()
+
+    assert LlmAgent.DEFAULT_MODEL not in str(excinfo.value)
+
+  def test_new_invocation_context_for_live_validates_the_live_model(self):
+    """The live factory accepts an agent whose live default is supported."""
+    original_live_model = LlmAgent._default_live_model
+    LlmAgent.set_default_live_model("gemini-2.0-flash-live-001")
+    try:
+      agent = LlmAgent(name="cfc_agent")
+      runner = self._runner(agent)
+
+      context = runner._new_invocation_context_for_live(
+          self.session,
+          live_request_queue=LiveRequestQueue(),
+          run_config=RunConfig(support_cfc=True),
+      )
+
+      assert isinstance(context, InvocationContext)
+      assert isinstance(agent.code_executor, BuiltInCodeExecutor)
+    finally:
+      LlmAgent.set_default_live_model(original_live_model)
+
+  def test_new_invocation_context_cfc_validates_the_live_model(self):
+    """The async factory gates on the live model too, because CFC goes live."""
+    original_live_model = LlmAgent._default_live_model
+    LlmAgent.set_default_live_model("gemini-2.0-flash-live-001")
+    try:
+      agent = LlmAgent(name="cfc_agent")
+      runner = self._runner(agent)
+
+      context = runner._new_invocation_context(
+          self.session, run_config=RunConfig(support_cfc=True)
+      )
+
+      assert isinstance(context, InvocationContext)
+      assert isinstance(agent.code_executor, BuiltInCodeExecutor)
+    finally:
+      LlmAgent.set_default_live_model(original_live_model)
+
+  def test_cfc_gate_accepts_an_explicit_supported_model(self):
+    """An explicit model resolves the same for both properties."""
+    agent = LlmAgent(name="cfc_agent", model="gemini-2.0-flash-live-001")
+    runner = self._runner(agent)
+
+    context = runner._new_invocation_context(
+        self.session, run_config=RunConfig(support_cfc=True)
+    )
+
+    assert isinstance(context, InvocationContext)
+    assert isinstance(agent.code_executor, BuiltInCodeExecutor)
+
+  def test_cfc_gate_keeps_an_existing_built_in_code_executor(self):
+    """The gate must not replace a code executor the caller already set."""
+    code_executor = BuiltInCodeExecutor()
+    agent = LlmAgent(
+        name="cfc_agent",
+        model="gemini-2.0-flash-live-001",
+        code_executor=code_executor,
+    )
+    runner = self._runner(agent)
+
+    runner._new_invocation_context(
+        self.session, run_config=RunConfig(support_cfc=True)
+    )
+
+    assert agent.code_executor is code_executor
+
+  def test_cfc_gate_rejects_an_explicit_unsupported_model(self):
+    """An explicit unsupported model still raises, naming that model."""
+    agent = LlmAgent(name="cfc_agent", model="gemini-1.5-pro")
+    runner = self._runner(agent)
+
+    with pytest.raises(ValueError, match="gemini-1.5-pro"):
+      runner._new_invocation_context(
+          self.session, run_config=RunConfig(support_cfc=True)
+      )
+
+  def test_cfc_gate_skipped_for_non_llm_agent(self):
+    """A plain BaseAgent has no live model property, so the gate is inert."""
+    agent = MockAgent("plain_agent")
+    runner = self._runner(agent)
+
+    context = runner._new_invocation_context(
+        self.session, run_config=RunConfig(support_cfc=True)
+    )
+
+    assert isinstance(context, InvocationContext)
+
+  def test_cfc_gate_skipped_for_agent_without_live_model_property(self):
+    """An agent CFC cannot run at all is skipped, not rejected here."""
+    agent = LegacyCanonicalModelAgent("legacy_agent")
+    runner = self._runner(agent)
+
+    context = runner._new_invocation_context(
+        self.session, run_config=RunConfig(support_cfc=True)
+    )
+
+    assert isinstance(context, InvocationContext)
+
+  def test_cfc_gate_skipped_when_support_cfc_disabled(self):
+    """Without support_cfc the gate never runs and never sets an executor."""
+    agent = LlmAgent(name="cfc_agent")
+    runner = self._runner(agent)
+
+    context = runner._new_invocation_context_for_live(
+        self.session,
+        live_request_queue=LiveRequestQueue(),
+        run_config=RunConfig(),
+    )
+
+    assert isinstance(context, InvocationContext)
+    assert agent.code_executor is None
 
 
 def test_runner_agent_is_a_class_attribute():
