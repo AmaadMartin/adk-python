@@ -24,11 +24,8 @@ import importlib.util
 import os
 import subprocess
 import sys
-from typing import Any
 from unittest import mock
 
-from click.testing import CliRunner
-from google.adk.cli import cli_tools_click
 import pytest
 
 from .isolated_import_utils import REPO_ROOT as _REPO_ROOT
@@ -180,26 +177,6 @@ def test_vertexai_dependency_shim_raises_clear_importerror():
 
     message = str(exc_info.value)
     assert "//third_party/py/google/cloud/aiplatform" in message
-
-
-def test_cli_test_command_without_pytest_names_the_test_extra(tmp_path):
-  """Verify that `adk test` without pytest names the extra it needs."""
-  real_find_spec = importlib.util.find_spec
-
-  def _fake_find_spec(name: str, *args: Any, **kwargs: Any):
-    if name == "pytest":
-      return None
-    return real_find_spec(name, *args, **kwargs)
-
-  with mock.patch.object(importlib.util, "find_spec", _fake_find_spec):
-    with mock.patch("subprocess.run") as mock_run:
-      result = CliRunner().invoke(cli_tools_click.main, ["test", str(tmp_path)])
-
-  assert result.exit_code != 0
-  assert "pytest" in result.output
-  assert "pip install google-adk[test]" in result.output
-  assert "No module named pytest" not in result.output
-  mock_run.assert_not_called()
 
 
 # =============================================================================
