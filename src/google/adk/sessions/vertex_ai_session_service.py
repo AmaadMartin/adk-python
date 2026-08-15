@@ -48,6 +48,25 @@ logger = logging.getLogger('google_adk.' + __name__)
 _COMPACTION_CUSTOM_METADATA_KEY = '_compaction'
 _USAGE_METADATA_CUSTOM_METADATA_KEY = '_usage_metadata'
 
+_MILLIS_PER_SECOND = 1000.0
+# Compaction field spellings accepted on read, most canonical first. The last
+# entry of each timestamp tuple is the legacy adk-js spelling.
+_COMPACTION_START_KEYS = ('start_timestamp', 'startTimestamp', 'startTime')
+_COMPACTION_END_KEYS = ('end_timestamp', 'endTimestamp', 'endTime')
+_COMPACTION_CONTENT_KEYS = ('compacted_content', 'compactedContent')
+# A timestamp read under one of these keys is epoch milliseconds, because
+# adk-js builds it from `Date.now()`. Every other spelling is epoch seconds.
+_LEGACY_MILLIS_TIMESTAMP_KEYS = frozenset({'startTime', 'endTime'})
+# adk-js JSON round-trips its whole compacted event into `raw_event`, so these
+# compaction fields also arrive at the top level of the raw event. Its
+# `isCompacted` flag is not listed: nothing reads it, and `Event` ignores extra
+# fields, so popping it would only make an empty payload look present.
+_LEGACY_RAW_EVENT_COMPACTION_KEYS = (
+    'startTime',
+    'endTime',
+    'compactedContent',
+)
+
 _SESSION_ID_PATTERN = re.compile(r'^[A-Za-z0-9_-]+$')
 
 
@@ -556,6 +575,126 @@ def _get_raw_event(api_event_obj: object) -> dict[str, Any] | None:
   return None
 
 
+def _read_compaction_field(
+    payload: Mapping[str, Any], keys: tuple[str, ...]
+) -> Any:
+  """Reads a compaction field under the first spelling ``payload`` carries.
+
+  A timestamp read under a legacy adk-js key is scaled to epoch seconds; every
+  other value is returned as it was persisted.
+
+  Args:
+    payload: The persisted compaction payload.
+    keys: The accepted spellings of one field, most canonical first.
+
+  Returns:
+    The value, or ``None`` if the payload carries no spelling of the field.
+  """
+  key = next((candidate for candidate in keys if candidate in payload), None)
+  if key is None:
+    return None
+  if key in _LEGACY_MILLIS_TIMESTAMP_KEYS:
+    return payload[key] / _MILLIS_PER_SECOND
+  return payload[key]
+
+
+def _normalize_compaction_payload(
+    payload: Any, *, event_name: str
+) -> Optional[EventCompaction]:
+  """Reads a persisted compaction payload in any spelling ADK has written.
+
+  Accepts the canonical ``adk-python`` payload (``start_timestamp`` or
+  ``startTimestamp``, with a ``Content`` summary) and the legacy ``adk-js``
+  payload (``startTime`` / ``endTime`` / ``compactedContent``, with a flat
+  string summary). A timestamp is scaled to seconds only when it was read
+  under a legacy key, because those hold epoch milliseconds by construction:
+  ``adk-js`` derives them from ``Date.now()``. The magnitude of the value is
+  never inspected, so a canonical timestamp is returned unchanged.
+
+  This is a read-compatibility boundary over records another SDK persisted, so
+  an unreadable payload degrades to ``None`` instead of raising. Raising would
+  fail the whole ``get_session`` call and lose the entire session.
+
+  Args:
+    payload: The persisted payload, or ``None`` when the event has none.
+    event_name: The API resource name of the event, for the warning log.
+
+  Returns:
+    The compaction, or ``None`` if the payload is absent or unreadable.
+  """
+  if payload is None:
+    return None
+  if not isinstance(payload, Mapping):
+    logger.warning(
+        'Ignoring the compaction of event %s: expected a mapping, got %s.',
+        event_name,
+        type(payload).__name__,
+    )
+    return None
+
+  content = _read_compaction_field(payload, _COMPACTION_CONTENT_KEYS)
+  try:
+    # Only the canonical keys are forwarded: `EventCompaction` forbids extras,
+    # so foreign keys such as `isCompacted` would defeat the normalization.
+    return EventCompaction.model_validate({
+        'start_timestamp': _read_compaction_field(
+            payload, _COMPACTION_START_KEYS
+        ),
+        'end_timestamp': _read_compaction_field(payload, _COMPACTION_END_KEYS),
+        'compacted_content': (
+            {'role': 'model', 'parts': [{'text': content}]}
+            if isinstance(content, str)
+            else content
+        ),
+    })
+  except (pydantic.ValidationError, TypeError, ValueError) as err:
+    # The payload holds user conversation text, so log only its shape and the
+    # error type. A pydantic ValidationError message quotes the input value,
+    # so it must not reach the log, and neither must a traceback carrying it.
+    logger.warning(
+        'Ignoring an unreadable compaction on event %s; %s, field types: %s.',
+        event_name,
+        type(err).__name__,
+        {key: type(value).__name__ for key, value in payload.items()},
+    )
+    return None
+
+
+def _normalize_raw_event_compaction(
+    event_dict: dict[str, Any], *, event_name: str
+) -> None:
+  """Rewrites the compaction of a raw event dict in place, canonically.
+
+  ``adk-js`` JSON round-trips its whole compacted event into ``raw_event``, so
+  the compaction arrives at the top level of the raw event. A JS process that
+  reads an event and re-appends it also parks the same legacy payload under
+  ``actions.compaction``. Both spellings are normalized here so
+  ``Event.model_validate`` neither drops nor rejects them.
+
+  Args:
+    event_dict: The raw event dict, mutated in place.
+    event_name: The API resource name of the event, for the warning log.
+  """
+  legacy_payload = {
+      key: event_dict.pop(key)
+      for key in _LEGACY_RAW_EVENT_COMPACTION_KEYS
+      if key in event_dict
+  }
+  actions = event_dict.get('actions') or {}
+  if not isinstance(actions, dict):
+    # A non-mapping `actions` is not a compaction problem. Leave it for
+    # `Event.model_validate` to reject.
+    return
+  # The nested payload wins: it is the more specific channel, and a JS
+  # re-append writes the same data to both.
+  compaction = _normalize_compaction_payload(
+      actions.pop('compaction', legacy_payload or None), event_name=event_name
+  )
+  if compaction is not None:
+    actions['compaction'] = compaction
+    event_dict['actions'] = actions
+
+
 def _from_api_event(api_event_obj: vertexai.types.SessionEvent) -> Event:
   """Converts an API event object to an Event object."""
   # Prioritize reading from raw_event to restore full state. Fall back to
@@ -571,6 +710,7 @@ def _from_api_event(api_event_obj: vertexai.types.SessionEvent) -> Event:
     })
     if timestamp_obj:
       event_dict['timestamp'] = timestamp_obj.timestamp()
+    _normalize_raw_event_compaction(event_dict, event_name=api_event_obj.name)
     return Event.model_validate(event_dict)
 
   actions = getattr(api_event_obj, 'actions', None)
@@ -590,7 +730,8 @@ def _from_api_event(api_event_obj: vertexai.types.SessionEvent) -> Event:
     # Extract compaction data stored in custom_metadata.
     # NOTE: This read path must be kept permanently because sessions
     # written before native compaction support store compaction data
-    # in custom_metadata under the compaction metadata key.
+    # in custom_metadata under the compaction metadata key. The payload is
+    # normalized below, because adk-js writes it in a legacy spelling.
     compaction_data = None
     usage_metadata_data = None
     if custom_metadata and (
@@ -627,16 +768,16 @@ def _from_api_event(api_event_obj: vertexai.types.SessionEvent) -> Event:
     renamed_actions_dict = {
         rename_map.get(k, k): v for k, v in actions_dict.items()
     }
-    if compaction_data:
-      renamed_actions_dict['compaction'] = compaction_data
-    event_actions = EventActions.model_validate(renamed_actions_dict)
   else:
-    if compaction_data:
-      event_actions = EventActions(
-          compaction=EventCompaction.model_validate(compaction_data)
-      )
-    else:
-      event_actions = EventActions()
+    renamed_actions_dict = {}
+  actions_compaction = renamed_actions_dict.pop('compaction', None)
+  compaction = _normalize_compaction_payload(
+      compaction_data if compaction_data is not None else actions_compaction,
+      event_name=api_event_obj.name,
+  )
+  if compaction is not None:
+    renamed_actions_dict['compaction'] = compaction
+  event_actions = EventActions.model_validate(renamed_actions_dict)
 
   usage_metadata = None
   if usage_metadata_data:
