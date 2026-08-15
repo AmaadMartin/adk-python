@@ -129,21 +129,21 @@ def _get_otel_exporters() -> OTelHooks:
   if os.getenv(otel_env.OTEL_EXPORTER_OTLP_ENDPOINT) or os.getenv(
       otel_env.OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
   ):
-    if span_processor := _get_otel_span_exporter():
+    if (span_processor := _get_otel_span_exporter()) is not None:
       span_processors.append(span_processor)
 
   metric_readers: list[MetricReader] = []
   if os.getenv(otel_env.OTEL_EXPORTER_OTLP_ENDPOINT) or os.getenv(
       otel_env.OTEL_EXPORTER_OTLP_METRICS_ENDPOINT
   ):
-    if metric_reader := _get_otel_metrics_exporter():
+    if (metric_reader := _get_otel_metrics_exporter()) is not None:
       metric_readers.append(metric_reader)
 
   log_record_processors: list[LogRecordProcessor] = []
   if os.getenv(otel_env.OTEL_EXPORTER_OTLP_ENDPOINT) or os.getenv(
       otel_env.OTEL_EXPORTER_OTLP_LOGS_ENDPOINT
   ):
-    if log_record_processor := _get_otel_logs_exporter():
+    if (log_record_processor := _get_otel_logs_exporter()) is not None:
       log_record_processors.append(log_record_processor)
 
   return OTelHooks(
@@ -153,52 +153,44 @@ def _get_otel_exporters() -> OTelHooks:
   )
 
 
-def _get_otel_span_exporter() -> SpanProcessor | None:
-  """Returns a span processor that exports over OTLP/HTTP.
+def _warn_exporter_unavailable(signal: str, exc: Exception) -> None:
+  """Logs why OTLP export for ``signal`` is off, naming the real failure."""
+  logger.warning(
+      "OTLP %s export is disabled; could not import"
+      " opentelemetry-exporter-otlp-proto-http: %s",
+      signal,
+      exc,
+  )
 
-  Returns None if the OTLP exporter package is unavailable.
-  """
+
+def _get_otel_span_exporter() -> SpanProcessor | None:
+  """Returns a span processor exporting over OTLP/HTTP, None if unavailable."""
   try:
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-  except (ImportError, AttributeError):
-    logger.warning(
-        "opentelemetry-exporter-otlp-proto-http is not installed; OTLP trace"
-        " export is disabled."
-    )
+  except (ImportError, AttributeError) as exc:
+    _warn_exporter_unavailable("trace", exc)
     return None
 
   return BatchSpanProcessor(OTLPSpanExporter())
 
 
 def _get_otel_metrics_exporter() -> MetricReader | None:
-  """Returns a metric reader that exports over OTLP/HTTP.
-
-  Returns None if the OTLP exporter package is unavailable.
-  """
+  """Returns a metric reader exporting over OTLP/HTTP, None if unavailable."""
   try:
     from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
-  except (ImportError, AttributeError):
-    logger.warning(
-        "opentelemetry-exporter-otlp-proto-http is not installed; OTLP metric"
-        " export is disabled."
-    )
+  except (ImportError, AttributeError) as exc:
+    _warn_exporter_unavailable("metric", exc)
     return None
 
   return PeriodicExportingMetricReader(OTLPMetricExporter())
 
 
 def _get_otel_logs_exporter() -> LogRecordProcessor | None:
-  """Returns a log record processor that exports over OTLP/HTTP.
-
-  Returns None if the OTLP exporter package is unavailable.
-  """
+  """Returns a log processor exporting over OTLP/HTTP, None if unavailable."""
   try:
     from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
-  except (ImportError, AttributeError):
-    logger.warning(
-        "opentelemetry-exporter-otlp-proto-http is not installed; OTLP log"
-        " export is disabled."
-    )
+  except (ImportError, AttributeError) as exc:
+    _warn_exporter_unavailable("log", exc)
     return None
 
   return BatchLogRecordProcessor(OTLPLogExporter())

@@ -206,7 +206,9 @@ def test_exporter_factory_returns_none_when_package_is_missing(
     exporter = exporter_factory()
 
   assert exporter is None
-  assert len(_otlp_warnings(caplog)) == 1
+  warnings = _otlp_warnings(caplog)
+  assert len(warnings) == 1
+  assert exporter_module in warnings[0]
 
 
 @pytest.mark.parametrize(
@@ -239,7 +241,9 @@ def test_exporter_factory_returns_none_when_import_raises_attribute_error(
   exporter = exporter_factory()
 
   assert exporter is None
-  assert len(_otlp_warnings(caplog)) == 1
+  warnings = _otlp_warnings(caplog)
+  assert len(warnings) == 1
+  assert "simulated broken exporter package" in warnings[0]
 
 
 @pytest.mark.parametrize(
@@ -282,6 +286,30 @@ def test_get_otel_exporters_skips_missing_exporters(
   assert otel_hooks.log_record_processors == []
 
 
+class _FalsySpanProcessor(SpanProcessor):
+  """A valid span processor that evaluates as false, like an empty container."""
+
+  def __bool__(self) -> bool:
+    return False
+
+
+def test_get_otel_exporters_keeps_a_falsy_exporter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """Only a None result disables a signal, never a falsy exporter."""
+  _clear_otlp_env(monkeypatch)
+  monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "some-endpoint")
+  span_processor = _FalsySpanProcessor()
+  monkeypatch.setattr(
+      "google.adk.telemetry.setup._get_otel_span_exporter",
+      lambda: span_processor,
+  )
+
+  otel_hooks = telemetry_setup._get_otel_exporters()
+
+  assert otel_hooks.span_processors == [span_processor]
+
+
 def test_maybe_set_otel_providers_without_exporter_package(
     monkeypatch: pytest.MonkeyPatch,
     caplog: pytest.LogCaptureFixture,
@@ -311,4 +339,7 @@ def test_maybe_set_otel_providers_without_exporter_package(
   assert trace_provider_mock.call_count == 0
   assert meter_provider_mock.call_count == 0
   assert logs_provider_mock.call_count == 0
-  assert len(_otlp_warnings(caplog)) == 3
+  warnings = _otlp_warnings(caplog)
+  assert len(warnings) == 3
+  for signal in ("trace", "metric", "log"):
+    assert sum(f"OTLP {signal} export" in warning for warning in warnings) == 1
