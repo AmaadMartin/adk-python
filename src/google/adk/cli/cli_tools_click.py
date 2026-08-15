@@ -20,6 +20,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime
 import functools
 import hashlib
+import importlib.util
 import json
 import logging
 import os
@@ -41,6 +42,7 @@ from .. import version
 from ..agents._streaming_mode import StreamingMode
 from ..features import FeatureName
 from ..features import override_feature_enabled
+from ..utils._dependency import missing_extra
 from ..utils._telemetry_config import read_telemetry_consent
 from ..utils._telemetry_config import write_telemetry_consent
 from ._telemetry._metrics_collector import MetricsCollector
@@ -1058,6 +1060,9 @@ def cli_test(ctx, folder: str, rebuild: bool):
         err=True,
     )
     sys.exit(1)
+
+  if importlib.util.find_spec("pytest") is None:
+    raise click.ClickException(str(missing_extra("pytest", "test")))
 
   click.echo(f"Running tests in {folder} using runner {test_runner_path}...")
 
