@@ -28,7 +28,6 @@ from typing import Callable
 from typing import Literal
 from typing import Mapping
 
-import click
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi import Request
@@ -176,6 +175,14 @@ def get_fast_api_app(
 
   Returns:
     The configured FastAPI application instance.
+
+  Raises:
+    ServiceConfigError: If memory_service_uri, artifact_service_uri or
+      eval_storage_uri names a backend that cannot be resolved, or the named
+      backend rejects the value. Importable from google.adk.errors; it
+      subclasses ValueError.
+    RuntimeError: If eval_storage_uri is a gs:// URI and the Google Cloud
+      optional dependencies are not installed.
   """
 
   # Enable the YAML key denylist for config loads if the web UI is enabled.
@@ -227,13 +234,10 @@ def get_fast_api_app(
   load_services_module(agents_dir)
 
   # Build the Memory service
-  try:
-    memory_service = create_memory_service_from_options(
-        base_dir=agents_dir,
-        memory_service_uri=memory_service_uri,
-    )
-  except ValueError as exc:
-    raise click.ClickException(str(exc)) from exc
+  memory_service = create_memory_service_from_options(
+      base_dir=agents_dir,
+      memory_service_uri=memory_service_uri,
+  )
 
   # Build the Session service
   session_service = create_session_service_from_options(
@@ -244,15 +248,12 @@ def get_fast_api_app(
   )
 
   # Build the Artifact service
-  try:
-    artifact_service = create_artifact_service_from_options(
-        base_dir=agents_dir,
-        artifact_service_uri=artifact_service_uri,
-        strict_uri=True,
-        use_local_storage=use_local_storage,
-    )
-  except ValueError as exc:
-    raise click.ClickException(str(exc)) from exc
+  artifact_service = create_artifact_service_from_options(
+      base_dir=agents_dir,
+      artifact_service_uri=artifact_service_uri,
+      strict_uri=True,
+      use_local_storage=use_local_storage,
+  )
 
   # Build  the Credential service
   credential_service = InMemoryCredentialService()

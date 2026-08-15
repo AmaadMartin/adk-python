@@ -21,6 +21,7 @@ from pydantic import alias_generators
 from pydantic import BaseModel
 from pydantic import ConfigDict
 
+from ...errors._service_config_error import ServiceConfigError
 from ...evaluation.eval_case import Invocation
 from ...evaluation.evaluation_generator import EvaluationGenerator
 from ...sessions.session import Session
@@ -68,7 +69,7 @@ def create_gcs_eval_managers_from_uri(
       GcsEvalManagers: The GcsEvalManagers object.
 
   Raises:
-      ValueError: If the eval_storage_uri is not supported.
+      ServiceConfigError: If the eval_storage_uri is not supported.
       RuntimeError: If GCP optional dependencies are missing.
   """
   if eval_storage_uri.startswith('gs://'):
@@ -94,7 +95,7 @@ def create_gcs_eval_managers_from_uri(
         eval_set_results_manager=eval_set_results_manager,
     )
   else:
-    raise ValueError(
+    raise ServiceConfigError(
         f'Unsupported evals storage URI: {eval_storage_uri}. Supported URIs:'
         ' gs://<bucket name>'
     )

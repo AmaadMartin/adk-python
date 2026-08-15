@@ -18,6 +18,7 @@ import os
 from unittest import mock
 
 from google.adk.cli.utils import evals
+from google.adk.errors import ServiceConfigError
 from google.adk.evaluation.gcs_eval_set_results_manager import GcsEvalSetResultsManager
 from google.adk.evaluation.gcs_eval_sets_manager import GcsEvalSetsManager
 from google.adk.events.event import Event
@@ -62,7 +63,7 @@ def test_create_gcs_eval_managers_from_uri_success(
 
 
 def test_create_gcs_eval_managers_from_uri_failure():
-  with pytest.raises(ValueError):
+  with pytest.raises(ServiceConfigError, match='Unsupported evals storage URI'):
     evals.create_gcs_eval_managers_from_uri('unsupported-uri')
 
 

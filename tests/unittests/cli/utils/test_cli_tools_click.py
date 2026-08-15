@@ -37,6 +37,7 @@ from google.adk.agents.base_agent import BaseAgent
 from google.adk.agents.run_config import StreamingMode
 from google.adk.cli import cli_tools_click
 from google.adk.cli.utils import gcp_utils
+from google.adk.errors import ServiceConfigError
 from google.adk.evaluation.eval_case import EvalCase
 from google.adk.evaluation.eval_set import EvalSet
 from google.adk.evaluation.local_eval_set_results_manager import LocalEvalSetResultsManager
@@ -1610,6 +1611,50 @@ def test_cli_web_passes_service_uris(
   assert called_kwargs.get("session_service_uri") == "sqlite:///test.db"
   assert called_kwargs.get("artifact_service_uri") == "gs://mybucket"
   assert called_kwargs.get("memory_service_uri") == "rag://mycorpus"
+
+
+@pytest.mark.parametrize("command", ["web", "api_server"])
+def test_cli_reports_service_config_error(
+    tmp_path: Path, _patch_uvicorn: _Recorder, command: str
+) -> None:
+  """An unusable service URI prints a one-line error and exits 1."""
+  agents_dir = tmp_path / "agents"
+  agents_dir.mkdir()
+
+  runner = CliRunner()
+  result = runner.invoke(
+      cli_tools_click.main,
+      [command, str(agents_dir), "--memory_service_uri", "unknown://x"],
+  )
+
+  assert result.exit_code == 1
+  assert "Error: Unsupported memory service URI: unknown://x" in result.output
+  assert not _patch_uvicorn.calls
+
+
+@pytest.mark.parametrize("command", ["web", "api_server"])
+def test_cli_does_not_convert_unrelated_value_error(
+    tmp_path: Path,
+    _patch_uvicorn: _Recorder,
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+) -> None:
+  """A ValueError that is not a ServiceConfigError keeps its traceback."""
+  agents_dir = tmp_path / "agents"
+  agents_dir.mkdir()
+
+  def _raise_value_error(**_kwargs: Any) -> None:
+    raise ValueError("boom")
+
+  monkeypatch.setattr(
+      "google.adk.cli.fast_api.get_fast_api_app", _raise_value_error
+  )
+
+  runner = CliRunner()
+  result = runner.invoke(cli_tools_click.main, [command, str(agents_dir)])
+
+  assert isinstance(result.exception, ValueError)
+  assert not isinstance(result.exception, ServiceConfigError)
 
 
 @pytest.mark.parametrize(

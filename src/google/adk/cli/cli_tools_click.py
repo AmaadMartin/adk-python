@@ -39,6 +39,7 @@ from click.core import ParameterSource
 
 from .. import version
 from ..agents._streaming_mode import StreamingMode
+from ..errors._service_config_error import ServiceConfigError
 from ..features import FeatureName
 from ..features import override_feature_enabled
 from ..utils._telemetry_config import read_telemetry_consent
@@ -2055,29 +2056,33 @@ def cli_web(
 
   from .fast_api import get_fast_api_app
 
-  app = get_fast_api_app(
-      agents_dir=agents_dir,
-      session_service_uri=session_service_uri,
-      artifact_service_uri=artifact_service_uri,
-      memory_service_uri=memory_service_uri,
-      use_local_storage=use_local_storage,
-      eval_storage_uri=eval_storage_uri,
-      allow_origins=allow_origins,
-      web=True,
-      trace_to_cloud=trace_to_cloud,
-      otel_to_cloud=otel_to_cloud,
-      lifespan=_lifespan,
-      a2a=a2a,
-      host=host,
-      port=port,
-      url_prefix=url_prefix,
-      reload_agents=reload_agents,
-      extra_plugins=extra_plugins,
-      logo_text=logo_text,
-      logo_image_url=logo_image_url,
-      trigger_sources=trigger_sources,
-      default_llm_model=default_llm_model,
-  )
+  try:
+    app = get_fast_api_app(
+        agents_dir=agents_dir,
+        session_service_uri=session_service_uri,
+        artifact_service_uri=artifact_service_uri,
+        memory_service_uri=memory_service_uri,
+        use_local_storage=use_local_storage,
+        eval_storage_uri=eval_storage_uri,
+        allow_origins=allow_origins,
+        web=True,
+        trace_to_cloud=trace_to_cloud,
+        otel_to_cloud=otel_to_cloud,
+        lifespan=_lifespan,
+        a2a=a2a,
+        host=host,
+        port=port,
+        url_prefix=url_prefix,
+        reload_agents=reload_agents,
+        extra_plugins=extra_plugins,
+        logo_text=logo_text,
+        logo_image_url=logo_image_url,
+        trigger_sources=trigger_sources,
+        default_llm_model=default_llm_model,
+    )
+  except ServiceConfigError as exc:
+    raise click.ClickException(str(exc)) from exc
+
   config = uvicorn.Config(
       app,
       host=host,
@@ -2195,30 +2200,35 @@ def cli_api_server(
       ctx.meta["server_started"] = True
     yield
 
+  try:
+    app = get_fast_api_app(
+        agents_dir=agents_dir,
+        session_service_uri=session_service_uri,
+        artifact_service_uri=artifact_service_uri,
+        memory_service_uri=memory_service_uri,
+        use_local_storage=use_local_storage,
+        eval_storage_uri=eval_storage_uri,
+        allow_origins=allow_origins,
+        web=with_ui,
+        trace_to_cloud=trace_to_cloud,
+        otel_to_cloud=otel_to_cloud,
+        a2a=a2a,
+        host=host,
+        port=port,
+        url_prefix=url_prefix,
+        reload_agents=reload_agents,
+        extra_plugins=extra_plugins,
+        auto_create_session=auto_create_session,
+        trigger_sources=trigger_sources,
+        gemini_enterprise_app_name=gemini_enterprise_app_name,
+        express_mode=express_mode,
+        lifespan=_lifespan,
+    )
+  except ServiceConfigError as exc:
+    raise click.ClickException(str(exc)) from exc
+
   config = uvicorn.Config(
-      get_fast_api_app(
-          agents_dir=agents_dir,
-          session_service_uri=session_service_uri,
-          artifact_service_uri=artifact_service_uri,
-          memory_service_uri=memory_service_uri,
-          use_local_storage=use_local_storage,
-          eval_storage_uri=eval_storage_uri,
-          allow_origins=allow_origins,
-          web=with_ui,
-          trace_to_cloud=trace_to_cloud,
-          otel_to_cloud=otel_to_cloud,
-          a2a=a2a,
-          host=host,
-          port=port,
-          url_prefix=url_prefix,
-          reload_agents=reload_agents,
-          extra_plugins=extra_plugins,
-          auto_create_session=auto_create_session,
-          trigger_sources=trigger_sources,
-          gemini_enterprise_app_name=gemini_enterprise_app_name,
-          express_mode=express_mode,
-          lifespan=_lifespan,
-      ),
+      app,
       host=host,
       port=port,
       reload=reload,
