@@ -58,9 +58,10 @@ _COMPACTION_CONTENT_KEYS = ('compacted_content', 'compactedContent')
 # adk-js builds it from `Date.now()`. Every other spelling is epoch seconds.
 _LEGACY_MILLIS_TIMESTAMP_KEYS = frozenset({'startTime', 'endTime'})
 # adk-js JSON round-trips its whole compacted event into `raw_event`, so these
-# compaction fields also arrive at the top level of the raw event.
+# compaction fields also arrive at the top level of the raw event. Its
+# `isCompacted` flag is not listed: nothing reads it, and `Event` ignores extra
+# fields, so popping it would only make an empty payload look present.
 _LEGACY_RAW_EVENT_COMPACTION_KEYS = (
-    'isCompacted',
     'startTime',
     'endTime',
     'compactedContent',
@@ -574,18 +575,27 @@ def _get_raw_event(api_event_obj: object) -> dict[str, Any] | None:
   return None
 
 
-def _first_present_key(
+def _read_compaction_field(
     payload: Mapping[str, Any], keys: tuple[str, ...]
-) -> Optional[str]:
-  """Returns the first key of ``keys`` that ``payload`` contains."""
-  return next((key for key in keys if key in payload), None)
+) -> Any:
+  """Reads a compaction field under the first spelling ``payload`` carries.
 
+  A timestamp read under a legacy adk-js key is scaled to epoch seconds; every
+  other value is returned as it was persisted.
 
-def _scale_legacy_timestamp(key: Optional[str], value: Any) -> Any:
-  """Converts a timestamp read under a legacy adk-js key to epoch seconds."""
+  Args:
+    payload: The persisted compaction payload.
+    keys: The accepted spellings of one field, most canonical first.
+
+  Returns:
+    The value, or ``None`` if the payload carries no spelling of the field.
+  """
+  key = next((candidate for candidate in keys if candidate in payload), None)
+  if key is None:
+    return None
   if key in _LEGACY_MILLIS_TIMESTAMP_KEYS:
-    return value / _MILLIS_PER_SECOND
-  return value
+    return payload[key] / _MILLIS_PER_SECOND
+  return payload[key]
 
 
 def _normalize_compaction_payload(
@@ -622,18 +632,15 @@ def _normalize_compaction_payload(
     )
     return None
 
-  start_key = _first_present_key(payload, _COMPACTION_START_KEYS)
-  end_key = _first_present_key(payload, _COMPACTION_END_KEYS)
-  content_key = _first_present_key(payload, _COMPACTION_CONTENT_KEYS)
-  content = payload.get(content_key)
+  content = _read_compaction_field(payload, _COMPACTION_CONTENT_KEYS)
   try:
     # Only the canonical keys are forwarded: `EventCompaction` forbids extras,
     # so foreign keys such as `isCompacted` would defeat the normalization.
     return EventCompaction.model_validate({
-        'start_timestamp': _scale_legacy_timestamp(
-            start_key, payload.get(start_key)
+        'start_timestamp': _read_compaction_field(
+            payload, _COMPACTION_START_KEYS
         ),
-        'end_timestamp': _scale_legacy_timestamp(end_key, payload.get(end_key)),
+        'end_timestamp': _read_compaction_field(payload, _COMPACTION_END_KEYS),
         'compacted_content': (
             {'role': 'model', 'parts': [{'text': content}]}
             if isinstance(content, str)
@@ -681,11 +688,9 @@ def _normalize_raw_event_compaction(
   # The nested payload wins: it is the more specific channel, and a JS
   # re-append writes the same data to both.
   compaction = _normalize_compaction_payload(
-      actions.get('compaction', legacy_payload or None), event_name=event_name
+      actions.pop('compaction', legacy_payload or None), event_name=event_name
   )
-  if compaction is None:
-    actions.pop('compaction', None)
-  else:
+  if compaction is not None:
     actions['compaction'] = compaction
     event_dict['actions'] = actions
 
@@ -765,15 +770,12 @@ def _from_api_event(api_event_obj: vertexai.types.SessionEvent) -> Event:
     }
   else:
     renamed_actions_dict = {}
+  actions_compaction = renamed_actions_dict.pop('compaction', None)
   compaction = _normalize_compaction_payload(
-      compaction_data
-      if compaction_data is not None
-      else renamed_actions_dict.get('compaction'),
+      compaction_data if compaction_data is not None else actions_compaction,
       event_name=api_event_obj.name,
   )
-  if compaction is None:
-    renamed_actions_dict.pop('compaction', None)
-  else:
+  if compaction is not None:
     renamed_actions_dict['compaction'] = compaction
   event_actions = EventActions.model_validate(renamed_actions_dict)
 

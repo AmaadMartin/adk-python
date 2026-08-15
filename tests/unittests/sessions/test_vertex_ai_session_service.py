@@ -1450,6 +1450,27 @@ async def test_get_session_restores_legacy_js_compaction_from_raw_event(
 
 @pytest.mark.asyncio
 @pytest.mark.usefixtures('mock_get_api_client')
+async def test_get_session_stays_quiet_for_an_event_with_no_compaction(
+    mock_api_client_instance, caplog
+):
+  """An adk-js flag without a payload is not an unreadable compaction."""
+  with caplog.at_level(logging.WARNING, logger=VERTEX_SESSION_SERVICE_LOGGER):
+    session = await _get_legacy_js_session(
+        mock_api_client_instance,
+        [
+            _legacy_js_event_json(
+                '1', rawEvent={'author': 'model', 'isCompacted': False}
+            )
+        ],
+    )
+
+  assert session is not None
+  assert session.events[0].actions.compaction is None
+  assert not caplog.records
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
 async def test_get_session_restores_legacy_js_compaction_from_nested_raw_actions(
     mock_api_client_instance,
 ):
