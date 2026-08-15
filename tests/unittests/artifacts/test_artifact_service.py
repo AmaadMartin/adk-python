@@ -18,6 +18,7 @@
 
 from datetime import datetime
 import enum
+import itertools
 import json
 from pathlib import Path
 import stat
@@ -1200,6 +1201,152 @@ async def test_file_list_artifact_versions(tmp_path, artifact_service_factory):
   assert latest.version == version_meta.version
   assert latest.canonical_uri == version_meta.canonical_uri
   assert latest.custom_metadata == version_meta.custom_metadata
+
+
+_CREATE_TIME_SCOPE = {
+    "app_name": "myapp",
+    "user_id": "user123",
+    "session_id": "sess789",
+    "filename": "docs/report.txt",
+}
+
+
+def _version_dir(tmp_path: Path, version: int) -> Path:
+  """Returns the on-disk directory holding one version of the scoped artifact."""
+  return (
+      tmp_path
+      / "artifacts"
+      / "apps"
+      / _CREATE_TIME_SCOPE["app_name"]
+      / "users"
+      / _CREATE_TIME_SCOPE["user_id"]
+      / "sessions"
+      / _CREATE_TIME_SCOPE["session_id"]
+      / "artifacts"
+      / "docs"
+      / "report.txt"
+      / "versions"
+      / str(version)
+  )
+
+
+def _persisted_create_time(tmp_path: Path, version: int) -> float:
+  """Reads `createTime` out of one version's metadata document."""
+  raw = (_version_dir(tmp_path, version) / "metadata.json").read_text(
+      encoding="utf-8"
+  )
+  return json.loads(raw)["createTime"]
+
+
+def _advancing_clock(mock_platform_time: mock.MagicMock) -> None:
+  """Makes every `get_time()` call return a strictly later timestamp.
+
+  A read that stamps the current time then cannot coincidentally match the
+  time the version was written.
+  """
+  mock_platform_time.get_time.side_effect = itertools.count(
+      FIXED_DATETIME.timestamp(), 1000.0
+  )
+
+
+@pytest.mark.asyncio
+async def test_file_artifact_version_create_time_is_stable_across_reads(
+    artifact_service_factory,
+):
+  """A version's create_time does not move when it is read again."""
+  artifact_service = artifact_service_factory(ArtifactServiceType.FILE)
+
+  with patch(
+      "google.adk.artifacts.base_artifact_service.platform_time"
+  ) as mock_platform_time:
+    _advancing_clock(mock_platform_time)
+    await artifact_service.save_artifact(
+        **_CREATE_TIME_SCOPE, artifact=types.Part(text="v0")
+    )
+
+    first = await artifact_service.get_artifact_version(**_CREATE_TIME_SCOPE)
+    second = await artifact_service.get_artifact_version(**_CREATE_TIME_SCOPE)
+
+  assert first is not None
+  assert second is not None
+  assert first.create_time == second.create_time
+  assert first == second
+
+
+@pytest.mark.asyncio
+async def test_file_artifact_version_create_time_matches_metadata_document(
+    tmp_path, artifact_service_factory
+):
+  """Both read paths report the create_time persisted for the version."""
+  artifact_service = artifact_service_factory(ArtifactServiceType.FILE)
+
+  with patch(
+      "google.adk.artifacts.base_artifact_service.platform_time"
+  ) as mock_platform_time:
+    _advancing_clock(mock_platform_time)
+    await artifact_service.save_artifact(
+        **_CREATE_TIME_SCOPE, artifact=types.Part(text="v0")
+    )
+
+    fetched = await artifact_service.get_artifact_version(**_CREATE_TIME_SCOPE)
+    listed = await artifact_service.list_artifact_versions(**_CREATE_TIME_SCOPE)
+
+  persisted = _persisted_create_time(tmp_path, 0)
+  assert fetched is not None
+  assert fetched.create_time == persisted
+  assert [version.create_time for version in listed] == [persisted]
+
+
+@pytest.mark.asyncio
+async def test_file_artifact_versions_report_persisted_create_times_in_order(
+    tmp_path, artifact_service_factory
+):
+  """Listed versions carry their own create_time, increasing with version."""
+  artifact_service = artifact_service_factory(ArtifactServiceType.FILE)
+
+  with patch(
+      "google.adk.artifacts.base_artifact_service.platform_time"
+  ) as mock_platform_time:
+    _advancing_clock(mock_platform_time)
+    for index in range(3):
+      await artifact_service.save_artifact(
+          **_CREATE_TIME_SCOPE, artifact=types.Part(text=f"v{index}")
+      )
+
+    listed = await artifact_service.list_artifact_versions(**_CREATE_TIME_SCOPE)
+
+  assert [version.version for version in listed] == [0, 1, 2]
+  create_times = [version.create_time for version in listed]
+  assert create_times == [_persisted_create_time(tmp_path, i) for i in range(3)]
+  assert create_times[0] < create_times[1] < create_times[2]
+
+
+@pytest.mark.asyncio
+async def test_file_artifact_version_without_metadata_document_still_returns_a_version(
+    tmp_path, artifact_service_factory
+):
+  """An unreadable metadata document degrades to a defaulted create_time."""
+  artifact_service = artifact_service_factory(ArtifactServiceType.FILE)
+  await artifact_service.save_artifact(
+      **_CREATE_TIME_SCOPE, artifact=types.Part(text="v0")
+  )
+  (_version_dir(tmp_path, 0) / "metadata.json").unlink()
+
+  with patch(
+      "google.adk.artifacts.base_artifact_service.platform_time"
+  ) as mock_platform_time:
+    mock_platform_time.get_time.return_value = FIXED_DATETIME.timestamp()
+    fetched = await artifact_service.get_artifact_version(**_CREATE_TIME_SCOPE)
+
+  assert fetched is not None
+  assert fetched.version == 0
+  assert (
+      fetched.canonical_uri
+      == (_version_dir(tmp_path, 0) / "report.txt").resolve().as_uri()
+  )
+  assert fetched.custom_metadata == {}
+  assert fetched.mime_type is None
+  assert fetched.create_time == FIXED_DATETIME.timestamp()
 
 
 @pytest.mark.asyncio

@@ -409,13 +409,18 @@ class FileArtifactService(BaseArtifactService):
     # service wrote, and recomputing means a tampered document cannot dictate
     # the URI handed to callers.
     canonical_uri = _canonical_uri(artifact_dir, version)
-    custom_metadata_val = metadata.custom_metadata if metadata else {}
-    mime_type = metadata.mime_type if metadata else None
+    if metadata is None:
+      # No readable document, so nothing to carry over. `create_time` falls
+      # back to the model default, which stamps the current time.
+      return ArtifactVersion(version=version, canonical_uri=canonical_uri)
     return ArtifactVersion(
         version=version,
         canonical_uri=canonical_uri,
-        custom_metadata=dict(custom_metadata_val),
-        mime_type=mime_type,
+        custom_metadata=dict(metadata.custom_metadata),
+        # Read back from the document rather than defaulted, so a version's
+        # creation time stays fixed instead of moving to each read.
+        create_time=metadata.create_time,
+        mime_type=metadata.mime_type,
     )
 
   def _latest_metadata(
