@@ -34,9 +34,17 @@ from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
 from google.adk.runners import Runner
 from google.adk.sessions.in_memory_session_service import InMemorySessionService
+from google.adk.utils._dependency import missing_extra
 from google.genai import types
 from pydantic import alias_generators
-import pytest
+
+# pytest ships in the 'test' extra, not with a default install, and this module
+# is only imported by `adk test`. Fail with the extra to install rather than a
+# bare ModuleNotFoundError.
+try:
+  import pytest
+except ImportError as e:
+  raise missing_extra("pytest", "test") from e
 
 EXCLUDED_EVENT_FIELDS = {
     "id",
