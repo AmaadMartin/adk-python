@@ -503,6 +503,45 @@ async def test_list_sessions_state_merging(session_service):
 
 
 @pytest.mark.asyncio
+async def test_list_sessions_excludes_events(session_service):
+  s1 = await session_service.create_session(
+      app_name="app1",
+      user_id="u1",
+      session_id="s1",
+      state={"user:lang": "en", "app:mode": "fast", "topic": "weather"},
+  )
+  await session_service.append_event(s1, Event(author="user"))
+  await session_service.append_event(s1, Event(author="agent"))
+
+  s2 = await session_service.create_session(
+      app_name="app1",
+      user_id="u2",
+      session_id="s2",
+  )
+  await session_service.append_event(s2, Event(author="user"))
+
+  # The events really are stored; the listing withholds them deliberately.
+  fetched = await session_service.get_session(
+      app_name="app1", user_id="u1", session_id="s1"
+  )
+  assert fetched is not None
+  assert len(fetched.events) == 2
+
+  resp = await session_service.list_sessions(app_name="app1", user_id="u1")
+  assert len(resp.sessions) == 1
+  assert resp.sessions[0].events == []
+  assert resp.sessions[0].state["user:lang"] == "en"
+  assert resp.sessions[0].state["app:mode"] == "fast"
+  assert resp.sessions[0].state["topic"] == "weather"
+
+  # Without user_id the scan spans users and fills user_states_map lazily.
+  all_resp = await session_service.list_sessions(app_name="app1")
+  assert len(all_resp.sessions) == 2
+  for s in all_resp.sessions:
+    assert s.events == []
+
+
+@pytest.mark.asyncio
 async def test_cumulative_user_state_creation(session_service):
   s1 = await session_service.create_session(
       app_name="app1",

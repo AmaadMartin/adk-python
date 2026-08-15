@@ -295,6 +295,9 @@ class RedisSessionService(BaseSessionService):
           s.state = self._merge_state(
               app_state, user_states_map.get(u_id, {}), s.state
           )
+          # Listings return metadata only; callers fetch events via
+          # get_session().
+          s.events = []
           sessions.append(s)
         except Exception as e:
           logger.warning("Failed to parse session at key %s: %s", key, e)
