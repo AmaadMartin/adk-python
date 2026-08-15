@@ -25,12 +25,14 @@ from unittest.mock import MagicMock
 from unittest.mock import patch
 
 from google.adk.agents.llm_agent import Agent
+from google.adk.artifacts.base_artifact_service import BaseArtifactService
 from google.adk.code_executors.base_code_executor import BaseCodeExecutor
 from google.adk.code_executors.built_in_code_executor import BuiltInCodeExecutor
 from google.adk.code_executors.code_execution_utils import CodeExecutionInput
 from google.adk.code_executors.code_execution_utils import CodeExecutionResult
 from google.adk.code_executors.code_execution_utils import File
 from google.adk.code_executors.code_executor_context import CodeExecutorContext
+from google.adk.events.event import Event
 from google.adk.flows.llm_flows._code_execution import _DATA_FILE_HELPER_LIB
 from google.adk.flows.llm_flows._code_execution import _extract_and_replace_inline_files
 from google.adk.flows.llm_flows._code_execution import _get_data_file_preprocessing_code
@@ -196,6 +198,85 @@ async def test_logs_executed_code(mock_logger):
   mock_code_executor.execute_code.assert_called_once()
   mock_logger.debug.assert_called_once_with(
       'Executed code:\n```\n%s\n```', 'print("hello")'
+  )
+
+
+async def _run_code_block(
+    code_execution_result: CodeExecutionResult,
+    artifact_service: Optional[BaseArtifactService],
+) -> list[Event]:
+  """Runs the response processor over one code block with the given result."""
+  mock_code_executor = MagicMock(spec=BaseCodeExecutor)
+  mock_code_executor.code_block_delimiters = [('```python\n', '\n```')]
+  mock_code_executor.error_retry_attempts = 2
+  mock_code_executor.stateful = False
+  mock_code_executor.execute_code.return_value = code_execution_result
+
+  agent = Agent(name='test_agent', code_executor=mock_code_executor)
+  invocation_context = await testing_utils.create_invocation_context(
+      agent=agent, user_content='test message'
+  )
+  invocation_context.artifact_service = artifact_service
+
+  llm_response = LlmResponse(
+      content=types.Content(
+          parts=[types.Part(text='```python\nprint("hello")\n```')]
+      )
+  )
+  return [
+      event
+      async for event in response_processor.run_async(
+          invocation_context, llm_response
+      )
+  ]
+
+
+@pytest.mark.asyncio
+async def test_post_processor_without_artifact_service_yields_empty_delta():
+  """A stdout-only execution needs no artifact service."""
+  events = await _run_code_block(
+      CodeExecutionResult(stdout='hello'), artifact_service=None
+  )
+
+  assert len(events) == 2
+  assert events[1].actions.artifact_delta == {}
+
+
+@pytest.mark.asyncio
+async def test_post_processor_output_files_without_artifact_service_raises():
+  """An output file still requires an artifact service."""
+  with pytest.raises(ValueError, match='Artifact service is not initialized.'):
+    await _run_code_block(
+        CodeExecutionResult(
+            output_files=[
+                File(name='plot.png', content='YWJj', mime_type='image/png')
+            ]
+        ),
+        artifact_service=None,
+    )
+
+
+@pytest.mark.asyncio
+async def test_post_processor_saves_output_files_with_artifact_service():
+  """An output file is saved and recorded in the artifact delta."""
+  artifact_service = MagicMock()
+  artifact_service.save_artifact = AsyncMock(return_value=1)
+
+  events = await _run_code_block(
+      CodeExecutionResult(
+          output_files=[
+              File(name='plot.png', content='YWJj', mime_type='image/png')
+          ]
+      ),
+      artifact_service=artifact_service,
+  )
+
+  assert events[1].actions.artifact_delta == {'plot.png': 1}
+  artifact_service.save_artifact.assert_called_once()
+  saved = artifact_service.save_artifact.call_args.kwargs
+  assert saved['filename'] == 'plot.png'
+  assert saved['artifact'] == types.Part.from_bytes(
+      data=b'abc', mime_type='image/png'
   )
 
 
