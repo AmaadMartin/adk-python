@@ -1183,6 +1183,10 @@ class SkillToolset(BaseToolset):
         scripts executed via exec().
       additional_tools: Optional list of `BaseTool` or `BaseToolset` instances
         to be made available to the agent when certain skills are activated.
+        `close()` closes any `BaseToolset` passed here, so the toolset should
+        not be reused after this one is closed. A toolset shared with a clone
+        created by `clone_with_updated_skills` may be closed more than once and
+        should therefore be idempotent.
       tool_name_prefix: Optional prefix to prepend to tool names.
       tool_filter: Optional filter to select specific tools.
     """
@@ -1442,14 +1446,31 @@ class SkillToolset(BaseToolset):
   @override
   async def close(self) -> None:
     """Performs cleanup and releases resources held by the toolset."""
-    if self._env is not None and self._env.is_initialized:
-      await self._env.close()
-    for turn_cache in self._fetched_skill_cache.values():
-      for cached in turn_cache.values():
-        if isinstance(cached, asyncio.Future) and not cached.done():
-          cached.cancel()
-    self._fetched_skill_cache.clear()
-    await super().close()
+    try:
+      # Closed first: they hold external resources such as network sessions
+      # and subprocesses that the environment close below would skip if it
+      # raised. Sequential, and awaited in the caller's task rather than via
+      # gather or wait_for: MCP toolsets keep an anyio cancel scope in
+      # task-local context and misbehave when another task closes them.
+      for toolset in self._provided_toolsets:
+        try:
+          await toolset.close()
+        except Exception as e:  # pylint: disable=broad-exception-caught
+          logger.warning(
+              "Error closing toolset %s provided via additional_tools: %s",
+              type(toolset).__name__,
+              e,
+              exc_info=e,
+          )
+      if self._env is not None and self._env.is_initialized:
+        await self._env.close()
+    finally:
+      for turn_cache in self._fetched_skill_cache.values():
+        for cached in turn_cache.values():
+          if isinstance(cached, asyncio.Future) and not cached.done():
+            cached.cancel()
+      self._fetched_skill_cache.clear()
+      await super().close()
 
 
 DEFAULT_SKILL_SYSTEM_INSTRUCTION = _build_skill_system_instruction()
