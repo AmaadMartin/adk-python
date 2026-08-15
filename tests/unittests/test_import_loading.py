@@ -89,6 +89,7 @@ _LAZY_PACKAGES = (
                 'google.adk.evaluation.agent_evaluator',
                 'google.genai',
                 'mcp',
+                'pytest',
                 'uvicorn',
             ),
         ),

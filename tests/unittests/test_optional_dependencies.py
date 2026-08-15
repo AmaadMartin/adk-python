@@ -159,6 +159,19 @@ def test_bigquery_agent_analytics_plugin_fails_on_import_naming_its_extra():
     assert "pip install google-adk[bigquery-analytics]" in message
 
 
+def test_agent_test_runner_fails_on_import_naming_its_extra():
+  """Verify that importing the agent test runner without pytest names the extra."""
+  with mock.patch.dict("sys.modules", {"pytest": None}):
+    sys.modules.pop("google.adk.cli.agent_test_runner", None)
+    with pytest.raises(ImportError) as exc_info:
+      importlib.import_module("google.adk.cli.agent_test_runner")
+
+    message = str(exc_info.value)
+    assert "pytest" in message
+    assert "pip install google-adk[test]" in message
+    assert isinstance(exc_info.value.__cause__, ImportError)
+
+
 def test_vertexai_dependency_shim_raises_clear_importerror():
   """Verify that the Vertex AI dependency shim points users to the dependency."""
   module_path = _REPO_ROOT / "dependencies_internal/vertexai.py"
