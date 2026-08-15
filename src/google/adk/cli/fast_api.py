@@ -307,24 +307,32 @@ def get_fast_api_app(
   # TODO - Remove separate trace_to_cloud logic once otel_to_cloud stops being
   # EXPERIMENTAL.
   if trace_to_cloud and not otel_to_cloud:
-    from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
+    try:
+      from opentelemetry.exporter.cloud_trace import CloudTraceSpanExporter
+    except (ImportError, AttributeError):
+      logger.warning(
+          "opentelemetry-exporter-gcp-trace is not installed; tracing to Cloud"
+          " Trace is disabled. Please call 'pip install"
+          " opentelemetry-exporter-gcp-trace'."
+      )
+    else:
 
-    def register_processors(provider: TracerProvider) -> None:
-      envs.load_dotenv_for_agent("", agents_dir)
-      if project_id := os.environ.get("GOOGLE_CLOUD_PROJECT", None):
-        processor = export.BatchSpanProcessor(
-            CloudTraceSpanExporter(project_id=project_id)
-        )
-        provider.add_span_processor(processor)
-      else:
-        logger.warning(
-            "GOOGLE_CLOUD_PROJECT environment variable is not set. Tracing will"
-            " not be enabled."
-        )
+      def register_processors(provider: TracerProvider) -> None:
+        envs.load_dotenv_for_agent("", agents_dir)
+        if project_id := os.environ.get("GOOGLE_CLOUD_PROJECT", None):
+          processor = export.BatchSpanProcessor(
+              CloudTraceSpanExporter(project_id=project_id)
+          )
+          provider.add_span_processor(processor)
+        else:
+          logger.warning(
+              "GOOGLE_CLOUD_PROJECT environment variable is not set. Tracing"
+              " will not be enabled."
+          )
 
-    extra_fast_api_args.update(
-        register_processors=register_processors,
-    )
+      extra_fast_api_args.update(
+          register_processors=register_processors,
+      )
 
   if reload_agents:
 

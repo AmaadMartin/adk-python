@@ -48,6 +48,7 @@ from google.adk.sessions.in_memory_session_service import InMemorySessionService
 from google.api_core.exceptions import GoogleAPICallError
 from google.api_core.exceptions import InvalidArgument
 from google.genai import types
+from opentelemetry.sdk.trace import export
 from pydantic import BaseModel
 import pytest
 
@@ -4423,6 +4424,124 @@ def test_create_eval_set_legacy_route_creates_eval_set(
       mock_eval_sets_manager.get_eval_set("test_app", "legacy_eval_set")
       is not None
   )
+
+
+#################################################
+# Cloud Trace export setup (--trace_to_cloud)
+#################################################
+
+_FAST_API_LOGGER = "google_adk.google.adk.cli.fast_api"
+_MISSING_CLOUD_TRACE = {"opentelemetry.exporter.cloud_trace": None}
+
+
+def _build_app_capturing_server_kwargs(tmp_path, **app_kwargs):
+  """Runs get_fast_api_app with ApiServer patched; returns the server kwargs."""
+  with patch.object(fast_api_module, "ApiServer", autospec=True) as mock_cls:
+    get_fast_api_app(agents_dir=str(tmp_path), web=False, **app_kwargs)
+    return mock_cls.return_value.get_fast_api_app.call_args.kwargs
+
+
+def _gcp_trace_warnings(caplog):
+  return [
+      record
+      for record in caplog.records
+      if record.levelno == logging.WARNING
+      and "opentelemetry-exporter-gcp-trace" in record.getMessage()
+  ]
+
+
+def test_trace_to_cloud_warns_and_continues_when_gcp_trace_exporter_missing(
+    tmp_path, caplog
+):
+  """A base install without the exporter warns once and still builds the app."""
+  with (
+      patch.dict("sys.modules", _MISSING_CLOUD_TRACE),
+      caplog.at_level(logging.WARNING, logger=_FAST_API_LOGGER),
+  ):
+    server_kwargs = _build_app_capturing_server_kwargs(
+        tmp_path, trace_to_cloud=True
+    )
+
+  assert len(_gcp_trace_warnings(caplog)) == 1
+  assert "register_processors" not in server_kwargs
+
+
+def test_trace_to_cloud_registers_cloud_trace_processor_when_available(
+    tmp_path, monkeypatch
+):
+  """With the exporter installed, spans are exported to the configured project."""
+  pytest.importorskip("opentelemetry.exporter.cloud_trace")
+
+  monkeypatch.setenv("GOOGLE_CLOUD_PROJECT", "test-project")
+  provider = MagicMock()
+  # get_fast_api_app binds the exporter name when it imports it, so the patch
+  # must already be active at that point.
+  with patch(
+      "opentelemetry.exporter.cloud_trace.CloudTraceSpanExporter",
+      autospec=True,
+  ) as mock_exporter:
+    server_kwargs = _build_app_capturing_server_kwargs(
+        tmp_path, trace_to_cloud=True
+    )
+    server_kwargs["register_processors"](provider)
+
+  mock_exporter.assert_called_once_with(project_id="test-project")
+  provider.add_span_processor.assert_called_once()
+  processor = provider.add_span_processor.call_args.args[0]
+  assert isinstance(processor, export.BatchSpanProcessor)
+
+
+def test_trace_to_cloud_warns_when_project_id_unset(
+    tmp_path, monkeypatch, caplog
+):
+  """Without GOOGLE_CLOUD_PROJECT no processor is attached to the provider."""
+  pytest.importorskip("opentelemetry.exporter.cloud_trace")
+
+  server_kwargs = _build_app_capturing_server_kwargs(
+      tmp_path, trace_to_cloud=True
+  )
+  register_processors = server_kwargs["register_processors"]
+
+  monkeypatch.delenv("GOOGLE_CLOUD_PROJECT", raising=False)
+  monkeypatch.setattr(
+      fast_api_module.envs, "load_dotenv_for_agent", lambda *args: None
+  )
+  provider = MagicMock()
+  with caplog.at_level(logging.WARNING, logger=_FAST_API_LOGGER):
+    register_processors(provider)
+
+  assert any(
+      "GOOGLE_CLOUD_PROJECT" in record.getMessage() for record in caplog.records
+  )
+  provider.add_span_processor.assert_not_called()
+
+
+def test_no_cloud_trace_setup_when_trace_to_cloud_disabled(tmp_path, caplog):
+  """trace_to_cloud=False never imports the exporter and never warns."""
+  with (
+      patch.dict("sys.modules", _MISSING_CLOUD_TRACE),
+      caplog.at_level(logging.WARNING, logger=_FAST_API_LOGGER),
+  ):
+    server_kwargs = _build_app_capturing_server_kwargs(
+        tmp_path, trace_to_cloud=False
+    )
+
+  assert not _gcp_trace_warnings(caplog)
+  assert "register_processors" not in server_kwargs
+
+
+def test_no_cloud_trace_setup_when_otel_to_cloud_enabled(tmp_path, caplog):
+  """otel_to_cloud=True suppresses the legacy path, exporter absent or not."""
+  with (
+      patch.dict("sys.modules", _MISSING_CLOUD_TRACE),
+      caplog.at_level(logging.WARNING, logger=_FAST_API_LOGGER),
+  ):
+    server_kwargs = _build_app_capturing_server_kwargs(
+        tmp_path, trace_to_cloud=True, otel_to_cloud=True
+    )
+
+  assert not _gcp_trace_warnings(caplog)
+  assert "register_processors" not in server_kwargs
 
 
 if __name__ == "__main__":
