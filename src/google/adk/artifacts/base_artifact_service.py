@@ -114,7 +114,8 @@ class BaseArtifactService(ABC):
         ``file_data``, the artifact service assumes its content has been
         uploaded separately, and this method will associate the ``file_data``
         with the artifact if necessary.
-      session_id: The session ID. If `None`, the artifact is user-scoped.
+      session_id: The session ID. Ignored when `filename` carries the ``user:``
+        prefix, which alone makes an artifact user-scoped. Required otherwise.
       custom_metadata: custom metadata to associate with the artifact.
 
     Returns:
@@ -141,7 +142,8 @@ class BaseArtifactService(ABC):
       app_name: The app name.
       user_id: The user ID.
       filename: The filename of the artifact.
-      session_id: The session ID. If `None`, load the user-scoped artifact.
+      session_id: The session ID. Ignored when `filename` carries the ``user:``
+        prefix, which alone makes an artifact user-scoped. Required otherwise.
       version: The version of the artifact. If None, the latest version will be
         returned.
 
@@ -182,8 +184,9 @@ class BaseArtifactService(ABC):
         app_name: The name of the application.
         user_id: The ID of the user.
         filename: The name of the artifact file.
-        session_id: The ID of the session. If `None`, delete the user-scoped
-          artifact.
+        session_id: The ID of the session. Ignored when `filename` carries the
+          ``user:`` prefix, which alone makes an artifact user-scoped. Required
+          otherwise.
     """
 
   @abstractmethod
@@ -201,8 +204,9 @@ class BaseArtifactService(ABC):
         app_name: The name of the application.
         user_id: The ID of the user.
         filename: The name of the artifact file.
-        session_id: The ID of the session. If `None`, only list the user-scoped
-          artifacts versions.
+        session_id: The ID of the session. Ignored when `filename` carries the
+          ``user:`` prefix, which alone makes an artifact user-scoped. Required
+          otherwise.
 
     Returns:
         A list of all available versions of the artifact.
@@ -223,9 +227,9 @@ class BaseArtifactService(ABC):
       app_name: The name of the application.
       user_id: The ID of the user.
       filename: The name of the artifact file.
-      session_id: The ID of the session. If `None`, lists versions of the
-        user-scoped artifact. Otherwise, lists versions of the artifact within
-        the specified session.
+      session_id: The ID of the session. Ignored when `filename` carries the
+        ``user:`` prefix, which alone makes an artifact user-scoped. Required
+        otherwise.
 
     Returns:
       A list of ArtifactVersion objects, each representing a version of the
@@ -248,9 +252,9 @@ class BaseArtifactService(ABC):
       app_name: The name of the application.
       user_id: The ID of the user.
       filename: The name of the artifact file.
-      session_id: The ID of the session. If `None`, the artifact will be fetched
-        from the user-scoped artifacts. Otherwise, it will be fetched from the
-        specified session.
+      session_id: The ID of the session. Ignored when `filename` carries the
+        ``user:`` prefix, which alone makes an artifact user-scoped. Required
+        otherwise.
       version: The version number of the artifact to retrieve. If `None`, the
         latest version will be returned.
 

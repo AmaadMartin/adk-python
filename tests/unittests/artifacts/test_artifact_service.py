@@ -1589,14 +1589,139 @@ async def test_file_save_artifact_rejects_absolute_path_within_scope(tmp_path):
       / "diagram.png"
   )
   part = types.Part(text="content")
-  with pytest.raises(InputValidationError):
+  # The `user:` prefix keeps the call in the user scope, so the rooted-path
+  # check is what rejects it rather than the missing session id.
+  with pytest.raises(InputValidationError, match="Rooted or drive-qualified"):
     await artifact_service.save_artifact(
         app_name="myapp",
         user_id="user123",
         session_id=None,
-        filename=str(absolute_in_scope),
+        filename=f"user:{absolute_in_scope}",
         artifact=part,
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "service_type",
+    [
+        ArtifactServiceType.IN_MEMORY,
+        ArtifactServiceType.GCS,
+        ArtifactServiceType.FILE,
+    ],
+)
+@pytest.mark.parametrize(
+    "method_name",
+    [
+        "save_artifact",
+        "load_artifact",
+        "delete_artifact",
+        "list_versions",
+        "list_artifact_versions",
+        "get_artifact_version",
+    ],
+)
+async def test_session_less_operation_without_user_prefix_raises(
+    service_type, method_name, artifact_service_factory
+):
+  """Every backend rejects a session-less call to an unprefixed filename."""
+  artifact_service = artifact_service_factory(service_type)
+  kwargs: dict[str, Any] = {
+      "app_name": "app0",
+      "user_id": "user0",
+      "filename": "a.txt",
+      "session_id": None,
+  }
+  if method_name == "save_artifact":
+    kwargs["artifact"] = types.Part.from_bytes(
+        data=b"plain", mime_type="text/plain"
+    )
+
+  with pytest.raises(InputValidationError, match="Session ID must be provided"):
+    await getattr(artifact_service, method_name)(**kwargs)
+
+
+@pytest.mark.asyncio
+async def test_file_session_less_save_does_not_alias_the_user_artifact(
+    tmp_path,
+):
+  """A rejected bare-name save leaves the `user:` artifact untouched."""
+  artifact_service = FileArtifactService(root_dir=tmp_path / "artifacts")
+  scope = {"app_name": "app0", "user_id": "user0", "session_id": None}
+
+  version = await artifact_service.save_artifact(
+      **scope,
+      filename="user:a.txt",
+      artifact=types.Part.from_bytes(
+          data=b"user-scoped", mime_type="text/plain"
+      ),
+  )
+  assert version == 0
+
+  with pytest.raises(InputValidationError, match="Session ID must be provided"):
+    await artifact_service.save_artifact(
+        **scope,
+        filename="a.txt",
+        artifact=types.Part.from_bytes(data=b"plain", mime_type="text/plain"),
+    )
+
+  assert await artifact_service.list_versions(
+      **scope, filename="user:a.txt"
+  ) == [0]
+  loaded = await artifact_service.load_artifact(**scope, filename="user:a.txt")
+  assert loaded is not None
+  assert loaded.inline_data is not None
+  assert loaded.inline_data.data == b"user-scoped"
+  assert await artifact_service.list_artifact_keys(**scope) == ["user:a.txt"]
+
+  versions_dir = (
+      tmp_path
+      / "artifacts"
+      / "apps"
+      / "app0"
+      / "users"
+      / "user0"
+      / "artifacts"
+      / "a.txt"
+      / "versions"
+  )
+  assert [entry.name for entry in sorted(versions_dir.iterdir())] == ["0"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "service_type",
+    [
+        ArtifactServiceType.IN_MEMORY,
+        ArtifactServiceType.GCS,
+        ArtifactServiceType.FILE,
+    ],
+)
+async def test_user_prefix_outranks_the_session_id(
+    service_type, artifact_service_factory
+):
+  """A `user:` filename names one artifact whatever the session id is."""
+  artifact_service = artifact_service_factory(service_type)
+  await artifact_service.save_artifact(
+      app_name="app0",
+      user_id="user0",
+      session_id=None,
+      filename="user:a.txt",
+      artifact=types.Part.from_bytes(
+          data=b"user-scoped", mime_type="text/plain"
+      ),
+  )
+
+  loaded = await artifact_service.load_artifact(
+      app_name="app0",
+      user_id="user0",
+      session_id="123",
+      filename="user:a.txt",
+  )
+
+  assert loaded is not None
+  assert loaded.inline_data is not None
+  assert loaded.inline_data.data == b"user-scoped"
 
 
 @pytest.mark.asyncio

@@ -235,11 +235,6 @@ def _resolve_scoped_artifact_path(
   return candidate, relative
 
 
-def _is_user_scoped(session_id: Optional[str], filename: str) -> bool:
-  """Determines whether artifacts should be stored in the user namespace."""
-  return session_id is None or _file_has_user_namespace(filename)
-
-
 def _user_artifacts_dir(base_root: Path) -> Path:
   """Returns the path that stores user-scoped artifacts."""
   return base_root / "artifacts"
@@ -374,8 +369,13 @@ class FileArtifactService(BaseArtifactService):
       session_id: Optional[str],
       filename: str,
   ) -> Path:
-    """Returns the directory that represents the artifact scope."""
-    if _is_user_scoped(session_id, filename):
+    """Returns the directory that represents the artifact scope.
+
+    Raises:
+      InputValidationError: If `session_id` is None and `filename` does not
+        carry the ``user:`` prefix.
+    """
+    if _file_has_user_namespace(filename):
       return _user_artifacts_dir(base_root)
     if session_id is None:
       raise InputValidationError(
