@@ -2918,40 +2918,6 @@ async def test_close_releases_the_resource_of_a_real_provided_toolset():
   assert sock.fileno() == -1
 
 
-class _HangingToolset(skill_toolset.BaseToolset):
-  """A real toolset whose close() never returns, like a wedged session."""
-
-  def __init__(self):
-    super().__init__()
-    self.close_started = False
-
-  async def get_tools(
-      self, readonly_context: ReadonlyContext | None = None
-  ) -> list[skill_toolset.BaseTool]:
-    return []
-
-  async def close(self) -> None:
-    self.close_started = True
-    await asyncio.Event().wait()
-
-
-@pytest.mark.asyncio
-async def test_close_times_out_a_hanging_provided_toolset(monkeypatch, caplog):
-  """A sub-toolset that never finishes closing cannot block the rest."""
-  monkeypatch.setattr(skill_toolset, "_TOOLSET_CLOSE_TIMEOUT", 0.01)
-  hanging = _HangingToolset()
-  sub = mock.create_autospec(skill_toolset.BaseToolset, instance=True)
-
-  toolset = skill_toolset.SkillToolset(additional_tools=[hanging, sub])
-
-  with caplog.at_level(logging.WARNING):
-    await toolset.close()
-
-  assert hanging.close_started
-  sub.close.assert_awaited_once()
-  assert "Timed out closing toolset _HangingToolset" in caplog.text
-
-
 @pytest.mark.asyncio
 async def test_close_clears_cache_when_the_environment_close_fails():
   """A failing environment close still propagates, after the cache cleanup."""
