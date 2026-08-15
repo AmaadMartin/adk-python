@@ -16,13 +16,16 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 from pathlib import Path
 from textwrap import dedent
 import types
 from typing import Any
 from typing import Dict
 from typing import List
+from typing import Optional
 from typing import Tuple
 from unittest import mock
 
@@ -48,6 +51,56 @@ class _Recorder:
 
   def __call__(self, *args: Any, **kwargs: Any) -> None:
     self.calls.append((args, kwargs))
+
+
+def _echo_event(text: str) -> types.SimpleNamespace:
+  """Builds the assistant event that the fake runners echo back."""
+  return types.SimpleNamespace(
+      author="assistant",
+      content=types.SimpleNamespace(
+          role="assistant", parts=[types.SimpleNamespace(text=f"echo:{text}")]
+      ),
+      node_info=None,
+      long_running_tool_ids=[],
+  )
+
+
+def _scripted_runner(
+    turns: List[Tuple[List[Any], Optional[BaseException]]],
+    closed: List[bool],
+) -> type:
+  """Builds a Runner fake that replays `turns`, then echoes the user input.
+
+  Args:
+    turns: One (events to yield, error to raise afterwards) pair per scripted
+      turn, in order. Turns beyond the script echo the input like the default
+      fake runner does.
+    closed: List the fake appends to when `close()` is awaited.
+  """
+
+  class _ScriptedRunner:
+
+    def __init__(self, *a: Any, **k: Any) -> None:
+      self._turn = 0
+
+    async def run_async(self, *a: Any, **k: Any):
+      turn, self._turn = self._turn, self._turn + 1
+      if turn < len(turns):
+        events, error = turns[turn]
+        for event in events:
+          yield event
+        if error is not None:
+          raise error
+        return
+      message = k["new_message"]
+      # A resumed turn sends a function response, which carries no text.
+      text = getattr(message.parts[0], "text", "") if message.parts else ""
+      yield _echo_event(text)
+
+    async def close(self, *a: Any, **k: Any) -> None:
+      closed.append(True)
+
+  return _ScriptedRunner
 
 
 # Fixtures
@@ -525,3 +578,138 @@ async def test_run_interactively_whitespace_and_exit(
 
   # verify: assistant echoed once with 'echo:hello'
   assert any("echo:hello" in m for m in echoed)
+
+
+async def _make_interactive_context():
+  """Builds the agent and services that run_interactively needs."""
+  session_service = InMemorySessionService()
+  sess = await session_service.create_session(app_name="dummy", user_id="u")
+  return (
+      BaseAgent(name="root"),
+      InMemoryArtifactService(),
+      sess,
+      session_service,
+      InMemoryCredentialService(),
+  )
+
+
+@pytest.mark.asyncio
+async def test_run_interactively_continues_after_turn_error(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+  """A failing turn should report the error and prompt for the next one."""
+  context = await _make_interactive_context()
+  closed: List[bool] = []
+  monkeypatch.setattr(
+      cli, "Runner", _scripted_runner([([], RuntimeError("kaboom"))], closed)
+  )
+
+  answers = iter(["boom", "hello", "exit"])
+  monkeypatch.setattr("builtins.input", lambda *_a, **_k: next(answers))
+  echoed: List[str] = []
+  monkeypatch.setattr(click, "echo", lambda msg: echoed.append(msg))
+  secho = _Recorder()
+  monkeypatch.setattr(click, "secho", secho)
+
+  with caplog.at_level(logging.ERROR, logger="google_adk.google.adk.cli.cli"):
+    await cli.run_interactively(*context)
+
+  errors = [c for c in secho.calls if "Error: kaboom" in c[0][0]]
+  assert len(errors) == 1
+  assert errors[0][1] == {"fg": "red", "err": True}
+  # The turn after the failure is still served, and cleanup still runs.
+  assert any("echo:hello" in m for m in echoed)
+  assert closed == [True]
+  # The traceback goes to the log, not to the console.
+  records = [r for r in caplog.records if r.exc_info is not None]
+  assert len(records) == 1
+  assert "kaboom" in records[0].getMessage()
+
+
+@pytest.mark.asyncio
+async def test_run_interactively_timeout_message_takes_precedence(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """A timed-out turn keeps its own message, not the generic error one."""
+  context = await _make_interactive_context()
+  closed: List[bool] = []
+  monkeypatch.setattr(
+      cli, "Runner", _scripted_runner([([], asyncio.TimeoutError())], closed)
+  )
+
+  answers = iter(["slow", "hello", "exit"])
+  monkeypatch.setattr("builtins.input", lambda *_a, **_k: next(answers))
+  echoed: List[str] = []
+  monkeypatch.setattr(click, "echo", lambda msg: echoed.append(msg))
+  secho = _Recorder()
+  monkeypatch.setattr(click, "secho", secho)
+
+  await cli.run_interactively(*context, timeout="1s")
+
+  assert [c[0][0] for c in secho.calls] == ["Error: Command timed out after 1s"]
+  assert any("echo:hello" in m for m in echoed)
+
+
+@pytest.mark.asyncio
+async def test_run_interactively_skips_hitl_prompt_after_turn_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """A failed turn's partial events must not raise a HITL prompt."""
+  context = await _make_interactive_context()
+  paused_event = types.SimpleNamespace(
+      author="assistant",
+      content=types.SimpleNamespace(
+          role="assistant",
+          parts=[
+              types.SimpleNamespace(
+                  text=None,
+                  function_call=types.SimpleNamespace(
+                      id="fc1", name="ask", args={}
+                  ),
+              )
+          ],
+      ),
+      node_info=None,
+      long_running_tool_ids=["fc1"],
+  )
+  closed: List[bool] = []
+  monkeypatch.setattr(
+      cli,
+      "Runner",
+      _scripted_runner([([paused_event], RuntimeError("kaboom"))], closed),
+  )
+
+  # A HITL prompt would build a function-response Part, so accept its kwargs.
+  monkeypatch.setattr(
+      cli.types, "Part", lambda **kwargs: types.SimpleNamespace(**kwargs)
+  )
+  answers = iter(["boom", "hello", "exit"])
+  monkeypatch.setattr("builtins.input", lambda *_a, **_k: next(answers))
+  echoed: List[str] = []
+  monkeypatch.setattr(click, "echo", lambda msg: echoed.append(msg))
+  monkeypatch.setattr(click, "secho", _Recorder())
+
+  await cli.run_interactively(*context)
+
+  # The dead invocation is not resumed: no HITL prompt, and 'hello' starts a
+  # fresh turn.
+  assert not any("[HITL" in m for m in echoed)
+  assert any("echo:hello" in m for m in echoed)
+
+
+@pytest.mark.asyncio
+async def test_run_interactively_keyboard_interrupt_stays_fatal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+  """Ctrl-C must still end the session, so it must not be caught."""
+  context = await _make_interactive_context()
+  closed: List[bool] = []
+  monkeypatch.setattr(
+      cli, "Runner", _scripted_runner([([], KeyboardInterrupt())], closed)
+  )
+
+  answers = iter(["boom", "hello", "exit"])
+  monkeypatch.setattr("builtins.input", lambda *_a, **_k: next(answers))
+
+  with pytest.raises(KeyboardInterrupt):
+    await cli.run_interactively(*context)

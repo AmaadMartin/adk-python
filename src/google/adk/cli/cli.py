@@ -246,6 +246,14 @@ async def run_interactively(
       next_message = None
       resume_invocation_id = None
       continue
+    except Exception as e:  # pylint: disable=broad-except
+      # One failing turn must not end the session. The traceback goes to the
+      # log file; the console gets a single line.
+      logger.exception('Error running agent turn: %s', e)
+      click.secho(f'Error: {e}', fg='red', err=True)
+      next_message = None
+      resume_invocation_id = None
+      continue
 
     next_message = None
     resume_invocation_id = None
