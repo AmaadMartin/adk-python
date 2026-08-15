@@ -26,12 +26,15 @@ from google.adk.features import FeatureName
 from google.adk.features._feature_registry import temporary_feature_override
 from google.adk.platform import thread as platform_thread
 from google.adk.tools.mcp_tool.mcp_session_manager import _DebugHttpxClientFactory
+from google.adk.tools.mcp_tool.mcp_session_manager import _factory_accepts_transport
 from google.adk.tools.mcp_tool.mcp_session_manager import _GoogleAuthAsyncByteStream
 from google.adk.tools.mcp_tool.mcp_session_manager import _http_debug_var
 from google.adk.tools.mcp_tool.mcp_session_manager import _RefreshableAsyncCredentials
+from google.adk.tools.mcp_tool.mcp_session_manager import _resolve_mtls_factory
 from google.adk.tools.mcp_tool.mcp_session_manager import _SharedAsyncTransport
 from google.adk.tools.mcp_tool.mcp_session_manager import _StreamableHttpClientWrapper
 from google.adk.tools.mcp_tool.mcp_session_manager import create_mcp_http_client
+from google.adk.tools.mcp_tool.mcp_session_manager import McpHttpClientFactoryWithTransport
 from google.adk.tools.mcp_tool.mcp_session_manager import MCPSessionManager
 from google.adk.tools.mcp_tool.mcp_session_manager import retry_on_errors
 from google.adk.tools.mcp_tool.mcp_session_manager import SseConnectionParams
@@ -1677,3 +1680,370 @@ class TestDebugHttpxClientFactory:
     assert record["response_body"].startswith("b" * 1000)
 
     await base_client.aclose()
+
+
+def _make_opt_in_factory(recorder):
+  """Returns a factory that declares `transport` and records every call."""
+
+  def factory(headers=None, timeout=None, auth=None, *, transport=None):
+    recorder.append({
+        "headers": headers,
+        "timeout": timeout,
+        "auth": auth,
+        "transport": transport,
+    })
+    return httpx.AsyncClient(
+        headers=headers, timeout=timeout, auth=auth, transport=transport
+    )
+
+  return factory
+
+
+def _make_plain_factory(recorder):
+  """Returns an MCP-shaped factory that does not declare `transport`."""
+
+  def factory(headers=None, timeout=None, auth=None):
+    recorder.append({"headers": headers, "timeout": timeout, "auth": auth})
+    return httpx.AsyncClient(headers=headers, timeout=timeout, auth=auth)
+
+  return factory
+
+
+class TestFactoryAcceptsTransport:
+  """Tests for _factory_accepts_transport."""
+
+  def test_keyword_only_transport_parameter(self):
+    """Test that a keyword-only `transport` parameter opts in."""
+
+    def factory(headers=None, timeout=None, auth=None, *, transport=None):
+      del headers, timeout, auth, transport
+
+    assert _factory_accepts_transport(factory) is True
+
+  def test_positional_or_keyword_transport_parameter(self):
+    """Test that a positional-or-keyword `transport` parameter opts in."""
+
+    def factory(headers=None, timeout=None, auth=None, transport=None):
+      del headers, timeout, auth, transport
+
+    assert _factory_accepts_transport(factory) is True
+
+  def test_three_keyword_factory_does_not_opt_in(self):
+    """Test that the MCP-shaped factory does not opt in."""
+    assert _factory_accepts_transport(_make_plain_factory([])) is False
+
+  def test_var_keyword_does_not_opt_in(self):
+    """Test that **kwargs alone does not opt in.
+
+    A factory that swallows unknown keywords would drop the transport and
+    return a client with no mTLS, so the parameter must be declared by name.
+    """
+
+    def factory(headers=None, timeout=None, auth=None, **kwargs):
+      del headers, timeout, auth, kwargs
+
+    assert _factory_accepts_transport(factory) is False
+
+  def test_positional_only_transport_does_not_opt_in(self):
+    """Test that a positional-only `transport` does not opt in.
+
+    ADK passes the transport by keyword, which a positional-only parameter
+    cannot accept.
+    """
+
+    def factory(transport=None, /, headers=None, timeout=None, auth=None):
+      del transport, headers, timeout, auth
+
+    assert _factory_accepts_transport(factory) is False
+
+  def test_callable_object_declaring_transport(self):
+    """Test that a callable object opts in through its __call__ signature."""
+
+    class Factory:
+
+      def __call__(
+          self, headers=None, timeout=None, auth=None, *, transport=None
+      ):
+        del headers, timeout, auth, transport
+
+    assert _factory_accepts_transport(Factory()) is True
+
+  def test_callable_without_retrievable_signature(self):
+    """Test that a callable with no retrievable signature does not opt in."""
+    # inspect.signature(dict) raises ValueError.
+    assert _factory_accepts_transport(dict) is False
+
+  def test_mock_factory_does_not_opt_in(self):
+    """Test that a Mock stays on the legacy path despite its **kwargs."""
+    assert _factory_accepts_transport(Mock()) is False
+
+
+class TestResolveMtlsFactory:
+  """Tests for _resolve_mtls_factory."""
+
+  def test_no_transport_returns_custom_factory(self):
+    """Test that a custom factory is returned unchanged without mTLS."""
+    custom_factory = _make_plain_factory([])
+
+    assert _resolve_mtls_factory(custom_factory, None) is custom_factory
+
+  def test_no_transport_returns_opt_in_factory_unwrapped(self):
+    """Test that an opt-in factory is not wrapped when there is no mTLS."""
+    opt_in_factory = _make_opt_in_factory([])
+
+    assert _resolve_mtls_factory(opt_in_factory, None) is opt_in_factory
+
+  def test_transport_with_default_factory_builds_adk_mtls_client(self):
+    """Test that the default factory is replaced by ADK's mTLS factory."""
+    mock_transport = Mock(spec=httpx.AsyncBaseTransport)
+
+    factory = _resolve_mtls_factory(create_mcp_http_client, mock_transport)
+    client = factory()
+
+    assert isinstance(client._transport, _SharedAsyncTransport)
+    assert client._transport._transport is mock_transport
+
+  def test_transport_with_non_opt_in_factory_skips_that_factory(self):
+    """Test that a factory without `transport` is replaced, not called."""
+    recorder = []
+    mock_transport = Mock(spec=httpx.AsyncBaseTransport)
+
+    factory = _resolve_mtls_factory(
+        _make_plain_factory(recorder), mock_transport
+    )
+    client = factory()
+
+    assert isinstance(client._transport, _SharedAsyncTransport)
+    assert client._transport._transport is mock_transport
+    assert recorder == []
+
+  def test_transport_with_opt_in_factory_is_wrapped_for_sharing(self):
+    """Test that the opt-in factory receives a close-suppressing transport."""
+    recorder = []
+    mock_transport = Mock(spec=httpx.AsyncBaseTransport)
+
+    factory = _resolve_mtls_factory(
+        _make_opt_in_factory(recorder), mock_transport
+    )
+    client = factory()
+
+    assert len(recorder) == 1
+    passed_transport = recorder[0]["transport"]
+    assert isinstance(passed_transport, _SharedAsyncTransport)
+    assert passed_transport._transport is mock_transport
+    assert client._transport is passed_transport
+
+
+class TestCreateClientTransportComposition:
+  """Tests that _create_client composes mTLS into an opt-in factory."""
+
+  @patch("google.adk.tools.mcp_tool.mcp_session_manager.sse_client")
+  def test_mtls_transport_reaches_opt_in_factory_sse(self, mock_sse_client):
+    """Test that the SSE path hands the mTLS transport to an opt-in factory."""
+    recorder = []
+    sse_params = SseConnectionParams(
+        url="https://example.com/mcp",
+        httpx_client_factory=_make_opt_in_factory(recorder),
+    )
+    manager = MCPSessionManager(sse_params)
+    mock_transport = Mock(spec=httpx.AsyncBaseTransport)
+
+    manager._create_client(mtls_transport=mock_transport)
+
+    factory = mock_sse_client.call_args.kwargs["httpx_client_factory"]
+    assert isinstance(factory, _DebugHttpxClientFactory)
+    client = factory(headers={"a": "b"}, timeout=httpx.Timeout(10.0))
+
+    assert len(recorder) == 1
+    call = recorder[0]
+    assert call["headers"] == {"a": "b"}
+    assert call["timeout"] == httpx.Timeout(10.0)
+    assert call["auth"] is None
+    assert isinstance(call["transport"], _SharedAsyncTransport)
+    assert call["transport"]._transport is mock_transport
+    assert client._transport is call["transport"]
+
+  @patch("google.adk.tools.mcp_tool.mcp_session_manager.sse_client")
+  def test_no_mtls_leaves_opt_in_factory_untouched_sse(self, mock_sse_client):
+    """Test that the SSE path calls an opt-in factory with transport=None."""
+    recorder = []
+    opt_in_factory = _make_opt_in_factory(recorder)
+    sse_params = SseConnectionParams(
+        url="https://example.com/mcp", httpx_client_factory=opt_in_factory
+    )
+    manager = MCPSessionManager(sse_params)
+
+    manager._create_client()
+
+    factory = mock_sse_client.call_args.kwargs["httpx_client_factory"]
+    assert factory._base_factory is opt_in_factory
+    factory(headers={"a": "b"})
+
+    assert recorder[0]["transport"] is None
+
+  @patch("google.adk.tools.mcp_tool.mcp_session_manager.sse_client")
+  def test_mtls_transport_skips_non_opt_in_factory_sse(self, mock_sse_client):
+    """Test that the SSE path replaces a factory without `transport`."""
+    recorder = []
+    sse_params = SseConnectionParams(
+        url="https://example.com/mcp",
+        httpx_client_factory=_make_plain_factory(recorder),
+    )
+    manager = MCPSessionManager(sse_params)
+    mock_transport = Mock(spec=httpx.AsyncBaseTransport)
+
+    manager._create_client(mtls_transport=mock_transport)
+
+    factory = mock_sse_client.call_args.kwargs["httpx_client_factory"]
+    client = factory(headers={"a": "b"})
+
+    assert isinstance(client._transport, _SharedAsyncTransport)
+    assert client._transport._transport is mock_transport
+    assert recorder == []
+
+  @patch("google.adk.tools.mcp_tool.mcp_session_manager.streamable_http_client")
+  def test_mtls_transport_reaches_opt_in_factory_streamable_http(
+      self, mock_streamable_http_client
+  ):
+    """Test that the streamable HTTP path composes mTLS into the factory."""
+    recorder = []
+    http_params = StreamableHTTPConnectionParams(
+        url="https://example.com/mcp",
+        timeout=15.0,
+        sse_read_timeout=30.0,
+        httpx_client_factory=_make_opt_in_factory(recorder),
+    )
+    manager = MCPSessionManager(http_params)
+    mock_transport = Mock(spec=httpx.AsyncBaseTransport)
+
+    manager._create_client(mtls_transport=mock_transport)
+
+    # The streamable HTTP branch calls the factory eagerly.
+    assert len(recorder) == 1
+    call = recorder[0]
+    assert call["timeout"] == httpx.Timeout(15.0, read=30.0)
+    assert isinstance(call["transport"], _SharedAsyncTransport)
+    assert call["transport"]._transport is mock_transport
+
+    http_client = mock_streamable_http_client.call_args.kwargs["http_client"]
+    assert isinstance(http_client, httpx.AsyncClient)
+    assert http_client._transport is call["transport"]
+
+  @patch("google.adk.tools.mcp_tool.mcp_session_manager.streamable_http_client")
+  def test_no_mtls_leaves_opt_in_factory_untouched_streamable_http(
+      self, mock_streamable_http_client
+  ):
+    """Test that the streamable HTTP path passes transport=None without mTLS."""
+    recorder = []
+    http_params = StreamableHTTPConnectionParams(
+        url="https://example.com/mcp",
+        httpx_client_factory=_make_opt_in_factory(recorder),
+    )
+    manager = MCPSessionManager(http_params)
+
+    manager._create_client()
+
+    assert recorder[0]["transport"] is None
+    http_client = mock_streamable_http_client.call_args.kwargs["http_client"]
+    assert not isinstance(http_client._transport, _SharedAsyncTransport)
+
+  @patch("google.adk.tools.mcp_tool.mcp_session_manager.streamable_http_client")
+  def test_mtls_transport_skips_non_opt_in_factory_streamable_http(
+      self, mock_streamable_http_client
+  ):
+    """Test that the streamable HTTP path replaces a plain factory."""
+    recorder = []
+    http_params = StreamableHTTPConnectionParams(
+        url="https://example.com/mcp",
+        httpx_client_factory=_make_plain_factory(recorder),
+    )
+    manager = MCPSessionManager(http_params)
+    mock_transport = Mock(spec=httpx.AsyncBaseTransport)
+
+    manager._create_client(mtls_transport=mock_transport)
+
+    assert recorder == []
+    http_client = mock_streamable_http_client.call_args.kwargs["http_client"]
+    assert isinstance(http_client._transport, _SharedAsyncTransport)
+    assert http_client._transport._transport is mock_transport
+
+  @pytest.mark.asyncio
+  async def test_composed_client_sends_through_adk_transport(self):
+    """Test the composed client end to end, with no mocks.
+
+    A real request must reach ADK's transport while the user's own client
+    configuration stays active, and closing the client must leave the shared
+    transport open.
+    """
+
+    class RecordingTransport(httpx.AsyncBaseTransport):
+      """A stand-in for the mTLS transport that records what it sends."""
+
+      def __init__(self):
+        self.requests = []
+        self.closed = False
+
+      async def handle_async_request(
+          self, request: httpx.Request
+      ) -> httpx.Response:
+        self.requests.append(request)
+        return httpx.Response(200, text="ok")
+
+      async def aclose(self) -> None:
+        self.closed = True
+
+    adk_transport = RecordingTransport()
+    hooked_urls = []
+
+    async def log_request(request: httpx.Request) -> None:
+      hooked_urls.append(str(request.url))
+
+    def user_factory(headers=None, timeout=None, auth=None, *, transport=None):
+      return httpx.AsyncClient(
+          headers=headers,
+          timeout=timeout,
+          auth=auth,
+          transport=transport,
+          event_hooks={"request": [log_request]},
+      )
+
+    factory = _resolve_mtls_factory(user_factory, adk_transport)
+    client = factory(headers={"x-test": "1"})
+    async with client:
+      response = await client.get("https://example.com/mcp")
+
+    assert response.status_code == 200
+    assert len(adk_transport.requests) == 1
+    assert adk_transport.requests[0].headers["x-test"] == "1"
+    assert hooked_urls == ["https://example.com/mcp"]
+    assert adk_transport.closed is False
+
+  @pytest.mark.asyncio
+  async def test_composed_client_close_does_not_close_shared_transport(self):
+    """Test that closing a composed client leaves the mTLS transport open."""
+    mock_transport = AsyncMock(spec=httpx.AsyncBaseTransport)
+
+    factory = _resolve_mtls_factory(_make_opt_in_factory([]), mock_transport)
+    client = factory()
+    await client.aclose()
+
+    mock_transport.aclose.assert_not_awaited()
+
+  def test_opt_in_factory_satisfies_connection_params_field(self):
+    """Test that Pydantic accepts a factory with the extended signature."""
+    opt_in_factory: McpHttpClientFactoryWithTransport = _make_opt_in_factory([])
+
+    sse_params = SseConnectionParams(
+        url="https://example.com/mcp", httpx_client_factory=opt_in_factory
+    )
+    http_params = StreamableHTTPConnectionParams(
+        url="https://example.com/mcp", httpx_client_factory=opt_in_factory
+    )
+
+    assert sse_params.httpx_client_factory is opt_in_factory
+    assert http_params.httpx_client_factory is opt_in_factory
+
+  def test_protocol_is_not_runtime_checkable(self):
+    """Test that the protocol rejects isinstance, which cannot see `transport`."""
+    with pytest.raises(TypeError, match="runtime_checkable"):
+      isinstance(_make_opt_in_factory([]), McpHttpClientFactoryWithTransport)
