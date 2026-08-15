@@ -101,19 +101,13 @@ def llm_request_with_tools():
 
 @pytest.mark.asyncio
 async def test_generate_content_async(oss_llm, llm_request):
-  async for response in oss_llm.generate_content_async(llm_request):
-    assert isinstance(response, LlmResponse)
-    assert response.content.parts[0].text
-
-
-@pytest.mark.asyncio
-async def test_generate_content_async(oss_llm, llm_request):
   responses = [
       resp
       async for resp in oss_llm.generate_content_async(
           llm_request, stream=False
       )
   ]
+  assert isinstance(responses[0], LlmResponse)
   part = responses[0].content.parts[0]
   assert len(part.text) > 0
 
