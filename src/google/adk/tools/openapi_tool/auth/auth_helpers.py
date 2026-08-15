@@ -212,7 +212,8 @@ def openid_dict_to_scheme_credential(
 
   Args:
       config_dict: Dictionary containing OpenID Connect configuration,  must
-        include at least 'authorization_endpoint' and 'token_endpoint'.
+        include at least 'authorization_endpoint' and 'token_endpoint'. The
+        dictionary is not modified; a copy is validated.
       scopes: List of scopes to be used.
       credential_dict: Dictionary containing credential information, must
         include 'client_id', 'client_secret', and 'scopes'.  May optionally
@@ -225,14 +226,16 @@ def openid_dict_to_scheme_credential(
       ValueError: If required fields are missing in the input dictionaries.
   """
 
-  # Validate and create the OpenIdConnectWithConfig scheme
+  # Validate and create the OpenIdConnectWithConfig scheme. Work on a copy so
+  # the caller's dictionary is not modified.
+  config = config_dict.copy()
+  config["scopes"] = scopes
+  # If user provides the OpenID Config as a static dict, it may not contain
+  # openIdConnect URL.
+  if "openIdConnectUrl" not in config:
+    config["openIdConnectUrl"] = ""
   try:
-    config_dict["scopes"] = scopes
-    # If user provides the OpenID Config as a static dict, it may not contain
-    # openIdConnect URL.
-    if "openIdConnectUrl" not in config_dict:
-      config_dict["openIdConnectUrl"] = ""
-    openid_scheme = OpenIdConnectWithConfig.model_validate(config_dict)
+    openid_scheme = OpenIdConnectWithConfig.model_validate(config)
   except ValidationError as e:
     raise ValueError(f"Invalid OpenID Connect configuration: {e}") from e
 
