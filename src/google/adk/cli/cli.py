@@ -207,7 +207,13 @@ async def run_interactively(
   resume_invocation_id = None
   while True:
     if next_message is None:
-      query = input('[user]: ')
+      try:
+        query = input('[user]: ')
+      except EOFError:
+        # Ctrl-D (or an exhausted stdin) ends the session like 'exit', so
+        # cleanup and the save prompt still run.
+        click.echo()
+        break
       if not query or not query.strip():
         continue
       if query == 'exit':
@@ -256,10 +262,16 @@ async def run_interactively(
       # Handle each pending function call. If there are multiple,
       # collect all responses into a single Content with multiple parts.
       parts: list[types.Part] = []
-      for fc_id, fc_name, args in pending:
-        response_content = _prompt_for_function_call(fc_id, fc_name, args)
-        if response_content.parts:
-          parts.extend(response_content.parts)
+      try:
+        for fc_id, fc_name, args in pending:
+          response_content = _prompt_for_function_call(fc_id, fc_name, args)
+          if response_content.parts:
+            parts.extend(response_content.parts)
+      except EOFError:
+        # Abandon the turn rather than answering only some of the pending
+        # calls, then leave the loop like 'exit' does.
+        click.echo()
+        break
       next_message = types.Content(role='user', parts=parts)
       resume_invocation_id = invocation_id
 
@@ -517,7 +529,14 @@ async def run_cli(
     )
 
   if save_session:
-    session_id = session_id or input('Session ID to save: ')
+    if not session_id:
+      try:
+        session_id = input('Session ID to save: ')
+      except EOFError:
+        # stdin is already exhausted on the Ctrl-D path; save under the live
+        # session id rather than losing the session.
+        click.echo()
+        session_id = session.id
     session_path = agent_root / f'{session_id}.session.json'
 
     # Fetch the session again to get all the details.
