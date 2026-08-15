@@ -986,6 +986,7 @@ class ApiServer:
 
   def get_fast_api_app(
       self,
+      *,
       lifespan: Optional[Lifespan[FastAPI]] = None,
       allow_origins: Optional[list[str]] = None,
       web_assets_dir: Optional[str] = None,
@@ -1005,6 +1006,9 @@ class ApiServer:
     endpoints,
     but if you specify a web_assets_dir, it'll also serve the static web assets
     from that directory.
+
+    Every parameter is keyword-only, so that subclasses can override this
+    method with a keyword-forwarding signature.
 
     Args:
       lifespan: The lifespan of the FastAPI app.
