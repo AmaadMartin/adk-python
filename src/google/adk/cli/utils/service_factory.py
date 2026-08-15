@@ -23,6 +23,7 @@ from urllib.parse import urlsplit
 from urllib.parse import urlunsplit
 
 from ...artifacts.base_artifact_service import BaseArtifactService
+from ...errors._service_config_error import ServiceConfigError
 from ...memory.base_memory_service import BaseMemoryService
 from ...sessions.base_session_service import BaseSessionService
 from ...utils.env_utils import is_env_enabled
@@ -252,12 +253,15 @@ def create_memory_service_from_options(
     logger.info(
         "Using memory service URI: %s", _redact_uri_for_log(memory_service_uri)
     )
-    service = registry.create_memory_service(
-        memory_service_uri,
-        agents_dir=str(base_path),
-    )
+    try:
+      service = registry.create_memory_service(
+          memory_service_uri,
+          agents_dir=str(base_path),
+      )
+    except ValueError as exc:
+      raise ServiceConfigError(str(exc)) from exc
     if service is None:
-      raise ValueError(
+      raise ServiceConfigError(
           "Unsupported memory service URI: %s"
           % _redact_uri_for_log(memory_service_uri)
       )
@@ -286,13 +290,16 @@ def create_artifact_service_from_options(
         "Using artifact service URI: %s",
         _redact_uri_for_log(artifact_service_uri),
     )
-    service = registry.create_artifact_service(
-        artifact_service_uri,
-        agents_dir=str(base_path),
-    )
+    try:
+      service = registry.create_artifact_service(
+          artifact_service_uri,
+          agents_dir=str(base_path),
+      )
+    except ValueError as exc:
+      raise ServiceConfigError(str(exc)) from exc
     if service is None:
       if strict_uri:
-        raise ValueError(
+        raise ServiceConfigError(
             "Unsupported artifact service URI: %s"
             % _redact_uri_for_log(artifact_service_uri)
         )

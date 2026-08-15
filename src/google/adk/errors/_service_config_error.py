@@ -12,7 +12,16 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from ._service_config_error import ServiceConfigError
-from ._stale_session_error import StaleSessionError
+from __future__ import annotations
 
-__all__ = ["ServiceConfigError", "StaleSessionError"]
+
+class ServiceConfigError(ValueError):
+  """Raised when a service or storage backend cannot be configured.
+
+  This is raised when an option such as ``memory_service_uri``,
+  ``artifact_service_uri`` or ``eval_storage_uri`` names a backend that ADK
+  cannot resolve, or when the named backend rejects the value.
+
+  Inherits from ValueError so that callers embedding ADK can catch it with a
+  plain ``except ValueError``.
+  """
