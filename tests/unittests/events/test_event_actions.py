@@ -19,6 +19,9 @@ from __future__ import annotations
 import datetime
 import logging
 
+from fastapi.openapi.models import APIKey
+from fastapi.openapi.models import APIKeyIn
+from google.adk.auth.auth_tool import AuthConfig
 from google.adk.events.event_actions import _make_json_serializable
 from google.adk.events.event_actions import EventActions
 from pydantic import BaseModel
@@ -148,3 +151,23 @@ class TestAgentStateSerialization:
         'Failed to serialize `agent_state`' in record.message
         for record in caplog.records
     )
+
+
+class TestRequestedAuthConfigsSerialization:
+  """Tests for the auth configs a persisted event carries."""
+
+  def test_requested_auth_configs_preserve_api_key_scheme(self):
+    """A session store reloads events, so the scheme must survive the trip."""
+    scheme = APIKey(
+        **{'type': 'apiKey', 'in': APIKeyIn.header, 'name': 'X-Api-Key'}
+    )
+    actions = EventActions(
+        requested_auth_configs={'fc1': AuthConfig(auth_scheme=scheme)}
+    )
+
+    reloaded = EventActions.model_validate_json(actions.model_dump_json())
+
+    restored = reloaded.requested_auth_configs['fc1'].auth_scheme
+    assert isinstance(restored, APIKey)
+    assert restored.in_ == APIKeyIn.header
+    assert restored.name == 'X-Api-Key'

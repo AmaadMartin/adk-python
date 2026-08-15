@@ -15,6 +15,8 @@
 from __future__ import annotations
 
 from enum import Enum
+from typing import Annotated
+from typing import Any
 from typing import List
 from typing import Optional
 from typing import Union
@@ -24,6 +26,7 @@ from fastapi.openapi.models import OAuthFlows
 from fastapi.openapi.models import SecurityBase
 from fastapi.openapi.models import SecurityScheme
 from fastapi.openapi.models import SecuritySchemeType
+from pydantic import BeforeValidator
 from pydantic import Field
 
 from ..utils.feature_decorator import experimental
@@ -53,10 +56,35 @@ class CustomAuthScheme(BaseModelWithConfig):
   type_: str = Field(alias="type")
 
 
+_FIELD_NAME_TO_ALIAS = {"type_": "type", "in_": "in"}
+
+
+def _restore_security_scheme_aliases(value: Any) -> Any:
+  """Rewrites field-name keys to the OpenAPI aliases the union expects.
+
+  The OpenAPI security-scheme models re-used from fastapi alias ``type_`` to
+  ``type`` and ``in_`` to ``in``, and they do not set ``populate_by_name``, so
+  they only validate from the aliased form. ADK models serialize by field name
+  by default, which would otherwise leave the union unable to restore an
+  ``APIKey``: no member accepts a ``type_`` key, so the payload falls through
+  to whichever member absorbs every key as an extra.
+  """
+  if not isinstance(value, dict):
+    return value
+  restored = dict(value)
+  for field_name, alias in _FIELD_NAME_TO_ALIAS.items():
+    if field_name in restored and alias not in restored:
+      restored[alias] = restored.pop(field_name)
+  return restored
+
+
 # AuthSchemes contains SecuritySchemes from OpenAPI 3.0, an extra flattened
 # OpenIdConnectWithConfig, and supports external schemes
 # that subclass CustomAuthScheme.
-AuthScheme = Union[SecurityScheme, OpenIdConnectWithConfig, CustomAuthScheme]
+AuthScheme = Annotated[
+    Union[SecurityScheme, OpenIdConnectWithConfig, CustomAuthScheme],
+    BeforeValidator(_restore_security_scheme_aliases),
+]
 
 
 class OAuthGrantType(str, Enum):
