@@ -299,8 +299,7 @@ class RedisSessionService(BaseSessionService):
         except Exception as e:
           logger.warning("Failed to parse session at key %s: %s", key, e)
 
-    # Sort descending by last_update_time
-    sessions.sort(key=lambda s: s.last_update_time, reverse=True)
+    sessions.sort(key=lambda s: (s.last_update_time, s.user_id, s.id))
     return ListSessionsResponse(sessions=sessions)
 
   async def delete_session(
