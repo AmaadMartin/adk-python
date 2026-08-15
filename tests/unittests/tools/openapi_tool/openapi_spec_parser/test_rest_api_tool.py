@@ -33,6 +33,7 @@ from google.adk.auth.auth_credential import HttpCredentials
 from google.adk.features import FeatureName
 from google.adk.features._feature_registry import temporary_feature_override
 from google.adk.sessions.state import State
+from google.adk.tools.openapi_tool.auth.auth_helpers import credential_to_param
 from google.adk.tools.openapi_tool.auth.auth_helpers import token_to_scheme_credential
 from google.adk.tools.openapi_tool.common.common import ApiParameter
 from google.adk.tools.openapi_tool.openapi_spec_parser.openapi_spec_parser import OperationEndpoint
@@ -1897,6 +1898,35 @@ class TestRestApiToolFromParsedOperation:
 
     assert tool.auth_scheme == sample_auth_scheme
     assert tool.auth_credential == sample_auth_credential
+
+  @pytest.mark.parametrize("location", ["header", "query", "cookie"])
+  def test_from_parsed_operation_str_preserves_api_key_scheme(self, location):
+    """Serializing and reloading a tool must keep the API key attachable.
+
+    ``ParsedOperation`` dumps by field name. An ``APIKey`` used to reload as
+    another union member, and ``credential_to_param`` then raised instead of
+    returning the parameter that carries the key.
+    """
+    parsed = _build_parsed_operation(
+        Operation(operationId="listPets", description="List pets."),
+        auth_scheme=APIKey(
+            **{"type": "apiKey", "in": location, "name": "X-API-Key"}
+        ),
+        auth_credential=AuthCredential(
+            auth_type=AuthCredentialTypes.API_KEY, api_key="secret123"
+        ),
+    )
+
+    tool = RestApiTool.from_parsed_operation_str(parsed.model_dump_json())
+
+    assert isinstance(tool.auth_scheme, APIKey)
+    assert tool.auth_scheme.in_.value == location
+    parameter, kwargs = credential_to_param(
+        tool.auth_scheme, tool.auth_credential
+    )
+    assert parameter.original_name == "X-API-Key"
+    assert parameter.param_location == location
+    assert kwargs == {parameter.py_name: "secret123"}
 
 
 class TestRestApiToolAuthConfiguration:
