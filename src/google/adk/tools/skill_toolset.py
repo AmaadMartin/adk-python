@@ -57,6 +57,8 @@ logger = logging.getLogger("google_adk." + __name__)
 
 _DEFAULT_SCRIPT_TIMEOUT = 300
 _MAX_SKILL_PAYLOAD_BYTES = 16 * 1024 * 1024  # 16 MB
+# Matches the per-toolset budget that Runner._cleanup_toolsets allows.
+_TOOLSET_CLOSE_TIMEOUT = 10.0
 
 # Message used for the "Content Injection" pattern.
 _BINARY_FILE_DETECTED_MSG = (
@@ -1443,17 +1445,24 @@ class SkillToolset(BaseToolset):
 
     llm_request.append_instructions(instructions)
 
-  @override
-  async def close(self) -> None:
-    """Performs cleanup and releases resources held by the toolset."""
-    # Close the provided toolsets first: they hold external resources such as
-    # network sessions and subprocesses, and the unguarded environment close
-    # below would skip them if it raised. Each close is awaited in the caller's
-    # task, because running it in a new task breaks the anyio cancel scope of
-    # MCP toolsets on Python 3.10 and 3.11.
+  async def _close_provided_toolsets(self) -> None:
+    """Closes the toolsets given via `additional_tools`, isolating failures.
+
+    A toolset that fails or exceeds `_TOOLSET_CLOSE_TIMEOUT` is logged and
+    skipped, so one bad toolset cannot hold the remaining resources open.
+
+    The loop is sequential rather than an `asyncio.gather`, because some
+    toolsets (MCP ones, via anyio) keep a cancel scope in task-local context
+    and misbehave when a new task closes them.
+    """
     for toolset in self._provided_toolsets:
       try:
-        await toolset.close()
+        await asyncio.wait_for(toolset.close(), timeout=_TOOLSET_CLOSE_TIMEOUT)
+      except asyncio.TimeoutError:
+        logger.warning(
+            "Timed out closing toolset %s provided via additional_tools.",
+            type(toolset).__name__,
+        )
       except Exception as e:  # pylint: disable=broad-except
         logger.warning(
             "Error closing toolset %s provided via additional_tools: %s",
@@ -1461,14 +1470,24 @@ class SkillToolset(BaseToolset):
             e,
             exc_info=e,
         )
-    if self._env is not None and self._env.is_initialized:
-      await self._env.close()
-    for turn_cache in self._fetched_skill_cache.values():
-      for cached in turn_cache.values():
-        if isinstance(cached, asyncio.Future) and not cached.done():
-          cached.cancel()
-    self._fetched_skill_cache.clear()
-    await super().close()
+
+  @override
+  async def close(self) -> None:
+    """Performs cleanup and releases resources held by the toolset."""
+    # The provided toolsets are closed first because they hold external
+    # resources such as network sessions and subprocesses, and the environment
+    # close below would skip them if it raised.
+    try:
+      await self._close_provided_toolsets()
+      if self._env is not None and self._env.is_initialized:
+        await self._env.close()
+    finally:
+      for turn_cache in self._fetched_skill_cache.values():
+        for cached in turn_cache.values():
+          if isinstance(cached, asyncio.Future) and not cached.done():
+            cached.cancel()
+      self._fetched_skill_cache.clear()
+      await super().close()
 
 
 DEFAULT_SKILL_SYSTEM_INSTRUCTION = _build_skill_system_instruction()
