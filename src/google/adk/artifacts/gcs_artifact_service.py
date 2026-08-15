@@ -449,6 +449,14 @@ class GcsArtifactService(BaseArtifactService):
       session_id: Optional[str],
       filename: str,
   ) -> None:
+    """Deletes every version of an artifact.
+
+    A version that another actor already deleted counts as deleted, so the
+    loop tolerates a not-found response and continues with the next version.
+    """
+    # Imported lazily: google-cloud-storage is an optional extra.
+    from google.cloud import exceptions as cloud_exceptions  # pylint: disable=g-import-not-at-top
+
     versions = self._list_versions(
         app_name=app_name,
         user_id=user_id,
@@ -460,8 +468,13 @@ class GcsArtifactService(BaseArtifactService):
           app_name, user_id, filename, version, session_id
       )
       blob = self.bucket.blob(blob_name)
-      blob.delete()
-    return
+      try:
+        blob.delete()
+      except cloud_exceptions.NotFound:
+        # Another actor deleted this version between the list and the delete.
+        logger.debug(
+            "Version %d of artifact %s was already deleted.", version, filename
+        )
 
   def _list_versions(
       self,
