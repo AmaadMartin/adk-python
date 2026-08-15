@@ -41,6 +41,7 @@ from ....auth.auth_credential import ServiceAccount
 from ....auth.auth_credential import ServiceAccountCredential
 from ....auth.auth_schemes import AuthScheme
 from ....auth.auth_schemes import AuthSchemeType
+from ....auth.auth_schemes import CustomAuthScheme
 from ....auth.auth_schemes import OpenIdConnectWithConfig
 from ..common.common import ApiParameter
 
@@ -429,16 +430,19 @@ def credential_to_param(
 def dict_to_auth_scheme(data: Dict[str, Any]) -> AuthScheme:
   """Converts a dictionary to a FastAPI AuthScheme object.
 
+  An `openIdConnect` dictionary carrying both flattened endpoints selects
+  `OpenIdConnectWithConfig`; any other `type` selects `CustomAuthScheme`.
+
   Args:
       data: The dictionary representing the security scheme.
 
   Returns:
-      A AuthScheme object (APIKey, HTTPBase, OAuth2, OpenIdConnect, or
-      HTTPBearer).
+      A AuthScheme object (APIKey, HTTPBase, HTTPBearer, OAuth2,
+      OpenIdConnect, OpenIdConnectWithConfig, or CustomAuthScheme).
 
   Raises:
-      ValueError: If the 'type' field is missing or invalid, or if the
-          dictionary cannot be converted to the corresponding Pydantic model.
+      ValueError: If the 'type' field is missing, or if the dictionary cannot
+          be converted to the corresponding Pydantic model.
 
   Example:
   ```python
@@ -474,6 +478,22 @@ def dict_to_auth_scheme(data: Dict[str, Any]) -> AuthScheme:
   }
   openid_scheme = dict_to_auth_scheme(openid_data)
 
+  openid_config_data = {
+      "type": "openIdConnect",
+      "openIdConnectUrl":
+          "https://example.com/.well-known/openid-configuration",
+      "authorization_endpoint": "https://example.com/auth",
+      "token_endpoint": "https://example.com/token",
+      "scopes": ["openid", "email"],
+  }
+  openid_config_scheme = dict_to_auth_scheme(openid_config_data)
+
+  custom_data = {
+      "type": "myCustomScheme",
+      "endpoint": "https://example.com/custom",
+  }
+  custom_scheme = dict_to_auth_scheme(custom_data)
+
 
   ```
   """
@@ -492,9 +512,11 @@ def dict_to_auth_scheme(data: Dict[str, Any]) -> AuthScheme:
     elif security_type == "oauth2":
       return OAuth2.model_validate(data)
     elif security_type == "openIdConnect":
+      if "authorization_endpoint" in data and "token_endpoint" in data:
+        return OpenIdConnectWithConfig.model_validate(data)
       return OpenIdConnect.model_validate(data)
     else:
-      raise ValueError(f"Invalid security scheme type: {security_type}")
+      return CustomAuthScheme.model_validate(data)
 
   except ValidationError as e:
     raise ValueError(f"Invalid security scheme data: {e}") from e

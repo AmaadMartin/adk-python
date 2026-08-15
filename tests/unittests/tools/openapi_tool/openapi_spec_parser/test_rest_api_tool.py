@@ -30,6 +30,8 @@ from google.adk.auth.auth_credential import AuthCredential
 from google.adk.auth.auth_credential import AuthCredentialTypes
 from google.adk.auth.auth_credential import HttpAuth
 from google.adk.auth.auth_credential import HttpCredentials
+from google.adk.auth.auth_schemes import CustomAuthScheme
+from google.adk.auth.auth_schemes import OpenIdConnectWithConfig
 from google.adk.features import FeatureName
 from google.adk.features._feature_registry import temporary_feature_override
 from google.adk.sessions.state import State
@@ -1921,6 +1923,31 @@ class TestRestApiToolAuthConfiguration:
     assert isinstance(tool.auth_scheme, APIKey)
     assert tool.auth_scheme.name == "X-API-Key"
     assert tool.auth_scheme.in_.value == "header"
+
+  def test_configure_auth_scheme_dict_builds_openid_connect_with_config(
+      self, tool
+  ):
+    tool.configure_auth_scheme({
+        "type": "openIdConnect",
+        "openIdConnectUrl": (
+            "https://example.com/.well-known/openid-configuration"
+        ),
+        "authorization_endpoint": "https://example.com/auth",
+        "token_endpoint": "https://example.com/token",
+        "scopes": ["openid", "email"],
+    })
+
+    assert isinstance(tool.auth_scheme, OpenIdConnectWithConfig)
+    assert tool.auth_scheme.token_endpoint == "https://example.com/token"
+
+  def test_configure_auth_scheme_dict_builds_custom_scheme(self, tool):
+    tool.configure_auth_scheme({
+        "type": "myCustomScheme",
+        "endpoint": "https://example.com/custom",
+    })
+
+    assert isinstance(tool.auth_scheme, CustomAuthScheme)
+    assert tool.auth_scheme.type_ == "myCustomScheme"
 
   def test_configure_auth_credential_parses_json_string(self, tool):
     credential = AuthCredential(

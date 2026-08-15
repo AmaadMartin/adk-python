@@ -24,10 +24,14 @@ from google.adk.auth.auth_credential import AuthCredential
 from google.adk.auth.auth_credential import AuthCredentialTypes
 from google.adk.auth.auth_credential import HttpAuth
 from google.adk.auth.auth_credential import HttpCredentials
+from google.adk.auth.auth_credential import OAuth2Auth
 from google.adk.auth.auth_credential import ServiceAccount
 from google.adk.auth.auth_credential import ServiceAccountCredential
+from google.adk.auth.auth_handler import AuthHandler
 from google.adk.auth.auth_schemes import AuthSchemeType
+from google.adk.auth.auth_schemes import CustomAuthScheme
 from google.adk.auth.auth_schemes import OpenIdConnectWithConfig
+from google.adk.auth.auth_tool import AuthConfig
 from google.adk.tools.openapi_tool.auth.auth_helpers import credential_to_param
 from google.adk.tools.openapi_tool.auth.auth_helpers import dict_to_auth_scheme
 from google.adk.tools.openapi_tool.auth.auth_helpers import INTERNAL_AUTH_PREFIX
@@ -543,10 +547,107 @@ def test_dict_to_auth_scheme_openid_connect():
   scheme = dict_to_auth_scheme(data)
 
   assert isinstance(scheme, OpenIdConnect)
+  assert not isinstance(scheme, OpenIdConnectWithConfig)
   assert (
       scheme.openIdConnectUrl
       == "https://example.com/.well-known/openid-configuration"
   )
+
+
+def test_dict_to_auth_scheme_openid_connect_with_config():
+  data = {
+      "type": "openIdConnect",
+      "openIdConnectUrl": (
+          "https://example.com/.well-known/openid-configuration"
+      ),
+      "authorization_endpoint": "https://example.com/auth",
+      "token_endpoint": "https://example.com/token",
+      "scopes": ["openid", "email"],
+  }
+
+  scheme = dict_to_auth_scheme(data)
+
+  assert isinstance(scheme, OpenIdConnectWithConfig)
+  assert scheme.authorization_endpoint == "https://example.com/auth"
+  assert scheme.token_endpoint == "https://example.com/token"
+  assert scheme.scopes == ["openid", "email"]
+  assert (
+      scheme.model_extra["openIdConnectUrl"]
+      == "https://example.com/.well-known/openid-configuration"
+  )
+
+
+def test_dict_to_auth_scheme_openid_connect_with_config_without_url():
+  data = {
+      "type": "openIdConnect",
+      "authorization_endpoint": "https://example.com/auth",
+      "token_endpoint": "https://example.com/token",
+  }
+
+  scheme = dict_to_auth_scheme(data)
+
+  assert isinstance(scheme, OpenIdConnectWithConfig)
+  assert scheme.authorization_endpoint == "https://example.com/auth"
+
+
+def test_dict_to_auth_scheme_openid_connect_partial_config_falls_back():
+  data = {
+      "type": "openIdConnect",
+      "openIdConnectUrl": (
+          "https://example.com/.well-known/openid-configuration"
+      ),
+      "authorization_endpoint": "https://example.com/auth",
+  }
+
+  scheme = dict_to_auth_scheme(data)
+
+  assert isinstance(scheme, OpenIdConnect)
+  assert not isinstance(scheme, OpenIdConnectWithConfig)
+
+
+def test_dict_to_auth_scheme_openid_connect_config_drives_auth_uri():
+  scheme = dict_to_auth_scheme({
+      "type": "openIdConnect",
+      "openIdConnectUrl": (
+          "https://example.com/.well-known/openid-configuration"
+      ),
+      "authorization_endpoint": "https://example.com/auth",
+      "token_endpoint": "https://example.com/token",
+      "scopes": ["openid"],
+  })
+  credential = AuthCredential(
+      auth_type=AuthCredentialTypes.OPEN_ID_CONNECT,
+      oauth2=OAuth2Auth(
+          client_id="client_id",
+          client_secret="client_secret",
+          redirect_uri="https://example.com/callback",
+      ),
+  )
+
+  auth_handler = AuthHandler(
+      AuthConfig(auth_scheme=scheme, raw_auth_credential=credential)
+  )
+  exchanged_credential = auth_handler.generate_auth_uri()
+
+  assert exchanged_credential.oauth2.auth_uri.startswith(
+      "https://example.com/auth?"
+  )
+
+
+def test_dict_to_auth_scheme_custom_scheme():
+  data = {"type": "myCustomScheme", "foo": "bar"}
+
+  scheme = dict_to_auth_scheme(data)
+
+  assert isinstance(scheme, CustomAuthScheme)
+  assert scheme.type_ == "myCustomScheme"
+  assert scheme.model_extra["foo"] == "bar"
+
+
+def test_dict_to_auth_scheme_custom_scheme_invalid_data():
+  data = {"type": 5}
+  with pytest.raises(ValueError, match="Invalid security scheme data"):
+    dict_to_auth_scheme(data)
 
 
 def test_dict_to_auth_scheme_missing_type():
@@ -557,10 +658,13 @@ def test_dict_to_auth_scheme_missing_type():
     dict_to_auth_scheme(data)
 
 
-def test_dict_to_auth_scheme_invalid_type():
+def test_dict_to_auth_scheme_unknown_type_returns_custom_scheme():
   data = {"type": "invalid", "in": "header", "name": "X-API-Key"}
-  with pytest.raises(ValueError, match="Invalid security scheme type: invalid"):
-    dict_to_auth_scheme(data)
+
+  scheme = dict_to_auth_scheme(data)
+
+  assert isinstance(scheme, CustomAuthScheme)
+  assert scheme.type_ == "invalid"
 
 
 def test_dict_to_auth_scheme_invalid_data():
