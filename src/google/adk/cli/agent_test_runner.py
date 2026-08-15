@@ -38,9 +38,7 @@ from google.adk.utils._dependency import missing_extra
 from google.genai import types
 from pydantic import alias_generators
 
-# pytest ships in the 'test' extra, not with a default install, and this module
-# is only imported by `adk test`. Fail with the extra to install rather than a
-# bare ModuleNotFoundError.
+# pytest ships in the 'test' extra; this module is only imported by `adk test`.
 try:
   import pytest
 except ImportError as e:

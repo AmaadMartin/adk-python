@@ -164,7 +164,7 @@ def test_agent_test_runner_fails_on_import_naming_its_extra():
   with mock.patch.dict("sys.modules", {"pytest": None}):
     sys.modules.pop("google.adk.cli.agent_test_runner", None)
     with pytest.raises(ImportError) as exc_info:
-      import google.adk.cli.agent_test_runner  # noqa: F401
+      importlib.import_module("google.adk.cli.agent_test_runner")
 
     message = str(exc_info.value)
     assert "pytest" in message
