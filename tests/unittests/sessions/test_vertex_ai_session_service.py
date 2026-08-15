@@ -13,6 +13,7 @@
 # limitations under the License.
 import copy
 import datetime
+import logging
 import re
 import types
 from typing import Any
@@ -32,6 +33,7 @@ from google.adk.models.cache_metadata import CacheMetadata
 from google.adk.sessions.base_session_service import GetSessionConfig
 from google.adk.sessions.session import Session
 from google.adk.sessions.vertex_ai_session_service import _extract_short_session_id
+from google.adk.sessions.vertex_ai_session_service import _normalize_compaction_payload
 from google.adk.sessions.vertex_ai_session_service import _validate_session_id
 from google.adk.sessions.vertex_ai_session_service import VertexAiSessionService
 from google.api_core import exceptions as api_core_exceptions
@@ -1327,6 +1329,429 @@ async def test_append_event_with_compaction_and_custom_metadata():
   # User custom_metadata is preserved without the internal _compaction key
   assert appended_event.custom_metadata == {'user_key': 'user_value'}
   assert '_compaction' not in (appended_event.custom_metadata or {})
+
+
+MOCK_LEGACY_JS_SESSION_ID = 'legacy_js'
+MOCK_LEGACY_JS_USER_ID = 'legacy_js_user'
+MOCK_LEGACY_JS_SESSION_JSON = {
+    'name': (
+        'projects/test-project/locations/test-location/'
+        f'reasoningEngines/123/sessions/{MOCK_LEGACY_JS_SESSION_ID}'
+    ),
+    'update_time': '2024-12-12T12:12:12.123456Z',
+    'user_id': MOCK_LEGACY_JS_USER_ID,
+}
+# What adk-js persists: epoch milliseconds and a flat string summary.
+MOCK_LEGACY_JS_COMPACTION = {
+    'startTime': 1700000000000,
+    'endTime': 1700000001000,
+    'compactedContent': 'js summary',
+}
+# What adk-python persists, in each of its two channels.
+MOCK_CANONICAL_CONTENT = {'role': 'model', 'parts': [{'text': 'summary'}]}
+MOCK_CANONICAL_SNAKE_COMPACTION = {
+    'start_timestamp': 1000.0,
+    'end_timestamp': 2000.0,
+    'compacted_content': MOCK_CANONICAL_CONTENT,
+}
+MOCK_CANONICAL_CAMEL_COMPACTION = {
+    'startTimestamp': 1000.0,
+    'endTimestamp': 2000.0,
+    'compactedContent': MOCK_CANONICAL_CONTENT,
+}
+VERTEX_SESSION_SERVICE_LOGGER = (
+    'google_adk.google.adk.sessions.vertex_ai_session_service'
+)
+
+
+def _legacy_js_event_json(event_id: str, **fields: Any) -> dict[str, Any]:
+  """Builds an API event JSON for the legacy compaction session."""
+  return {
+      'name': (
+          'projects/test-project/locations/test-location/reasoningEngines/123/'
+          f'sessions/{MOCK_LEGACY_JS_SESSION_ID}/events/{event_id}'
+      ),
+      'invocation_id': f'invocation_{event_id}',
+      'author': 'model',
+      'timestamp': '2024-12-12T12:12:12.123456Z',
+      **fields,
+  }
+
+
+def _compaction_event_json(channel: str, payload: Any) -> dict[str, Any]:
+  """Builds an event carrying `payload` on one of the three read channels."""
+  content = {'parts': [{'text': 'kept'}]}
+  if channel == 'raw_event':
+    return _legacy_js_event_json(
+        '1',
+        rawEvent={
+            'author': 'model',
+            'content': content,
+            'actions': {'compaction': payload},
+        },
+    )
+  if channel == 'api_actions':
+    return _legacy_js_event_json(
+        '1', content=content, actions={'compaction': payload}
+    )
+  return _legacy_js_event_json(
+      '1',
+      content=content,
+      event_metadata={'custom_metadata': {'_compaction': payload}},
+  )
+
+
+async def _get_legacy_js_session(
+    mock_api_client_instance: MockAsyncClient, events: List[dict[str, Any]]
+) -> Optional[Session]:
+  """Seeds the mock client with `events`, then reads the session back."""
+  mock_api_client_instance.session_dict[MOCK_LEGACY_JS_SESSION_ID] = (
+      MOCK_LEGACY_JS_SESSION_JSON
+  )
+  mock_api_client_instance.event_dict[MOCK_LEGACY_JS_SESSION_ID] = (
+      copy.deepcopy(events),
+      None,
+  )
+  return await mock_vertex_ai_session_service().get_session(
+      app_name='123',
+      user_id=MOCK_LEGACY_JS_USER_ID,
+      session_id=MOCK_LEGACY_JS_SESSION_ID,
+  )
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_get_session_restores_legacy_js_compaction_from_raw_event(
+    mock_api_client_instance,
+):
+  """adk-js parks the compaction at the top level of the raw event."""
+  session = await _get_legacy_js_session(
+      mock_api_client_instance,
+      [
+          _legacy_js_event_json(
+              '1',
+              rawEvent={
+                  'author': 'model',
+                  'isCompacted': True,
+                  **MOCK_LEGACY_JS_COMPACTION,
+              },
+          )
+      ],
+  )
+
+  assert session is not None
+  compaction = session.events[0].actions.compaction
+  assert compaction is not None
+  assert compaction.start_timestamp == 1700000000.0
+  assert compaction.end_timestamp == 1700000001.0
+  assert compaction.compacted_content.role == 'model'
+  assert compaction.compacted_content.parts[0].text == 'js summary'
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_get_session_restores_legacy_js_compaction_from_nested_raw_actions(
+    mock_api_client_instance,
+):
+  """A JS read-then-append cycle also parks it under actions.compaction."""
+  session = await _get_legacy_js_session(
+      mock_api_client_instance,
+      [
+          _legacy_js_event_json('1', content={'parts': [{'text': 'hello'}]}),
+          _legacy_js_event_json(
+              '2',
+              rawEvent={
+                  'author': 'model',
+                  'actions': {'compaction': dict(MOCK_LEGACY_JS_COMPACTION)},
+              },
+          ),
+      ],
+  )
+
+  assert session is not None
+  # This payload used to raise and take the whole session down.
+  assert len(session.events) == 2
+  assert session.events[0].content.parts[0].text == 'hello'
+  compaction = session.events[1].actions.compaction
+  assert compaction is not None
+  assert compaction.start_timestamp == 1700000000.0
+  assert compaction.end_timestamp == 1700000001.0
+  assert compaction.compacted_content.parts[0].text == 'js summary'
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_get_session_restores_legacy_js_compaction_from_custom_metadata(
+    mock_api_client_instance,
+):
+  """An event with no raw event falls back to the custom_metadata channel."""
+  session = await _get_legacy_js_session(
+      mock_api_client_instance,
+      [
+          _legacy_js_event_json(
+              '1',
+              event_metadata={
+                  'custom_metadata': {
+                      '_compaction': dict(MOCK_LEGACY_JS_COMPACTION),
+                      'user_key': 'user_value',
+                  }
+              },
+          )
+      ],
+  )
+
+  assert session is not None
+  event = session.events[0]
+  assert event.actions.compaction is not None
+  assert event.actions.compaction.start_timestamp == 1700000000.0
+  assert event.actions.compaction.end_timestamp == 1700000001.0
+  assert event.actions.compaction.compacted_content.parts[0].text == (
+      'js summary'
+  )
+  assert event.custom_metadata == {'user_key': 'user_value'}
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_get_session_prefers_the_nested_raw_event_compaction(
+    mock_api_client_instance,
+):
+  """The nested payload wins over the top-level one; it is more specific."""
+  session = await _get_legacy_js_session(
+      mock_api_client_instance,
+      [
+          _legacy_js_event_json(
+              '1',
+              rawEvent={
+                  'author': 'model',
+                  'isCompacted': True,
+                  'startTime': 1500000000000,
+                  'endTime': 1500000001000,
+                  'compactedContent': 'top level summary',
+                  'actions': {'compaction': dict(MOCK_LEGACY_JS_COMPACTION)},
+              },
+          )
+      ],
+  )
+
+  assert session is not None
+  compaction = session.events[0].actions.compaction
+  assert compaction is not None
+  assert compaction.start_timestamp == 1700000000.0
+  assert compaction.compacted_content.parts[0].text == 'js summary'
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_get_session_restores_legacy_js_compaction_from_api_actions(
+    mock_api_client_instance,
+):
+  """The typed API actions field is normalized on the same terms."""
+  session = await _get_legacy_js_session(
+      mock_api_client_instance,
+      [
+          _legacy_js_event_json(
+              '1', actions={'compaction': dict(MOCK_LEGACY_JS_COMPACTION)}
+          )
+      ],
+  )
+
+  assert session is not None
+  compaction = session.events[0].actions.compaction
+  assert compaction is not None
+  assert compaction.start_timestamp == 1700000000.0
+  assert compaction.compacted_content.parts[0].text == 'js summary'
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+@pytest.mark.parametrize(
+    'channel', ['raw_event', 'api_actions', 'custom_metadata']
+)
+@pytest.mark.parametrize(
+    'payload',
+    [
+        'garbage',
+        {
+            'startTime': 'nope',
+            'endTime': 2,
+            'compactedContent': 'secret summary',
+        },
+        {'startTime': 1, 'endTime': 2, 'compactedContent': ['secret summary']},
+        {},
+    ],
+)
+async def test_get_session_drops_malformed_compaction_without_raising(
+    mock_api_client_instance, caplog, channel, payload
+):
+  """An unreadable compaction degrades the event; it never fails the read."""
+  event_json = _compaction_event_json(channel, payload)
+
+  with caplog.at_level(logging.WARNING, logger=VERTEX_SESSION_SERVICE_LOGGER):
+    session = await _get_legacy_js_session(
+        mock_api_client_instance, [event_json]
+    )
+
+  assert session is not None
+  event = session.events[0]
+  assert event.author == 'model'
+  assert event.content.parts[0].text == 'kept'
+  assert event.actions.compaction is None
+  assert caplog.records
+  assert event_json['name'] in caplog.text
+  # The summary is user conversation text and must stay out of the log.
+  assert 'secret summary' not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+@pytest.mark.parametrize(
+    'channel, payload',
+    [
+        ('raw_event', MOCK_CANONICAL_CAMEL_COMPACTION),
+        ('api_actions', MOCK_CANONICAL_SNAKE_COMPACTION),
+        ('custom_metadata', MOCK_CANONICAL_SNAKE_COMPACTION),
+    ],
+)
+async def test_get_session_preserves_canonical_compaction_spellings(
+    mock_api_client_instance, channel, payload
+):
+  """A canonical payload is read exactly as before: seconds stay seconds."""
+  session = await _get_legacy_js_session(
+      mock_api_client_instance,
+      [_compaction_event_json(channel, copy.deepcopy(payload))],
+  )
+
+  assert session is not None
+  compaction = session.events[0].actions.compaction
+  assert compaction is not None
+  assert compaction.start_timestamp == 1000.0
+  assert compaction.end_timestamp == 2000.0
+  assert compaction.compacted_content.parts[0].text == 'summary'
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_get_session_raises_for_a_malformed_non_compaction_field(
+    mock_api_client_instance,
+):
+  """Containment is scoped: other malformed raw event fields still raise."""
+  with pytest.raises(pydantic.ValidationError, match='actions'):
+    await _get_legacy_js_session(
+        mock_api_client_instance,
+        [
+            _legacy_js_event_json(
+                '1', rawEvent={'author': 'model', 'actions': 'garbage'}
+            )
+        ],
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures('mock_get_api_client')
+async def test_legacy_js_compaction_is_rewritten_canonically_on_append(
+    mock_api_client_instance,
+):
+  """Reading a legacy record and re-appending it migrates it forward."""
+  session = await _get_legacy_js_session(
+      mock_api_client_instance,
+      [
+          _legacy_js_event_json(
+              '1',
+              rawEvent={
+                  'author': 'model',
+                  'isCompacted': True,
+                  **MOCK_LEGACY_JS_COMPACTION,
+              },
+          )
+      ],
+  )
+  assert session is not None
+
+  await mock_vertex_ai_session_service().append_event(
+      session, session.events[0]
+  )
+
+  persisted = mock_api_client_instance.event_dict[MOCK_LEGACY_JS_SESSION_ID][0][
+      -1
+  ]
+  stored = persisted['event_metadata']['custom_metadata']['_compaction']
+  assert set(stored) == {
+      'start_timestamp',
+      'end_timestamp',
+      'compacted_content',
+  }
+  assert stored['start_timestamp'] == 1700000000.0
+  assert stored['end_timestamp'] == 1700000001.0
+  assert isinstance(stored['compacted_content'], dict)
+  raw_compaction = persisted['raw_event']['actions']['compaction']
+  assert isinstance(raw_compaction['compactedContent'], dict)
+  assert 'startTime' not in raw_compaction
+
+
+@pytest.mark.parametrize(
+    'payload',
+    [
+        None,
+        'garbage',
+        42,
+        {},
+        {'startTime': 1000},
+        {'startTime': 1, 'endTime': 2, 'compactedContent': 42},
+    ],
+)
+def test_normalize_compaction_payload_returns_none(payload):
+  """An absent or unreadable payload yields no compaction."""
+  assert _normalize_compaction_payload(payload, event_name='events/1') is None
+
+
+@pytest.mark.parametrize(
+    'payload, expected_start, expected_end, expected_text',
+    [
+        (MOCK_LEGACY_JS_COMPACTION, 1700000000.0, 1700000001.0, 'js summary'),
+        (MOCK_CANONICAL_SNAKE_COMPACTION, 1000.0, 2000.0, 'summary'),
+        (MOCK_CANONICAL_CAMEL_COMPACTION, 1000.0, 2000.0, 'summary'),
+        # Mixed: only the legacy-spelled field is scaled.
+        (
+            {
+                'startTimestamp': 1000.0,
+                'endTime': 2000,
+                'compactedContent': 'mixed',
+            },
+            1000.0,
+            2.0,
+            'mixed',
+        ),
+        # Foreign keys never reach the strict model.
+        (
+            {
+                'isCompacted': True,
+                'isScratchpad': False,
+                **{
+                    'startTime': 1000,
+                    'endTime': 2000,
+                    'compactedContent': 'extras',
+                },
+            },
+            1.0,
+            2.0,
+            'extras',
+        ),
+    ],
+)
+def test_normalize_compaction_payload_reads_every_spelling(
+    payload, expected_start, expected_end, expected_text
+):
+  """Every spelling ADK has written normalizes to the canonical model."""
+  compaction = _normalize_compaction_payload(
+      copy.deepcopy(payload), event_name='events/1'
+  )
+
+  assert compaction is not None
+  assert compaction.start_timestamp == expected_start
+  assert compaction.end_timestamp == expected_end
+  assert compaction.compacted_content.role == 'model'
+  assert compaction.compacted_content.parts[0].text == expected_text
 
 
 @pytest.mark.asyncio
