@@ -1570,7 +1570,9 @@ def test_validate_adk_version_rejects_unsafe_values(value: str) -> None:
     cli_deploy._validate_adk_version(value)
 
 
-@pytest.mark.parametrize("name", ["my_pkg", "helper.py", "my-data.v2", "pkg2"])
+@pytest.mark.parametrize(
+    "name", ["my_pkg", "helper.py", "my-data.v2", "pkg2", "p" * 128]
+)
 def test_validate_extra_package_name_accepts_ordinary_names(name: str) -> None:
   """An ordinary path segment is accepted."""
   assert cli_deploy._validate_extra_package_name(name, name) is None
@@ -1578,7 +1580,7 @@ def test_validate_extra_package_name_accepts_ordinary_names(name: str) -> None:
 
 @pytest.mark.parametrize(
     "name",
-    ['pkg"', "pkg\nRUN echo pwned", "pkg$(id)", "my pkg", ""],
+    ['pkg"', "pkg\nRUN echo pwned", "pkg$(id)", "my pkg", "", "p" * 129],
 )
 def test_validate_extra_package_name_rejects_unsafe_names(name: str) -> None:
   """A name that escapes the COPY instruction is rejected by flag name."""

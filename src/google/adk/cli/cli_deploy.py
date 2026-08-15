@@ -130,14 +130,6 @@ _SAFE_DOCKERFILE_TOKEN_RE: Final[re.Pattern[str]] = re.compile(
 # double-quoted shell word the version is interpolated into.
 _ADK_VERSION_PATTERN: Final[re.Pattern[str]] = re.compile(r'[A-Za-z0-9._!+-]+')
 
-# A staged extra_packages entry is copied to /app/<name>, and /app is on
-# PYTHONPATH, so the name has to be an ordinary path segment. A filename may
-# legitimately carry '.' and '-', which the plain token above allows too, but
-# on Linux and macOS it may also carry a quote, a '$' or a newline.
-_EXTRA_PACKAGE_NAME_PATTERN: Final[re.Pattern[str]] = re.compile(
-    r'[A-Za-z0-9._-]+'
-)
-
 
 def _assert_safe_dockerfile_token(value: Optional[str], field: str) -> None:
   """Rejects a value that cannot be embedded in the Dockerfile verbatim.
@@ -231,6 +223,11 @@ def _validate_adk_version(adk_version: str) -> None:
 def _validate_extra_package_name(pkg: str, name: str) -> None:
   """Rejects a staged extra_packages name that is unsafe in a COPY instruction.
 
+  The entry is copied to /app/<name>, and /app is on PYTHONPATH, so the name
+  has to be an ordinary path segment. It gets the plain-token rule above: on
+  Linux and macOS a filename may carry a quote, a '$' or a newline, and an
+  entry that resolves to a root path has no basename at all.
+
   Args:
     pkg: The extra_packages entry as the user or the config file wrote it, used
       in the error message.
@@ -239,11 +236,11 @@ def _validate_extra_package_name(pkg: str, name: str) -> None:
   Raises:
     click.ClickException: If the name is not an ordinary path segment.
   """
-  if not _EXTRA_PACKAGE_NAME_PATTERN.fullmatch(name):
+  if not _SAFE_DOCKERFILE_TOKEN_RE.fullmatch(name):
     raise click.ClickException(
         f'Invalid --extra_packages entry {pkg!r}: it would be staged as'
         f' {name!r}, which is not a valid package name. Use only letters,'
-        " digits, '.', '-' and '_'."
+        " digits, '.', '-' and '_', up to 128 characters."
     )
 
 
