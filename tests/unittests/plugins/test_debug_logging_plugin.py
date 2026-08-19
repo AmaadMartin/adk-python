@@ -163,7 +163,7 @@ class TestDebugLoggingPluginCallbacks:
     )
 
   async def test_on_user_message_callback_before_before_run_keeps_entry(
-      self, debug_output_file, mock_invocation_context
+      self, caplog, debug_output_file, mock_invocation_context
   ):
     """Test that the user message survives the runner's callback order."""
     plugin = DebugLoggingPlugin(output_path=str(debug_output_file))
@@ -171,24 +171,26 @@ class TestDebugLoggingPluginCallbacks:
         role="user", parts=[types.Part.from_text(text="Hello, world!")]
     )
 
-    await plugin.on_user_message_callback(
-        invocation_context=mock_invocation_context, user_message=user_message
-    )
+    with caplog.at_level(logging.WARNING):
+      await plugin.on_user_message_callback(
+          invocation_context=mock_invocation_context, user_message=user_message
+      )
 
-    state = plugin._invocation_states[mock_invocation_context.invocation_id]
-    assert [e.entry_type for e in state.entries] == ["user_message"]
-    assert state.session_id is None
-    assert state.app_name is None
+      state = plugin._invocation_states[mock_invocation_context.invocation_id]
+      assert [e.entry_type for e in state.entries] == ["user_message"]
+      assert state.session_id == "test-session-id"
+      assert state.app_name == "test-app"
+      assert state.user_id == "test-user"
 
-    await plugin.before_run_callback(invocation_context=mock_invocation_context)
+      await plugin.before_run_callback(
+          invocation_context=mock_invocation_context
+      )
 
     assert [e.entry_type for e in state.entries] == [
         "user_message",
         "invocation_start",
     ]
-    assert state.session_id == "test-session-id"
-    assert state.app_name == "test-app"
-    assert state.user_id == "test-user"
+    assert not [r for r in caplog.records if "No debug state" in r.message]
 
   async def test_before_run_callback_preserves_start_time(
       self, debug_output_file, mock_invocation_context
@@ -209,10 +211,10 @@ class TestDebugLoggingPluginCallbacks:
 
     assert state.start_time == start_time
 
-  async def test_entry_before_state_is_not_dropped_and_logs_no_warning(
+  async def test_entry_for_an_unknown_invocation_creates_no_state(
       self, caplog, debug_output_file, mock_invocation_context
   ):
-    """Test that any callback creates the state it needs, without a warning."""
+    """Test that a late entry is dropped instead of resurrecting state."""
     plugin = DebugLoggingPlugin(output_path=str(debug_output_file))
     event = Event(
         invocation_id=mock_invocation_context.invocation_id,
@@ -228,9 +230,8 @@ class TestDebugLoggingPluginCallbacks:
       )
 
     assert result is None
-    state = plugin._invocation_states[mock_invocation_context.invocation_id]
-    assert [e.entry_type for e in state.entries] == ["event"]
-    assert not [r for r in caplog.records if "No debug state" in r.message]
+    assert not plugin._invocation_states
+    assert [r for r in caplog.records if "No debug state" in r.message]
 
   async def test_before_model_callback_logs_request(
       self, debug_output_file, mock_invocation_context, mock_callback_context

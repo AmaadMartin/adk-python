@@ -57,8 +57,8 @@ class _InvocationDebugState(BaseModel):
   """Per-invocation debug state."""
 
   invocation_id: str
-  session_id: str | None = None
-  app_name: str | None = None
+  session_id: str
+  app_name: str
   user_id: str | None = None
   start_time: str
   entries: list[_DebugEntry] = Field(default_factory=list)
@@ -192,23 +192,29 @@ class DebugLoggingPlugin(BasePlugin):
     except Exception:
       return "<unserializable>"
 
-  def _ensure_state(self, invocation_id: str) -> _InvocationDebugState:
+  def _ensure_state(
+      self, invocation_context: InvocationContext
+  ) -> _InvocationDebugState:
     """Returns the debug state for an invocation, creating it if absent.
 
     The runner dispatches ``on_user_message_callback`` before
-    ``before_run_callback``, so the first entry for an invocation can arrive
-    before the callback that fills in the session metadata.
+    ``before_run_callback``, so either one can be the first to need the state.
 
     Args:
-      invocation_id: The id of the invocation to get state for.
+      invocation_context: The context of the invocation to get state for.
 
     Returns:
       The existing state, or a newly created one.
     """
+    invocation_id = invocation_context.invocation_id
     state = self._invocation_states.get(invocation_id)
     if state is None:
+      session = invocation_context.session
       state = _InvocationDebugState(
           invocation_id=invocation_id,
+          session_id=session.id,
+          app_name=session.app_name,
+          user_id=invocation_context.user_id,
           start_time=self._get_timestamp(),
       )
       self._invocation_states[invocation_id] = state
@@ -222,7 +228,12 @@ class DebugLoggingPlugin(BasePlugin):
       **data: Any,
   ) -> None:
     """Add a debug entry to the current invocation state."""
-    state = self._ensure_state(invocation_id)
+    if invocation_id not in self._invocation_states:
+      logger.warning(
+          "No debug state for invocation %s, skipping entry", invocation_id
+      )
+      return
+
     entry = _DebugEntry(
         timestamp=self._get_timestamp(),
         entry_type=entry_type,
@@ -230,7 +241,7 @@ class DebugLoggingPlugin(BasePlugin):
         agent_name=agent_name,
         data=self._safe_serialize(data),
     )
-    state.entries.append(entry)
+    self._invocation_states[invocation_id].entries.append(entry)
 
   @override
   async def on_user_message_callback(
@@ -240,10 +251,10 @@ class DebugLoggingPlugin(BasePlugin):
       user_message: types.Content,
   ) -> types.Content | None:
     """Log user message and invocation start."""
-    invocation_id = invocation_context.invocation_id
+    self._ensure_state(invocation_context)
 
     self._add_entry(
-        invocation_id,
+        invocation_context.invocation_id,
         "user_message",
         content=self._serialize_content(user_message),
     )
@@ -253,20 +264,11 @@ class DebugLoggingPlugin(BasePlugin):
   async def before_run_callback(
       self, *, invocation_context: InvocationContext
   ) -> types.Content | None:
-    """Record the session metadata for this invocation."""
-    invocation_id = invocation_context.invocation_id
-    session = invocation_context.session
-
-    # The state may already exist, carrying the user message entry that
-    # on_user_message_callback recorded before this callback ran. Keep its
-    # earlier start_time: that is the truer start of the invocation.
-    state = self._ensure_state(invocation_id)
-    state.session_id = session.id
-    state.app_name = session.app_name
-    state.user_id = invocation_context.user_id
+    """Initialize debug state for this invocation."""
+    self._ensure_state(invocation_context)
 
     self._add_entry(
-        invocation_id,
+        invocation_context.invocation_id,
         "invocation_start",
         agent_name=getattr(invocation_context.agent, "name", None),
         branch=invocation_context.branch,
