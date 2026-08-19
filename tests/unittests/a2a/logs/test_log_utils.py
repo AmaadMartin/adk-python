@@ -240,12 +240,25 @@ class TestBuildMessagePartLog:
     assert result == f"{_compat.part_kind_label(part)}: {expected}"
     assert "<bytes redacted>" not in result
 
-  def test_unserializable_file_part_falls_back(self):
+  @pytest.mark.parametrize(
+      "serializer_behaviour",
+      [
+          pytest.param(
+              {"return_value": {"data": object()}}, id="unserializable_value"
+          ),
+          pytest.param(
+              {"side_effect": ValueError("boom")}, id="serializer_raises"
+          ),
+      ],
+  )
+  def test_file_part_serialization_failure_falls_back(
+      self, serializer_behaviour
+  ):
     """Test that redaction stays inside the serialization guard."""
 
     part = _compat.make_file_part_with_uri(uri="https://example.com/p.png")
 
-    with patch.object(_compat, "a2a_to_dict", return_value={"data": object()}):
+    with patch.object(_compat, "a2a_to_dict", **serializer_behaviour):
       result = build_message_part_log(part)
 
     assert result == f"{_compat.part_kind_label(part)}: <unserializable>"
@@ -290,6 +303,29 @@ class TestBuildA2ARequestLog:
     assert "ctx-101" in result
     assert "Part 0:" in result
     assert "Part 1:" in result
+
+  def test_request_with_file_part_redacts_payload(self):
+    """Test the reported leak end to end, with no mocks."""
+
+    payload = b"SUPER_SECRET_IMAGE_PAYLOAD_0123456789"
+    req = _compat.make_message(
+        message_id="msg-456",
+        role="user",
+        task_id="task-789",
+        context_id="ctx-101",
+        parts=[
+            _compat.make_file_part_with_bytes(
+                data=payload, mime_type="image/png", name="photo.png"
+            )
+        ],
+    )
+
+    result = build_a2a_request_log(req)
+
+    assert base64.b64encode(payload).decode() not in result
+    assert "<bytes redacted>" in result
+    assert "photo.png" in result
+    assert "image/png" in result
 
   def test_request_without_parts(self):
     """Test request logging without message parts."""
