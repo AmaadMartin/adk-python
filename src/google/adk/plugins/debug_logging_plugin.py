@@ -192,6 +192,34 @@ class DebugLoggingPlugin(BasePlugin):
     except Exception:
       return "<unserializable>"
 
+  def _ensure_state(
+      self, invocation_context: InvocationContext
+  ) -> _InvocationDebugState:
+    """Returns the debug state for an invocation, creating it if absent.
+
+    The runner dispatches ``on_user_message_callback`` before
+    ``before_run_callback``, so either one can be the first to need the state.
+
+    Args:
+      invocation_context: The context of the invocation to get state for.
+
+    Returns:
+      The existing state, or a newly created one.
+    """
+    invocation_id = invocation_context.invocation_id
+    state = self._invocation_states.get(invocation_id)
+    if state is None:
+      session = invocation_context.session
+      state = _InvocationDebugState(
+          invocation_id=invocation_id,
+          session_id=session.id,
+          app_name=session.app_name,
+          user_id=invocation_context.user_id,
+          start_time=self._get_timestamp(),
+      )
+      self._invocation_states[invocation_id] = state
+    return state
+
   def _add_entry(
       self,
       invocation_id: str,
@@ -223,10 +251,10 @@ class DebugLoggingPlugin(BasePlugin):
       user_message: types.Content,
   ) -> types.Content | None:
     """Log user message and invocation start."""
-    invocation_id = invocation_context.invocation_id
+    self._ensure_state(invocation_context)
 
     self._add_entry(
-        invocation_id,
+        invocation_context.invocation_id,
         "user_message",
         content=self._serialize_content(user_message),
     )
@@ -237,20 +265,10 @@ class DebugLoggingPlugin(BasePlugin):
       self, *, invocation_context: InvocationContext
   ) -> types.Content | None:
     """Initialize debug state for this invocation."""
-    invocation_id = invocation_context.invocation_id
-    session = invocation_context.session
-
-    state = _InvocationDebugState(
-        invocation_id=invocation_id,
-        session_id=session.id,
-        app_name=session.app_name,
-        user_id=invocation_context.user_id,
-        start_time=self._get_timestamp(),
-    )
-    self._invocation_states[invocation_id] = state
+    self._ensure_state(invocation_context)
 
     self._add_entry(
-        invocation_id,
+        invocation_context.invocation_id,
         "invocation_start",
         agent_name=getattr(invocation_context.agent, "name", None),
         branch=invocation_context.branch,

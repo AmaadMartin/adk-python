@@ -14,11 +14,13 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 from unittest.mock import Mock
 
 from google.adk.agents.callback_context import CallbackContext
 from google.adk.agents.invocation_context import InvocationContext
+from google.adk.agents.llm_agent import LlmAgent
 from google.adk.events.event import Event
 from google.adk.models.llm_request import LlmRequest
 from google.adk.models.llm_response import LlmResponse
@@ -29,6 +31,8 @@ from google.adk.tools.tool_context import ToolContext
 from google.genai import types
 import pytest
 import yaml
+
+from .. import testing_utils
 
 
 @pytest.fixture
@@ -157,6 +161,77 @@ class TestDebugLoggingPluginCallbacks:
     assert user_message_entries[0].data["content"]["parts"][0]["text"] == (
         "Hello, world!"
     )
+
+  async def test_on_user_message_callback_before_before_run_keeps_entry(
+      self, caplog, debug_output_file, mock_invocation_context
+  ):
+    """Test that the user message survives the runner's callback order."""
+    plugin = DebugLoggingPlugin(output_path=str(debug_output_file))
+    user_message = types.Content(
+        role="user", parts=[types.Part.from_text(text="Hello, world!")]
+    )
+
+    with caplog.at_level(logging.WARNING):
+      await plugin.on_user_message_callback(
+          invocation_context=mock_invocation_context, user_message=user_message
+      )
+
+      state = plugin._invocation_states[mock_invocation_context.invocation_id]
+      assert [e.entry_type for e in state.entries] == ["user_message"]
+      assert state.session_id == "test-session-id"
+      assert state.app_name == "test-app"
+      assert state.user_id == "test-user"
+
+      await plugin.before_run_callback(
+          invocation_context=mock_invocation_context
+      )
+
+    assert [e.entry_type for e in state.entries] == [
+        "user_message",
+        "invocation_start",
+    ]
+    assert not [r for r in caplog.records if "No debug state" in r.message]
+
+  async def test_before_run_callback_preserves_start_time(
+      self, debug_output_file, mock_invocation_context
+  ):
+    """Test that before_run_callback keeps the user message's start_time."""
+    plugin = DebugLoggingPlugin(output_path=str(debug_output_file))
+    user_message = types.Content(
+        role="user", parts=[types.Part.from_text(text="Hello, world!")]
+    )
+
+    await plugin.on_user_message_callback(
+        invocation_context=mock_invocation_context, user_message=user_message
+    )
+    state = plugin._invocation_states[mock_invocation_context.invocation_id]
+    start_time = state.start_time
+
+    await plugin.before_run_callback(invocation_context=mock_invocation_context)
+
+    assert state.start_time == start_time
+
+  async def test_entry_for_an_unknown_invocation_creates_no_state(
+      self, caplog, debug_output_file, mock_invocation_context
+  ):
+    """Test that a late entry is dropped instead of resurrecting state."""
+    plugin = DebugLoggingPlugin(output_path=str(debug_output_file))
+    event = Event(
+        invocation_id=mock_invocation_context.invocation_id,
+        author="test-agent",
+        content=types.Content(
+            role="model", parts=[types.Part.from_text(text="Response text")]
+        ),
+    )
+
+    with caplog.at_level(logging.WARNING):
+      result = await plugin.on_event_callback(
+          invocation_context=mock_invocation_context, event=event
+      )
+
+    assert result is None
+    assert not plugin._invocation_states
+    assert [r for r in caplog.records if "No debug state" in r.message]
 
   async def test_before_model_callback_logs_request(
       self, debug_output_file, mock_invocation_context, mock_callback_context
@@ -490,6 +565,37 @@ class TestDebugLoggingPluginFileOutput:
     assert (
         mock_invocation_context.invocation_id not in plugin._invocation_states
     )
+
+
+class TestDebugLoggingPluginRunnerIntegration:
+  """Tests that drive a real Runner, which owns the callback order."""
+
+  async def test_runner_flow_writes_user_message_to_yaml(
+      self, debug_output_file, caplog
+  ):
+    """Test that a real run writes the user message as the first entry."""
+    mock_model = testing_utils.MockModel.create(responses=["Hi there!"])
+    agent = LlmAgent(name="test_agent", model=mock_model)
+    plugin = DebugLoggingPlugin(output_path=str(debug_output_file))
+    runner = testing_utils.InMemoryRunner(root_agent=agent, plugins=[plugin])
+
+    with caplog.at_level(logging.WARNING):
+      await runner.run_async(testing_utils.UserContent("Hello, world!"))
+
+    with open(debug_output_file, "r") as f:
+      documents = list(yaml.safe_load_all(f))
+
+    assert len(documents) == 1
+    entries = documents[0]["entries"]
+    user_entries = [e for e in entries if e["entry_type"] == "user_message"]
+    assert len(user_entries) == 1
+    assert user_entries[0]["data"]["content"]["parts"][0]["text"] == (
+        "Hello, world!"
+    )
+    assert entries[0]["entry_type"] == "user_message"
+    assert documents[0]["session_id"]
+    assert not [r for r in caplog.records if "No debug state" in r.message]
+    assert not plugin._invocation_states
 
 
 class TestDebugLoggingPluginSerialization:
