@@ -14,6 +14,8 @@
 
 """Tests for log_utils module."""
 
+import base64
+import json
 import sys
 from unittest.mock import Mock
 from unittest.mock import patch
@@ -135,6 +137,118 @@ class TestBuildMessagePartLog:
 
     # On 0.3.x the else branch labels non-text/data parts as "FilePart".
     assert result.startswith("FilePart: ")
+
+  def test_file_part_with_bytes_redacts_payload(self):
+    """Test that an inline file payload never reaches the log."""
+
+    payload = b"SUPER_SECRET_IMAGE_PAYLOAD_0123456789"
+    part = _compat.make_file_part_with_bytes(
+        data=payload, mime_type="image/png", name="photo.png"
+    )
+
+    result = build_message_part_log(part)
+
+    # Both SDK generations render the payload as base64, so that is the
+    # substring the leak would show up as.
+    assert payload.decode() not in result
+    assert base64.b64encode(payload).decode() not in result
+    assert "<bytes redacted>" in result
+    # Assert on the values: the keys are ``mimeType``/``name`` on 0.3.x and
+    # ``mediaType``/``filename`` on 1.x.
+    assert "image/png" in result
+    assert "photo.png" in result
+    assert result.startswith(f"{_compat.part_kind_label(part)}: ")
+
+  def test_file_part_with_uri_is_not_redacted(self):
+    """Test that a URI-backed file part logs in full."""
+
+    part = _compat.make_file_part_with_uri(
+        uri="https://example.com/a.png", mime_type="image/png", name="a.png"
+    )
+
+    result = build_message_part_log(part)
+
+    assert "https://example.com/a.png" in result
+    assert "image/png" in result
+    assert "<bytes redacted>" not in result
+
+  @pytest.mark.parametrize(
+      "serialized_part",
+      [
+          pytest.param(
+              {
+                  "file": {
+                      "bytes": "QUJDREVG",
+                      "mimeType": "image/png",
+                      "name": "p.png",
+                  },
+                  "kind": "file",
+              },
+              id="a2a_sdk_0_3_shape",
+          ),
+          pytest.param(
+              {
+                  "raw": "QUJDREVG",
+                  "mediaType": "image/png",
+                  "filename": "p.png",
+              },
+              id="a2a_sdk_1_shape",
+          ),
+      ],
+  )
+  def test_file_part_bytes_redacted_for_both_sdk_shapes(self, serialized_part):
+    """Test redaction of both SDK generations' serialized file parts."""
+
+    # Only one generation is installed, so the other generation's dict is
+    # supplied at the serializer boundary. A real URI part drives the input so
+    # the file/other branch is the one under test.
+    part = _compat.make_file_part_with_uri(uri="https://example.com/p.png")
+
+    with patch.object(
+        _compat, "a2a_to_dict", return_value=serialized_part
+    ) as mock_to_dict:
+      result = build_message_part_log(part)
+
+    mock_to_dict.assert_called_once_with(part)
+    assert "QUJDREVG" not in result
+    assert "<bytes redacted>" in result
+    assert "image/png" in result
+    assert "p.png" in result
+
+  @pytest.mark.parametrize(
+      "serialized_part",
+      [
+          pytest.param(
+              {
+                  "file": {"uri": "https://example.com/p.png"},
+                  "kind": "file",
+              },
+              id="file_dict_without_bytes",
+          ),
+          pytest.param({"file": "unexpected"}, id="file_field_not_a_dict"),
+      ],
+  )
+  def test_file_part_without_inline_payload_is_untouched(self, serialized_part):
+    """Test that a part carrying no inline payload logs unchanged."""
+
+    part = _compat.make_file_part_with_uri(uri="https://example.com/p.png")
+    expected = json.dumps(serialized_part)
+
+    with patch.object(_compat, "a2a_to_dict", return_value=serialized_part):
+      result = build_message_part_log(part)
+
+    assert result == f"{_compat.part_kind_label(part)}: {expected}"
+    assert "<bytes redacted>" not in result
+
+  def test_unserializable_file_part_falls_back(self):
+    """Test that redaction stays inside the serialization guard."""
+
+    part = _compat.make_file_part_with_uri(uri="https://example.com/p.png")
+
+    with patch.object(_compat, "a2a_to_dict", return_value={"data": object()}):
+      result = build_message_part_log(part)
+
+    assert result == f"{_compat.part_kind_label(part)}: <unserializable>"
 
 
 class TestBuildA2ARequestLog:

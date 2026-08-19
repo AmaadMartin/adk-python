@@ -38,7 +38,7 @@ except ImportError as e:
 
 # Constants
 _NEW_LINE = "\n"
-_EXCLUDED_PART_FIELD = {"file": {"bytes"}}
+_REDACTED_FILE_BYTES = "<bytes redacted>"
 
 
 def _is_a2a_task(obj: Any) -> TypeGuard[A2ATask]:
@@ -60,6 +60,35 @@ def _is_a2a_message(obj: Any) -> TypeGuard[A2AMessage]:
     return isinstance(obj, A2AMessage)
   except (TypeError, AttributeError):
     return type(obj).__name__ == "Message" and hasattr(obj, "role")
+
+
+def _redact_file_bytes(part_dict: dict[str, Any]) -> dict[str, Any]:
+  """Replaces a serialized Part's inline file payload with a marker.
+
+  A file part can carry a whole image, PDF or audio blob inline. Rendering that
+  into a debug log bloats the log and persists user content where it was not
+  meant to go, so the payload is dropped while the fields that make the log
+  useful -- name, MIME type, URI -- are kept.
+
+  The payload sits under a different key per SDK generation: 0.3.x nests base64
+  text at ``file.bytes``; 1.x is a flat proto whose ``raw`` bytes field
+  ``MessageToDict`` renders as base64. Both are handled so the helper needs no
+  version branch.
+
+  Args:
+    part_dict: A Part already serialized by ``_compat.a2a_to_dict``. Mutated in
+      place -- the caller owns a freshly built dict, and the payload may be
+      large enough that copying it is wasteful.
+
+  Returns:
+    The same dict, with any inline payload redacted.
+  """
+  file_field = part_dict.get("file")
+  if isinstance(file_field, dict) and "bytes" in file_field:
+    file_field["bytes"] = _REDACTED_FILE_BYTES
+  if "raw" in part_dict:
+    part_dict["raw"] = _REDACTED_FILE_BYTES
+  return part_dict
 
 
 def build_message_part_log(part: A2APart) -> str:
@@ -92,7 +121,10 @@ def build_message_part_log(part: A2APart) -> str:
     # File parts / other kinds.
     part_kind = _compat.part_kind_label(part)
     try:
-      part_content = f"{part_kind}: {json.dumps(_compat.a2a_to_dict(part))}"
+      part_content = (
+          f"{part_kind}:"
+          f" {json.dumps(_redact_file_bytes(_compat.a2a_to_dict(part)))}"
+      )
     except Exception:
       part_content = f"{part_kind}: <unserializable>"
 
