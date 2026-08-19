@@ -63,25 +63,13 @@ def _is_a2a_message(obj: Any) -> TypeGuard[A2AMessage]:
 
 
 def _redact_file_bytes(part_dict: dict[str, Any]) -> dict[str, Any]:
-  """Replaces a serialized Part's inline file payload with a marker.
+  """Replaces a serialized Part's inline file payload with a marker, in place.
 
-  A file part can carry a whole image, PDF or audio blob inline. Rendering that
-  into a debug log bloats the log and persists user content where it was not
-  meant to go, so the payload is dropped while the fields that make the log
-  useful -- name, MIME type, URI -- are kept.
-
-  The payload sits under a different key per SDK generation: 0.3.x nests base64
-  text at ``file.bytes``; 1.x is a flat proto whose ``raw`` bytes field
-  ``MessageToDict`` renders as base64. Both are handled so the helper needs no
-  version branch.
-
-  Args:
-    part_dict: A Part already serialized by ``_compat.a2a_to_dict``. Mutated in
-      place -- the caller owns a freshly built dict, and the payload may be
-      large enough that copying it is wasteful.
-
-  Returns:
-    The same dict, with any inline payload redacted.
+  The payload key differs per SDK generation: 0.3.x nests base64 text at
+  ``file.bytes``; 1.x is a flat proto whose ``raw`` bytes field
+  ``MessageToDict`` renders as base64. Both are handled, so no version branch
+  is needed. Name, MIME type and URI survive -- they are what makes the log
+  useful.
   """
   file_field = part_dict.get("file")
   if isinstance(file_field, dict) and "bytes" in file_field:
